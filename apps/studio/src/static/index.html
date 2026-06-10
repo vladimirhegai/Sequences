@@ -34,6 +34,26 @@
 
     <!-- ============ MAIN ============ -->
     <main id="main">
+      <div id="agentPanel" class="panel">
+        <div class="panel-head">
+          <span class="agent-spark" id="agentSpark"></span>
+          <span class="ph-title">Agent</span>
+          <span class="ph-sub mono" id="agentProviderSub"></span>
+          <div class="ph-tools"></div>
+        </div>
+        <div id="agentBody"></div>
+        <div id="agentFoot">
+          <div class="composer">
+            <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
+            <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
+          </div>
+          <div class="composer-meta">
+            <span id="composerHint">plans apply as one undoable batch</span>
+            <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
+          </div>
+        </div>
+      </div>
+
       <div id="left">
         <div id="viewportPanel">
           <div id="previewWrap">
@@ -71,25 +91,6 @@
             <div class="ph-tools"><span class="ph-sub" id="inspectorSub"></span></div>
           </div>
           <div id="inspectorBody"></div>
-        </div>
-        <div id="agentPanel" class="panel">
-          <div class="panel-head">
-            <span class="agent-spark" id="agentSpark"></span>
-            <span class="ph-title">Agent</span>
-            <span class="ph-sub mono" id="agentProviderSub"></span>
-            <div class="ph-tools"></div>
-          </div>
-          <div id="agentBody"></div>
-          <div id="agentFoot">
-            <div class="composer">
-              <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
-              <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
-            </div>
-            <div class="composer-meta">
-              <span id="composerHint">plans apply as one undoable batch</span>
-              <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
-            </div>
-          </div>
         </div>
       </div>
     </main>
