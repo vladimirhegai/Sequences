@@ -15,6 +15,7 @@ node_modules/
 
 # Project-specific ignores requested by user
 hyperframes/
+Web-Prototype/
 README_dev.md
 README_DEV.md
 SEQUENCES_MASTER_PLAN.md
