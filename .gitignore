@@ -1,0 +1,22 @@
+node_modules/
+.spike/
+**/build/
+**/renders/
+*.log
+!events.log
+.DS_Store
+
+# IDE and Editor files
+.vscode/
+.idea/
+
+# Claude config/artifacts
+.claude/
+
+# Project-specific ignores requested by user
+hyperframes/
+README_dev.md
+README_DEV.md
+SEQUENCES_MASTER_PLAN.md
+**/README_DEV.md
+**/SEQUENCES_MASTER_PLAN.md

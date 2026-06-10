@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sequences — Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;450;500;550;600;650;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="preview.jsx"></script>
+<script type="text/babel" src="timeline.jsx"></script>
+<script type="text/babel" src="inspector.jsx"></script>
+<script type="text/babel" src="agent.jsx"></script>
+
+<script type="text/babel">
+const { useReducer, useEffect, useState } = React;
+const D = window.SEQ;
+
+/* deep-ish clone of scenes for mutable state */
+const cloneScenes = () => JSON.parse(JSON.stringify(D.SCENES));
+
+function updateLayer(scenes, layerId, fn) {
+  return scenes.map((s) => ({
+    ...s,
+    layers: s.layers.map((l) => (l.id === layerId ? fn({ ...l }) : l)),
+  }));
+}
+
+const initial = {
+  phase: "picker",
+  scenes: cloneScenes(),
+  camera: D.CAMERA,
+  audio: D.AUDIO,
+  directions: D.DIRECTIONS,
+  activeDirection: "A",
+  profile: "crisp-saas",
+  selectedSceneId: "s1",
+  selectedLayerId: null,
+  frame: 0,
+  playing: false,
+  ppf: 1.75,
+  snap: true,
+  safeArea: false,
+  choreoStagger: "base",
+  tweakLog: [],
+  composer: "",
+  cost: "$0.04",
+  lintOpen: false,
+  toasts: [],
+};
+
+let toastId = 0;
+function toast(state, msg, kind) {
+  return { ...state, toasts: [...state.toasts, { id: ++toastId, msg, kind: kind || "ok" }] };
+}
+
+const TWEAK_RULES = [
+  { kw: ["bigger", "larger", "huge"], zero: true, cmd: "SetLayerStyle(headline, size: display)",
+    apply: (s) => ({ ...s, scenes: updateLayer(s.scenes, "l3", (l) => ({ ...l, style: { ...l.style, size: "h1" } })) }),
+    msg: "Headline scaled up" },
+  { kw: ["slow", "slower"], zero: true, cmd: "SetChoreography(scene 1, durations: slow)",
+    apply: (s) => ({ ...s, scenes: s.scenes.map((sc) => sc.id === "s1" ? { ...sc, dur: Math.min(120, sc.dur + 30) } : sc) }),
+    msg: "Intro slowed" },
+  { kw: ["punch", "punchier", "energy", "bold"], zero: true, cmd: "SetMotionProfile(bold-launch)",
+    apply: (s) => ({ ...s, profile: "bold-launch" }), msg: "Profile → Bold Launch" },
+  { kw: ["calm", "calmer", "quiet", "softer"], zero: true, cmd: "SetMotionProfile(warm-startup)",
+    apply: (s) => ({ ...s, profile: "warm-startup" }), msg: "Profile → Warm Startup" },
+  { kw: ["faster", "quick", "snappy"], zero: true, cmd: "SetChoreography(durations: quick)",
+    apply: (s) => ({ ...s, scenes: s.scenes.map((sc) => ({ ...sc, dur: Math.max(45, Math.round(sc.dur * 0.9)) })) }),
+    msg: "Tightened all scenes" },
+];
+
+function matchTweak(text) {
+  const t = text.toLowerCase();
+  for (const r of TWEAK_RULES) if (r.kw.some((k) => t.includes(k))) return r;
+  return null;
+}
+
+function reducer(state, a) {
+  switch (a.type) {
+    case "seek": return { ...state, frame: Math.max(0, Math.min(D.TOTAL, a.frame)) };
+    case "togglePlay": return { ...state, playing: !state.playing };
+    case "tick": {
+      let f = state.frame + 2;
+      if (f >= D.TOTAL) f = 0;
+      return { ...state, frame: f };
+    }
+    case "toggleSafe": return { ...state, safeArea: !state.safeArea };
+    case "toggleSnap": return { ...state, snap: !state.snap };
+    case "zoom": return { ...state, ppf: Math.max(0.7, Math.min(4, state.ppf + a.d)) };
+    case "selectScene": return { ...state, selectedSceneId: a.id, selectedLayerId: null };
+    case "selectLayer": return { ...state, selectedLayerId: a.id, selectedSceneId: a.sceneId || state.selectedSceneId };
+    case "setSceneDur": {
+      // resize + retile following scenes
+      const scenes = retile(state.scenes.map((s) => s.id === a.id ? { ...s, dur: a.dur } : s));
+      return { ...state, scenes };
+    }
+    case "setSceneBounds": {
+      const scenes = retile(state.scenes.map((s) => s.id === a.id ? { ...s, dur: a.dur } : s));
+      return { ...state, scenes };
+    }
+    case "setProfile": return toast({ ...state, profile: a.id }, "Profile → " + D.PROFILES[a.id].name + " · recompiled 176ms");
+    case "setDirection": return { ...state, activeDirection: a.id };
+    case "commit":
+      return { ...state, phase: "editing", selectedSceneId: "s2", selectedLayerId: "l3", frame: 120 };
+    case "setText": return { ...state, scenes: updateLayer(state.scenes, a.id, (l) => ({ ...l, content: a.content })) };
+    case "setAnchor": return { ...state, scenes: updateLayer(state.scenes, a.id, (l) => ({ ...l, box: { ...l.box, anchor: a.anchor } })) };
+    case "setSize": return { ...state, scenes: updateLayer(state.scenes, a.id, (l) => ({ ...l, style: { ...l.style, size: a.size } })) };
+    case "setColor": return { ...state, scenes: updateLayer(state.scenes, a.id, (l) => ({ ...l, style: { ...l.style, color: a.color } })) };
+    case "setMotionParam":
+      return { ...state, scenes: updateLayer(state.scenes, a.layerId, (l) => ({
+        ...l, motions: l.motions.map((m, i) => i === a.idx ? { ...m, [a.key]: a.value } : m) })) };
+    case "setStagger": return { ...state, choreoStagger: a.id };
+    case "setComposer": return { ...state, composer: a.text };
+    case "toggleLint": return { ...state, lintOpen: !state.lintOpen };
+    case "dismissToast": return { ...state, toasts: state.toasts.filter((t) => t.id !== a.id) };
+    case "quickTweak": {
+      const r = matchTweak(a.label) || { cmd: "BatchCommand(…)", apply: (s) => s, msg: "Applied", zero: true };
+      let ns = r.apply(state);
+      ns = { ...ns, tweakLog: [...state.tweakLog, { text: a.label, zero: true, reply: "→ <b>" + r.cmd + "</b> · recompiled in 168ms" }] };
+      if (state.phase === "picker") ns.phase = "editing", ns.selectedSceneId = "s2", ns.selectedLayerId = "l3", ns.frame = 120;
+      return toast(ns, r.msg + " · 168ms");
+    }
+    case "sendTweak": {
+      const r = matchTweak(a.text);
+      let ns = r ? r.apply(state) : state;
+      const reply = r
+        ? "→ <b>" + r.cmd + "</b> · recompiled in 172ms"
+        : "→ <b>SetSlotContent</b> + <b>SetLayerStyle</b> · cheap model · recompiled in 240ms";
+      ns = { ...ns, composer: "", tweakLog: [...state.tweakLog, { text: a.text, zero: !!r, reply }] };
+      if (state.phase === "picker") ns.phase = "editing", ns.selectedSceneId = "s2", ns.selectedLayerId = "l3", ns.frame = 120;
+      return toast(ns, (r ? r.msg : "Tweak applied") + (r ? " · zero-token" : " · $0.001"));
+    }
+    default: return state;
+  }
+}
+
+function retile(scenes) {
+  let acc = 0;
+  return scenes.map((s) => { const ns = { ...s, start: acc }; acc += s.dur; return ns; });
+}
+
+/* ---------- top bar ---------- */
+function TopBar({ state, dispatch }) {
+  const prof = D.PROFILES[state.profile];
+  return (
+    <div className="topbar">
+      <div className="brand">
+        <div className="brand-mark"></div>
+        <div className="brand-name"><b>Sequences</b></div>
+      </div>
+      <div className="topbar-sep"></div>
+      <div className="proj">
+        <span className="proj-dot"></span>
+        <span className="proj-title"><b>Northwind</b> — Launch Promo</span>
+      </div>
+      <div className="spacer"></div>
+      <div className="topbar-tools">
+        <button className="icon-btn" title="Undo (⌘Z)"><Icon name="undo" size={17} /></button>
+        <button className="icon-btn" title="Redo (⌘⇧Z)"><Icon name="redo" size={17} /></button>
+        <button className="btn btn-ghost" title="Command palette"><Icon name="search" size={14} /> <span className="mono" style={{ fontSize: 11, opacity: .7 }}>⌘K</span></button>
+        <div className="topbar-sep"></div>
+        <div className="profile-chip" title="Active motion profile">
+          <span className="pf-swatches">{prof.swatches.map((s, i) => <i key={i} style={{ background: s }}></i>)}</span>
+          <span className="pf-name">{prof.name} <small>profile</small></span>
+          <Icon name="chevDown" size={13} style={{ color: "var(--text-lo)" }} />
+        </div>
+        <div className="topbar-sep"></div>
+        <button className="btn btn-ghost"><Icon name="download" size={14} /> Export</button>
+        <button className="btn btn-primary"><Icon name="film" size={15} /> Render</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- status bar ---------- */
+function StatusBar({ state, dispatch }) {
+  const passed = D.LINT.filter((l) => l.status === "pass").length;
+  const fixed = D.LINT.filter((l) => l.status === "fixed").length;
+  const warned = D.LINT.filter((l) => l.status === "warn").length;
+  return (
+    <div className="statusbar">
+      <div className="lint-btn" onClick={() => dispatch({ type: "toggleLint" })}>
+        <span className={"status-dot " + (warned ? "warn" : "good")}></span>
+        <span style={{ color: "var(--text-mid)", fontWeight: 500 }}>Linter</span>
+        <span className="mono" style={{ color: "var(--text-lo)" }}>{passed} passed · {fixed} auto-fixed{warned ? " · " + warned + " review" : ""}</span>
+        <Icon name="chevDown" size={12} style={{ color: "var(--text-dim)", transform: "rotate(180deg)" }} />
+      </div>
+      <span className="status-sep"></span>
+      <div className="status-item"><Icon name="zap" size={12} style={{ color: "var(--text-dim)" }} /><span className="mono">compiled 184ms</span></div>
+      <span className="status-sep"></span>
+      <div className="status-item"><Icon name="film" size={12} style={{ color: "var(--text-dim)" }} /><span className="mono">solver · 6 scenes scheduled</span></div>
+      <div className="spacer" style={{ flex: 1 }}></div>
+      <div className="status-item"><span className="mono">events.log · 41 ops</span></div>
+      <span className="status-sep"></span>
+      <div className="status-item"><span className="status-dot good"></span><span className="mono">{state.cost} session</span></div>
+    </div>
+  );
+}
+
+/* ---------- lint popover ---------- */
+function LintPopover({ dispatch }) {
+  const passed = D.LINT.filter((l) => l.status === "pass").length;
+  return (
+    <div className="lint-pop">
+      <div className="lint-pop-head">
+        <Icon name="check" size={15} style={{ color: "var(--good)" }} />
+        <span className="t">Motion linter <small>· deterministic · zero-token</small></span>
+        <div style={{ marginLeft: "auto" }}><button className="mini-btn" onClick={() => dispatch({ type: "toggleLint" })}><Icon name="x" size={13} /></button></div>
+      </div>
+      <div className="lint-list">
+        {D.LINT.map((l, i) => (
+          <div key={i} className={"lint-rule " + l.status}>
+            <span className="lr-ico">
+              <Icon name={l.status === "pass" ? "check" : l.status === "fixed" ? "wand" : "dot"} size={12} />
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div className="lr-name">{l.rule}</div>
+              <div className="lr-msg">{l.msg}</div>
+            </div>
+            {l.tag && <span className="lr-tag">{l.tag}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- toasts ---------- */
+function Toasts({ state, dispatch }) {
+  useEffect(() => {
+    if (!state.toasts.length) return;
+    const t = state.toasts[state.toasts.length - 1];
+    const id = setTimeout(() => dispatch({ type: "dismissToast", id: t.id }), 2600);
+    return () => clearTimeout(id);
+  }, [state.toasts]);
+  return (
+    <div className="toast-wrap">
+      {state.toasts.slice(-2).map((t) => (
+        <div className="toast" key={t.id}>
+          <span className="ti"><Icon name="wand" size={13} /></span>
+          {t.msg}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- app ---------- */
+function App() {
+  const [state, dispatch] = useReducer(reducer, initial);
+
+  // play loop
+  useEffect(() => {
+    if (!state.playing) return;
+    const id = setInterval(() => dispatch({ type: "tick" }), 1000 / 30);
+    return () => clearInterval(id);
+  }, [state.playing]);
+
+  // space = play/pause
+  useEffect(() => {
+    const h = (e) => {
+      if (e.code === "Space" && e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") {
+        e.preventDefault(); dispatch({ type: "togglePlay" });
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  return (
+    <div className="app">
+      <TopBar state={state} dispatch={dispatch} />
+      <div className="main">
+        <div className="left-col">
+          <Viewport state={state} dispatch={dispatch} />
+          <Timeline state={state} dispatch={dispatch} />
+        </div>
+        <div className="right-col">
+          <Inspector state={state} dispatch={dispatch} />
+          <AgentPanel state={state} dispatch={dispatch} />
+        </div>
+      </div>
+      <StatusBar state={state} dispatch={dispatch} />
+      {state.lintOpen && <LintPopover dispatch={dispatch} />}
+      <Toasts state={state} dispatch={dispatch} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

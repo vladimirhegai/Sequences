@@ -1,0 +1,1799 @@
+﻿
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sequences Phase 1 Studio</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --surface: #f7f7f7;
+      --surface-warm: #eeeeee;
+      --fg: #111111;
+      --fg-2: #3a3a3a;
+      --muted: #707070;
+      --meta: #111111;
+      --border: #d9d9d9;
+      --border-soft: #eeeeee;
+      --accent: #111111;
+      --accent-on: #ffffff;
+      --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+      --accent-active: color-mix(in oklab, var(--accent), black 14%);
+      --success: #168a46;
+      --warn: #b7791f;
+      --danger: #c53030;
+      --font-display: "Helvetica Neue", Arial, sans-serif;
+      --font-body: "Helvetica Neue", Arial, sans-serif;
+      --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+      --text-xs: 12px;
+      --text-sm: 14px;
+      --text-base: 16px;
+      --text-lg: 18px;
+      --text-xl: 24px;
+      --text-2xl: 36px;
+      --text-3xl: 54px;
+      --text-4xl: 76px;
+      --leading-body: 1.52;
+      --leading-tight: 1.06;
+      --tracking-display: -0.025em;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --space-12: 48px;
+      --section-y-desktop: 96px;
+      --section-y-tablet: 68px;
+      --section-y-phone: 48px;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-pill: 9999px;
+      --elev-flat: none;
+      --elev-ring: 0 0 0 1px var(--border);
+      --elev-raised: 0 16px 40px rgba(0, 0, 0, 0.10);
+      --focus-ring: 0 0 0 3px rgba(17, 17, 17, 0.18);
+      --motion-fast: 150ms;
+      --motion-base: 240ms;
+      --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+      --container-max: 1180px;
+      --container-gutter-desktop: 36px;
+      --container-gutter-tablet: 24px;
+      --container-gutter-phone: 16px;
+    }
+
+    :root {
+      --editor-bg: #0a0c0e;
+      --panel-0: #0f1113;
+      --panel-1: #15181b;
+      --panel-2: #1c2024;
+      --panel-3: #252a2f;
+      --panel-4: #31373d;
+      --line: rgba(255,255,255,0.075);
+      --line-strong: rgba(255,255,255,0.15);
+      --line-hot: rgba(218,224,230,0.42);
+      --text-hi: #eef1f3;
+      --text-mid: #aab2b9;
+      --text-low: #707981;
+      --text-dim: #4d565e;
+      --editor-accent: #d4d9df;
+      --editor-accent-soft: rgba(212,217,223,0.12);
+      --editor-accent-mid: rgba(212,217,223,0.28);
+      --good-soft: color-mix(in oklab, var(--success) 20%, transparent);
+      --warn-soft: color-mix(in oklab, var(--warn) 20%, transparent);
+      --bad-soft: color-mix(in oklab, var(--danger) 18%, transparent);
+      --timeline-text: #c9d0d6;
+      --clip-text: #273742;
+      --clip-device: #34313f;
+      --clip-camera: #3a342c;
+      --clip-audio: #2b3440;
+      --topbar-h: 46px;
+      --status-h: 26px;
+      --agent-w: 344px;
+      --inspector-w: 368px;
+      --timeline-h: 300px;
+      --editor-radius-xs: 2px;
+      --editor-radius-sm: 3px;
+      --editor-radius-md: 5px;
+      --editor-radius-lg: 7px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--editor-bg);
+      color: var(--text-hi);
+      font-family: var(--font-body);
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      letter-spacing: 0.05px;
+    }
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; border: 0; background: transparent; cursor: pointer; }
+    input, textarea, select { color: var(--text-hi); background: var(--panel-1); border: 1px solid var(--line); }
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in oklab, var(--surface) 22%, var(--fg)) transparent;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: var(--panel-4);
+      border: 2px solid transparent;
+      border-radius: 6px;
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in oklab, var(--panel-4) 68%, var(--editor-accent));
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    svg { width: 16px; height: 16px; display: block; }
+    h1, h2, h3 { font-family: var(--font-display); letter-spacing: var(--tracking-display); margin: 0; }
+    p { margin: 0; text-wrap: pretty; }
+    .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: var(--topbar-h) 1fr var(--status-h);
+      background: var(--editor-bg);
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 12px 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #13171a, var(--panel-0));
+      -webkit-app-region: drag;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      min-width: 190px;
+    }
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid var(--line-strong);
+      display: grid;
+      place-items: center;
+      color: #0e1113;
+      font-weight: 700;
+      letter-spacing: -0.08em;
+      background:
+        linear-gradient(150deg, #f3f5f7, #bdc5cd 58%, #7f8a94);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.32), 0 1px 4px rgba(0,0,0,0.42);
+      position: relative;
+    }
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: var(--editor-radius-sm);
+      background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(0,0,0,0.12) 3px 4px);
+      mix-blend-mode: multiply;
+    }
+    .brand-text strong {
+      display: block;
+      font-size: var(--text-sm);
+      line-height: 1.05;
+      letter-spacing: -0.01em;
+    }
+    .brand-text span {
+      display: block;
+      color: var(--text-low);
+      font-size: 11px;
+      line-height: 1.1;
+    }
+    .project-pill {
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--editor-radius-md);
+      color: var(--text-mid);
+      background: var(--panel-2);
+      min-width: 0;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+    }
+    .project-pill b { color: var(--text-hi); font-weight: 600; }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--editor-accent);
+      box-shadow: 0 0 0 4px var(--editor-accent-soft);
+      flex: 0 0 auto;
+    }
+    .spacer { flex: 1; }
+    .btn {
+      height: 30px;
+      border-radius: var(--editor-radius-md);
+      border: 1px solid var(--line);
+      padding: 0 13px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      color: var(--text-mid);
+      background: linear-gradient(180deg, var(--panel-2), var(--panel-1));
+      transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+      white-space: nowrap;
+      font-size: 12.5px;
+      font-weight: 560;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 1px 2px rgba(0,0,0,0.28);
+      -webkit-app-region: no-drag;
+    }
+    .btn:hover, .icon-btn:hover { background: var(--panel-2); border-color: var(--line-strong); color: var(--text-hi); }
+    .btn:active, .icon-btn:active { transform: translateY(1px); }
+    .btn-primary {
+      background: linear-gradient(180deg, #f1f3f5, #c6ccd2);
+      border-color: rgba(255,255,255,0.45);
+      color: var(--panel-0);
+      font-weight: 700;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 1px 5px rgba(0,0,0,0.42);
+    }
+    .btn-primary:hover { background: color-mix(in oklab, var(--editor-accent) 88%, var(--surface)); color: var(--panel-0); }
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--editor-radius-md);
+      border: 1px solid transparent;
+      display: grid;
+      place-items: center;
+      color: var(--text-low);
+      transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+      -webkit-app-region: no-drag;
+    }
+    .workspace {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--agent-w) minmax(620px, 1fr) var(--inspector-w);
+      border-bottom: 1px solid var(--line);
+    }
+    .rail, .center, .inspector {
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel-0);
+    }
+    .rail {
+      border-right: 1px solid var(--line);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: var(--panel-0);
+    }
+    .center {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) var(--timeline-h);
+      background: var(--editor-bg);
+    }
+    .inspector {
+      border-left: 1px solid var(--line);
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .panel-head {
+      height: 38px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      background: linear-gradient(180deg, #15191d, #101316);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.026);
+    }
+    .panel-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-mid);
+      font-weight: 650;
+    }
+    .panel-sub {
+      color: var(--text-low);
+      font-size: 11px;
+      margin-left: auto;
+    }
+    .rail-body, .inspect-body {
+      overflow: auto;
+      min-height: 0;
+      padding: 14px 13px;
+    }
+    .agent-card {
+      border: 1px solid var(--line);
+      border-radius: var(--editor-radius-lg);
+      background: linear-gradient(180deg, #181c20, var(--panel-1));
+      overflow: hidden;
+      margin-bottom: 14px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 10px 30px -18px rgba(0,0,0,0.72);
+    }
+    .agent-status {
+      padding: 15px 15px 14px;
+      display: grid;
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+    }
+    .agent-status h2 {
+      font-size: 21px;
+      line-height: 1.08;
+      letter-spacing: -0.025em;
+    }
+    .agent-status p { color: var(--text-mid); font-size: 12.5px; }
+    .provider-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: var(--space-3);
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    .provider-row:last-child { border-bottom: 0; }
+    .provider-row strong { font-size: var(--text-sm); }
+    .provider-row span { display: block; color: var(--text-low); font-size: 11px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-1);
+      height: 22px;
+      min-width: 58px;
+      padding: 0 8px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid var(--line);
+      color: var(--text-mid);
+      background: rgba(255,255,255,0.035);
+      font-size: 11px;
+      font-weight: 560;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .provider-row > .badge {
+      display: inline-flex;
+      align-self: center;
+      justify-self: end;
+      text-transform: uppercase;
+      letter-spacing: 0.045em;
+      font-size: 10px;
+    }
+    .badge.good { color: color-mix(in oklab, var(--success) 74%, var(--surface)); background: var(--good-soft); border-color: color-mix(in oklab, var(--success) 35%, transparent); }
+    .badge.warn { color: color-mix(in oklab, var(--warn) 76%, var(--surface)); background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 35%, transparent); }
+    .plan-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .plan-list li {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: var(--space-2);
+      align-items: start;
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    .plan-list li:last-child { border-bottom: 0; }
+    .step-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      color: var(--panel-0);
+      background: var(--panel-4);
+      margin-top: 1px;
+    }
+    .plan-list li.active .step-dot { background: var(--editor-accent); color: var(--panel-0); }
+    .plan-list li.done .step-dot { background: color-mix(in oklab, var(--success) 78%, var(--surface)); }
+    .step-copy strong { display: block; font-size: var(--text-xs); }
+    .step-copy span { display: block; color: var(--text-low); font-size: 11px; margin-top: 2px; }
+    .diff-chip {
+      font-size: 10px;
+      color: var(--text-low);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 2px 5px;
+      white-space: nowrap;
+      font-family: var(--font-mono);
+    }
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-2);
+      padding: 12px;
+    }
+    .quick-actions button {
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: var(--editor-radius-md);
+      background: var(--panel-2);
+      color: var(--text-mid);
+      font-size: 11.5px;
+      font-weight: 560;
+      text-align: left;
+      padding: var(--space-2);
+      transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+    }
+    .quick-actions button:hover { background: var(--panel-3); border-color: var(--line-strong); color: var(--text-hi); }
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 9px 11px 11px;
+      background: var(--panel-1);
+    }
+    .composer-box {
+      display: grid;
+      grid-template-columns: 1fr 34px;
+      gap: var(--space-2);
+      align-items: end;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--editor-radius-lg);
+      padding: var(--space-2);
+      background: var(--panel-2);
+      transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+    .composer-box:focus-within {
+      border-color: var(--line-hot);
+      box-shadow: inset 0 0 0 1px rgba(218,224,230,0.16);
+    }
+    .composer textarea {
+      min-height: 44px;
+      max-height: 92px;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text-hi);
+      padding: var(--space-1);
+    }
+    .composer textarea::placeholder { color: var(--text-low); }
+    .composer textarea:focus {
+      background: transparent;
+      border-color: transparent;
+      box-shadow: none;
+    }
+    .send-btn {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: var(--editor-radius-md);
+      background: linear-gradient(180deg, #eef2f5, #c7ced5);
+      color: var(--panel-0);
+      font-weight: 800;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 1px 4px rgba(0,0,0,0.35);
+    }
+    .composer-box:focus-within .send-btn {
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.44);
+    }
+    .preview-panel {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px 1fr 46px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-0);
+    }
+    .preview-head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 0 var(--space-3);
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #121519, var(--panel-0));
+    }
+    .preview-shell {
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      position: relative;
+      overflow: hidden;
+      background:
+        radial-gradient(120% 90% at 50% 0%, rgba(32,37,42,0.78) 0%, #090b0d 75%),
+        #090b0d;
+    }
+    .preview-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: .14;
+      background-image:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 44px 44px;
+      -webkit-mask-image: radial-gradient(80% 70% at 50% 45%, #000 0%, transparent 80%);
+              mask-image: radial-gradient(80% 70% at 50% 45%, #000 0%, transparent 80%);
+      pointer-events: none;
+    }
+    .stage {
+      width: min(100%, 1060px);
+      aspect-ratio: 16 / 9;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--editor-radius-lg);
+      background: #070809;
+      box-shadow: 0 24px 60px -20px rgba(0,0,0,0.88), 0 0 0 1px rgba(255,255,255,0.035);
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+    }
+    .stage-grid {
+      position: absolute;
+      inset: 0;
+      opacity: 0.48;
+      background:
+        linear-gradient(90deg, transparent 0 7%, rgba(255,255,255,0.045) 7% 7.1%, transparent 7.1% 14%),
+        radial-gradient(70% 80% at 75% 45%, rgba(212,217,223,0.11), transparent 55%);
+    }
+    .stage-content {
+      position: absolute;
+      inset: 8% 7%;
+      display: grid;
+      grid-template-columns: 0.88fr 1.12fr;
+      gap: 5%;
+      align-items: center;
+    }
+    .stage-copy .kicker {
+      color: var(--editor-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      font-weight: 800;
+      font-size: clamp(9px, 1vw, 13px);
+      margin-bottom: 3%;
+    }
+    .stage-copy h1 {
+      color: var(--surface);
+      font-size: clamp(24px, 4.5vw, 58px);
+      line-height: 0.96;
+      max-width: 10ch;
+    }
+    .stage-copy p {
+      margin-top: 4%;
+      color: color-mix(in oklab, var(--surface) 66%, var(--fg));
+      font-size: clamp(11px, 1.2vw, 17px);
+      max-width: 34ch;
+    }
+    .mock-browser {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--editor-radius-md);
+      background: rgba(255,255,255,0.055);
+      overflow: hidden;
+      min-height: 58%;
+    }
+    .mock-chrome {
+      height: 28px;
+      border-bottom: 1px solid rgba(255,255,255,0.085);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+    }
+    .mock-chrome i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.26);
+    }
+    .mock-body {
+      padding: 18px;
+      display: grid;
+      gap: 12px;
+    }
+    .mock-row {
+      display: grid;
+      grid-template-columns: 38px 1fr 72px;
+      gap: 10px;
+      align-items: center;
+    }
+    .mock-thumb, .mock-line, .mock-pill {
+      background: rgba(255,255,255,0.13);
+      border-radius: var(--radius-sm);
+    }
+    .mock-thumb { height: 30px; }
+    .mock-line { height: 8px; }
+    .mock-pill { height: 20px; border: 1px solid var(--editor-accent-mid); background: var(--editor-accent-soft); }
+    .layer-box {
+      position: absolute;
+      border: 1px solid var(--editor-accent);
+      box-shadow: 0 0 0 1px var(--editor-accent-mid);
+      border-radius: var(--radius-sm);
+      pointer-events: none;
+    }
+    .layer-box::after {
+      content: "headline / drag override";
+      position: absolute;
+      left: 0;
+      top: -24px;
+      height: 18px;
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      border-radius: var(--radius-sm);
+      background: var(--editor-accent);
+      color: var(--panel-0);
+      font-size: 10px;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+    }
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      padding: 0 var(--space-3);
+      border-top: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel-1), var(--panel-0));
+    }
+    .timecode {
+      color: var(--text-hi);
+      font-size: var(--text-xs);
+      min-width: 168px;
+    }
+    .scrub {
+      height: 5px;
+      flex: 1;
+      border-radius: var(--editor-radius-xs);
+      background: var(--panel-4);
+      position: relative;
+      cursor: pointer;
+    }
+    .scrub-fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 36%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #aeb6be, #eef1f3);
+    }
+    .scrub-knob {
+      position: absolute;
+      top: 50%;
+      left: 36%;
+      width: 13px;
+      height: 13px;
+      border-radius: var(--editor-radius-xs);
+      transform: translate(-50%, -50%);
+      background: var(--surface);
+      box-shadow: 0 0 0 1px var(--panel-0);
+    }
+    .timeline {
+      --tl-gutter: 132px;
+      --tl-lane-w: 1120px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel-0);
+      border-top: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .tl-toolbar {
+      flex: 0 0 36px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #171b1f, var(--panel-1));
+    }
+    .tl-tool {
+      width: 28px;
+      height: 26px;
+      border-radius: var(--editor-radius-sm);
+      display: grid;
+      place-items: center;
+      color: var(--text-low);
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 650;
+      transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+    }
+    .tl-tool:hover { background: var(--panel-2); border-color: var(--line); color: var(--text-hi); }
+    .tl-tool.on,
+    .tl-tool.active {
+      color: var(--editor-accent);
+      background: linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035));
+      border-color: var(--line-hot);
+      box-shadow: inset 0 0 0 1px rgba(218,224,230,0.08);
+    }
+    .tl-tsep {
+      width: 1px;
+      height: 16px;
+      background: var(--line-strong);
+      margin: 0 3px;
+    }
+    .tl-zoom {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: auto;
+      color: var(--text-low);
+    }
+    .tl-count {
+      color: var(--text-low);
+      font-size: 11px;
+      font-weight: 550;
+      margin-left: 2px;
+    }
+    .tl-draft-tag {
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid color-mix(in oklab, var(--editor-accent) 22%, transparent);
+      background: var(--editor-accent-soft);
+      color: var(--editor-accent);
+      font-size: 11px;
+      font-weight: 650;
+      margin-left: 8px;
+    }
+    .tl-draft-tag .pulse {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--editor-accent);
+      animation: pulse 1.6s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+    .tl-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      position: relative;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.018), transparent 32px),
+        var(--panel-0);
+    }
+    .tl-scroll {
+      position: relative;
+      min-width: 100%;
+      width: calc(var(--tl-gutter) + var(--tl-lane-w));
+    }
+    .tl-ruler {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      height: 24px;
+      display: flex;
+      background: var(--panel-1);
+      border-bottom: 1px solid var(--line);
+    }
+    .tl-ruler .gutter {
+      position: sticky;
+      left: 0;
+      z-index: 5;
+      width: var(--tl-gutter);
+      flex: 0 0 var(--tl-gutter);
+      background: var(--panel-1);
+      border-right: 1px solid var(--line);
+    }
+    .ticks {
+      position: relative;
+      flex: 0 0 var(--tl-lane-w);
+      width: var(--tl-lane-w);
+    }
+    .tl-tick {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-left: 1px solid var(--line);
+      padding-left: 5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-low);
+      display: flex;
+      align-items: center;
+    }
+    .tl-tick.major { border-left-color: var(--line-strong); color: var(--text-mid); }
+    .tl-track {
+      display: flex;
+      border-bottom: 1px solid var(--line);
+      position: relative;
+    }
+    .tl-gutter-cell {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      width: var(--tl-gutter);
+      flex: 0 0 var(--tl-gutter);
+      background: var(--panel-1);
+      border-right: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      color: var(--text-mid);
+      font-weight: 550;
+    }
+    .tl-gutter-cell .gi {
+      width: 18px;
+      color: var(--text-low);
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+    .tl-lane {
+      position: relative;
+      flex: 0 0 var(--tl-lane-w);
+      width: var(--tl-lane-w);
+      background-image:
+        linear-gradient(90deg, transparent calc(56px - 1px), var(--line) 56px, transparent calc(56px + 1px)),
+        linear-gradient(90deg, transparent calc(140px - 1px), var(--line-strong) 140px, transparent calc(140px + 1px));
+      background-size: 56px 100%, 280px 100%;
+    }
+    .tl-scenes-track { height: 56px; }
+    .tl-scene {
+      position: absolute;
+      top: 7px;
+      bottom: 7px;
+      border-radius: var(--editor-radius-md);
+      background: linear-gradient(180deg, #30363c, #23282d);
+      border: 1px solid var(--line-strong);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard), transform 80ms var(--ease-standard);
+      display: flex;
+      flex-direction: column;
+    }
+    .tl-scene:hover { border-color: var(--line-hot); }
+    .tl-scene.active,
+    .tl-scene.sel {
+      border-color: var(--line-hot);
+      box-shadow: 0 0 0 1px rgba(218,224,230,0.22), inset 0 0 0 1px rgba(255,255,255,0.055);
+    }
+    .tl-scene.draft {
+      background: var(--panel-1);
+      border-style: dashed;
+      border-color: var(--editor-accent-mid);
+      opacity: .92;
+    }
+    .tl-scene-top {
+      height: 4px;
+      background: linear-gradient(90deg, var(--editor-accent), color-mix(in oklab, var(--editor-accent) 42%, transparent));
+      opacity: .84;
+      flex: 0 0 4px;
+    }
+    .tl-scene.draft .tl-scene-top { background: var(--editor-accent-mid); }
+    .tl-scene-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      min-width: 0;
+    }
+    .tl-scene-ico {
+      color: var(--editor-accent);
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+    .tl-scene-meta { min-width: 0; }
+    .tl-scene-name {
+      font-size: 11.5px;
+      font-weight: 650;
+      color: var(--text-hi);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+    .tl-scene-dur {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-low);
+      line-height: 1.15;
+    }
+    .tl-scene-handle {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 7px;
+      cursor: ew-resize;
+    }
+    .tl-scene-handle.l { left: 0; }
+    .tl-scene-handle.r { right: 0; }
+    .tl-scene-handle:hover { background: var(--editor-accent-mid); }
+    .tl-layer-track { height: 30px; }
+    .tl-layer-track.alt { background: rgba(255,255,255,0.012); }
+    .tl-clip {
+      position: absolute;
+      top: 5px;
+      bottom: 5px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid var(--line-strong);
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      color: var(--text-hi);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+      transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+    .tl-clip:hover { border-color: var(--line-hot); }
+    .tl-clip.sel { border-color: var(--line-hot); box-shadow: 0 0 0 1px rgba(218,224,230,0.22), inset 0 1px 0 rgba(255,255,255,0.08); }
+    .tl-clip-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tl-mot {
+      display: inline-flex;
+      align-items: center;
+      height: 15px;
+      padding: 0 5px;
+      border-radius: var(--editor-radius-xs);
+      gap: 3px;
+      background: rgba(0,0,0,0.25);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      color: rgba(255,255,255,0.62);
+      flex: 0 0 auto;
+    }
+    .tl-mot .mk {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--editor-accent);
+    }
+    .clip-text, .tl-clip.text { background: linear-gradient(180deg, #334552, var(--clip-text)); }
+    .clip-image { background: linear-gradient(180deg, #3d3932, #2a2926); }
+    .clip-device, .tl-clip.device { background: linear-gradient(180deg, #414550, var(--clip-device)); }
+    .clip-shape { background: linear-gradient(180deg, #34423b, #26302c); }
+    .clip-camera, .tl-clip.camera { background: linear-gradient(180deg, #4a4641, var(--clip-camera)); }
+    .clip-audio, .tl-clip.audio { background: linear-gradient(180deg, #3a4652, var(--clip-audio)); }
+    .tl-wave {
+      flex: 1;
+      min-width: 160px;
+      height: 14px;
+      opacity: .72;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px) 0 50% / 5px 70% repeat-x,
+        repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 2px, transparent 2px 6px);
+      mask: linear-gradient(180deg, transparent 0 10%, black 10% 90%, transparent 90% 100%);
+    }
+    .tl-playhead {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: calc(var(--tl-gutter) + 414px);
+      width: 1px;
+      background: var(--editor-accent);
+      z-index: 6;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.38);
+    }
+    .tl-playhead::before {
+      content: "";
+      position: absolute;
+      top: -1px;
+      left: -5px;
+      width: 11px;
+      height: 9px;
+      background: var(--editor-accent);
+      clip-path: polygon(0 0,100% 0,50% 100%);
+    }
+    .tl-playhead-hit {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: calc(var(--tl-gutter) + 414px);
+      width: 11px;
+      transform: translateX(-5px);
+      cursor: ew-resize;
+      z-index: 7;
+    }
+    .tl-sep { width: 1px; height: 16px; background: var(--line-strong); margin: 0 3px; }
+    .timeline-status {
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid color-mix(in oklab, var(--editor-accent) 22%, transparent);
+      background: var(--editor-accent-soft);
+      color: var(--editor-accent);
+      font-size: 0;
+      font-weight: 650;
+    }
+    .timeline-status::after {
+      content: "agent draft \00B7  3 edits";
+      font-size: 11px;
+    }
+    .timeline-status .dot {
+      width: 6px;
+      height: 6px;
+      box-shadow: none;
+      animation: pulse 1.6s infinite;
+    }
+    .ruler {
+      flex: 0 0 24px;
+      display: grid;
+      grid-template-columns: var(--tl-gutter) repeat(8, 140px);
+      min-width: calc(var(--tl-gutter) + var(--tl-lane-w));
+      border-bottom: 1px solid var(--line);
+      color: var(--text-low);
+      font-size: 10px;
+      background: var(--panel-1);
+      font-family: var(--font-mono);
+    }
+    .ruler span {
+      border-left: 1px solid var(--line);
+      padding: 5px 7px 0;
+    }
+    .ruler span:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 5;
+      border-left: 0;
+      border-right: 1px solid var(--line);
+      background: var(--panel-1);
+    }
+    .tracks {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      position: relative;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.018), transparent 32px),
+        var(--panel-0);
+    }
+    .tracks::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: calc(var(--tl-gutter) + 36%);
+      width: 1px;
+      background: var(--editor-accent);
+      z-index: 6;
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.38);
+    }
+    .tracks::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: calc(var(--tl-gutter) + 36% - 5px);
+      width: 11px;
+      height: 9px;
+      background: var(--editor-accent);
+      clip-path: polygon(0 0,100% 0,50% 100%);
+      z-index: 7;
+      pointer-events: none;
+    }
+    .track {
+      display: flex;
+      min-width: calc(var(--tl-gutter) + var(--tl-lane-w));
+      border-bottom: 1px solid var(--line);
+      position: relative;
+    }
+    .track:first-child { height: 56px; }
+    .track:not(:first-child) { height: 30px; }
+    .track:nth-child(odd):not(:first-child) { background: rgba(255,255,255,0.012); }
+    .track-label {
+      position: sticky;
+      left: 0;
+      z-index: 3;
+      width: var(--tl-gutter);
+      flex: 0 0 var(--tl-gutter);
+      background: var(--panel-1);
+      border-right: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      color: var(--text-mid);
+      font-weight: 550;
+    }
+    .track-label::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 2px;
+      background: color-mix(in oklab, var(--surface) 30%, var(--fg));
+      opacity: .72;
+    }
+    .track-lane {
+      position: relative;
+      flex: 0 0 var(--tl-lane-w);
+      width: var(--tl-lane-w);
+      background-image:
+        linear-gradient(90deg, transparent calc(56px - 1px), var(--line) 56px, transparent calc(56px + 1px)),
+        linear-gradient(90deg, transparent calc(140px - 1px), var(--line-strong) 140px, transparent calc(140px + 1px));
+      background-size: 56px 100%, 280px 100%;
+    }
+    .scene-clip, .layer-clip {
+      position: absolute;
+      top: 5px;
+      bottom: 5px;
+      border-radius: var(--editor-radius-sm);
+      border: 1px solid var(--line-strong);
+      cursor: pointer;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+      color: var(--text-hi);
+      white-space: nowrap;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+      transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+    .scene-clip {
+      top: 7px;
+      bottom: 7px;
+      border-radius: var(--editor-radius-md);
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: center;
+      padding: 11px 9px 5px;
+      background: linear-gradient(180deg, #30363c, #23282d);
+      font-size: 11.5px;
+      font-weight: 650;
+    }
+    .scene-clip::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--editor-accent), color-mix(in oklab, var(--editor-accent) 42%, transparent));
+      opacity: .84;
+    }
+    .scene-clip::after {
+      content: attr(data-duration);
+      display: block;
+      margin-top: 2px;
+      color: var(--text-low);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .scene-clip.active,
+    .scene-clip:hover {
+      border-color: var(--line-hot);
+      box-shadow: 0 0 0 1px rgba(218,224,230,0.22), inset 0 0 0 1px rgba(255,255,255,0.055);
+    }
+    .layer-clip {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-overflow: ellipsis;
+    }
+    .layer-clip::after {
+      content: attr(data-motion);
+      margin-left: auto;
+      height: 15px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 5px;
+      border-radius: var(--editor-radius-xs);
+      background: rgba(0,0,0,0.25);
+      color: rgba(255,255,255,0.62);
+      font-family: var(--font-mono);
+      font-size: 8.5px;
+      font-weight: 500;
+      flex: 0 0 auto;
+    }
+    .layer-clip:hover {
+      border-color: var(--line-hot);
+      box-shadow: 0 0 0 1px rgba(218,224,230,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .layer-clip.text { background: linear-gradient(180deg, #334552, var(--clip-text)); }
+    .layer-clip.device { background: linear-gradient(180deg, #414550, var(--clip-device)); }
+    .layer-clip.camera { background: linear-gradient(180deg, #4a4641, var(--clip-camera)); }
+    .layer-clip.audio { background: linear-gradient(180deg, #3a4652, var(--clip-audio)); }
+    .playhead { display: none; }
+    .tabs {
+      display: flex;
+      gap: var(--space-1);
+      margin-left: auto;
+    }
+    .tab {
+      height: 27px;
+      padding: 0 10px;
+      border-radius: var(--editor-radius-sm);
+      color: var(--text-low);
+      font-size: 12px;
+      transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard);
+    }
+    .tab:hover { background: var(--panel-2); color: var(--text-hi); }
+    .tab.active { background: rgba(255,255,255,0.06); color: var(--editor-accent); box-shadow: inset 0 -1px 0 var(--line-hot); }
+    .inspect-card {
+      border: 1px solid var(--line);
+      border-radius: var(--editor-radius-lg);
+      background: linear-gradient(180deg, #171b1f, var(--panel-1));
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+    }
+    .inspect-card h3 {
+      padding: 11px 13px 10px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--line);
+      color: var(--text-hi);
+      letter-spacing: -0.01em;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+      padding: 10px 13px;
+      border-bottom: 1px solid var(--line);
+    }
+    .field:last-child { border-bottom: 0; }
+    .field label {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-low);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      font-weight: 650;
+    }
+    .input, .select {
+      width: 100%;
+      height: 30px;
+      border-radius: var(--editor-radius-sm);
+      padding: 0 10px;
+      outline: 0;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      color: var(--text-hi);
+      font-size: 12.5px;
+      transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+    .input:focus, .select:focus, textarea:focus { border-color: var(--line-hot); background: var(--panel-1); box-shadow: inset 0 0 0 1px rgba(218,224,230,0.12); }
+    .token-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    .token {
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: var(--editor-radius-sm);
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      color: var(--text-mid);
+      background: var(--panel-2);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      transition: border-color var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+    }
+    .token:hover { border-color: var(--line-strong); color: var(--text-hi); }
+    .token.active { border-color: var(--line-hot); color: var(--editor-accent); background: var(--editor-accent-soft); }
+    .lint-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .lint-list li {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: var(--space-2);
+      align-items: center;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .lint-list li:last-child { border-bottom: 0; }
+    .lint-state {
+      width: 16px;
+      height: 16px;
+      border-radius: var(--editor-radius-xs);
+      display: grid;
+      place-items: center;
+      font-size: 10px;
+      color: var(--panel-0);
+    }
+    .lint-state.pass { background: color-mix(in oklab, var(--success) 78%, var(--surface)); }
+    .lint-state.fix { background: var(--editor-accent); }
+    .lint-state.warn { background: color-mix(in oklab, var(--warn) 72%, var(--surface)); }
+    .statusbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 13px;
+      background: linear-gradient(180deg, var(--panel-1), var(--panel-0));
+      border-top: 1px solid var(--line);
+      color: var(--text-low);
+      font-size: 11px;
+    }
+    .statusbar strong { color: var(--text-mid); font-weight: 600; }
+    .lint-drawer {
+      position: absolute;
+      right: calc(var(--inspector-w) + 14px);
+      bottom: calc(var(--status-h) + var(--timeline-h) + 16px);
+      width: 340px;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--editor-radius-lg);
+      background: var(--panel-2);
+      box-shadow: 0 18px 50px -12px rgba(0,0,0,0.78), 0 0 0 1px rgba(0,0,0,0.45);
+      display: none;
+      overflow: hidden;
+      z-index: 10;
+    }
+    .lint-drawer.open { display: block; }
+    .lint-drawer .panel-head { background: var(--panel-2); }
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: calc(var(--status-h) + 18px);
+      transform: translateX(-50%);
+      display: none;
+      min-height: 38px;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 0 var(--space-4);
+      border-radius: var(--editor-radius-md);
+      border: 1px solid var(--line-strong);
+      background: var(--panel-3);
+      color: var(--text-hi);
+      box-shadow: 0 12px 30px -10px rgba(0,0,0,0.68);
+      z-index: 11;
+    }
+    .toast.show { display: flex; }
+    @media (max-width: 1180px) {
+      :root { --agent-w: 300px; --inspector-w: 320px; }
+      .workspace { grid-template-columns: var(--agent-w) minmax(500px, 1fr) var(--inspector-w); }
+      .stage-content { grid-template-columns: 1fr; gap: 4%; }
+      .mock-browser { min-height: 44%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" aria-label="Sequences">
+        <div class="brand-mark">S</div>
+        <div class="brand-text">
+          <strong>Sequences</strong>
+          <span>Agentic motion studio</span>
+        </div>
+      </div>
+      <div class="project-pill">
+        <span class="dot"></span>
+        <span><b>Pulse Launch Promo</b> / project.json</span>
+      </div>
+      <button class="btn" id="cmdButton">Command K</button>
+      <div class="spacer"></div>
+      <button class="icon-btn" title="Undo" id="undoBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/></svg>
+      </button>
+      <button class="icon-btn" title="Redo" id="redoBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h4"/></svg>
+      </button>
+      <button class="btn">Capture thumbs</button>
+      <button class="btn btn-primary" id="renderTop">Render MP4</button>
+    </header>
+
+    <section class="workspace" data-od-id="studio-workspace" aria-label="Sequences studio workspace">
+      <aside class="rail">
+        <div class="panel-head">
+          <span class="panel-title">Agent workflow</span>
+          <span class="panel-sub">local CLI</span>
+        </div>
+        <div class="rail-body">
+          <div class="agent-card">
+            <div class="agent-status">
+              <h2>Plan first, edit precisely.</h2>
+              <p>The agent proposes a beat sheet and typed scene-graph commands. Every accepted change is undoable, linted, and compiled into the same preview.</p>
+            </div>
+            <div class="provider-row">
+              <div><strong>claude-code-cli</strong><span>Uses local subscription login</span></div>
+              <span class="badge good">ready</span>
+            </div>
+            <div class="provider-row">
+              <div><strong>codex-cli</strong><span>External planner over MCP</span></div>
+              <span class="badge good">ready</span>
+            </div>
+            <div class="provider-row">
+              <div><strong>openai-api</strong><span>Lights up only with a pasted key</span></div>
+              <span class="badge">optional</span>
+            </div>
+          </div>
+
+          <div class="agent-card">
+            <ol class="plan-list">
+              <li class="done">
+                <span class="step-dot">1</span>
+                <span class="step-copy"><strong>Read assets and brand kit</strong><span>dashboard.svg, screenshots, copy slots</span></span>
+                <span class="diff-chip">manifest</span>
+              </li>
+              <li class="done">
+                <span class="step-dot">2</span>
+                <span class="step-copy"><strong>Create 5-scene beat sheet</strong><span>hook, feature reveal, stat callout, walkthrough, logo sting</span></span>
+                <span class="diff-chip">plan</span>
+              </li>
+              <li class="active">
+                <span class="step-dot">3</span>
+                <span class="step-copy"><strong>Apply typed command batch</strong><span>SetSceneCamera, SetSlotContent, SwapMotion</span></span>
+                <span class="diff-chip">undoable</span>
+              </li>
+              <li>
+                <span class="step-dot">4</span>
+                <span class="step-copy"><strong>Run deterministic linter</strong><span>settle gap, motion density, contrast, grid snap</span></span>
+                <span class="diff-chip">zero-token</span>
+              </li>
+            </ol>
+          </div>
+
+          <div class="agent-card">
+            <div class="quick-actions">
+              <button data-command="Make the headline bigger">Make headline bigger</button>
+              <button data-command="Slow the intro down">Slow intro down</button>
+              <button data-command="Use maskRevealUp on the selected layer">Use maskRevealUp</button>
+              <button data-command="Revert the agent batch">Revert agent batch</button>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-box">
+            <textarea id="agentInput" placeholder="Ask for a precise edit, e.g. make scene 2 calmer"></textarea>
+            <button class="send-btn" id="sendBtn" aria-label="Send command">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="center">
+        <div class="preview-panel">
+          <div class="preview-head">
+            <span class="panel-title">Compiled preview</span>
+            <span class="badge">1920 x 1080</span>
+            <span class="badge good">lint clean after fixes</span>
+            <div class="spacer"></div>
+            <button class="btn">Safe area</button>
+            <button class="btn">Position mode</button>
+            <button class="btn">Open build</button>
+          </div>
+          <div class="preview-shell">
+            <div class="stage" aria-label="Video preview stage">
+              <div class="stage-grid"></div>
+              <div class="stage-content">
+                <div class="stage-copy">
+                  <div class="kicker">scene 02 / feature reveal</div>
+                  <h1>Your product demo, motion-designed by an agent.</h1>
+                  <p>Sequences keeps taste in primitives and lets the planner choose under constraints.</p>
+                </div>
+                <div class="mock-browser">
+                  <div class="mock-chrome"><i></i><i></i><i></i></div>
+                  <div class="mock-body">
+                    <div class="mock-row"><div class="mock-thumb"></div><div class="mock-line"></div><div class="mock-pill"></div></div>
+                    <div class="mock-row"><div class="mock-thumb"></div><div class="mock-line"></div><div class="mock-pill"></div></div>
+                    <div class="mock-row"><div class="mock-thumb"></div><div class="mock-line"></div><div class="mock-pill"></div></div>
+                    <div class="mock-row"><div class="mock-thumb"></div><div class="mock-line"></div><div class="mock-pill"></div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="layer-box" style="left: 7%; top: 25%; width: 37%; height: 25%;"></div>
+            </div>
+          </div>
+          <div class="transport">
+            <button class="icon-btn" id="playBtn" title="Play">
+              <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="timecode mono"><span id="timecode">00:04:12</span> <span style="color: var(--text-low);">/ 00:17:21</span></div>
+            <div class="scrub" id="scrub"><div class="scrub-fill" id="scrubFill"></div><div class="scrub-knob" id="scrubKnob"></div></div>
+            <span class="badge">30 fps</span>
+            <span class="badge">draft preview</span>
+          </div>
+        </div>
+
+        <div class="timeline">
+          <div class="tl-toolbar">
+            <span class="panel-title">Timeline</span>
+            <button class="tl-tool active" title="Select (V)" aria-label="Select tool">V</button>
+            <button class="tl-tool" title="Hand (H)" aria-label="Hand tool">H</button>
+            <button class="tl-tool" title="Blade (B)" aria-label="Blade tool">B</button>
+            <div class="tl-sep"></div>
+            <button class="tl-tool active" title="Snap to grid" aria-label="Snap to grid">S</button>
+            <button class="tl-tool" title="Beat markers" aria-label="Beat markers">M</button>
+            <span class="timeline-status"><i class="dot"></i> agent draft · 3 edits</span>
+            <div class="spacer"></div>
+            <button class="tl-tool" title="Zoom out" aria-label="Zoom out">-</button>
+            <span class="mono" style="color: var(--text-low);">1.75 px/frame</span>
+            <button class="tl-tool" title="Zoom in" aria-label="Zoom in">+</button>
+          </div>
+          <div class="ruler">
+            <span></span><span>00:00</span><span>00:02</span><span>00:04</span><span>00:06</span><span>00:08</span><span>00:10</span><span>00:12</span><span>00:14</span>
+          </div>
+          <div class="tracks">
+            <div class="track">
+              <div class="track-label">Scenes</div>
+              <div class="track-lane">
+                <div class="scene-clip" data-scene="Hook opener" data-duration="3.6s · 108f" style="left: 0%; width: 18%;">01 Hook opener</div>
+                <div class="scene-clip active" data-scene="Feature reveal" data-duration="4.6s · 138f" style="left: 18%; width: 23%;">02 Feature reveal</div>
+                <div class="scene-clip" data-scene="Stat callout" data-duration="3.2s · 96f" style="left: 41%; width: 16%;">03 Stat callout</div>
+                <div class="scene-clip" data-scene="UI walkthrough" data-duration="5.4s · 162f" style="left: 57%; width: 27%;">04 UI walkthrough</div>
+                <div class="scene-clip" data-scene="Logo sting" data-duration="3.2s · 96f" style="left: 84%; width: 16%;">05 Logo sting</div>
+                <div class="playhead"></div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="track-label">Text layers</div>
+              <div class="track-lane">
+                <div class="layer-clip text" data-motion="slideUp" style="left: 3%; width: 13%;">headline</div>
+                <div class="layer-clip text" data-motion="maskUp" style="left: 21%; width: 17%;">headline</div>
+                <div class="layer-clip text" data-motion="countUp" style="left: 43%; width: 12%;">metric</div>
+                <div class="layer-clip text" data-motion="sweep" style="left: 61%; width: 18%;">callout</div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="track-label">Device</div>
+              <div class="track-lane">
+                <div class="layer-clip device" data-motion="pushIn" style="left: 19%; width: 21%;">dashboard.svg</div>
+                <div class="layer-clip device" data-motion="cursor" style="left: 58%; width: 24%;">screen recording</div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="track-label">Camera</div>
+              <div class="track-lane">
+                <div class="layer-clip camera" data-motion="1.04x" style="left: 18%; width: 23%;">scene camera</div>
+                <div class="layer-clip camera" data-motion="0.98x" style="left: 57%; width: 27%;">scene camera</div>
+              </div>
+            </div>
+            <div class="track">
+              <div class="track-label">Audio</div>
+              <div class="track-lane">
+                <div class="layer-clip audio" data-motion="beat grid" style="left: 0%; width: 100%;">music stub pending Phase 2</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="inspector">
+        <div class="panel-head">
+          <span class="panel-title">Inspector</span>
+          <div class="tabs">
+            <button class="tab active" data-tab="scene">Scene</button>
+            <button class="tab" data-tab="layer">Layer</button>
+            <button class="tab" data-tab="render">Render</button>
+          </div>
+        </div>
+        <div class="inspect-body">
+          <div class="inspect-pane" id="scenePane">
+            <div class="inspect-card">
+              <h3 id="selectedScene">02 Feature reveal</h3>
+              <div class="field">
+                <label>Archetype <span>registry</span></label>
+                <select class="select"><option>feature-reveal</option><option>hook-opener</option><option>ui-walkthrough</option><option>logo-sting-cta</option></select>
+              </div>
+              <div class="field">
+                <label>Duration <span class="mono">frames</span></label>
+                <input class="input mono" value="108">
+              </div>
+              <div class="field">
+                <label>Camera move <span>scene-level</span></label>
+                <div class="token-grid">
+                  <button class="token active">pushIn</button>
+                  <button class="token">pullBack</button>
+                  <button class="token">none</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Transition after <span>Phase 1</span></label>
+                <div class="token-grid">
+                  <button class="token active">cut</button>
+                  <button class="token">fade</button>
+                  <button class="token">shader soon</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="inspect-card">
+              <h3>Motion system</h3>
+              <div class="field">
+                <label>Profile <span>global</span></label>
+                <select class="select"><option>crisp-saas</option><option>warm-startup</option><option>bold-launch</option></select>
+              </div>
+              <div class="field">
+                <label>Stagger <span>token lattice</span></label>
+                <div class="token-grid">
+                  <button class="token">tight</button>
+                  <button class="token active">base</button>
+                  <button class="token">wide</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Solver constraints <span>locked</span></label>
+                <div class="token-grid">
+                  <span class="token active">65% overlap</span>
+                  <span class="token active">settle gap</span>
+                  <span class="token active">one loud motion</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="inspect-card">
+              <h3>Linter</h3>
+              <ul class="lint-list">
+                <li><span class="lint-state pass">✓</span><span>easing whitelist</span><span class="badge good">pass</span></li>
+                <li><span class="lint-state fix">↺</span><span>grid snap cleaned</span><span class="badge warn">fixed</span></li>
+                <li><span class="lint-state pass">✓</span><span>contrast budget</span><span class="badge good">pass</span></li>
+                <li><span class="lint-state warn">!</span><span>shader transition wrapper</span><span class="badge">backlog</span></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="inspect-pane" id="layerPane" hidden>
+            <div class="inspect-card">
+              <h3>headline / selected layer</h3>
+              <div class="field">
+                <label>Slot content <span>editable</span></label>
+                <input class="input" value="Your product demo, motion-designed by an agent.">
+              </div>
+              <div class="field">
+                <label>Enter primitive <span>hover-preview later</span></label>
+                <div class="token-grid">
+                  <button class="token">slideUpSoft</button>
+                  <button class="token active">maskRevealUp</button>
+                  <button class="token">pushIn</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>Box override <span>2px lattice</span></label>
+                <input class="input mono" value="x 134 / y 152 / w 710 / h 244">
+              </div>
+            </div>
+          </div>
+
+          <div class="inspect-pane" id="renderPane" hidden>
+            <div class="inspect-card">
+              <h3>Render queue</h3>
+              <div class="field">
+                <label>Output <span>FFmpeg</span></label>
+                <select class="select"><option>MP4 standard</option><option>MP4 draft</option><option>WebM</option><option>PNG sequence</option></select>
+              </div>
+              <div class="field">
+                <label>Poster <span>verified</span></label>
+                <input class="input mono" value="renders/poster.jpg">
+              </div>
+              <div class="field">
+                <button class="btn btn-primary" id="renderSide">Render current project</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="statusbar">
+      <span><strong>compiled</strong> 184ms</span>
+      <span><strong>events.log</strong> 41 ops</span>
+      <span><strong>tests</strong> 59 green in handoff</span>
+      <span><strong>MCP</strong> get_planning_context / submit_plan / apply_commands</span>
+      <span class="spacer"></span>
+      <button class="btn" id="lintButton">Open lint report</button>
+    </footer>
+  </div>
+
+  <div class="lint-drawer" id="lintDrawer">
+    <div class="panel-head">
+      <span class="panel-title">Deterministic lint report</span>
+      <span class="panel-sub">zero-token</span>
+    </div>
+    <ul class="lint-list">
+      <li><span class="lint-state pass">✓</span><span>Scenes tile exactly with no orphan frames</span><span class="badge good">pass</span></li>
+      <li><span class="lint-state pass">✓</span><span>All motion parameters resolve to tokens</span><span class="badge good">pass</span></li>
+      <li><span class="lint-state fix">↺</span><span>Layer box snapped back to 2px lattice</span><span class="badge warn">auto-fix</span></li>
+      <li><span class="lint-state warn">!</span><span>True crossfade requires alternating tracks</span><span class="badge">Phase 1 backlog</span></li>
+    </ul>
+  </div>
+
+  <div class="toast" id="toast"><span class="dot"></span><span id="toastText">Applied command</span></div>
+
+  <script>
+    const toast = document.getElementById('toast');
+    const toastText = document.getElementById('toastText');
+    let toastTimer;
+
+    function showToast(message) {
+      toastText.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+    }
+
+    document.querySelectorAll('.quick-actions button').forEach((button) => {
+      button.addEventListener('click', () => {
+        const command = button.dataset.command;
+        document.getElementById('agentInput').value = command;
+        showToast('Queued: ' + command);
+      });
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', () => {
+      const input = document.getElementById('agentInput');
+      const value = input.value.trim();
+      if (!value) {
+        showToast('Type a command first');
+        return;
+      }
+      input.value = '';
+      showToast('Applied typed command batch');
+    });
+
+    document.getElementById('cmdButton').addEventListener('click', () => showToast('Command palette opened'));
+    document.getElementById('undoBtn').addEventListener('click', () => showToast('Undo: reverted latest command'));
+    document.getElementById('redoBtn').addEventListener('click', () => showToast('Redo: restored command'));
+    document.getElementById('renderTop').addEventListener('click', () => showToast('Render started: MP4 standard'));
+    document.getElementById('renderSide').addEventListener('click', () => showToast('Render queued with poster extraction'));
+
+    const lintDrawer = document.getElementById('lintDrawer');
+    document.getElementById('lintButton').addEventListener('click', () => {
+      lintDrawer.classList.toggle('open');
+    });
+
+    const panes = {
+      scene: document.getElementById('scenePane'),
+      layer: document.getElementById('layerPane'),
+      render: document.getElementById('renderPane')
+    };
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        Object.values(panes).forEach((pane) => pane.hidden = true);
+        panes[tab.dataset.tab].hidden = false;
+      });
+    });
+
+    document.querySelectorAll('.scene-clip').forEach((clip) => {
+      clip.addEventListener('click', () => {
+        document.querySelectorAll('.scene-clip').forEach((c) => c.classList.remove('active'));
+        clip.classList.add('active');
+        document.getElementById('selectedScene').textContent = clip.textContent.trim();
+        showToast('Selected scene: ' + clip.dataset.scene);
+      });
+    });
+
+    let playing = false;
+    const playBtn = document.getElementById('playBtn');
+    const playIcon = document.getElementById('playIcon');
+    playBtn.addEventListener('click', () => {
+      playing = !playing;
+      playIcon.innerHTML = playing ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+      showToast(playing ? 'Preview playing' : 'Preview paused');
+    });
+
+    document.getElementById('scrub').addEventListener('click', (event) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const percent = Math.round(pct * 100);
+      document.getElementById('scrubFill').style.width = percent + '%';
+      document.getElementById('scrubKnob').style.left = percent + '%';
+      const seconds = Math.round(pct * 17);
+      document.getElementById('timecode').textContent = '00:' + String(seconds).padStart(2, '0') + ':00';
+    });
+  </script>
+</body>
+</html>
+

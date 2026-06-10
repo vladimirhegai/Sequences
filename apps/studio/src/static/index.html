@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sequences — Studio</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ============ TOP BAR ============ -->
+    <header id="topbar">
+      <div class="brand">
+        <div class="brand-mark"></div>
+        <span class="brand-name">Sequences</span>
+      </div>
+      <div class="topbar-sep"></div>
+      <div class="proj">
+        <span class="proj-dot"></span>
+        <span id="projectTitle">…</span>
+      </div>
+      <div class="spacer"></div>
+      <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)"></button>
+      <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)"></button>
+      <div class="topbar-sep"></div>
+      <div id="profileChip" class="chip" title="Motion profile — the project-wide vibe"></div>
+      <div class="topbar-sep"></div>
+      <span id="renderStatus"></span>
+      <a id="renderDownload" href="" download></a>
+      <div id="qualityChip" class="chip" title="Render quality"></div>
+      <button id="renderBtn" class="btn btn-primary"></button>
+    </header>
+
+    <!-- ============ MAIN ============ -->
+    <main id="main">
+      <div id="left">
+        <div id="viewportPanel">
+          <div id="previewWrap">
+            <div id="playerHost"></div>
+          </div>
+          <div id="transport">
+            <button id="playBtn" class="tp-btn" title="Play/Pause (Space)"></button>
+            <span id="timecode" class="mono">00:00<span class="sep">:</span>00</span>
+            <div id="scrub"><div id="scrubFill"></div><div id="scrubKnob"></div></div>
+            <span id="frameLabel" class="mono"></span>
+            <button id="safeBtn" class="tp-btn" title="Title-safe guides"></button>
+            <button id="dragToggle" class="tp-btn" title="Position mode — drag layers on the canvas, snapped to the grid"></button>
+            <span id="resChip" class="res-chip mono"></span>
+          </div>
+        </div>
+        <div id="timelinePanel">
+          <div id="tlToolbar">
+            <div id="addSceneWrap">
+              <button id="addSceneBtn" class="mini-btn" title="Add a scene"></button>
+            </div>
+            <button id="thumbsBtn" class="mini-btn" title="Capture scene thumbnails into the timeline (needs Edge/Chrome)"></button>
+            <span id="thumbsStatus"></span>
+            <span class="spacer"></span>
+            <span id="durationLabel" class="tl-info"></span>
+          </div>
+          <div id="tlBody"><div id="tlContent"></div></div>
+        </div>
+      </div>
+
+      <div id="right">
+        <div id="inspectorPanel" class="panel">
+          <div class="panel-head">
+            <span class="ph-title">Inspector</span>
+            <div class="tabs" id="inspectorTabs"></div>
+            <div class="ph-tools"><span class="ph-sub" id="inspectorSub"></span></div>
+          </div>
+          <div id="inspectorBody"></div>
+        </div>
+        <div id="agentPanel" class="panel">
+          <div class="panel-head">
+            <span class="agent-spark" id="agentSpark"></span>
+            <span class="ph-title">Agent</span>
+            <span class="ph-sub mono" id="agentProviderSub"></span>
+            <div class="ph-tools"></div>
+          </div>
+          <div id="agentBody"></div>
+          <div id="agentFoot">
+            <div class="composer">
+              <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
+              <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
+            </div>
+            <div class="composer-meta">
+              <span id="composerHint">plans apply as one undoable batch</span>
+              <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ============ STATUS BAR ============ -->
+    <footer id="statusbar">
+      <div id="lintChip" title="Motion linter — deterministic, zero-token"></div>
+      <span class="status-sep"></span>
+      <div class="status-item"><span id="solverInfo" class="mono"></span></div>
+      <span class="spacer"></span>
+      <div class="status-item" id="eventsChip" style="cursor:pointer" title="events.log — every command, journaled"></div>
+      <span class="status-sep"></span>
+      <div class="status-item"><span id="buildInfo" class="mono"></span></div>
+      <div id="lintPop" class="hidden"></div>
+      <div id="eventsPop" class="hidden"></div>
+    </footer>
+  </div>
+
+  <div id="toastWrap"></div>
+
+  <script src="/vendor/hyperframes-player.global.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
