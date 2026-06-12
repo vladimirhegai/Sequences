@@ -86,7 +86,9 @@ export function buildProject(dir: string, project: Project): CompileResult {
   for (const asset of result.assets) {
     const source = path.join(dir, asset.sourcePath);
     if (fs.existsSync(source)) {
-      fs.copyFileSync(source, path.join(buildDir, asset.href));
+      const destination = path.join(buildDir, asset.href);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.copyFileSync(source, destination);
     }
   }
   return result;

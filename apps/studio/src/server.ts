@@ -491,6 +491,41 @@ export function startStudio(projectDir: string, port: number): http.Server {
         );
       }
 
+      if (route === "POST /api/assets/move") {
+        const body = JSON.parse(await readBody(req)) as { assetId?: string; folder?: string };
+        const assetId = (body.assetId ?? "").trim();
+        const index = store.project.assets.findIndex((a) => a.id === assetId);
+        if (index === -1) return badRequest(res, "assetId", `unknown asset: ${assetId}`);
+        const asset = store.project.assets[index]!;
+        const folder = (body.folder ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+        const currentBin = asset.path.replace(/\\/g, "/").split("/").slice(1, -1).join("/");
+        if (folder === currentBin) return sendJson(res, 200, stateJson());
+        const source = path.join(dir, asset.path);
+        if (!fs.existsSync(source)) return badRequest(res, "assetId", `asset file missing on disk: ${asset.path}`);
+        // COPY into the target bin (the old file stays — undo must keep working),
+        // then re-register at the new path as one atomic, undoable batch.
+        const others = new Set(store.project.assets.filter((a) => a.id !== assetId).map((a) => a.id));
+        const placed = placeAsset(dir, path.basename(source), folder, others, (destination) =>
+          fs.copyFileSync(source, destination),
+        );
+        const outcome = store.apply(
+          {
+            type: "Batch",
+            commands: [
+              { type: "RemoveAsset", assetId },
+              { type: "AddAsset", asset: { id: assetId, path: placed.relPath, kind: asset.kind }, index },
+            ],
+          },
+          "user",
+        );
+        if (!outcome.ok) {
+          fs.rmSync(path.join(dir, placed.relPath), { force: true });
+          return sendJson(res, 422, JSON.stringify({ ok: false, errors: outcome.errors }));
+        }
+        rebuild();
+        return sendJson(res, 200, stateJson());
+      }
+
       if (route === "POST /api/assets/folder") {
         const body = JSON.parse(await readBody(req)) as { name?: string };
         const name = (body.name ?? "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
@@ -671,6 +706,8 @@ export function startStudio(projectDir: string, port: number): http.Server {
           brief?: string;
           provider?: string;
           apiKey?: string;
+          model?: string;
+          thinkingMode?: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
         };
         const brief = (body.brief ?? "").trim();
         if (!brief) {
@@ -709,8 +746,13 @@ export function startStudio(projectDir: string, port: number): http.Server {
         // as brief context (capped; Phase 2 brings the token-optimized form).
         const storyboardText = storyboardToText(loadStoryboard(dir)).slice(0, 4000);
         const fullBrief = storyboardText ? `${brief}\n\n${storyboardText}` : brief;
-        // apiKey is used for this request only — never persisted anywhere.
-        void runPlan(providerId, fullBrief, agentStore, body.apiKey ? { apiKey: body.apiKey } : {})
+        // Agent options are request-only browser preferences, never project data.
+        const runOptions = {
+          ...(body.apiKey ? { apiKey: body.apiKey } : {}),
+          ...(body.model?.trim() ? { model: body.model.trim() } : {}),
+          ...(body.thinkingMode && body.thinkingMode !== "auto" ? { thinkingMode: body.thinkingMode } : {}),
+        };
+        void runPlan(providerId, fullBrief, agentStore, runOptions)
           .then((result) => {
             if (agentDir !== dir || agentStore !== store) return;
             rebuild();

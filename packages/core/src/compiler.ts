@@ -257,8 +257,11 @@ export function compile(project: Project): CompileResult {
   const assetHrefs = new Map<string, string>();
   const assets: CompileResult["assets"] = [];
   for (const asset of project.assets) {
-    const base = asset.path.split(/[\\/]/).pop() ?? asset.path;
-    const href = `assets/${base}`;
+    // Preserve the assets/ subfolder structure ("bins") so two assets with
+    // the same basename in different folders never collide in build/assets/.
+    const parts = asset.path.replace(/\\/g, "/").split("/").filter(Boolean);
+    const rel = (parts[0] === "assets" ? parts.slice(1) : parts).join("/") || asset.path;
+    const href = `assets/${rel}`;
     assetHrefs.set(asset.id, href);
     assets.push({ assetId: asset.id, sourcePath: asset.path, href });
   }

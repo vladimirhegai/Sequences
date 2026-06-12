@@ -50,6 +50,20 @@ describe("compiler", () => {
     expect(errors, JSON.stringify(errors, null, 2)).toEqual([]);
   });
 
+  it("asset hrefs preserve bin subfolders (same basename in two bins never collides)", () => {
+    const project = exampleProject();
+    project.assets.push(
+      { id: "logo-a", path: "assets/intro/logo.png", kind: "image" },
+      { id: "logo-b", path: "assets/outro/logo.png", kind: "image" },
+    );
+    const { assets } = compile(project);
+    const hrefOf = (id: string) => assets.find((a) => a.assetId === id)?.href;
+    expect(hrefOf("dashboard")).toBe("assets/dashboard.svg");
+    expect(hrefOf("logo-a")).toBe("assets/intro/logo.png");
+    expect(hrefOf("logo-b")).toBe("assets/outro/logo.png");
+    expect(new Set(assets.map((a) => a.href)).size).toBe(assets.length);
+  });
+
   it("is a pure function: identical input → identical output", () => {
     const a = compile(exampleProject());
     const b = compile(exampleProject());

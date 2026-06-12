@@ -10,7 +10,12 @@ let sbSaveTimer = null;
 let sbLoadedFor = null;
 let sbKeysBound = false;
 let sbHandle = null;
-let sbSelection = { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null };
+let sbSelection = sbEmptySelection();
+let sbDragFrameId = null;
+
+function sbEmptySelection() {
+  return { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null, fontFamily: null, fontSize: null, motionPathFor: null };
+}
 
 function sbSelectionSignature(selection) {
   return `${selection.ids.join(",")}|${selection.count}|${selection.id ?? ""}|${selection.type ?? ""}|${selection.assetId ?? ""}`;
@@ -27,7 +32,7 @@ function storyboardResetForProject() {
   sbBoard = null;
   sbFrameId = null;
   sbLoadedFor = null;
-  sbSelection = { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null };
+  sbSelection = sbEmptySelection();
 }
 
 async function enterStoryboardPage() {
@@ -51,16 +56,17 @@ function storyboardOnState() {
 
 function sbNormalizeBoard(board) {
   const frames = Array.isArray(board?.frames) && board.frames.length ? board.frames : [{ id: "frame-1", name: "Frame 1", items: [] }];
-  return {
+  const normalized = {
     version: 1,
     frames: frames.map((frame, index) => ({
       id: frame.id || `frame-${index + 1}`,
-      name: frame.name || `Frame ${index + 1}`,
+      name: sbFrameName(index),
       ...(frame.comment ? { comment: frame.comment } : {}),
       items: Array.isArray(frame.items) ? frame.items : [],
       ...(frame.excalidraw ? { excalidraw: sbNormalizeExcalidraw(frame.excalidraw) } : {}),
     })),
   };
+  return sbRenumberFrames(normalized);
 }
 
 function sbNormalizeExcalidraw(raw) {
@@ -73,6 +79,60 @@ function sbNormalizeExcalidraw(raw) {
 
 function sbFrame() {
   return sbBoard?.frames.find((f) => f.id === sbFrameId) ?? null;
+}
+
+function sbFrameName(index) {
+  return `Frame ${index + 1}`;
+}
+
+function sbFrameLabel(frame) {
+  const index = sbBoard?.frames.findIndex((f) => f.id === frame?.id) ?? -1;
+  return index >= 0 ? sbFrameName(index) : "Frame";
+}
+
+function sbRenumberFrames(board = sbBoard) {
+  if (!board?.frames) return board;
+  board.frames.forEach((frame, index) => {
+    frame.name = sbFrameName(index);
+  });
+  return board;
+}
+
+function sbMoveFrameBy(id, delta) {
+  if (!sbBoard) return false;
+  const from = sbBoard.frames.findIndex((frame) => frame.id === id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= sbBoard.frames.length) return false;
+  const [frame] = sbBoard.frames.splice(from, 1);
+  sbBoard.frames.splice(to, 0, frame);
+  sbRenumberFrames();
+  return true;
+}
+
+function sbMoveFrameTo(dragId, targetId, placeAfter) {
+  if (!sbBoard || dragId === targetId) return false;
+  const moving = sbBoard.frames.find((frame) => frame.id === dragId);
+  if (!moving) return false;
+  const rest = sbBoard.frames.filter((frame) => frame.id !== dragId);
+  let targetIndex = rest.findIndex((frame) => frame.id === targetId);
+  if (targetIndex < 0) targetIndex = rest.length;
+  if (placeAfter) targetIndex += 1;
+  rest.splice(Math.min(targetIndex, rest.length), 0, moving);
+  sbBoard.frames = rest;
+  sbRenumberFrames();
+  return true;
+}
+
+function sbDeleteFrame(id) {
+  if (!sbBoard || sbBoard.frames.length <= 1) return false;
+  const index = sbBoard.frames.findIndex((frame) => frame.id === id);
+  if (index < 0) return false;
+  sbBoard.frames.splice(index, 1);
+  if (sbFrameId === id) {
+    sbFrameId = sbBoard.frames[Math.min(index, sbBoard.frames.length - 1)]?.id ?? sbBoard.frames[0]?.id ?? null;
+  }
+  sbRenumberFrames();
+  return true;
 }
 
 function sbQueueSave() {
@@ -90,6 +150,7 @@ async function sbSaveNow() {
   if (!sbBoard) return;
   clearTimeout(sbSaveTimer);
   sbSaveTimer = null;
+  sbRenumberFrames();
   const response = await fetch("/api/storyboard", {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -116,7 +177,15 @@ const SB_TOOLS = [
   ["line", "line", "Line"],
   ["text", "text", "Text"],
   ["media", "image", "Place media from the pool"],
+  ["motionpath", "route", "Motion path - select an object, then draw the path it moves along during this beat"],
 ];
+
+function sbArmMotionPath() {
+  if (!sbHandle?.armMotionPath?.()) return;
+  sbTool = "motionpath";
+  renderSbToolRailState();
+  toast("draw the movement path - it attaches to the selected object");
+}
 
 function renderStoryboardPage() {
   const host = pageHost("storyboard");
@@ -136,25 +205,86 @@ function buildSbStrip() {
   sbBoard.frames.forEach((frame, i) => {
     const count = (frame.excalidraw?.elements ?? []).filter((item) => item && item.isDeleted !== true).length
       + (frame.excalidraw ? 0 : (frame.items?.length ?? 0));
-    const card = el("div", { class: `sb-frame ${frame.id === sbFrameId ? "on" : ""}`, title: frame.comment || frame.name });
+    const frameName = sbFrameName(i);
+    const card = el("div", {
+      class: `sb-frame ${frame.id === sbFrameId ? "on" : ""}`,
+      title: frame.comment || frameName,
+      draggable: "true",
+    });
     card.append(el("span", { class: "sf-n" }, [String(i + 1)]));
     if (frame.comment || sbFrameHasElementComments(frame)) card.append(el("span", { class: "sf-dot", title: "has AI comments" }));
-    card.append(el("span", { class: "sf-name" }, [`${frame.name}${count ? ` - ${count}` : ""}`]));
+    card.append(el("span", { class: "sf-name" }, [`${frameName}${count ? ` - ${count}` : ""}`]));
+    const actions = el("div", { class: "sf-actions" });
+    const leftAttrs = { class: "sf-act", title: "Move frame left" };
+    if (i === 0) leftAttrs.disabled = "true";
+    const left = el("button", leftAttrs, [icon("arrow", 10)]);
+    left.firstChild.style.transform = "rotate(180deg)";
+    left.onclick = (e) => {
+      e.stopPropagation();
+      if (!sbMoveFrameBy(frame.id, -1)) return;
+      sbFrameId = frame.id;
+      sbSelection = sbEmptySelection();
+      sbQueueSave();
+      renderStoryboardPage();
+    };
+    const rightAttrs = { class: "sf-act", title: "Move frame right" };
+    if (i === sbBoard.frames.length - 1) rightAttrs.disabled = "true";
+    const right = el("button", rightAttrs, [icon("arrow", 10)]);
+    right.onclick = (e) => {
+      e.stopPropagation();
+      if (!sbMoveFrameBy(frame.id, 1)) return;
+      sbFrameId = frame.id;
+      sbSelection = sbEmptySelection();
+      sbQueueSave();
+      renderStoryboardPage();
+    };
+    actions.append(left, right);
     if (sbBoard.frames.length > 1) {
-      const del = el("button", { class: "sf-del", title: "Delete frame" }, [icon("x", 10)]);
+      const del = el("button", { class: "sf-act sf-del", title: "Delete frame" }, [icon("x", 10)]);
       del.onclick = (e) => {
         e.stopPropagation();
-        sbBoard.frames = sbBoard.frames.filter((f) => f.id !== frame.id);
-        if (sbFrameId === frame.id) sbFrameId = sbBoard.frames[0].id;
-        sbSelection = { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null };
+        sbDeleteFrame(frame.id);
+        sbSelection = sbEmptySelection();
         sbQueueSave();
         renderStoryboardPage();
       };
-      card.append(del);
+      actions.append(del);
     }
+    card.append(actions);
     card.onclick = () => {
       sbFrameId = frame.id;
-      sbSelection = { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null };
+      sbSelection = sbEmptySelection();
+      renderStoryboardPage();
+    };
+    card.ondragstart = (e) => {
+      sbDragFrameId = frame.id;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", frame.id);
+      card.classList.add("dragging");
+    };
+    card.ondragend = () => {
+      sbDragFrameId = null;
+      card.classList.remove("dragging", "drop-before", "drop-after");
+    };
+    card.ondragover = (e) => {
+      if (!sbDragFrameId || sbDragFrameId === frame.id) return;
+      e.preventDefault();
+      const rect = card.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      card.classList.toggle("drop-before", !after);
+      card.classList.toggle("drop-after", after);
+    };
+    card.ondragleave = () => card.classList.remove("drop-before", "drop-after");
+    card.ondrop = (e) => {
+      e.preventDefault();
+      const dragId = e.dataTransfer.getData("text/plain") || sbDragFrameId;
+      const rect = card.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      card.classList.remove("drop-before", "drop-after");
+      if (!sbMoveFrameTo(dragId, frame.id, after)) return;
+      sbFrameId = dragId;
+      sbSelection = sbEmptySelection();
+      sbQueueSave();
       renderStoryboardPage();
     };
     strip.appendChild(card);
@@ -162,9 +292,10 @@ function buildSbStrip() {
   const add = el("button", { class: "sb-add", title: "Add frame" }, [icon("plus", 15)]);
   add.onclick = () => {
     const id = sbNewId("frame");
-    sbBoard.frames.push({ id, name: `Frame ${sbBoard.frames.length + 1}`, items: [] });
+    sbBoard.frames.push({ id, name: sbFrameName(sbBoard.frames.length), items: [] });
+    sbRenumberFrames();
     sbFrameId = id;
-    sbSelection = { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null };
+    sbSelection = sbEmptySelection();
     sbQueueSave();
     renderStoryboardPage();
   };
@@ -179,6 +310,7 @@ function buildSbToolRail() {
     btn.append(icon(ico, 15));
     btn.onclick = () => {
       if (id === "media") return openSbMediaPicker();
+      if (id === "motionpath") return sbArmMotionPath();
       sbTool = id;
       sbHandle?.setTool?.(id);
       renderSbToolRailState();
@@ -190,7 +322,7 @@ function buildSbToolRail() {
   clear.onclick = () => {
     const frame = sbFrame();
     if (!frame) return;
-    if (confirm(`Clear ${frame.name}?`)) sbHandle?.clear?.();
+    if (confirm(`Clear ${sbFrameLabel(frame)}?`)) sbHandle?.clear?.();
   };
   rail.appendChild(clear);
   return rail;
@@ -217,10 +349,11 @@ function buildSbSidePane() {
   side.append(
     el("div", { class: "pane-head" }, [
       el("span", { class: "ph-title" }, ["Frame"]),
-      el("span", { class: "ph-sub", id: "sbPaneSub" }, [sbFrame() ? sbFrame().name : ""]),
+      el("span", { class: "ph-sub", id: "sbPaneSub" }, [sbFrame() ? sbFrameLabel(sbFrame()) : ""]),
     ]),
     el("div", { class: "pane-body", id: "sbSidebar" }),
   );
+  side.appendChild(splitHandle({ edge: "left", cssVar: "--sb-side-w", min: 220, max: 480 }));
   return side;
 }
 
@@ -239,13 +372,19 @@ function mountSbExcalidraw() {
     onChange: (nextFrame) => {
       const idx = sbBoard.frames.findIndex((f) => f.id === nextFrame.id);
       if (idx >= 0) {
-        sbBoard.frames[idx] = nextFrame;
+        sbBoard.frames[idx] = { ...nextFrame, name: sbFrameName(idx) };
+        sbRenumberFrames();
         sbQueueSave();
       }
     },
     onSelectionChange: (summary) => {
       const sameTarget = sbSelectionSignature(sbSelection) === sbSelectionSignature(summary);
       sbSelection = summary;
+      if (sbTool === "motionpath" && summary.motionPathFor) {
+        // the path landed — the canvas already switched itself back to select
+        sbTool = "selection";
+        renderSbToolRailState();
+      }
       if (!sameTarget || !sbIsTypingSelectionComment()) renderSbSidebar();
     },
     onToast: (message, kind) => toast(message, kind),
@@ -376,17 +515,7 @@ function fillSbSidebar(body) {
 
   const sec1 = el("div", { class: "insp-section" });
   const sec1Body = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
-  sec1Body.append(
-    field("Frame name", el("input", {
-      class: "input",
-      value: frame.name,
-      onchange: (e) => {
-        frame.name = e.target.value.trim() || frame.name;
-        sbQueueSave();
-        renderStoryboardPage();
-      },
-    })),
-  );
+  sec1Body.append(field("Frame", el("div", { class: "input mono", style: "display:flex;align-items:center" }, [sbFrameLabel(frame)])));
   const note = el("textarea", { class: "input", rows: 3, placeholder: "What happens in this beat?" });
   note.value = frame.comment ?? "";
   note.onchange = () => {
@@ -403,7 +532,9 @@ function fillSbSidebar(body) {
   if (sbSelection.count === 0) {
     sec2Body.append(
       el("div", { class: "sb-note" }, [
-        "Select any Excalidraw object to add a Comment for AI. Double-click an object for the same comment prompt.",
+        "Select any Excalidraw object to add a Comment for AI. Double-click an object for the same comment prompt. With an object selected, the ",
+        el("b", {}, ["motion path"]),
+        " tool draws the path it moves along during this beat.",
       ]),
     );
   } else {
@@ -411,6 +542,36 @@ function fillSbSidebar(body) {
       ? `${sbSelection.type}${sbSelection.assetId ? ` - ${sbSelection.assetId}` : ""}`
       : `${sbSelection.count} selected objects`;
     sec2Body.append(el("div", { class: "sb-note" }, [el("b", {}, [label])]));
+    if (sbSelection.motionPathFor) {
+      sec2Body.append(
+        el("div", { class: "sb-note sb-motion-note" }, [
+          icon("route", 11),
+          " motion path — describes how the attached object moves during this beat",
+        ]),
+      );
+    }
+    if (sbSelection.count === 1 && sbSelection.type === "text") {
+      const fonts = window.SequenceStoryboardExcalidraw?.FONT_FAMILIES ?? [];
+      if (fonts.length) {
+        const fontSel = selectInput(
+          fonts.map((f) => String(f.id)),
+          String(sbSelection.fontFamily ?? fonts[0].id),
+          (v) => {
+            sbHandle?.setFontFamily?.(Number(v));
+            sbSelection = { ...sbSelection, fontFamily: Number(v) };
+          },
+          fonts.map((f) => f.label),
+        );
+        const sizeBox = el("input", { class: "input", type: "number", min: 8, max: 220, step: 2, value: sbSelection.fontSize ?? 36 });
+        sizeBox.onchange = () => {
+          sbHandle?.setFontSize?.(Number(sizeBox.value) || 36);
+          sbSelection = { ...sbSelection, fontSize: Number(sizeBox.value) || 36 };
+        };
+        sec2Body.append(
+          el("div", { class: "row2" }, [field("Font", fontSel), field("Size", sizeBox)]),
+        );
+      }
+    }
     const comment = el("textarea", {
       class: "input",
       rows: 4,
@@ -514,6 +675,9 @@ function sbBindKeys() {
     } else if (key === "m") {
       e.preventDefault();
       openSbMediaPicker();
+    } else if (key === "p") {
+      e.preventDefault();
+      sbArmMotionPath();
     } else if (e.key === "Escape") {
       sbTool = "selection";
       sbHandle?.setTool?.("selection");

@@ -80,7 +80,7 @@ describe("workspace host services", () => {
   it("storyboardToText is deterministic, comment-forward, and empty for empty boards", () => {
     expect(storyboardToText(defaultStoryboard())).toBe("");
     const board = loadStoryboard(tmp); // default (empty) — then build a real one
-    board.frames[0]!.name = "Opener";
+    board.frames[0]!.name = "Opener"; // legacy/custom names are ignored; order owns frame names.
     board.frames[0]!.comment = "punchy start";
     board.frames[0]!.items = [
       { id: "i1", type: "rect", x: 10, y: 20, w: 30, h: 15, comment: "the dashboard card" },
@@ -88,7 +88,8 @@ describe("workspace host services", () => {
     ];
     board.frames.push({ id: "frame-2", name: "Empty beat", items: [] });
     const text = storyboardToText(board);
-    expect(text).toContain("Frame 1 - Opener - note: punchy start");
+    expect(text).toContain("Frame 1 - note: punchy start");
+    expect(text).not.toContain("Opener");
     expect(text).toContain("rect at (10%, 20%) size 30%x15% - intent: the dashboard card");
     expect(text).toContain('media asset "dashboard"');
     expect(text).not.toContain("Empty beat");
@@ -129,8 +130,47 @@ describe("workspace host services", () => {
       ],
     };
     const text = storyboardToText(board);
-    expect(text).toContain("Excalidraw rectangle at scene (120, 80) size 300x180 - intent: main product card");
-    expect(text).toContain('Excalidraw media asset "dashboard-shot" at scene (480, 110) size 360x220');
+    expect(text).toContain("rectangle at (120, 80) size 300x180 - intent: main product card");
+    expect(text).toContain('media asset "dashboard-shot" at (480, 110) size 360x220');
+    expect(text).toContain("1280x720 canvas");
+  });
+
+  it("storyboardToText reads motion-path arrows as movement of their target", () => {
+    const board: Storyboard = {
+      version: 1,
+      frames: [
+        {
+          id: "frame-1",
+          name: "Sketch",
+          items: [],
+          excalidraw: {
+            elements: [
+              { id: "e1", type: "rectangle", x: 100, y: 100, width: 200, height: 120 },
+              {
+                id: "p1",
+                type: "arrow",
+                x: 200,
+                y: 160,
+                width: 400,
+                height: 100,
+                points: [
+                  [0, 0],
+                  [220, -60],
+                  [400, 100],
+                ],
+                customData: { sequenceMotionPathFor: "e1", sequenceAiComment: "ease in, settle softly" },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const text = storyboardToText(board);
+    expect(text).toContain(
+      "MOTION PATH: the rectangle at (100, 100) moves from (200, 160) to (600, 260) via (420, 100) during this beat - intent: ease in, settle softly",
+    );
+    // the arrow itself is not double-reported as a drawn shape
+    expect(text).not.toContain("arrow from (200, 160)");
   });
 
   it("storyboardToText ignores stale legacy items once a frame uses Excalidraw", () => {

@@ -1,19 +1,25 @@
 /* Media page — DaVinci-style: disk file browser (left), media viewer
  * (center), media pool with bins (bottom). Imports copy the file into the
  * project's assets/ and register it through an AddAsset command — the same
- * one-pathway rule as everything else. */
+ * one-pathway rule as everything else. Moving an asset between bins copies
+ * the file and re-registers it as one atomic Batch (undo keeps working). */
 
 let mediaFsPath = null; // current disk folder (null until roots load)
 let mediaFsRoots = [];
 let mediaPreview = null; // { src, name, kind, info } shown in the viewer
 let mediaBin = ""; // "" = all assets, otherwise assets/<bin>/ prefix
 let mediaSelectedAssetId = null;
+let mediaPathEditing = false;
+
+const MIME_DRAG_ASSET = "application/x-seq-asset-id";
+const MIME_DRAG_DISK = "application/x-seq-disk-path";
 
 function mediaResetForProject() {
   mediaFsPath = null;
   mediaPreview = null;
   mediaBin = "";
   mediaSelectedAssetId = null;
+  mediaPathEditing = false;
 }
 
 function assetPoolHref(asset) {
@@ -34,6 +40,14 @@ function assetUsedBy(assetId) {
 async function renderMediaPage() {
   if (activePage !== "media") return;
   const host = pageHost("media");
+
+  // keep scroll positions across re-renders (selection should not jump lists)
+  const keepScroll = {
+    fb: $("fbList")?.scrollTop ?? 0,
+    bins: $("mediaBins")?.scrollTop ?? 0,
+    pool: host.querySelector(".pool-body")?.scrollTop ?? 0,
+  };
+
   host.innerHTML = "";
   const cols = el("div", { class: "page-cols" });
 
@@ -41,6 +55,7 @@ async function renderMediaPage() {
   top.append(buildFileBrowser(), buildMediaViewer());
   const bottom = el("div", { class: "media-bottom" });
   bottom.append(buildBins(), buildPool());
+  bottom.appendChild(splitHandle({ edge: "top", cssVar: "--media-bottom-h", min: 170, max: 520 }));
   cols.append(top, bottom);
   host.appendChild(cols);
 
@@ -54,6 +69,13 @@ async function renderMediaPage() {
     }
   }
   await fillFileBrowser();
+
+  const fbList = $("fbList");
+  if (fbList) fbList.scrollTop = keepScroll.fb;
+  const bins = $("mediaBins");
+  if (bins) bins.scrollTop = keepScroll.bins;
+  const pool = host.querySelector(".pool-body");
+  if (pool) pool.scrollTop = keepScroll.pool;
 }
 
 /* ---------------- file browser (left) ---------------- */
@@ -66,24 +88,95 @@ function buildFileBrowser() {
       el("span", { class: "ph-sub" }, ["drag files into the pool"]),
     ]),
     el("div", { class: "fb-roots", id: "fbRoots" }),
-    el("div", { class: "fb-crumbs", id: "fbCrumbs" }),
+    el("div", { class: "fb-pathbar", id: "fbPathbar" }),
     el("div", { class: "fb-list", id: "fbList" }, [el("div", { class: "pool-hint" }, ["loading…"])]),
   );
+  pane.appendChild(splitHandle({ edge: "right", cssVar: "--media-fb-w", min: 210, max: 540 }));
   return pane;
+}
+
+function fbPathSeparator(p) {
+  return p.includes("\\") ? "\\" : "/";
+}
+
+/** Crumbs with cumulative absolute targets ("C:\" → "C:\Users" → …). */
+function fbCrumbTargets(p) {
+  const sep = fbPathSeparator(p);
+  const parts = p.split(/[\\/]/).filter(Boolean);
+  const targets = [];
+  let acc = p.startsWith("/") ? "" : null; // posix roots start at ""
+  for (const part of parts) {
+    acc = acc === null ? part + sep : acc === "" ? sep + part : acc + (acc.endsWith(sep) ? "" : sep) + part;
+    targets.push({ label: part, target: acc });
+  }
+  return targets;
+}
+
+function fillFbPathbar(listingPath) {
+  const bar = $("fbPathbar");
+  if (!bar) return;
+  bar.innerHTML = "";
+  bar.title = listingPath;
+
+  if (mediaPathEditing) {
+    const input = el("input", { class: "input mono fb-path-input", value: listingPath, spellcheck: "false" });
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") {
+        mediaPathEditing = false;
+        mediaFsPath = input.value.trim() || listingPath;
+        fillFileBrowser();
+      } else if (e.key === "Escape") {
+        mediaPathEditing = false;
+        fillFileBrowser();
+      }
+    };
+    input.onblur = () => {
+      if (!mediaPathEditing) return;
+      mediaPathEditing = false;
+      fillFileBrowser();
+    };
+    bar.appendChild(input);
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+    return;
+  }
+
+  const crumbs = el("div", { class: "fb-crumbs" });
+  const targets = fbCrumbTargets(listingPath);
+  targets.forEach(({ label, target }, i) => {
+    const here = i === targets.length - 1;
+    const node = el("span", { class: `fb-crumb ${here ? "here" : ""}`, title: target }, [label]);
+    if (!here)
+      node.onclick = () => {
+        mediaFsPath = target;
+        fillFileBrowser();
+      };
+    crumbs.appendChild(node);
+    if (!here) crumbs.append(el("span", { class: "lr-crumb-sep" }, ["›"]));
+  });
+  const edit = el("button", { class: "fb-path-edit", title: "type a path (Enter to go)" }, [icon("pen", 11)]);
+  edit.onclick = () => {
+    mediaPathEditing = true;
+    fillFbPathbar(listingPath);
+  };
+  bar.append(crumbs, edit);
+  crumbs.scrollLeft = crumbs.scrollWidth; // the deepest folder stays visible
 }
 
 async function fillFileBrowser() {
   const rootsHost = $("fbRoots");
   const list = $("fbList");
-  const crumbs = $("fbCrumbs");
   if (!rootsHost || !list) return;
 
   rootsHost.innerHTML = "";
   for (const root of mediaFsRoots) {
     const on = mediaFsPath && (mediaFsPath === root.path || mediaFsPath.startsWith(root.path));
-    const btn = el("button", { class: `fb-root ${on ? "on" : ""}` }, [root.name]);
+    const btn = el("button", { class: `fb-root ${on ? "on" : ""}`, title: root.path }, [root.name]);
     btn.onclick = () => {
       mediaFsPath = root.path;
+      mediaPathEditing = false;
       fillFileBrowser();
     };
     rootsHost.appendChild(btn);
@@ -100,28 +193,15 @@ async function fillFileBrowser() {
   } catch (err) {
     list.innerHTML = "";
     list.append(el("div", { class: "pool-hint" }, [`cannot read folder — ${err.message}`]));
+    fillFbPathbar(mediaFsPath);
     return;
   }
 
-  crumbs.innerHTML = "";
-  const parts = listing.path.split(/[\\/]/).filter(Boolean);
-  let acc = listing.path.startsWith("/") ? "/" : "";
-  parts.forEach((part, i) => {
-    acc = acc === "" ? part + "\\" : acc === "/" ? "/" + part : acc.replace(/[\\/]?$/, "") + (listing.path.includes("\\") ? "\\" : "/") + part;
-    const target = acc;
-    const node = el("span", { class: "fb-crumb" }, [part]);
-    if (i < parts.length - 1)
-      node.onclick = () => {
-        mediaFsPath = target;
-        fillFileBrowser();
-      };
-    crumbs.appendChild(node);
-    if (i < parts.length - 1) crumbs.append(el("span", { class: "lr-crumb-sep" }, ["›"]));
-  });
+  fillFbPathbar(listing.path);
 
   list.innerHTML = "";
   if (listing.parent) {
-    const up = el("div", { class: "fb-item" }, [
+    const up = el("div", { class: "fb-item fb-up" }, [
       el("span", { class: "fi-ico" }, [icon("undo", 12)]),
       el("span", { class: "fi-name" }, [".."]),
     ]);
@@ -132,7 +212,7 @@ async function fillFileBrowser() {
     list.appendChild(up);
   }
   for (const d of listing.dirs) {
-    const item = el("div", { class: "fb-item" }, [
+    const item = el("div", { class: "fb-item", title: d.path }, [
       el("span", { class: "fi-ico" }, [icon("folder", 13)]),
       el("span", { class: "fi-name" }, [d.name]),
     ]);
@@ -146,10 +226,11 @@ async function fillFileBrowser() {
     const item = el("div", {
       class: `fb-item ${mediaPreview && mediaPreview.diskPath === f.path ? "sel" : ""}`,
       draggable: "true",
-      title: "click to preview · drag into the media pool to import · double-click imports",
+      title: `${f.path}\nclick to preview · drag into the pool or a bin · double-click imports`,
     }, [
       el("span", { class: "fi-ico" }, [icon(f.kind === "audio" ? "music" : f.kind === "video" ? "film" : "image", 13)]),
       el("span", { class: "fi-name" }, [f.name]),
+      el("span", { class: "fi-size" }, [fmtBytes(f.size)]),
       el("span", { class: "fi-kind" }, [f.kind]),
     ]);
     item.onclick = () => {
@@ -164,7 +245,7 @@ async function fillFileBrowser() {
     };
     item.ondblclick = () => importDiskFile(f.path);
     item.ondragstart = (e) => {
-      e.dataTransfer.setData("application/x-seq-disk-path", f.path);
+      e.dataTransfer.setData(MIME_DRAG_DISK, f.path);
       e.dataTransfer.effectAllowed = "copy";
     };
     list.appendChild(item);
@@ -174,14 +255,41 @@ async function fillFileBrowser() {
   }
 }
 
-async function importDiskFile(diskPath) {
+async function importDiskFile(diskPath, folder = mediaBin) {
   try {
-    state = await api(`/api/assets/import`, { path: diskPath, folder: mediaBin });
+    state = await api(`/api/assets/import`, { path: diskPath, folder });
     render();
-    toast("imported into the media pool — referenced as an asset, undoable");
+    toast(`imported into ${folder ? `assets/${folder}/` : "the media pool"} — undoable`);
   } catch (err) {
     toast(`import failed — ${err.message}`, "err");
   }
+}
+
+async function moveAssetToBin(assetId, folder) {
+  try {
+    state = await api(`/api/assets/move`, { assetId, folder });
+    render();
+    toast(`moved "${assetId}" to ${folder ? `assets/${folder}/` : "assets/"} — undoable`);
+  } catch (err) {
+    toast(`move failed — ${err.message}`, "err");
+  }
+}
+
+async function uploadFiles(files, folder = mediaBin) {
+  for (const file of files || []) {
+    try {
+      const res = await fetch(
+        `/api/assets/upload?name=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(folder)}`,
+        { method: "POST", body: file },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error((json.errors || []).map((x) => x.message).join(" · "));
+      state = json;
+    } catch (err) {
+      toast(`upload failed — ${err.message}`, "err");
+    }
+  }
+  render();
 }
 
 /* ---------------- viewer (center) ---------------- */
@@ -215,7 +323,10 @@ function buildMediaViewer() {
 
   const bar = el("div", { class: "mv-bar" });
   if (mediaPreview) {
-    bar.append(el("span", { class: "mono" }, [mediaPreview.name]), el("span", {}, [mediaPreview.info ?? ""]));
+    bar.append(
+      el("span", { class: "mono", title: mediaPreview.diskPath ?? mediaPreview.name }, [mediaPreview.name]),
+      el("span", { class: "mv-info" }, [mediaPreview.info ?? ""]),
+    );
     if (mediaPreview.diskPath) {
       const importBtn = el("button", { class: "btn-sm", style: "margin-left:auto" }, [icon("plus", 12), "Add to pool"]);
       importBtn.onclick = () => importDiskFile(mediaPreview.diskPath);
@@ -235,6 +346,25 @@ function binOfAsset(asset) {
   return parts.length > 2 ? parts.slice(1, -1).join("/") : "";
 }
 
+/** Bins accept drops: pool cards (move), disk files (import), OS files (upload). */
+function wireBinDrop(item, bin) {
+  item.ondragover = (e) => {
+    e.preventDefault();
+    item.classList.add("dragover");
+  };
+  item.ondragleave = () => item.classList.remove("dragover");
+  item.ondrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    item.classList.remove("dragover");
+    const assetId = e.dataTransfer.getData(MIME_DRAG_ASSET);
+    if (assetId) return moveAssetToBin(assetId, bin);
+    const diskPath = e.dataTransfer.getData(MIME_DRAG_DISK);
+    if (diskPath) return importDiskFile(diskPath, bin);
+    if (e.dataTransfer.files?.length) return uploadFiles(e.dataTransfer.files, bin);
+  };
+}
+
 function buildBins() {
   const pane = el("div", { class: "page-pane" });
   const addBin = el("button", { class: "mini-btn", title: "New bin (a folder inside assets/)" }, [icon("plus", 12)]);
@@ -243,6 +373,7 @@ function buildBins() {
     if (!name || !name.trim()) return;
     try {
       await api("/api/assets/folder", { name: name.trim() });
+      mediaBin = name.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
       renderMediaPage();
     } catch (err) {
       toast(`bin failed — ${err.message}`, "err");
@@ -256,6 +387,7 @@ function buildBins() {
   );
   const body = el("div", { class: "pane-body", style: "padding:6px", id: "mediaBins" });
   pane.appendChild(body);
+  pane.appendChild(splitHandle({ edge: "right", cssVar: "--media-bins-w", min: 140, max: 360 }));
 
   const assets = state.project.assets;
   const counts = {};
@@ -270,6 +402,7 @@ function buildBins() {
     mediaBin = "";
     renderMediaPage();
   };
+  wireBinDrop(all, "");
   body.appendChild(all);
 
   api("/api/assets/folders")
@@ -277,17 +410,21 @@ function buildBins() {
       const known = new Set(folders);
       for (const bin of Object.keys(counts)) if (bin) known.add(bin);
       for (const bin of [...known].sort()) {
-        const item = el("div", { class: `bin-item ${mediaBin === bin ? "on" : ""}` }, [
+        const item = el("div", { class: `bin-item ${mediaBin === bin ? "on" : ""}`, title: `assets/${bin}/ — drop assets or files here` }, [
           icon("folder", 13),
-          bin,
+          el("span", { class: "bi-name" }, [bin]),
           el("span", { class: "bi-count" }, [String(counts[bin] ?? 0)]),
         ]);
         item.onclick = () => {
           mediaBin = bin;
           renderMediaPage();
         };
+        wireBinDrop(item, bin);
         body.appendChild(item);
       }
+      body.append(
+        el("div", { class: "bin-hint" }, ["drag pool items onto a bin to move them"]),
+      );
     })
     .catch(() => {});
   return pane;
@@ -300,14 +437,14 @@ function buildPool() {
   pane.append(
     el("div", { class: "pane-head" }, [
       el("span", { class: "ph-title" }, ["Media pool"]),
-      el("span", { class: "ph-sub" }, [mediaBin ? `assets/${mediaBin}/` : "assets/"]),
+      el("span", { class: "ph-sub mono" }, [mediaBin ? `assets/${mediaBin}/` : "assets/"]),
       el("div", { class: "ph-tools" }, [
         el("span", { class: "ph-sub" }, ["drop files here · everything is referenced by asset id"]),
       ]),
     ]),
   );
   const body = el("div", { class: "pool-body" });
-  body.append(el("div", { class: "pool-drop" }, ["Drop to import into the pool"]));
+  body.append(el("div", { class: "pool-drop" }, [`Drop to import into ${mediaBin ? `assets/${mediaBin}/` : "the pool"}`]));
 
   const assets = state.project.assets.filter((a) => mediaBin === "" || binOfAsset(a) === mediaBin);
   if (assets.length === 0) {
@@ -332,29 +469,23 @@ function buildPool() {
 
   // OS file drop + in-app disk-file drop
   body.ondragover = (e) => {
+    // dragging a pool card around the "All media" view is a no-op — no overlay
+    if (e.dataTransfer.types.includes(MIME_DRAG_ASSET) && mediaBin === "") return;
     e.preventDefault();
     body.classList.add("dragover");
   };
   body.ondragleave = () => body.classList.remove("dragover");
-  body.ondrop = async (e) => {
+  body.ondrop = (e) => {
     e.preventDefault();
     body.classList.remove("dragover");
-    const diskPath = e.dataTransfer.getData("application/x-seq-disk-path");
-    if (diskPath) return importDiskFile(diskPath);
-    for (const file of e.dataTransfer.files || []) {
-      try {
-        const res = await fetch(
-          `/api/assets/upload?name=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(mediaBin)}`,
-          { method: "POST", body: file },
-        );
-        const json = await res.json();
-        if (!res.ok) throw new Error((json.errors || []).map((x) => x.message).join(" · "));
-        state = json;
-      } catch (err) {
-        toast(`upload failed — ${err.message}`, "err");
-      }
+    const assetId = e.dataTransfer.getData(MIME_DRAG_ASSET);
+    if (assetId) {
+      if (mediaBin !== "") return moveAssetToBin(assetId, mediaBin);
+      return; // dropping back into "All media" view is a no-op
     }
-    render();
+    const diskPath = e.dataTransfer.getData(MIME_DRAG_DISK);
+    if (diskPath) return importDiskFile(diskPath);
+    return uploadFiles(e.dataTransfer.files);
   };
 
   pane.appendChild(body);
@@ -363,18 +494,25 @@ function buildPool() {
 
 function poolCard(asset) {
   const used = assetUsedBy(asset.id);
+  const bin = binOfAsset(asset);
   const card = el("div", {
     class: `pool-card ${mediaSelectedAssetId === asset.id ? "sel" : ""}`,
-    title: `${asset.path}\nclick to preview · double-click a slot in the inspector to use it`,
+    draggable: "true",
+    title: `${asset.path}\nclick to preview · drag onto a bin to move · double-click a slot in the inspector to use it`,
   });
+  card.ondragstart = (e) => {
+    e.dataTransfer.setData(MIME_DRAG_ASSET, asset.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
   const thumb = el("div", { class: "pool-thumb" });
   if (asset.kind === "image") thumb.append(el("img", { src: assetPoolHref(asset), alt: asset.id, loading: "lazy" }));
   else thumb.append(icon(asset.kind === "audio" ? "music" : "film", 20));
+  const place = mediaBin === "" && bin ? `${bin}/ · ` : "";
   card.append(
     thumb,
     el("div", { class: "pool-meta" }, [
       el("div", { class: "pm-id" }, [asset.id]),
-      el("div", { class: "pm-info" }, [`${asset.kind} · ${used.length ? `used in ${used.join(", ")}` : "unused"}`]),
+      el("div", { class: "pm-info" }, [`${place}${asset.kind} · ${used.length ? `used in ${used.join(", ")}` : "unused"}`]),
     ]),
   );
   const del = el("button", { class: "pc-del", title: used.length ? "in use — remove it from scenes first" : "remove from pool (file stays on disk)" }, [icon("x", 11)]);
@@ -390,7 +528,7 @@ function poolCard(asset) {
       src: assetPoolHref(asset),
       name: asset.path.split("/").pop(),
       kind: asset.kind,
-      info: `asset "${asset.id}" · in the pool`,
+      info: `asset "${asset.id}" · in the pool${bin ? ` · bin ${bin}/` : ""}`,
     };
     renderMediaPage();
   };

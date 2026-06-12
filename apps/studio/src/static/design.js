@@ -18,6 +18,23 @@ const DESIGN_LINE_DEFAULT_W = 180;
 const DESIGN_LINE_DEFAULT_H = 0;
 const DESIGN_HANDLE_SIZE = 14;
 
+/* System fonts only in Phase 1 (deterministic renders need bundled fonts —
+ * the asset pipeline for that is a Phase-1 backlog item, plan §5). */
+const DESIGN_FONTS = [
+  "Segoe UI",
+  "Arial",
+  "Verdana",
+  "Tahoma",
+  "Trebuchet MS",
+  "Georgia",
+  "Times New Roman",
+  "Garamond",
+  "Courier New",
+  "Consolas",
+  "Impact",
+];
+const DESIGN_WEIGHTS = [300, 400, 500, 600, 650, 700, 800, 900];
+
 let designTool = "select";
 let designItems = [];
 let designSelectedId = null;
@@ -77,6 +94,8 @@ function designNormalizeItem(raw) {
     opacity: clamp(num(raw.opacity, 1), 0, 1),
     text: raw.text || "Text",
     fontSize: num(raw.fontSize, type === "text" ? 64 : 64),
+    font: DESIGN_FONTS.includes(raw.font) ? raw.font : "Segoe UI",
+    weight: DESIGN_WEIGHTS.includes(Number(raw.weight)) ? Number(raw.weight) : 650,
   };
   if (type === "text") {
     item.w = Math.max(DESIGN_TEXT_MIN_W, Math.abs(item.w || DESIGN_TEXT_DEFAULT_W));
@@ -166,6 +185,7 @@ function renderDesignPage() {
   const propsBody = el("div", { class: "pane-body" });
   fillDesignProps(propsBody);
   props.appendChild(propsBody);
+  props.appendChild(splitHandle({ edge: "left", cssVar: "--design-props-w", min: 220, max: 480 }));
 
   cols.append(rail, stagePane, props);
   host.appendChild(cols);
@@ -313,8 +333,8 @@ function designTextNode(item, defs, interactive) {
     y: item.y + 10,
     fill: designFillFor(item, defs),
     "font-size": item.fontSize ?? 64,
-    "font-family": "Segoe UI, system-ui, sans-serif",
-    "font-weight": 650,
+    "font-family": `${item.font ?? "Segoe UI"}, system-ui, sans-serif`,
+    "font-weight": item.weight ?? 650,
     "dominant-baseline": "hanging",
     "clip-path": `url(#${clipId})`,
   });
@@ -575,6 +595,8 @@ function designCreateItem(type, p) {
     opacity: 1,
     text: "Text",
     fontSize: 64,
+    font: "Segoe UI",
+    weight: 650,
   };
 }
 
@@ -699,6 +721,10 @@ function fillDesignProps(body) {
     });
     secBody.append(
       field("Text", textInput),
+      el("div", { class: "row2" }, [
+        field("Font", selectInput(DESIGN_FONTS, item.font ?? "Segoe UI", (v) => { item.font = v; softCommit(); })),
+        field("Weight", selectInput(DESIGN_WEIGHTS.map(String), String(item.weight ?? 650), (v) => { item.weight = Number(v); softCommit(); })),
+      ]),
       field("Text size", numberBox(item.fontSize ?? 64, 8, 220, (v) => { item.fontSize = v; softCommit(); })),
     );
   }
@@ -753,13 +779,31 @@ function fillDesignProps(body) {
     designGeometryFields(item, hardCommit),
   );
 
-  const delBtn = el("button", { class: "btn-sm danger" }, [icon("trash", 12), "Delete"]);
+  // arrange: stacking order + duplicate + delete
+  const idx = designItems.indexOf(item);
+  const back = el("button", { class: "btn-sm", title: "Send backward (draws earlier)" }, [icon("undo", 12), "Back"]);
+  back.disabled = idx <= 0;
+  back.onclick = () => {
+    designItems.splice(idx, 1);
+    designItems.splice(idx - 1, 0, item);
+    hardCommit();
+  };
+  const fwd = el("button", { class: "btn-sm", title: "Bring forward (draws later)" }, ["Front", icon("redo", 12)]);
+  fwd.disabled = idx === designItems.length - 1;
+  fwd.onclick = () => {
+    designItems.splice(idx, 1);
+    designItems.splice(idx + 1, 0, item);
+    hardCommit();
+  };
+  const dup = el("button", { class: "btn-sm", title: "Duplicate (Ctrl+D)" }, [icon("copy", 12), "Duplicate"]);
+  dup.onclick = () => designDuplicateSelected();
+  const delBtn = el("button", { class: "btn-sm danger", style: "margin-left:auto" }, [icon("trash", 12), "Delete"]);
   delBtn.onclick = () => {
     designItems = designItems.filter((i) => i.id !== item.id);
     designSelectedId = null;
     hardCommit();
   };
-  secBody.append(el("div", { class: "btn-row" }, [delBtn]));
+  secBody.append(el("div", { class: "btn-row" }, [back, fwd, dup, delBtn]));
   sec.appendChild(secBody);
   body.append(sec, designSaveSection());
 }
@@ -836,6 +880,17 @@ function designToSvgString() {
   return new XMLSerializer().serializeToString(svg);
 }
 
+function designDuplicateSelected() {
+  const item = designSelected();
+  if (!item) return;
+  const copy = designNormalizeItem({ ...item, id: null, x: item.x + 16, y: item.y + 16 });
+  copy.id = designNewId();
+  designItems.push(copy);
+  designSelectedId = copy.id;
+  designPersist();
+  renderDesignPage();
+}
+
 function designBindKeys() {
   if (designKeysBound) return;
   designKeysBound = true;
@@ -844,8 +899,26 @@ function designBindKeys() {
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing) return;
     const key = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && key === "d" && designSelectedId) {
+      e.preventDefault();
+      designDuplicateSelected();
+      return;
+    }
+    if (e.key.startsWith("Arrow") && designSelectedId) {
+      const item = designSelected();
+      if (!item) return;
+      e.preventDefault();
+      const step = e.shiftKey ? 10 : 1;
+      if (e.key === "ArrowLeft") item.x -= step;
+      else if (e.key === "ArrowRight") item.x += step;
+      else if (e.key === "ArrowUp") item.y -= step;
+      else item.y += step;
+      designPersist();
+      paintDesignSvg();
+      return;
+    }
     const toolMap = { v: "select", r: "rect", e: "ellipse", l: "line", t: "text" };
-    if (toolMap[key]) {
+    if (toolMap[key] && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       designTool = toolMap[key];
       renderDesignPage();

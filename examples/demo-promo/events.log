@@ -12,3 +12,5 @@
 {"seq":3,"at":"2026-06-11T17:32:21.837Z","kind":"undo","command":{"type":"SetSceneDuration","sceneId":"cold-open","durationFrames":126},"source":"user"}
 {"seq":4,"at":"2026-06-11T17:32:23.369Z","kind":"apply","command":{"type":"SetSceneDuration","sceneId":"cold-open","durationFrames":65},"source":"user"}
 {"seq":5,"at":"2026-06-11T17:32:29.406Z","kind":"undo","command":{"type":"SetSceneDuration","sceneId":"cold-open","durationFrames":126},"source":"user"}
+{"seq":1,"at":"2026-06-12T02:44:03.150Z","kind":"apply","command":{"type":"ReorderScene","sceneId":"cold-open","toIndex":1},"source":"user"}
+{"seq":2,"at":"2026-06-12T02:44:03.849Z","kind":"undo","command":{"type":"ReorderScene","sceneId":"cold-open","toIndex":0},"source":"user"}

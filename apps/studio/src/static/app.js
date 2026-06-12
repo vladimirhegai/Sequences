@@ -1202,8 +1202,8 @@ function renderBrandTab(host) {
 /* ----- media tab ----- */
 
 function assetHref(asset) {
-  const base = asset.path.split(/[\\/]/).pop() ?? asset.path;
-  return `/build/assets/${encodeURIComponent(base)}`;
+  // serve straight from the project assets dir (bin subfolders included)
+  return `/${asset.path.replace(/\\/g, "/")}`;
 }
 
 function renderMediaTab(host) {
@@ -1272,6 +1272,154 @@ function providerUsable(info) {
   return info.kind === "api" && !!localStorage.getItem(`seq.agent.key.${info.id}`);
 }
 
+const AGENT_MODEL_PRESETS = {
+  "codex-cli": [
+    { id: "gpt-5.5", label: "GPT-5.5", desc: "Recommended for Codex" },
+    { id: "gpt-5.4", label: "GPT-5.4", desc: "Strong general Codex work" },
+    { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", desc: "Faster, higher-usage coding" },
+    { id: "gpt-5.3-codex", label: "GPT-5.3 Codex", desc: "Codex-specialized" },
+    { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark", desc: "Fast Pro preview, when available" },
+    { id: "gpt-5.2-codex", label: "GPT-5.2 Codex", desc: "Legacy / API-key workflows" },
+    { id: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max", desc: "Legacy frontier Codex" },
+    { id: "gpt-5.1-codex", label: "GPT-5.1 Codex", desc: "Legacy Codex" },
+    { id: "gpt-5.1", label: "GPT-5.1", desc: "Legacy general GPT-5.1" },
+  ],
+  "claude-code-cli": [
+    { id: "claude-fable-5", label: "Fable 5", desc: "Latest Claude Code model" },
+    { id: "claude-opus-4-8", label: "Opus 4.8", desc: "Highest-capability Claude 4.x" },
+    { id: "claude-opus-4-7", label: "Opus 4.7", desc: "Prior Opus" },
+    { id: "claude-opus-4-6", label: "Opus 4.6", desc: "Prior Opus" },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6", desc: "Balanced Claude" },
+  ],
+  "openai-api": [
+    { id: "gpt-5.5", label: "GPT-5.5", desc: "Latest capable model, if enabled" },
+    { id: "gpt-5.4", label: "GPT-5.4", desc: "Strong general model" },
+    { id: "gpt-5.4-mini", label: "GPT-5.4 Mini", desc: "Fast, efficient model" },
+    { id: "gpt-5.1", label: "GPT-5.1", desc: "Broad compatibility" },
+    { id: "gpt-5.1-mini", label: "GPT-5.1 Mini", desc: "Fast broad compatibility" },
+  ],
+  "anthropic-api": [
+    { id: "claude-fable-5", label: "Fable 5", desc: "Latest Claude family" },
+    { id: "claude-opus-4-8", label: "Opus 4.8", desc: "Highest-capability Claude 4.x" },
+    { id: "claude-opus-4-7", label: "Opus 4.7", desc: "Prior Opus" },
+    { id: "claude-opus-4-6", label: "Opus 4.6", desc: "Prior Opus" },
+    { id: "claude-sonnet-4-6", label: "Sonnet 4.6", desc: "Balanced Claude" },
+  ],
+};
+
+const THINKING_MODES = {
+  auto: "Auto",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "XHigh",
+  max: "Max",
+};
+
+function agentModelKey(providerId) {
+  return `seq.agent.model.${providerId}`;
+}
+
+function agentThinkingKey(providerId) {
+  return `seq.agent.thinking.${providerId}`;
+}
+
+function currentAgentModel(providerId) {
+  if (!providerId) return "";
+  return localStorage.getItem(agentModelKey(providerId)) || modelPresetIds(providerId)[0] || "";
+}
+
+function currentThinkingMode(providerId) {
+  const value = providerId ? localStorage.getItem(agentThinkingKey(providerId)) || "auto" : "auto";
+  return Object.prototype.hasOwnProperty.call(THINKING_MODES, value) ? value : "auto";
+}
+
+function thinkingOptionsForProvider(providerId) {
+  return providerId === "codex-cli" || providerId?.includes("claude") || providerId === "anthropic-api"
+    ? ["auto", "low", "medium", "high", "xhigh", "max"]
+    : ["auto", "low", "medium", "high"];
+}
+
+function modelPresetIds(providerId) {
+  return (AGENT_MODEL_PRESETS[providerId] || []).map((preset) => preset.id);
+}
+
+function modelPreset(providerId, modelId) {
+  return (AGENT_MODEL_PRESETS[providerId] || []).find((preset) => preset.id === modelId);
+}
+
+function modelLabel(providerId, modelId) {
+  return modelPreset(providerId, modelId)?.label || modelId;
+}
+
+function providerChipLabel(info, providerId) {
+  if (!info) return providerId ?? "none";
+  return info.label.replace(" (ChatGPT login)", "").replace(" (subscription login)", "").replace(" (key)", "");
+}
+
+function renderAgentModelChip(info) {
+  const providerId = info?.id ?? currentProviderId();
+  const chip = $("modelChip");
+  if (!chip) return;
+  const model = currentAgentModel(providerId);
+  const thinking = currentThinkingMode(providerId);
+  chip.innerHTML = "";
+  chip.append(
+    icon("gear", 12),
+    el("span", { class: "am-model", title: model }, [modelLabel(providerId, model)]),
+    el("span", { class: "am-thinking" }, [THINKING_MODES[thinking]]),
+    icon("chev", 11),
+  );
+  chip.onclick = () =>
+    openMenu(chip, (menu) => {
+      menu.classList.add("left", "up", "agent-model-menu");
+      menu.append(el("div", { class: "menu-label" }, ["Model"]));
+      for (const preset of AGENT_MODEL_PRESETS[providerId] || []) {
+        menu.appendChild(
+          menuOption({
+            name: preset.label,
+            desc: `${preset.desc} · ${preset.id}`,
+            selected: model === preset.id,
+            onpick: () => {
+              localStorage.setItem(agentModelKey(providerId), preset.id);
+              renderAgent();
+            },
+          }),
+        );
+      }
+      menu.appendChild(
+        menuOption({
+          name: "Custom model...",
+          desc: "Enter an exact model id or CLI alias",
+          selected: model && !modelPresetIds(providerId).includes(model),
+          onpick: () => {
+            const next = prompt("Model id or alias", model || "");
+            if (next === null) return;
+            const cleaned = next.trim();
+            if (cleaned) localStorage.setItem(agentModelKey(providerId), cleaned);
+            else localStorage.removeItem(agentModelKey(providerId));
+            renderAgent();
+          },
+        }),
+      );
+      menu.appendChild(menuSep());
+      menu.append(el("div", { class: "menu-label" }, ["Thinking"]));
+      for (const mode of thinkingOptionsForProvider(providerId)) {
+        menu.appendChild(
+          menuOption({
+            name: THINKING_MODES[mode],
+            selected: thinking === mode,
+            onpick: () => {
+              if (mode === "auto") localStorage.removeItem(agentThinkingKey(providerId));
+              else localStorage.setItem(agentThinkingKey(providerId), mode);
+              renderAgent();
+            },
+          }),
+        );
+      }
+    });
+}
+
 function agentMessage(text, opts = {}) {
   const who = el("div", { class: `who ${opts.failed ? "failed" : ""}` }, [
     el("span", { class: "av" }, [opts.spinner ? el("span", { class: "spin" }) : icon(opts.failed ? "alert" : "sparkle", 11)]),
@@ -1288,7 +1436,7 @@ function renderAgent() {
   const current = currentProviderId();
   const info = providerInfo(current);
 
-  $("agentProviderSub").textContent = current ?? "no provider";
+  $("agentProviderSub").textContent = providerUsable(info) ? "ready" : "setup";
 
   const body = $("agentBody");
   body.innerHTML = "";
@@ -1302,7 +1450,7 @@ function renderAgent() {
             ? " Using your local CLI sign-in, <b>no API key needed</b>."
             : providers.some((p) => providerUsable(p))
               ? ""
-              : " <b>No provider detected</b> — open setup below to connect one."),
+              : " <b>No provider detected</b> — open setup in the header to connect one."),
       ),
     );
   }
@@ -1325,18 +1473,14 @@ function renderAgent() {
     );
   }
 
-  const setupLink = el("button", { class: "btn-sm", style: "align-self:flex-start" }, [icon("terminal", 12), "Agent setup"]);
-  setupLink.onclick = openAgentSetup;
-  body.append(setupLink);
   body.scrollTop = body.scrollHeight;
 
-  // provider chip in the composer
+  // provider chip in the panel header
   const chip = $("providerChip");
   chip.innerHTML = "";
-  chip.append(el("span", { class: `prov-dot ${providerUsable(info) ? "ok" : "no"}` }), current ?? "none", icon("chev", 11));
+  chip.append(el("span", { class: `prov-dot ${providerUsable(info) ? "ok" : "no"}` }), providerChipLabel(info, current), icon("chev", 11));
   chip.onclick = () =>
     openMenu(chip, (menu) => {
-      menu.classList.add("up");
       for (const p of providers) {
         menu.appendChild(
           menuOption({
@@ -1354,6 +1498,12 @@ function renderAgent() {
       menu.appendChild(setup);
     });
 
+  const setupBtn = $("agentSetupBtn");
+  if (setupBtn && !setupBtn.hasChildNodes()) setupBtn.append(icon("terminal", 13));
+  if (setupBtn) setupBtn.onclick = openAgentSetup;
+
+  renderAgentModelChip(info);
+
   // plan button + spark
   const spark = $("agentSpark");
   if (!spark.hasChildNodes()) spark.append(icon("sparkle", 14));
@@ -1363,7 +1513,9 @@ function renderAgent() {
   $("composerHint").textContent =
     agentState.status === "planning"
       ? `planning with ${agentState.provider}…`
-      : "plans apply as one undoable batch · Ctrl+Z reverts";
+      : "";
+
+  if (agentState.status !== "planning") $("composerHint").textContent = "";
 
   if (agentState.status === "failed" && agentState.error && agentState.error !== lastAgentError) {
     lastAgentError = agentState.error;
@@ -1392,12 +1544,20 @@ async function startPlan() {
     return;
   }
   const key = localStorage.getItem(`seq.agent.key.${providerId}`) || "";
+  const model = currentAgentModel(providerId);
+  const thinkingMode = currentThinkingMode(providerId);
   chatLog.push({ kind: "user", text: brief });
   chatLog.push({ kind: "agent", html: `Planning with <b>${providerId}</b>… CLI providers can take a minute.`, spinner: true, label: "planning" });
   $("agentBrief").value = "";
   sessionStorage.setItem("seq.agent.brief", "");
   try {
-    state.agent = await api("/api/agent/plan", { brief, provider: providerId, ...(key ? { apiKey: key } : {}) });
+    state.agent = await api("/api/agent/plan", {
+      brief,
+      provider: providerId,
+      ...(key ? { apiKey: key } : {}),
+      ...(model ? { model } : {}),
+      ...(thinkingMode !== "auto" ? { thinkingMode } : {}),
+    });
     renderAgent();
     pollAgent();
   } catch (err) {
@@ -1952,6 +2112,12 @@ async function init() {
   // transport
   initTransport();
   requestAnimationFrame(transportTick);
+
+  // resizable panels (drag the edges; double-click resets)
+  const refit = () => renderOverlays();
+  $("agentPanel").appendChild(splitHandle({ edge: "right", cssVar: "--agent-w", min: 260, max: 560, onChange: refit }));
+  $("right").appendChild(splitHandle({ edge: "left", cssVar: "--right-w", min: 260, max: 560, onChange: refit }));
+  $("timelinePanel").appendChild(splitHandle({ edge: "top", cssVar: "--timeline-h", min: 140, max: 520, onChange: refit }));
 
   // agent composer
   const brief = $("agentBrief");

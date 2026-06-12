@@ -41,6 +41,9 @@ type SelectionSummary = {
   text: string;
   comment: string;
   assetId: string | null;
+  fontFamily: number | null;
+  fontSize: number | null;
+  motionPathFor: string | null;
 };
 
 type BridgeOptions = {
@@ -56,6 +59,9 @@ type BridgeHandle = {
   unmount: () => void;
   setTool: (tool: string) => void;
   setComment: (comment: string) => void;
+  setFontFamily: (family: number) => void;
+  setFontSize: (size: number) => void;
+  armMotionPath: () => boolean;
   insertMedia: (asset: SeqAsset) => Promise<void>;
   clear: () => void;
 };
@@ -73,8 +79,29 @@ type ExcalidrawApi = {
 
 const COMMENT_KEY = "sequenceAiComment";
 const ASSET_KEY = "sequenceAssetId";
+const MOTION_PATH_KEY = "sequenceMotionPathFor";
 const STORYBOARD_CANVAS_BG = "#e7e8eb";
 const STORYBOARD_INK = "#111827";
+const MOTION_PATH_COLOR = "#c2255c";
+
+/** The storyboard draws on a FIXED virtual 1280x720 stage; the viewport is
+ * always fitted to it (zoom = host width / 1280, scroll locked at origin).
+ * Scene coordinates are therefore stable across window sizes and machines —
+ * the serializer can speak in "stage units" the agent can trust. */
+const STAGE_W = 1280;
+const STAGE_H = 720;
+
+/** Excalidraw FONT_FAMILY ids (0.18) → CSS family names for measuring. */
+const FONT_FAMILIES: Array<{ id: number; label: string; css: string }> = [
+  { id: 5, label: "Excalifont (sketch)", css: "Excalifont" },
+  { id: 1, label: "Virgil (sketch)", css: "Virgil" },
+  { id: 6, label: "Nunito (clean)", css: "Nunito" },
+  { id: 2, label: "Helvetica (clean)", css: "Helvetica" },
+  { id: 9, label: "Liberation Sans", css: "Liberation Sans" },
+  { id: 7, label: "Lilita One (display)", css: "Lilita One" },
+  { id: 8, label: "Comic Shanns", css: "Comic Shanns" },
+  { id: 3, label: "Cascadia (code)", css: "Cascadia" },
+];
 
 const h = React.createElement;
 
@@ -92,6 +119,11 @@ function commentOf(element: Record<string, any> | null | undefined): string {
 function assetIdOf(element: Record<string, any> | null | undefined): string | null {
   const value = element?.customData?.[ASSET_KEY];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function motionPathTargetOf(element: Record<string, any> | null | undefined): string | null {
+  const value = element?.customData?.[MOTION_PATH_KEY];
+  return typeof value === "string" && value ? value : null;
 }
 
 function defaultAppState(palette: Palette) {
@@ -118,7 +150,6 @@ function initialData(frame: StoryboardFrame, palette: Palette) {
       ...defaultAppState(palette),
       ...(frame.excalidraw?.appState ?? {}),
       viewBackgroundColor: STORYBOARD_CANVAS_BG,
-      currentItemStrokeColor: STORYBOARD_INK,
       scrollX: 0,
       scrollY: 0,
       zoom: { value: 1 },
@@ -150,6 +181,7 @@ function selectionSummary(elements: Record<string, any>[], appState: Record<stri
   const selectedElementIds = appState.selectedElementIds ?? {};
   const ids = Object.keys(selectedElementIds).filter((id) => selectedElementIds[id]);
   const first = elements.find((element) => ids.includes(String(element.id)) && element.isDeleted !== true) ?? null;
+  const isText = first?.type === "text";
   return {
     ids,
     count: ids.length,
@@ -158,6 +190,9 @@ function selectionSummary(elements: Record<string, any>[], appState: Record<stri
     text: typeof first?.text === "string" ? first.text : "",
     comment: commentOf(first),
     assetId: assetIdOf(first),
+    fontFamily: isText ? Number(first?.fontFamily ?? 5) : null,
+    fontSize: isText ? Number(first?.fontSize ?? 36) : null,
+    motionPathFor: motionPathTargetOf(first),
   };
 }
 
@@ -199,6 +234,22 @@ function sceneCenter(api: ExcalidrawApi): { x: number; y: number } {
   );
 }
 
+/** Approximate text box re-measure after a font change (no public helper). */
+const measureCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+function measureTextBox(text: string, fontSize: number, fontFamilyId: number): { width: number; height: number } {
+  const lines = String(text || " ").split("\n");
+  const css = FONT_FAMILIES.find((f) => f.id === fontFamilyId)?.css ?? "Excalifont";
+  const ctx = measureCanvas?.getContext("2d");
+  let width = 0;
+  if (ctx) {
+    ctx.font = `${fontSize}px ${css}, Segoe UI, sans-serif`;
+    for (const line of lines) width = Math.max(width, ctx.measureText(line).width);
+  } else {
+    width = Math.max(...lines.map((l) => l.length)) * fontSize * 0.6;
+  }
+  return { width: Math.max(10, Math.ceil(width)), height: Math.ceil(lines.length * fontSize * 1.25) };
+}
+
 function StoryboardExcalidraw({
   options,
   bridge,
@@ -208,10 +259,11 @@ function StoryboardExcalidraw({
 }) {
   const apiRef = useRef<ExcalidrawApi | null>(null);
   const optionsRef = useRef(options);
-  const fixedViewportRef = useRef<{ scrollX: number; scrollY: number; zoom: Record<string, unknown> } | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const restoringViewportRef = useRef(false);
   const lastClickRef = useRef<{ id: string | null; time: number }>({ id: null, time: 0 });
   const lastSelectionRef = useRef("");
+  const motionPathArmRef = useRef<{ targetId: string; before: Set<string> } | null>(null);
   const [seed] = useState(() => `${options.frame.id}-${Date.now()}`);
 
   optionsRef.current = options;
@@ -220,7 +272,7 @@ function StoryboardExcalidraw({
     const api = apiRef.current;
     if (!api) return;
     const summary = selectionSummary(elements ?? api.getSceneElements(), appState ?? api.getAppState());
-    const signature = `${summary.ids.join(",")}|${summary.comment}|${summary.type}|${summary.assetId}`;
+    const signature = `${summary.ids.join(",")}|${summary.comment}|${summary.type}|${summary.assetId}|${summary.fontFamily}|${summary.fontSize}`;
     if (signature !== lastSelectionRef.current) {
       lastSelectionRef.current = signature;
       optionsRef.current.onSelectionChange(summary);
@@ -244,6 +296,12 @@ function StoryboardExcalidraw({
     [notifySelection],
   );
 
+  const persistNow = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    persist(api.getSceneElementsIncludingDeleted() as Record<string, any>[], api.getAppState(), api.getFiles());
+  }, [persist]);
+
   const applyCommentToIds = useCallback(
     (ids: string[], comment: string) => {
       const api = apiRef.current;
@@ -258,10 +316,10 @@ function StoryboardExcalidraw({
         mutateElement(element as any, { customData });
       }
       api.updateScene({ elements, appState: api.getAppState() });
-      persist(api.getSceneElementsIncludingDeleted() as Record<string, any>[], api.getAppState(), api.getFiles());
+      persistNow();
       notifySelection();
     },
-    [notifySelection, persist],
+    [notifySelection, persistNow],
   );
 
   const promptForElement = useCallback(
@@ -273,28 +331,50 @@ function StoryboardExcalidraw({
     [applyCommentToIds],
   );
 
-  const lockViewport = useCallback(() => {
+  /** Fit the locked viewport to the virtual 1280x720 stage. */
+  const fitViewport = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
-    const fixed = {
-      viewBackgroundColor: STORYBOARD_CANVAS_BG,
-      currentItemStrokeColor: STORYBOARD_INK,
-      scrollX: 0,
-      scrollY: 0,
-      zoom: { value: 1 },
-      gridSize: null,
-      gridModeEnabled: false,
-    };
-    fixedViewportRef.current = fixed;
+    const appState = api.getAppState();
+    const width = Number(appState.width ?? 0) || rootRef.current?.clientWidth || 0;
+    if (!width) return;
+    const zoom = Math.max(0.1, Math.min(4, width / STAGE_W));
     restoringViewportRef.current = true;
-    api.updateScene({ appState: fixed });
+    api.updateScene({
+      appState: {
+        viewBackgroundColor: STORYBOARD_CANVAS_BG,
+        scrollX: 0,
+        scrollY: 0,
+        zoom: { value: zoom },
+        gridSize: null,
+        gridModeEnabled: false,
+      },
+    });
     setTimeout(() => {
       restoringViewportRef.current = false;
     }, 0);
   }, []);
 
   useEffect(() => {
-    bridge.setTool = (tool: string) => apiRef.current?.setActiveTool({ type: tool });
+    const node = rootRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => fitViewport());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fitViewport]);
+
+  useEffect(() => {
+    bridge.setTool = (tool: string) => {
+      const api = apiRef.current;
+      if (motionPathArmRef.current) {
+        // cancel an armed motion path — restore the borrowed stroke style
+        motionPathArmRef.current = null;
+        api?.updateScene({
+          appState: { currentItemStrokeColor: STORYBOARD_INK, currentItemStrokeStyle: "solid" },
+        });
+      }
+      api?.setActiveTool({ type: tool });
+    };
     bridge.setComment = (comment: string) => {
       const api = apiRef.current;
       if (!api) return;
@@ -303,14 +383,71 @@ function StoryboardExcalidraw({
       );
       applyCommentToIds(selectedIds, comment);
     };
+    bridge.setFontFamily = (family: number) => {
+      const api = apiRef.current;
+      if (!api) return;
+      const selected = api.getAppState().selectedElementIds ?? {};
+      const elements = api.getSceneElementsIncludingDeleted();
+      for (const element of elements) {
+        if (!selected[String(element.id)] || element.type !== "text" || element.isDeleted) continue;
+        const box = measureTextBox(String(element.text ?? ""), Number(element.fontSize ?? 36), family);
+        mutateElement(element as any, { fontFamily: family, width: box.width, height: box.height });
+      }
+      api.updateScene({ elements, appState: { currentItemFontFamily: family } });
+      persistNow();
+    };
+    bridge.setFontSize = (size: number) => {
+      const api = apiRef.current;
+      if (!api) return;
+      const clamped = Math.max(8, Math.min(220, Math.round(size)));
+      const selected = api.getAppState().selectedElementIds ?? {};
+      const elements = api.getSceneElementsIncludingDeleted();
+      for (const element of elements) {
+        if (!selected[String(element.id)] || element.type !== "text" || element.isDeleted) continue;
+        const family = Number(element.fontFamily ?? 5);
+        const box = measureTextBox(String(element.text ?? ""), clamped, family);
+        mutateElement(element as any, { fontSize: clamped, width: box.width, height: box.height });
+      }
+      api.updateScene({ elements, appState: { currentItemFontSize: clamped } });
+      persistNow();
+    };
+    bridge.armMotionPath = () => {
+      const api = apiRef.current;
+      if (!api) return false;
+      const appState = api.getAppState();
+      const selectedIds = Object.keys(appState.selectedElementIds ?? {}).filter(
+        (id) => appState.selectedElementIds[id],
+      );
+      const target = api
+        .getSceneElements()
+        .find((element) => selectedIds.includes(String(element.id)));
+      if (!target) {
+        optionsRef.current.onToast?.("select the object that should move first, then draw its path", "err");
+        return false;
+      }
+      motionPathArmRef.current = {
+        targetId: String(target.id),
+        before: new Set(api.getSceneElementsIncludingDeleted().map((element) => String(element.id))),
+      };
+      api.setActiveTool({ type: "arrow" });
+      api.updateScene({
+        appState: {
+          currentItemStrokeColor: MOTION_PATH_COLOR,
+          currentItemStrokeStyle: "dashed",
+        },
+      });
+      return true;
+    };
     bridge.clear = () => {
       const api = apiRef.current;
       if (!api) return;
+      motionPathArmRef.current = null;
       api.updateScene({
         elements: [],
         appState: { ...defaultAppState(optionsRef.current.palette), selectedElementIds: {} },
       });
       api.history?.clear?.();
+      fitViewport();
       optionsRef.current.onToast?.("storyboard frame cleared");
     };
     bridge.insertMedia = async (asset: SeqAsset) => {
@@ -360,11 +497,48 @@ function StoryboardExcalidraw({
       });
       optionsRef.current.onToast?.(`placed "${asset.id}"`);
     };
-  }, [applyCommentToIds]);
+  }, [applyCommentToIds, fitViewport, persistNow]);
+
+  /** A motion-path arrow was just drawn while armed → stamp + restore. */
+  const finalizeMotionPath = useCallback(() => {
+    const api = apiRef.current;
+    const armed = motionPathArmRef.current;
+    if (!api || !armed) return;
+    const appState = api.getAppState();
+    if (appState.multiElement || appState.newElement) return; // still drawing
+    const fresh = api
+      .getSceneElements()
+      .find(
+        (element) =>
+          !armed.before.has(String(element.id)) &&
+          (element.type === "arrow" || element.type === "line"),
+      );
+    if (!fresh) return;
+    motionPathArmRef.current = null;
+    mutateElement(fresh as any, {
+      customData: {
+        ...((fresh.customData as Record<string, unknown> | undefined) ?? {}),
+        [MOTION_PATH_KEY]: armed.targetId,
+      },
+      strokeColor: MOTION_PATH_COLOR,
+      strokeStyle: "dashed",
+    });
+    api.setActiveTool({ type: "selection" });
+    api.updateScene({
+      elements: api.getSceneElementsIncludingDeleted(),
+      appState: {
+        currentItemStrokeColor: STORYBOARD_INK,
+        currentItemStrokeStyle: "solid",
+        selectedElementIds: { [String(fresh.id)]: true },
+      },
+    });
+    persistNow();
+    optionsRef.current.onToast?.("motion path attached — the agent reads it as movement during this beat");
+  }, [persistNow]);
 
   return h(
     "div",
-    { className: "sb-excal-root" },
+    { className: "sb-excal-root", ref: rootRef },
     h(Excalidraw, {
       key: seed,
       initialData: initialData(options.frame, options.palette),
@@ -372,29 +546,24 @@ function StoryboardExcalidraw({
         apiRef.current = api;
         if (api) {
           setTimeout(() => {
-            lockViewport();
+            fitViewport();
             notifySelection();
           }, 0);
         }
       },
       onChange: persist,
-      onScrollChange: (scrollX: number, scrollY: number, zoom: Record<string, unknown>) => {
-        const api = apiRef.current;
-        const fixed = fixedViewportRef.current;
-        if (!api || !fixed || restoringViewportRef.current) return;
-        if (scrollX === fixed.scrollX && scrollY === fixed.scrollY && (zoom as any)?.value === (fixed.zoom as any).value) {
-          return;
-        }
-        restoringViewportRef.current = true;
-        api.updateScene({ appState: fixed });
-        setTimeout(() => {
-          restoringViewportRef.current = false;
-        }, 0);
+      onScrollChange: () => {
+        if (restoringViewportRef.current) return;
+        fitViewport();
       },
       onPointerUp: (_activeTool: unknown, pointerDownState: any) => {
-        setTimeout(() => notifySelection(), 0);
+        setTimeout(() => {
+          finalizeMotionPath();
+          notifySelection();
+        }, 0);
         const hit = pointerDownState?.hit?.element;
         if (!hit || pointerDownState?.drag?.hasOccurred) return;
+        if (hit.type === "text") return; // double-click on text = edit the text
         const now = Date.now();
         if (lastClickRef.current.id === hit.id && now - lastClickRef.current.time < 360) {
           lastClickRef.current = { id: null, time: 0 };
@@ -438,6 +607,11 @@ function mount(host: Element, options: BridgeOptions): BridgeHandle {
     },
     setTool() {},
     setComment() {},
+    setFontFamily() {},
+    setFontSize() {},
+    armMotionPath() {
+      return false;
+    },
     async insertMedia() {},
     clear() {},
   };
@@ -446,4 +620,8 @@ function mount(host: Element, options: BridgeOptions): BridgeHandle {
   return handle;
 }
 
-(window as any).SequenceStoryboardExcalidraw = { mount };
+(window as any).SequenceStoryboardExcalidraw = {
+  mount,
+  FONT_FAMILIES: FONT_FAMILIES.map(({ id, label }) => ({ id, label })),
+  STAGE: { width: STAGE_W, height: STAGE_H },
+};

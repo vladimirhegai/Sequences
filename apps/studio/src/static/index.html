@@ -50,7 +50,10 @@
             <span class="agent-spark" id="agentSpark"></span>
             <span class="ph-title">Agent</span>
             <span class="ph-sub mono" id="agentProviderSub"></span>
-            <div class="ph-tools"></div>
+            <div class="ph-tools">
+              <span id="providerChip" class="prov-chip"></span>
+              <button id="agentSetupBtn" class="mini-btn" title="Agent setup"></button>
+            </div>
           </div>
           <div id="agentBody"></div>
           <div id="agentFoot">
@@ -59,8 +62,8 @@
               <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
             </div>
             <div class="composer-meta">
-              <span id="composerHint">plans apply as one undoable batch</span>
-              <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
+              <button id="modelChip" class="agent-select-chip"></button>
+              <span class="cm-right"><span id="composerHint"></span></span>
             </div>
           </div>
         </div>
@@ -132,6 +135,7 @@
   <div id="toastWrap"></div>
 
   <script src="/vendor/hyperframes-player.global.js"></script>
+  <script src="/resize.js"></script>
   <script src="/pages.js"></script>
   <script src="/launcher.js"></script>
   <script src="/media.js"></script>

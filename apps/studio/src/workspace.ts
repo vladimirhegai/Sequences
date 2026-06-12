@@ -311,9 +311,11 @@ const pct = (v: number | undefined) => `${Math.round(v ?? 0)}%`;
 export function storyboardToText(board: Storyboard): string {
   const frames = board.frames.filter((f) => storyboardItemsForText(f).length > 0 || excalidrawElements(f).length > 0 || f.comment);
   if (frames.length === 0) return "";
-  const lines: string[] = ["Storyboard (frames are sequential beats of the video):"];
+  const lines: string[] = [
+    "Storyboard (frames are sequential beats of the video; sketch coordinates are on a 1280x720 canvas, origin top-left):",
+  ];
   frames.forEach((frame, i) => {
-    lines.push(`\nFrame ${i + 1} - ${frame.name}${frame.comment ? ` - note: ${frame.comment}` : ""}`);
+    lines.push(`\nFrame ${i + 1}${frame.comment ? ` - note: ${frame.comment}` : ""}`);
     const items = storyboardItemsForText(frame);
     const sketches = items.filter((it) => it.type === "draw");
     if (sketches.length > 0) lines.push(`  - freehand sketch (${sketches.length} strokes)`);
@@ -354,32 +356,85 @@ function excalidrawAssetId(el: Record<string, unknown>): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function excalidrawMotionPathTarget(el: Record<string, unknown>): string | null {
+  const customData = el.customData as Record<string, unknown> | undefined;
+  const value = customData?.sequenceMotionPathFor;
+  return typeof value === "string" && value ? value : null;
+}
+
+/** Short positional label for an element, used as a motion-path target name. */
+function excalidrawElementLabel(el: Record<string, unknown> | undefined): string {
+  if (!el) return "an object";
+  const type = String(el.type ?? "element");
+  if (type === "text") return `the text "${String(el.text ?? "").trim()}"`;
+  const assetId = excalidrawAssetId(el);
+  if (type === "image") return `the media asset "${assetId ?? "embedded"}"`;
+  const x = Math.round(Number(el.x ?? 0));
+  const y = Math.round(Number(el.y ?? 0));
+  return `the ${type} at (${x}, ${y})`;
+}
+
+/** Arrow/line endpoints in absolute canvas coordinates ([x, y][]). */
+function excalidrawLinePoints(el: Record<string, unknown>): Array<[number, number]> {
+  const x = Number(el.x ?? 0);
+  const y = Number(el.y ?? 0);
+  const points = Array.isArray(el.points) ? (el.points as Array<[number, number]>) : [];
+  return points.map(([px, py]) => [Math.round(x + Number(px ?? 0)), Math.round(y + Number(py ?? 0))]);
+}
+
 function excalidrawFrameToText(frame: StoryboardFrame): string[] {
   const elements = excalidrawElements(frame);
   if (elements.length === 0) return [];
   const lines: string[] = [];
+  const byId = new Map(elements.map((el) => [String(el.id ?? ""), el]));
   const freehandCount = elements.filter((el) => el.type === "freedraw").length;
-  if (freehandCount > 0) lines.push(`  - Excalidraw freehand sketch (${freehandCount} strokes)`);
+  if (freehandCount > 0) lines.push(`  - freehand sketch (${freehandCount} strokes)`);
   for (const el of elements) {
     if (el.type === "freedraw") continue;
+    const comment = excalidrawComment(el);
+    const intent = comment ? ` - intent: ${comment}` : "";
+
+    // Motion paths read as movement, not as drawn shapes.
+    const motionTarget = excalidrawMotionPathTarget(el);
+    if (motionTarget) {
+      const pts = excalidrawLinePoints(el);
+      const from = pts[0] ? `(${pts[0][0]}, ${pts[0][1]})` : "?";
+      const to = pts.length > 1 ? `(${pts[pts.length - 1]![0]}, ${pts[pts.length - 1]![1]})` : from;
+      const via =
+        pts.length > 2
+          ? ` via ${pts
+              .slice(1, -1)
+              .map(([px, py]) => `(${px}, ${py})`)
+              .join(", ")}`
+          : "";
+      lines.push(
+        `  - MOTION PATH: ${excalidrawElementLabel(byId.get(motionTarget))} moves from ${from} to ${to}${via} during this beat${intent}`,
+      );
+      continue;
+    }
+
     const type = String(el.type ?? "element");
     const x = Math.round(Number(el.x ?? 0));
     const y = Math.round(Number(el.y ?? 0));
     const w = Math.round(Number(el.width ?? 0));
     const h = Math.round(Number(el.height ?? 0));
-    const at = `at scene (${x}, ${y})${w || h ? ` size ${w}x${h}` : ""}`;
-    const comment = excalidrawComment(el);
+    const at = `at (${x}, ${y})${w || h ? ` size ${w}x${h}` : ""}`;
     const assetId = excalidrawAssetId(el);
     const text = typeof el.text === "string" ? el.text.trim() : "";
-    const desc =
-      type === "text"
-        ? `Excalidraw text "${text}" ${at}`
-        : type === "image"
-          ? `Excalidraw media asset "${assetId ?? "embedded"}" ${at}`
-          : type === "arrow" || type === "line"
-            ? `Excalidraw ${type} ${at}`
-            : `Excalidraw ${type} ${at}`;
-    lines.push(`  - ${desc}${comment ? ` - intent: ${comment}` : ""}`);
+    let desc: string;
+    if (type === "text") {
+      desc = `text "${text}" ${at}`;
+    } else if (type === "image") {
+      desc = `media asset "${assetId ?? "embedded"}" ${at}`;
+    } else if (type === "arrow" || type === "line") {
+      const pts = excalidrawLinePoints(el);
+      const from = pts[0] ? `(${pts[0][0]}, ${pts[0][1]})` : `(${x}, ${y})`;
+      const to = pts.length > 1 ? `(${pts[pts.length - 1]![0]}, ${pts[pts.length - 1]![1]})` : from;
+      desc = `${type} from ${from} to ${to}`;
+    } else {
+      desc = `${type} ${at}`;
+    }
+    lines.push(`  - ${desc}${intent}`);
   }
   return lines;
 }

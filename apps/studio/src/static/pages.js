@@ -23,6 +23,7 @@ const PAGE_ICONS = {
   save: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
   home: '<path d="m3 11 9-8 9 8M5 9.5V21h14V9.5"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v5h-5"/>',
+  route: '<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5" stroke-dasharray="3 2.4"/>',
 };
 
 const PAGES = [
@@ -249,6 +250,7 @@ async function renderRenderPage() {
   const hist = el("div", { class: "rd-history" }, [el("div", { class: "sb-note" }, ["loading…"])]);
   histBody.appendChild(hist);
   left.appendChild(histBody);
+  left.appendChild(splitHandle({ edge: "right", cssVar: "--render-left-w", min: 260, max: 520 }));
 
   /* ---- right: player + scene strip ---- */
   const right = el("div", { class: "page-pane" });
@@ -268,6 +270,7 @@ async function renderRenderPage() {
     strip.appendChild(block);
   });
   stripWrap.appendChild(strip);
+  stripWrap.appendChild(splitHandle({ edge: "top", cssVar: "--render-strip-h", min: 60, max: 240 }));
   right.appendChild(stripWrap);
 
   cols.append(left, right);

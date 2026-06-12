@@ -27,6 +27,10 @@ export type ProviderId = "codex-cli" | "claude-code-cli" | "openai-api" | "anthr
 export interface CompleteOptions {
   /** Per-request API key (api providers only). Overrides the env var. */
   apiKey?: string;
+  /** Per-request model override. Empty/undefined keeps the provider default. */
+  model?: string;
+  /** Per-request thinking/effort override. "auto" keeps the provider default. */
+  thinkingMode?: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
   timeoutMs?: number;
 }
 
@@ -51,6 +55,21 @@ export interface ProviderInfo {
 }
 
 const DEFAULT_TIMEOUT_MS = 240_000;
+
+function modelOverride(options: CompleteOptions): string | undefined {
+  const model = options.model?.trim();
+  return model || undefined;
+}
+
+function effortOverride(options: CompleteOptions): CompleteOptions["thinkingMode"] | undefined {
+  return options.thinkingMode && options.thinkingMode !== "auto" ? options.thinkingMode : undefined;
+}
+
+function openAiReasoningEffort(options: CompleteOptions): "low" | "medium" | "high" | undefined {
+  const effort = effortOverride(options);
+  if (!effort) return undefined;
+  return effort === "low" || effort === "medium" ? effort : "high";
+}
 
 /** Resolve a command on PATH (where.exe on Windows, which elsewhere). */
 export function findOnPath(command: string): string | undefined {
@@ -131,17 +150,22 @@ export const codexCli: AgentProvider = {
       `seq-codex-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`,
     );
     try {
+      const model = modelOverride(options);
+      const effort = effortOverride(options);
+      const args = [
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "--output-last-message",
+        lastMessageFile,
+      ];
+      if (model) args.push("--model", model);
+      if (effort) args.push("--config", `model_reasoning_effort=${JSON.stringify(effort)}`);
+      args.push("-");
       await runCli(
         file,
-        [
-          "exec",
-          "--skip-git-repo-check",
-          "--sandbox",
-          "read-only",
-          "--output-last-message",
-          lastMessageFile,
-          "-",
-        ],
+        args,
         prompt,
         options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       );
@@ -171,9 +195,14 @@ export const claudeCodeCli: AgentProvider = {
     if (!file) throw new Error("claude CLI not found on PATH");
     // -p (print mode) reads the prompt from stdin and prints the final
     // response. Planning is a one-shot text task — no tools needed.
+    const args = ["-p", "--output-format", "text"];
+    const model = modelOverride(options);
+    const effort = effortOverride(options);
+    if (model) args.push("--model", model);
+    if (effort) args.push("--effort", effort);
     const { stdout } = await runCli(
       file,
-      ["-p", "--output-format", "text"],
+      args,
       prompt,
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     );
@@ -217,11 +246,14 @@ export const openaiApi: AgentProvider = {
   async complete(prompt, options = {}) {
     const key = options.apiKey || process.env.OPENAI_API_KEY;
     if (!key) throw new Error("no OpenAI API key (set OPENAI_API_KEY or pass one per request)");
-    const model = process.env.SEQUENCES_OPENAI_MODEL ?? "gpt-5.1-mini";
+    const model = modelOverride(options) ?? process.env.SEQUENCES_OPENAI_MODEL ?? "gpt-5.1-mini";
+    const body: Record<string, unknown> = { model, messages: [{ role: "user", content: prompt }] };
+    const effort = openAiReasoningEffort(options);
+    if (effort) body.reasoning_effort = effort;
     const json = (await postJson(
       "https://api.openai.com/v1/chat/completions",
       { authorization: `Bearer ${key}` },
-      { model, messages: [{ role: "user", content: prompt }] },
+      body,
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     )) as { choices?: Array<{ message?: { content?: string } }> };
     const text = json.choices?.[0]?.message?.content?.trim();
@@ -243,11 +275,21 @@ export const anthropicApi: AgentProvider = {
   async complete(prompt, options = {}) {
     const key = options.apiKey || process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error("no Anthropic API key (set ANTHROPIC_API_KEY or pass one per request)");
-    const model = process.env.SEQUENCES_ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+    const model = modelOverride(options) ?? process.env.SEQUENCES_ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+    const effort = effortOverride(options);
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    };
+    if (effort) {
+      body.thinking = { type: "adaptive" };
+      body.effort = effort;
+    }
     const json = (await postJson(
       "https://api.anthropic.com/v1/messages",
       { "x-api-key": key, "anthropic-version": "2023-06-01" },
-      { model, max_tokens: 4096, messages: [{ role: "user", content: prompt }] },
+      body,
       options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     )) as { content?: Array<{ type: string; text?: string }> };
     const text = json.content

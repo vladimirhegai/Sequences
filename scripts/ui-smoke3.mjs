@@ -89,28 +89,24 @@ const out = await page.evaluate(async () => {
   result.designPropsFields = document.querySelectorAll("#page-design .field").length;
 
   await go("Storyboard");
-  await sleep(500);
+  await sleep(1200); // Excalidraw mounts async
   result.storyboard = {
     frames: document.querySelectorAll("#page-storyboard .sb-frame").length,
     tools: document.querySelectorAll("#page-storyboard .tool-btn").length,
-    canvas: !!document.querySelector("#page-storyboard .sb-canvas-wrap svg"),
+    excalidrawMounted: !!document.querySelector("#page-storyboard .sb-excal-host .excalidraw canvas"),
+    fontCatalog: (window.SequenceStoryboardExcalidraw?.FONT_FAMILIES ?? []).length,
   };
-  // add a frame
+  // add a frame (persists through the sidecar PUT)
   document.querySelector("#page-storyboard .sb-add").click();
-  await sleep(300);
+  await sleep(900);
   result.storyboard.framesAfterAdd = document.querySelectorAll("#page-storyboard .sb-frame").length;
-  // draw a rect on the storyboard
-  const sbTools = [...document.querySelectorAll("#page-storyboard .tool-btn")];
-  sbTools[2].click(); // rect
-  await sleep(150);
-  const sbsvg = document.querySelector("#page-storyboard .sb-canvas-wrap svg");
-  const sr = sbsvg.getBoundingClientRect();
-  fire(sbsvg, "pointerdown", sr.left + 80, sr.top + 60);
-  fire(sbsvg, "pointermove", sr.left + 260, sr.top + 200);
-  fire(sbsvg, "pointerup", sr.left + 260, sr.top + 200);
-  await sleep(400);
-  result.storyboard.itemDrawn = !!document.querySelector("#page-storyboard .sb-canvas-wrap svg [data-id]");
+  result.storyboard.excalidrawRemounted = !!document.querySelector("#page-storyboard .sb-excal-host .excalidraw canvas");
   result.storyboard.sidebarFields = document.querySelectorAll("#page-storyboard .field").length;
+  // remove the frame we just added so the demo storyboard stays clean
+  const lastFrame = [...document.querySelectorAll("#page-storyboard .sb-frame")].pop();
+  lastFrame?.querySelector(".sf-del")?.click();
+  await sleep(600);
+  result.storyboard.framesAfterCleanup = document.querySelectorAll("#page-storyboard .sb-frame").length;
 
   await go("Render");
   await sleep(700);
