@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "meta": {
+    "title": "Starter",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "background": "surface"
+  },
+  "brand": {
+    "name": "Starter",
+    "colors": {
+      "primary": "#5B5BF0",
+      "surface": "#0E1016",
+      "text": "#F4F5F7",
+      "muted": "#9BA0AC",
+      "accent": "#27D9A1"
+    },
+    "fonts": {
+      "display": "Segoe UI",
+      "body": "Segoe UI"
+    }
+  },
+  "motionProfile": "crisp-saas",
+  "scenes": [
+    {
+      "id": "hook",
+      "archetype": "hook-opener",
+      "durationFrames": 96,
+      "slots": {
+        "headline": "Ship insights, not spreadsheets",
+        "subline": "Starter turns raw product data into answers"
+      },
+      "choreography": {},
+      "overrides": {}
+    },
+    {
+      "id": "feature",
+      "archetype": "feature-reveal",
+      "durationFrames": 150,
+      "slots": {
+        "headline": "Your whole funnel, live",
+        "media": {
+          "assetId": "dashboard"
+        },
+        "bullets": [
+          "Realtime dashboards",
+          "Alerts that matter",
+          "One-click reports"
+        ]
+      },
+      "choreography": {},
+      "overrides": {},
+      "camera": {
+        "move": "pushIn",
+        "scale": "subtle"
+      }
+    },
+    {
+      "id": "stat",
+      "archetype": "stat-callout",
+      "durationFrames": 90,
+      "slots": {
+        "stat": {
+          "value": 12480,
+          "prefix": "",
+          "suffix": "+"
+        },
+        "caption": "teams ship faster with Starter"
+      },
+      "choreography": {},
+      "overrides": {}
+    },
+    {
+      "id": "sting",
+      "archetype": "logo-sting-cta",
+      "durationFrames": 105,
+      "slots": {
+        "tagline": "Analytics for builders",
+        "cta": "Start free today"
+      },
+      "choreography": {},
+      "overrides": {}
+    }
+  ],
+  "transitions": {},
+  "assets": [
+    {
+      "id": "dashboard",
+      "path": "assets/dashboard.svg",
+      "kind": "image"
+    }
+  ]
+}

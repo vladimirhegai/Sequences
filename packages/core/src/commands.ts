@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 import {
+  AssetSchema,
   BoxSchema,
   CameraSchema,
   ChoreographySchema,
@@ -39,6 +40,8 @@ export const CommandSchema: z.ZodType<unknown> = z.lazy(() =>
     z.object({ type: z.literal("SetLayerOverride"), sceneId: z.string(), layerId: z.string(), patch: LayerOverrideSchema.nullable() }),
     z.object({ type: z.literal("SetChoreography"), sceneId: z.string(), choreography: ChoreographySchema }),
     z.object({ type: z.literal("SetSceneCamera"), sceneId: z.string(), camera: CameraSchema.nullable() }),
+    z.object({ type: z.literal("AddAsset"), asset: AssetSchema, index: z.number().int().min(0).optional() }),
+    z.object({ type: z.literal("RemoveAsset"), assetId: z.string() }),
     z.object({ type: z.literal("Batch"), commands: z.array(CommandSchema).min(1).max(100) }),
   ]),
 );
@@ -61,6 +64,8 @@ export type Command =
   | { type: "SetLayerOverride"; sceneId: string; layerId: string; patch: z.infer<typeof LayerOverrideSchema> | null }
   | { type: "SetChoreography"; sceneId: string; choreography: z.infer<typeof ChoreographySchema> }
   | { type: "SetSceneCamera"; sceneId: string; camera: z.infer<typeof CameraSchema> | null }
+  | { type: "AddAsset"; asset: z.infer<typeof AssetSchema>; index?: number }
+  | { type: "RemoveAsset"; assetId: string }
   | { type: "Batch"; commands: Command[] };
 
 export class CommandError extends Error {}
@@ -223,6 +228,22 @@ export function applyCommand(input: Project, cmd: Command): ApplyResult {
         project,
         inverse: { type: "SetSceneCamera", sceneId: cmd.sceneId, camera: prev },
       };
+    }
+    case "AddAsset": {
+      if (project.assets.some((a) => a.id === cmd.asset.id)) {
+        throw new CommandError(`asset id already exists: ${cmd.asset.id}`);
+      }
+      const index = Math.min(cmd.index ?? project.assets.length, project.assets.length);
+      project.assets.splice(index, 0, cmd.asset);
+      return { project, inverse: { type: "RemoveAsset", assetId: cmd.asset.id } };
+    }
+    case "RemoveAsset": {
+      // Removing an asset a slot still references is rejected downstream by
+      // validateProject (the store gates on it) — no special case here.
+      const index = project.assets.findIndex((a) => a.id === cmd.assetId);
+      if (index === -1) throw new CommandError(`unknown asset: ${cmd.assetId}`);
+      const [asset] = project.assets.splice(index, 1);
+      return { project, inverse: { type: "AddAsset", asset: asset!, index } };
     }
     case "Batch": {
       let current = project;

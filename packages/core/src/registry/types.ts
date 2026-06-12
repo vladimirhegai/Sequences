@@ -87,8 +87,8 @@ export type GsapStep =
   | {
       kind: "fromTo";
       target: string;
-      from: Record<string, string | number>;
-      to: Record<string, string | number>;
+      from: Record<string, string | number | boolean>;
+      to: Record<string, string | number | boolean>;
       durationSec: number;
       ease: string;
       atSec: number;
@@ -96,12 +96,12 @@ export type GsapStep =
   | {
       kind: "to";
       target: string;
-      vars: Record<string, string | number>;
+      vars: Record<string, string | number | boolean>;
       durationSec: number;
       ease: string;
       atSec: number;
     }
-  | { kind: "set"; target: string; vars: Record<string, string | number>; atSec: number }
+  | { kind: "set"; target: string; vars: Record<string, string | number | boolean>; atSec: number }
   /** Escape hatch for primitives needing imperative code (e.g. countUp).
    *  `code` may reference the in-scope `tl` timeline. Must declare its eases. */
   | { kind: "custom"; code: string; easesUsed: string[] };

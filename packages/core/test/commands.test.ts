@@ -41,6 +41,7 @@ const COMMANDS: Command[] = [
   },
   { type: "SetChoreography", sceneId: "hook", choreography: { stagger: "loose" } },
   { type: "SetSceneCamera", sceneId: "hook", camera: { move: "pushIn", scale: "pop" } },
+  { type: "AddAsset", asset: { id: "shot", path: "assets/shot.png", kind: "image" } },
 ];
 
 describe("command API (T5)", () => {
@@ -102,6 +103,21 @@ describe("command API (T5)", () => {
     expect(store.project.scenes[0]!.durationFrames).toBe(120);
 
     expect(events.map((e) => e.kind)).toEqual(["apply", "undo", "redo"]);
+  });
+
+  it("RemoveAsset roundtrips (and restores position), duplicates are rejected", () => {
+    const seeded = freshProject();
+    seeded.assets.push(
+      { id: "a", path: "assets/a.png", kind: "image" },
+      { id: "b", path: "assets/b.png", kind: "image" },
+    );
+    const { project: after, inverse } = applyCommand(seeded, { type: "RemoveAsset", assetId: "a" });
+    expect(after.assets.map((x) => x.id)).toEqual(["b"]);
+    const { project: restored } = applyCommand(after, inverse);
+    expect(restored).toEqual(seeded);
+    expect(() =>
+      applyCommand(seeded, { type: "AddAsset", asset: { id: "b", path: "assets/b2.png", kind: "image" } }),
+    ).toThrow(/already exists/);
   });
 
   it("rejects commands that violate referential integrity", () => {

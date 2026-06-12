@@ -6,6 +6,9 @@ node_modules/
 !events.log
 .DS_Store
 
+# app-mode browser profile (sequences app/exe)
+**/.sequences-app-profile/
+
 # IDE and Editor files
 .vscode/
 .idea/
@@ -21,3 +24,4 @@ README_DEV.md
 SEQUENCES_MASTER_PLAN.md
 **/README_DEV.md
 **/SEQUENCES_MASTER_PLAN.md
+excalidraw/

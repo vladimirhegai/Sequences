@@ -23,10 +23,10 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
     #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: 'Segoe UI', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif; }
     .clip { position: absolute; top: 0; left: 0; width: 100%; height: 100%; visibility: hidden; }
     .seq-scene { background: var(--c-surface); }
-    .seq-camera { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: center center; }
+    .seq-camera { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: center center; backface-visibility: hidden; }
     .seq-layer { position: absolute; }
     .seq-mask { overflow: hidden; }
-    .seq-inner { width: 100%; height: 100%; display: flex; align-items: center; }
+    .seq-inner { width: 100%; height: 100%; display: flex; align-items: center; backface-visibility: hidden; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
     .seq-img { width: 100%; height: 100%; object-fit: cover; display: block; }
   </style>
 </head>
@@ -104,7 +104,7 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       tl.fromTo("#sc-hook__headline > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},0);
       tl.fromTo("#sc-hook__subline > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},0.533);
       tl.fromTo("#sc-hook__decor-glow > .seq-inner",{"opacity":0},{"opacity":1,"duration":1.2,"ease":"seqEnterGlide"},0.867);
-      tl.fromTo("#sc-feature > .seq-camera",{"scale":1},{"scale":1.03,"duration":5,"ease":"seqMoveGlide"},3.2);
+      tl.fromTo("#sc-feature > .seq-camera",{"scale":1,"force3D":false},{"scale":1.03,"force3D":false,"autoRound":false,"duration":5,"ease":"seqMoveGlide"},3.2);
       tl.fromTo("#sc-feature__headline > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},3.2);
       tl.fromTo("#sc-feature__media > .seq-inner",{"scale":0.971,"opacity":0},{"scale":1,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},3.733);
       tl.fromTo("#sc-feature__bullet-0 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.067);

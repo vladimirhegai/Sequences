@@ -32,8 +32,24 @@ import { renderProject, type RenderFormat, type RenderQuality } from "./render.t
 import { detectProviders, defaultProvider, type ProviderId } from "./agentConfig.ts";
 import { runPlan } from "./agent/planRunner.ts";
 import { extractRenderPoster, generateSceneThumbnails } from "./thumbs.ts";
+import { demoProjectDir, initializeProject, resolveProjectPath } from "./projectTemplates.ts";
+import {
+  createLibraryFolder,
+  findProjectPoster,
+  fsRoots,
+  libraryDir,
+  listDisk,
+  listLibrary,
+  loadStoryboard,
+  mediaKind,
+  placeAsset,
+  saveStoryboard,
+  storyboardToText,
+  type Storyboard,
+} from "./workspace.ts";
 
 const STATIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "static");
+const EXCALIDRAW_VENDOR_DIR = path.dirname(fileURLToPath(import.meta.resolve("@excalidraw/excalidraw")));
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +63,8 @@ const MIME: Record<string, string> = {
   ".mov": "video/quicktime",
   ".webm": "video/webm",
   ".mp3": "audio/mpeg",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 interface StudioRenderState {
@@ -83,6 +101,8 @@ interface StudioState {
   store: ProjectStore;
   manifest: Manifest;
   findings: Finding[];
+  projectDir: string;
+  projectFile: string;
   buildVersion: number;
   recentEvents: EventEntry[];
   render: StudioRenderState;
@@ -91,21 +111,9 @@ interface StudioState {
 }
 
 export function startStudio(projectDir: string, port: number): http.Server {
-  const dir = path.resolve(projectDir);
-  const project = loadProject(dir);
-
+  let dir = path.resolve(projectDir);
+  let store: ProjectStore;
   const state = {} as StudioState;
-  const store = new ProjectStore(project, (entry) => {
-    appendEvent(dir, entry);
-    state.recentEvents.push(entry);
-    if (state.recentEvents.length > 50) state.recentEvents.shift();
-  });
-  state.store = store;
-  state.recentEvents = [];
-  state.buildVersion = 0;
-  state.render = { status: "idle" };
-  state.agent = { status: "idle" };
-  state.thumbs = { status: "idle", files: {}, version: 0 };
 
   const rebuild = () => {
     saveProject(dir, store.project);
@@ -114,11 +122,33 @@ export function startStudio(projectDir: string, port: number): http.Server {
     state.findings = lintProject(store.project);
     state.buildVersion += 1;
   };
-  rebuild();
+
+  const loadActiveProject = (nextDir: string) => {
+    dir = path.resolve(nextDir);
+    const project = loadProject(dir);
+    store = new ProjectStore(project, (entry) => {
+      appendEvent(dir, entry);
+      state.recentEvents.push(entry);
+      if (state.recentEvents.length > 50) state.recentEvents.shift();
+    });
+    state.store = store;
+    state.projectDir = dir;
+    state.projectFile = path.join(dir, "project.json");
+    state.recentEvents = [];
+    state.buildVersion = 0;
+    state.render = { status: "idle" };
+    state.agent = { status: "idle" };
+    state.thumbs = { status: "idle", files: {}, version: 0 };
+    rebuild();
+  };
+
+  loadActiveProject(dir);
 
   const stateJson = () =>
     JSON.stringify({
       project: store.project,
+      projectDir: dir,
+      projectFile: path.join(dir, "project.json"),
       manifest: state.manifest,
       findings: state.findings,
       canUndo: store.canUndo,
@@ -155,6 +185,9 @@ export function startStudio(projectDir: string, port: number): http.Server {
       promptCatalog: promptCatalog(),
       agentProviders: await detectProviders(),
       defaultAgentProvider: await defaultProvider(),
+      demoProjectDir: fs.existsSync(path.join(demoProjectDir(), "project.json"))
+        ? demoProjectDir()
+        : null,
     });
 
   const sendJson = (res: http.ServerResponse, status: number, body: string) => {
@@ -175,6 +208,40 @@ export function startStudio(projectDir: string, port: number): http.Server {
     res.end(fs.readFileSync(file));
   };
 
+  /** Streamed media with Range support (video/audio scrubbing needs it). */
+  const sendMedia = (req: http.IncomingMessage, res: http.ServerResponse, file: string) => {
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      res.writeHead(404);
+      return res.end("not found");
+    }
+    const size = fs.statSync(file).size;
+    const type = MIME[path.extname(file).toLowerCase()] ?? "application/octet-stream";
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (start >= size || start > end) {
+        res.writeHead(416, { "content-range": `bytes */${size}` });
+        return res.end();
+      }
+      res.writeHead(206, {
+        "content-type": type,
+        "content-range": `bytes ${start}-${end}/${size}`,
+        "content-length": end - start + 1,
+        "accept-ranges": "bytes",
+      });
+      fs.createReadStream(file, { start, end }).pipe(res);
+    } else {
+      res.writeHead(200, {
+        "content-type": type,
+        "content-length": size,
+        "accept-ranges": "bytes",
+        "cache-control": "no-store",
+      });
+      fs.createReadStream(file).pipe(res);
+    }
+  };
+
   const renderJson = () => JSON.stringify(state.render);
 
   const safeChildPath = (root: string, rel: string): string | null => {
@@ -189,27 +256,300 @@ export function startStudio(projectDir: string, port: number): http.Server {
       let body = "";
       req.on("data", (chunk) => {
         body += chunk;
-        if (body.length > 2_000_000) reject(new Error("body too large"));
+        // 16MB: storyboards with heavy freehand sketching are still JSON.
+        if (body.length > 16_000_000) reject(new Error("body too large"));
       });
       req.on("end", () => resolve(body));
       req.on("error", reject);
     });
+
+  /** Raw binary body (media upload). In-memory; fine for Phase-1 file sizes. */
+  const readBinaryBody = (req: http.IncomingMessage): Promise<Buffer> =>
+    new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      req.on("data", (chunk: Buffer) => {
+        total += chunk.length;
+        if (total > 512_000_000) reject(new Error("file too large (512MB cap)"));
+        else chunks.push(chunk);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+
+  const badRequest = (res: http.ServerResponse, where: string, message: string, status = 400) =>
+    sendJson(res, status, JSON.stringify({ ok: false, errors: [{ path: where, message }] }));
+
+  /** Copy/write a file into assets/ and register it via AddAsset (one pathway). */
+  const importAsset = (
+    res: http.ServerResponse,
+    fileName: string,
+    folder: string,
+    write: (destination: string) => void,
+  ) => {
+    const existing = new Set(store.project.assets.map((a) => a.id));
+    const placed = placeAsset(dir, fileName, folder, existing, write);
+    const outcome = store.apply(
+      { type: "AddAsset", asset: { id: placed.id, path: placed.relPath, kind: placed.kind } },
+      "user",
+    );
+    if (!outcome.ok) {
+      fs.rmSync(path.join(dir, placed.relPath), { force: true });
+      return sendJson(res, 422, JSON.stringify({ ok: false, errors: outcome.errors }));
+    }
+    rebuild();
+    return sendJson(res, 200, stateJson());
+  };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const route = `${req.method} ${url.pathname}`;
     try {
       if (route === "GET /") return sendFile(res, path.join(STATIC_DIR, "index.html"));
-      if (route === "GET /app.js") return sendFile(res, path.join(STATIC_DIR, "app.js"));
-      if (route === "GET /styles.css") return sendFile(res, path.join(STATIC_DIR, "styles.css"));
+      if (req.method === "GET" && /^\/[\w-]+\.(js|css|svg|png)$/.test(url.pathname)) {
+        return sendFile(res, path.join(STATIC_DIR, url.pathname.slice(1)));
+      }
       if (route === "GET /vendor/hyperframes-player.global.js") {
         return sendFile(res, vendorFiles()["hyperframes-player.global.js"]!);
+      }
+      if (req.method === "GET" && url.pathname.startsWith("/vendor/excalidraw/")) {
+        const rel = decodeURIComponent(url.pathname.slice("/vendor/excalidraw/".length));
+        const file = safeChildPath(EXCALIDRAW_VENDOR_DIR, rel);
+        if (!file) {
+          res.writeHead(403);
+          return res.end("forbidden");
+        }
+        return sendFile(res, file);
       }
       if (route === "GET /api/state") return sendJson(res, 200, stateJson());
       if (route === "GET /api/meta") return sendJson(res, 200, await metaJson());
       if (route === "GET /api/render") return sendJson(res, 200, renderJson());
       if (route === "GET /api/agent") return sendJson(res, 200, JSON.stringify(state.agent));
       if (route === "GET /api/thumbs") return sendJson(res, 200, JSON.stringify(state.thumbs));
+
+      if (route === "POST /api/project/open") {
+        const body = JSON.parse(await readBody(req)) as { dir?: string };
+        if (!body.dir?.trim()) {
+          return sendJson(
+            res,
+            400,
+            JSON.stringify({ ok: false, errors: [{ path: "dir", message: "project path is empty" }] }),
+          );
+        }
+        const target = resolveProjectPath(body.dir, process.cwd());
+        if (!fs.existsSync(path.join(target, "project.json"))) {
+          return sendJson(
+            res,
+            400,
+            JSON.stringify({
+              ok: false,
+              errors: [{ path: "dir", message: `no project.json in ${target}` }],
+            }),
+          );
+        }
+        loadActiveProject(target);
+        return sendJson(res, 200, stateJson());
+      }
+
+      if (route === "POST /api/project/new") {
+        const body = JSON.parse(await readBody(req)) as {
+          dir?: string;
+          name?: string;
+          showcase?: boolean;
+        };
+        if (!body.dir?.trim()) {
+          return sendJson(
+            res,
+            400,
+            JSON.stringify({ ok: false, errors: [{ path: "dir", message: "project path is empty" }] }),
+          );
+        }
+        const target = resolveProjectPath(body.dir, process.cwd());
+        if (fs.existsSync(path.join(target, "project.json"))) {
+          return sendJson(
+            res,
+            409,
+            JSON.stringify({
+              ok: false,
+              errors: [{ path: "dir", message: `project already exists in ${target}` }],
+            }),
+          );
+        }
+        const name = body.name?.trim() || path.basename(target);
+        initializeProject(target, { name, showcase: body.showcase === true });
+        loadActiveProject(target);
+        return sendJson(res, 200, stateJson());
+      }
+
+      if (route === "POST /api/project/demo") {
+        const target = demoProjectDir();
+        if (!fs.existsSync(path.join(target, "project.json"))) {
+          return sendJson(
+            res,
+            404,
+            JSON.stringify({
+              ok: false,
+              errors: [{ path: "demo", message: "bundled demo project was not found" }],
+            }),
+          );
+        }
+        loadActiveProject(target);
+        return sendJson(res, 200, stateJson());
+      }
+
+      /* ---- project library (Main Menu launcher) ---- */
+
+      if (route === "GET /api/projects") {
+        const rel = url.searchParams.get("path") ?? "";
+        const listing = listLibrary(rel);
+        const demoDir = demoProjectDir();
+        const demo = fs.existsSync(path.join(demoDir, "project.json"))
+          ? { kind: "project", name: "Pulse — Demo", dir: demoDir, modifiedAt: new Date().toISOString(), title: "Pulse" }
+          : null;
+        return sendJson(
+          res,
+          200,
+          JSON.stringify({
+            libraryDir: libraryDir(),
+            currentProjectDir: dir,
+            path: listing.path,
+            entries: listing.entries,
+            demo,
+          }),
+        );
+      }
+
+      if (route === "POST /api/projects/folder") {
+        const body = JSON.parse(await readBody(req)) as { path?: string; name?: string };
+        if (!body.name?.trim()) return badRequest(res, "name", "folder name is empty");
+        const created = createLibraryFolder(body.path ?? "", body.name);
+        return sendJson(res, 200, JSON.stringify({ ok: true, dir: created }));
+      }
+
+      if (route === "GET /api/projects/poster") {
+        const target = path.resolve(url.searchParams.get("dir") ?? "");
+        const inLibrary = target.startsWith(path.resolve(libraryDir()) + path.sep);
+        if (!inLibrary && target !== path.resolve(demoProjectDir()) && target !== dir) {
+          res.writeHead(403);
+          return res.end("forbidden");
+        }
+        const poster = findProjectPoster(target);
+        if (!poster) {
+          res.writeHead(404);
+          return res.end("no poster");
+        }
+        return sendMedia(req, res, poster);
+      }
+
+      /* ---- disk browsing (Media page file view; read-only, localhost) ---- */
+
+      if (route === "GET /api/fs") {
+        const target = url.searchParams.get("path");
+        if (!target) return sendJson(res, 200, JSON.stringify({ roots: fsRoots(dir) }));
+        return sendJson(res, 200, JSON.stringify(listDisk(target)));
+      }
+
+      if (route === "GET /api/fs/file") {
+        const target = path.resolve(url.searchParams.get("path") ?? "");
+        if (!mediaKind(target)) {
+          res.writeHead(403);
+          return res.end("not a media file");
+        }
+        return sendMedia(req, res, target);
+      }
+
+      /* ---- media pool imports (copy into assets/ + AddAsset command) ---- */
+
+      if (route === "POST /api/assets/import") {
+        const body = JSON.parse(await readBody(req)) as { path?: string; folder?: string };
+        const source = (body.path ?? "").trim();
+        if (!source || !fs.existsSync(source) || !fs.statSync(source).isFile()) {
+          return badRequest(res, "path", `no such file: ${source}`);
+        }
+        return importAsset(res, path.basename(source), body.folder ?? "", (destination) =>
+          fs.copyFileSync(source, destination),
+        );
+      }
+
+      if (route === "POST /api/assets/upload") {
+        const name = (url.searchParams.get("name") ?? "").trim();
+        if (!name) return badRequest(res, "name", "file name is required (?name=)");
+        const buffer = await readBinaryBody(req);
+        if (buffer.length === 0) return badRequest(res, "body", "empty upload");
+        return importAsset(res, name, url.searchParams.get("folder") ?? "", (destination) =>
+          fs.writeFileSync(destination, buffer),
+        );
+      }
+
+      if (route === "POST /api/assets/svg") {
+        const body = JSON.parse(await readBody(req)) as { name?: string; svg?: string; folder?: string };
+        const name = (body.name ?? "").trim().replace(/\.svg$/i, "");
+        if (!name) return badRequest(res, "name", "asset name is empty");
+        if (!body.svg?.trim().startsWith("<svg")) return badRequest(res, "svg", "not an <svg> document");
+        return importAsset(res, `${name}.svg`, body.folder ?? "design", (destination) =>
+          fs.writeFileSync(destination, body.svg!),
+        );
+      }
+
+      if (route === "POST /api/assets/folder") {
+        const body = JSON.parse(await readBody(req)) as { name?: string };
+        const name = (body.name ?? "").trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+        if (!name || name.includes("..")) return badRequest(res, "name", "invalid folder name");
+        fs.mkdirSync(path.join(dir, "assets", name), { recursive: true });
+        return sendJson(res, 200, JSON.stringify({ ok: true }));
+      }
+
+      if (route === "GET /api/assets/folders") {
+        const root = path.join(dir, "assets");
+        const folders: string[] = [];
+        const walk = (sub: string, depth: number) => {
+          if (depth > 3 || !fs.existsSync(sub)) return;
+          for (const name of fs.readdirSync(sub)) {
+            const p = path.join(sub, name);
+            if (fs.statSync(p).isDirectory()) {
+              folders.push(path.relative(root, p).replace(/\\/g, "/"));
+              walk(p, depth + 1);
+            }
+          }
+        };
+        walk(root, 1);
+        return sendJson(res, 200, JSON.stringify({ folders }));
+      }
+
+      /* ---- storyboard sidecar ---- */
+
+      if (route === "GET /api/storyboard") {
+        return sendJson(res, 200, JSON.stringify(loadStoryboard(dir)));
+      }
+      if (route === "PUT /api/storyboard") {
+        const board = JSON.parse(await readBody(req)) as Storyboard;
+        saveStoryboard(dir, board);
+        return sendJson(res, 200, JSON.stringify({ ok: true }));
+      }
+      if (route === "GET /api/storyboard/text") {
+        return sendJson(res, 200, JSON.stringify({ text: storyboardToText(loadStoryboard(dir)) }));
+      }
+
+      /* ---- render history (Render page) ---- */
+
+      if (route === "GET /api/renders/list") {
+        const rendersDir = path.join(dir, "renders");
+        const items: Array<{ name: string; href: string; size: number; mtime: string }> = [];
+        if (fs.existsSync(rendersDir)) {
+          for (const name of fs.readdirSync(rendersDir)) {
+            if (![".mp4", ".webm", ".mov"].includes(path.extname(name).toLowerCase())) continue;
+            const stat = fs.statSync(path.join(rendersDir, name));
+            items.push({
+              name,
+              href: `/renders/${encodeURIComponent(name)}`,
+              size: stat.size,
+              mtime: stat.mtime.toISOString(),
+            });
+          }
+        }
+        items.sort((a, b) => b.mtime.localeCompare(a.mtime));
+        return sendJson(res, 200, JSON.stringify({ renders: items }));
+      }
 
       if (route === "POST /api/command") {
         const body = JSON.parse(await readBody(req)) as { command: unknown; source?: string };
@@ -276,8 +616,12 @@ export function startStudio(projectDir: string, port: number): http.Server {
           format,
           quality,
         };
-        void renderProject(dir, store.project, { format, quality, workers, quiet: true })
+        const renderDir = dir;
+        const renderStore = store;
+        const renderStartedAt = state.render.startedAt;
+        void renderProject(renderDir, renderStore.project, { format, quality, workers, quiet: true })
           .then(async (result) => {
+            if (renderDir !== dir || renderStore !== store) return;
             const outputName = path.basename(result.outputPath);
             let posterHref: string | undefined;
             if (format !== "png-sequence") {
@@ -288,7 +632,7 @@ export function startStudio(projectDir: string, port: number): http.Server {
             }
             state.render = {
               status: "complete",
-              startedAt: state.render.startedAt,
+              startedAt: renderStartedAt,
               completedAt: new Date().toISOString(),
               outputPath: result.outputPath,
               outputName,
@@ -299,9 +643,10 @@ export function startStudio(projectDir: string, port: number): http.Server {
             };
           })
           .catch((error) => {
+            if (renderDir !== dir || renderStore !== store) return;
             state.render = {
               status: "failed",
-              startedAt: state.render.startedAt,
+              startedAt: renderStartedAt,
               completedAt: new Date().toISOString(),
               format,
               quality,
@@ -357,23 +702,32 @@ export function startStudio(projectDir: string, port: number): http.Server {
           provider: providerId,
           startedAt: new Date().toISOString(),
         };
+        const agentDir = dir;
+        const agentStore = store;
+        const agentStartedAt = state.agent.startedAt;
+        // The storyboard is the user's drawn intent — hand it to the planner
+        // as brief context (capped; Phase 2 brings the token-optimized form).
+        const storyboardText = storyboardToText(loadStoryboard(dir)).slice(0, 4000);
+        const fullBrief = storyboardText ? `${brief}\n\n${storyboardText}` : brief;
         // apiKey is used for this request only — never persisted anywhere.
-        void runPlan(providerId, brief, store, body.apiKey ? { apiKey: body.apiKey } : {})
+        void runPlan(providerId, fullBrief, agentStore, body.apiKey ? { apiKey: body.apiKey } : {})
           .then((result) => {
+            if (agentDir !== dir || agentStore !== store) return;
             rebuild();
             state.agent = {
               status: "complete",
               provider: providerId,
-              startedAt: state.agent.startedAt,
+              startedAt: agentStartedAt,
               completedAt: new Date().toISOString(),
               summary: `${result.plan.scenes.length} scenes, profile ${result.plan.motionProfile}`,
             };
           })
           .catch((error) => {
+            if (agentDir !== dir || agentStore !== store) return;
             state.agent = {
               status: "failed",
               provider: providerId,
-              startedAt: state.agent.startedAt,
+              startedAt: agentStartedAt,
               completedAt: new Date().toISOString(),
               error: error instanceof Error ? error.message : String(error),
             };
@@ -386,8 +740,11 @@ export function startStudio(projectDir: string, port: number): http.Server {
           return sendJson(res, 202, JSON.stringify(state.thumbs));
         }
         state.thumbs = { ...state.thumbs, status: "generating" };
-        void generateSceneThumbnails(dir, store.project)
+        const thumbsDir = dir;
+        const thumbsStore = store;
+        void generateSceneThumbnails(thumbsDir, thumbsStore.project)
           .then((result) => {
+            if (thumbsDir !== dir || thumbsStore !== store) return;
             state.thumbs = {
               status: "complete",
               files: Object.fromEntries(
@@ -397,6 +754,7 @@ export function startStudio(projectDir: string, port: number): http.Server {
             };
           })
           .catch((error) => {
+            if (thumbsDir !== dir || thumbsStore !== store) return;
             state.thumbs = {
               ...state.thumbs,
               status: "failed",
@@ -423,7 +781,18 @@ export function startStudio(projectDir: string, port: number): http.Server {
           res.writeHead(403);
           return res.end("forbidden");
         }
-        return sendFile(res, file);
+        return sendMedia(req, res, file);
+      }
+
+      // Project media pool files (pool thumbnails/previews, any subfolder).
+      if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+        const rel = decodeURIComponent(url.pathname.slice("/assets/".length));
+        const file = safeChildPath(path.join(dir, "assets"), rel);
+        if (!file) {
+          res.writeHead(403);
+          return res.end("forbidden");
+        }
+        return sendMedia(req, res, file);
       }
 
       res.writeHead(404);

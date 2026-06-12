@@ -93,8 +93,8 @@ describe("compiler", () => {
     expect(cameraSteps).toHaveLength(1); // the feature scene's default pushIn
     const step = cameraSteps[0]!;
     expect(step.target).toBe("#sc-feature > .seq-camera");
-    expect(step.from.scale).toBe(1);
-    expect(step.to.scale).toBe(1.03); // scale token "subtle", never a raw choice
+    expect(step.from).toEqual({ scale: 1, force3D: false });
+    expect(step.to).toEqual({ scale: 1.03, force3D: false, autoRound: false }); // scale token "subtle", never a raw choice
     expect(step.ease).toBe("seqMoveGlide"); // move-role easing token
     expect(html).toContain('class="seq-camera"');
     expect(manifest.scenes.find((s) => s.id === "feature")?.camera).toEqual({

@@ -6,6 +6,8 @@
   <title>Sequences — Studio</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/pages.css" />
+  <link rel="stylesheet" href="/vendor/excalidraw/index.css" />
 </head>
 <body>
   <div id="app">
@@ -15,11 +17,14 @@
         <div class="brand-mark"></div>
         <span class="brand-name">Sequences</span>
       </div>
+      <button id="projectMenuBtn" class="menu-btn" title="Project menu">Project</button>
       <div class="topbar-sep"></div>
       <div class="proj">
         <span class="proj-dot"></span>
         <span id="projectTitle">…</span>
       </div>
+      <div class="spacer"></div>
+      <nav id="pageTabs" title="Workspace pages"></nav>
       <div class="spacer"></div>
       <button id="undoBtn" class="icon-btn" title="Undo (Ctrl+Z)"></button>
       <button id="redoBtn" class="icon-btn" title="Redo (Ctrl+Y)"></button>
@@ -32,72 +37,84 @@
       <button id="renderBtn" class="btn btn-primary"></button>
     </header>
 
-    <!-- ============ MAIN ============ -->
+    <!-- ============ MAIN (workspace pages) ============ -->
     <main id="main">
-      <div id="agentPanel" class="panel">
-        <div class="panel-head">
-          <span class="agent-spark" id="agentSpark"></span>
-          <span class="ph-title">Agent</span>
-          <span class="ph-sub mono" id="agentProviderSub"></span>
-          <div class="ph-tools"></div>
-        </div>
-        <div id="agentBody"></div>
-        <div id="agentFoot">
-          <div class="composer">
-            <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
-            <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
-          </div>
-          <div class="composer-meta">
-            <span id="composerHint">plans apply as one undoable batch</span>
-            <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
-          </div>
-        </div>
-      </div>
+      <div id="page-references" class="page"></div>
+      <div id="page-media" class="page"></div>
+      <div id="page-design" class="page"></div>
+      <div id="page-storyboard" class="page"></div>
 
-      <div id="left">
-        <div id="viewportPanel">
-          <div id="previewWrap">
-            <div id="playerHost"></div>
-          </div>
-          <div id="transport">
-            <button id="playBtn" class="tp-btn" title="Play/Pause (Space)"></button>
-            <span id="timecode" class="mono">00:00<span class="sep">:</span>00</span>
-            <div id="scrub"><div id="scrubFill"></div><div id="scrubKnob"></div></div>
-            <span id="frameLabel" class="mono"></span>
-            <button id="safeBtn" class="tp-btn" title="Title-safe guides"></button>
-            <button id="dragToggle" class="tp-btn" title="Position mode — drag layers on the canvas, snapped to the grid"></button>
-            <span id="resChip" class="res-chip mono"></span>
-          </div>
-        </div>
-        <div id="timelinePanel">
-          <div id="tlToolbar">
-            <div id="addSceneWrap">
-              <button id="addSceneBtn" class="mini-btn" title="Add a scene"></button>
-            </div>
-            <button id="thumbsBtn" class="mini-btn" title="Capture scene thumbnails into the timeline (needs Edge/Chrome)"></button>
-            <span id="thumbsStatus"></span>
-            <span class="spacer"></span>
-            <span id="durationLabel" class="tl-info"></span>
-          </div>
-          <div id="tlBody"><div id="tlContent"></div></div>
-        </div>
-      </div>
-
-      <div id="right">
-        <div id="inspectorPanel" class="panel">
+      <div id="page-timeline" class="page on">
+        <div id="agentPanel" class="panel">
           <div class="panel-head">
-            <span class="ph-title">Inspector</span>
-            <div class="tabs" id="inspectorTabs"></div>
-            <div class="ph-tools"><span class="ph-sub" id="inspectorSub"></span></div>
+            <span class="agent-spark" id="agentSpark"></span>
+            <span class="ph-title">Agent</span>
+            <span class="ph-sub mono" id="agentProviderSub"></span>
+            <div class="ph-tools"></div>
           </div>
-          <div id="inspectorBody"></div>
+          <div id="agentBody"></div>
+          <div id="agentFoot">
+            <div class="composer">
+              <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
+              <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
+            </div>
+            <div class="composer-meta">
+              <span id="composerHint">plans apply as one undoable batch</span>
+              <span class="cm-right"><span id="providerChip" class="prov-chip"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="left">
+          <div id="viewportPanel">
+            <div id="previewWrap">
+              <div id="playerHost"></div>
+            </div>
+            <div id="transport">
+              <button id="playBtn" class="tp-btn" title="Play/Pause (Space)"></button>
+              <span id="timecode" class="mono">00:00<span class="sep">:</span>00</span>
+              <div id="scrub"><div id="scrubFill"></div><div id="scrubKnob"></div></div>
+              <span id="frameLabel" class="mono"></span>
+              <button id="safeBtn" class="tp-btn" title="Title-safe guides"></button>
+              <button id="dragToggle" class="tp-btn" title="Position mode — drag layers on the canvas, snapped to the grid"></button>
+              <span id="resChip" class="res-chip mono"></span>
+            </div>
+          </div>
+          <div id="timelinePanel">
+            <div id="tlToolbar">
+              <div id="addSceneWrap">
+                <button id="addSceneBtn" class="mini-btn" title="Add a scene"></button>
+              </div>
+              <button id="thumbsBtn" class="mini-btn" title="Capture scene thumbnails into the timeline (needs Edge/Chrome)"></button>
+              <span id="thumbsStatus"></span>
+              <span class="spacer"></span>
+              <span id="durationLabel" class="tl-info"></span>
+            </div>
+            <div id="tlBody"><div id="tlContent"></div></div>
+          </div>
+        </div>
+
+        <div id="right">
+          <div id="inspectorPanel" class="panel">
+            <div class="panel-head">
+              <span class="ph-title">Inspector</span>
+              <div class="tabs" id="inspectorTabs"></div>
+              <div class="ph-tools"><span class="ph-sub" id="inspectorSub"></span></div>
+            </div>
+            <div id="inspectorBody"></div>
+          </div>
         </div>
       </div>
+
+      <div id="page-render" class="page"></div>
+      <div id="page-extensions" class="page"></div>
     </main>
 
     <!-- ============ STATUS BAR ============ -->
     <footer id="statusbar">
       <div id="lintChip" title="Motion linter — deterministic, zero-token"></div>
+      <span class="status-sep"></span>
+      <div class="status-item project-path" id="projectPath"></div>
       <span class="status-sep"></span>
       <div class="status-item"><span id="solverInfo" class="mono"></span></div>
       <span class="spacer"></span>
@@ -109,9 +126,18 @@
     </footer>
   </div>
 
+  <!-- ============ MAIN MENU (project launcher) ============ -->
+  <div id="launcher" class="hidden"></div>
+
   <div id="toastWrap"></div>
 
   <script src="/vendor/hyperframes-player.global.js"></script>
+  <script src="/pages.js"></script>
+  <script src="/launcher.js"></script>
+  <script src="/media.js"></script>
+  <script src="/design.js"></script>
+  <script src="/storyboard-excalidraw-bundle.js"></script>
+  <script src="/storyboard.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -31,6 +31,7 @@ const checks = await page.evaluate(() => {
   const text = (id) => ($(id) ? $(id).textContent.trim() : null);
   return {
     title: text("projectTitle"),
+    projectPath: text("projectPath"),
     scenes: document.querySelectorAll(".tl-scene").length,
     laneRows: document.querySelectorAll(".tl-lane-row").length,
     ticks: document.querySelectorAll(".tl-tick").length,
@@ -75,6 +76,12 @@ const interact = await page.evaluate(async () => {
   document.getElementById("eventsChip").click();
   await new Promise((r) => setTimeout(r, 120));
   out.eventsPopOpen = !document.getElementById("eventsPop").classList.contains("hidden");
+  document.getElementById("eventsChip").click();
+
+  document.getElementById("projectMenuBtn").click();
+  await new Promise((r) => setTimeout(r, 120));
+  out.projectMenu = [...document.querySelectorAll("#projectMenuBtn .menu-opt .mo-name")].map((n) => n.textContent);
+  document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 
   const setupBtn = [...document.querySelectorAll("#agentBody .btn-sm")].find((b) => b.textContent.includes("Agent setup"));
   setupBtn.click();

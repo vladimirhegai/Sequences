@@ -18,13 +18,25 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "studio": "node apps/studio/src/cli.ts studio examples/demo-promo",
+    "build:storyboard": "esbuild apps/studio/src/static/storyboard-excalidraw-entry.ts --bundle --format=iife --target=es2022 --outfile=apps/studio/src/static/storyboard-excalidraw-bundle.js",
+    "studio": "node apps/studio/src/cli.ts app examples/demo-promo",
+    "studio:app": "node apps/studio/src/cli.ts app examples/demo-promo",
+    "studio:exe": "node apps/studio/src/cli.ts exe examples/demo-promo",
+    "studio:web": "node apps/studio/src/cli.ts studio examples/demo-promo",
     "compile:example": "node apps/studio/src/cli.ts compile examples/demo-promo",
     "render:example": "node apps/studio/src/cli.ts render examples/demo-promo"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "esbuild": "^0.25.12",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
   }
 }

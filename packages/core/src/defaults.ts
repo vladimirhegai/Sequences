@@ -7,8 +7,8 @@
  *
  * `createShowcaseProject` — the demo-reel arc (`init --showcase`, the
  * shipped example). Everything Phase 1 can do, hand-tuned: bold-launch
- * profile (charCascade hooks, springs, scale-away exits), a camera move on
- * every scene, kenBurns + floatIdle continuous motion, maskRevealUp where
+ * profile (charCascade hooks, springs, scale-away exits), product-scene
+ * camera moves, kenBurns + floatIdle continuous motion, maskRevealUp where
  * it reads best, and a fade only where the story breathes.
  */
 import type { Project } from "./schema.ts";
@@ -97,12 +97,12 @@ export function createDefaultProject(options?: {
 }
 
 /**
- * The showcase arc — 6 beats, ~22s, constant motion:
+ * The showcase arc — 6 beats, ~22s, steady motion:
  *
- *   hook (charCascade + pushIn) → feature (maskRevealUp headline, kenBurns
- *   hero shot, pushIn) → walkthrough (pullBack reveal, floating hotspots) →
- *   stat (countUp + pushIn punch) → social proof (fade out of it) →
- *   logo sting (springy CTA, slow pullBack release).
+ *   hook (charCascade) → feature (maskRevealUp headline, kenBurns hero shot,
+ *   pushIn) → walkthrough (pullBack reveal, floating hotspots) → stat
+ *   (countUp punch) → social proof (fade out of it) → logo sting
+ *   (springy CTA release).
  *
  * Stays strictly on the Phase-1 lattice: every choice here is a token,
  * primitive, or archetype the agent could also have picked.
@@ -142,7 +142,6 @@ export function createShowcaseProject(options?: {
         },
         choreography: {},
         overrides: {},
-        camera: { move: "pushIn", scale: "subtle" },
       },
       ...(screenshot
         ? [
@@ -179,7 +178,7 @@ export function createShowcaseProject(options?: {
               // scene over the motion-density ceiling.
               overrides: { "hotspot-2": { hidden: true } },
               // Open tight on the UI, release wide as the steps land.
-              camera: { move: "pullBack", scale: "pop" },
+              camera: { move: "pullBack", scale: "subtle" },
             } satisfies Project["scenes"][number],
           ]
         : []),
@@ -193,8 +192,6 @@ export function createShowcaseProject(options?: {
         },
         choreography: {},
         overrides: {},
-        // The hardest camera hit in the video lands on the number.
-        camera: { move: "pushIn", scale: "pop" },
       },
       {
         id: "social",
@@ -202,12 +199,11 @@ export function createShowcaseProject(options?: {
         durationFrames: 108,
         slots: {
           quote: `We replaced three dashboards with ${brandName} on day one.`,
-          source: "Maya Chen · CTO, Northbeam",
+          source: "Maya Chen - CTO, Northbeam",
           logos: ["NORTHBEAM", "LINEAR", "RAYCAST", "ARC"],
         },
         choreography: {},
         overrides: {},
-        camera: { move: "pushIn", scale: "subtle" },
       },
       {
         id: "sting",
@@ -219,8 +215,6 @@ export function createShowcaseProject(options?: {
         },
         choreography: {},
         overrides: {},
-        // Slow release out — the held breath after the cut barrage.
-        camera: { move: "pullBack", scale: "subtle" },
       },
     ],
     // Hard cuts everywhere except one fade where the story exhales.

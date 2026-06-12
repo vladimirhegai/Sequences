@@ -290,8 +290,8 @@ export function compile(project: Project): CompileResult {
       steps.push({
         kind: "fromTo",
         target: `#${sceneElId} > .seq-camera`,
-        from: { scale: fromScale },
-        to: { scale: toScale },
+        from: { scale: fromScale, force3D: false },
+        to: { scale: toScale, force3D: false, autoRound: false },
         durationSec: durSec,
         ease: runtimeEase("move.glide"),
         atSec: startSec,
@@ -402,10 +402,10 @@ export function compile(project: Project): CompileResult {
     #stage { position: relative; width: ${W}px; height: ${H}px; overflow: hidden; font-family: ${fontStack(project.brand.fonts.body)}; }
     .clip { position: absolute; top: 0; left: 0; width: 100%; height: 100%; visibility: hidden; }
     .seq-scene { background: var(--c-${project.meta.background}); }
-    .seq-camera { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: center center; }
+    .seq-camera { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform-origin: center center; backface-visibility: hidden; }
     .seq-layer { position: absolute; }
     .seq-mask { overflow: hidden; }
-    .seq-inner { width: 100%; height: 100%; display: flex; align-items: center; }
+    .seq-inner { width: 100%; height: 100%; display: flex; align-items: center; backface-visibility: hidden; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
     .seq-img { width: 100%; height: 100%; object-fit: cover; display: block; }
   </style>
 </head>

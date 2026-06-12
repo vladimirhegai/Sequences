@@ -1,18 +1,15 @@
 #!/usr/bin/env node
 /**
  * Sequences CLI:
- *   init | compile | lint | render | thumbs | plan | providers | mcp | studio
+ *   init | compile | lint | render | thumbs | plan | providers | mcp | studio | app
  *
  * Run with plain Node ≥ 22.18 (native type-stripping):
  *   node apps/studio/src/cli.ts studio examples/demo-promo
  */
-import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import net from "node:net";
 import {
   applyAutoFixes,
-  createDefaultProject,
-  createShowcaseProject,
   lintProject,
   ProjectStore,
   type Finding,
@@ -24,8 +21,8 @@ import { startMcpServer } from "./mcp.ts";
 import { detectProviders, defaultProvider, type ProviderId } from "./agentConfig.ts";
 import { runPlan } from "./agent/planRunner.ts";
 import { extractRenderPoster, generateSceneThumbnails } from "./thumbs.ts";
-
-const TEMPLATES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "templates");
+import { openAppWindow } from "./desktopApp.ts";
+import { initializeProject } from "./projectTemplates.ts";
 
 function printFindings(findings: Finding[]): void {
   if (findings.length === 0) {
@@ -41,26 +38,9 @@ function printFindings(findings: Finding[]): void {
 }
 
 function cmdInit(dir: string, name: string | undefined, showcase: boolean): void {
-  if (fs.existsSync(path.join(dir, "project.json"))) {
-    console.error(`refusing to overwrite existing project in ${dir}`);
-    process.exit(1);
-  }
-  fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
-  fs.copyFileSync(
-    path.join(TEMPLATES_DIR, "dashboard.svg"),
-    path.join(dir, "assets", "dashboard.svg"),
-  );
-  const factory = showcase ? createShowcaseProject : createDefaultProject;
-  const project = factory({
-    title: name ?? path.basename(path.resolve(dir)),
-    brandName: name ?? "Acme",
-    screenshotAssetId: "dashboard",
-  });
-  project.assets.push({ id: "dashboard", path: "assets/dashboard.svg", kind: "image" });
-  saveProject(dir, project);
-  fs.writeFileSync(path.join(dir, "events.log"), "");
+  initializeProject(path.resolve(dir), { name, showcase });
   console.log(`initialized project in ${dir}`);
-  console.log(`next: node apps/studio/src/cli.ts studio ${dir}`);
+  console.log(`next: npm run studio -- ${dir}`);
 }
 
 function cmdCompile(dir: string): void {
@@ -71,6 +51,45 @@ function cmdCompile(dir: string): void {
       `(${result.manifest.durationSec}s) → ${path.join(dir, "build", "index.html")}`,
   );
   printFindings(lintProject(project));
+}
+
+function parsePort(value: string | undefined): number {
+  const port = Number(value ?? 4400);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`--port must be an integer from 1 to 65535; got "${value}"`);
+  }
+  return port;
+}
+
+function canListen(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const probe = net.createServer();
+    probe.once("error", () => resolve(false));
+    probe.once("listening", () => {
+      probe.close(() => resolve(true));
+    });
+    probe.listen(port, "127.0.0.1");
+  });
+}
+
+async function choosePort(requested: number): Promise<number> {
+  for (let port = requested; port < requested + 20 && port <= 65535; port++) {
+    if (await canListen(port)) {
+      if (port !== requested) console.log(`port ${requested} is busy; using ${port}`);
+      return port;
+    }
+  }
+  throw new Error(`no free port found near ${requested}`);
+}
+
+async function cmdStudio(dir: string): Promise<void> {
+  startStudio(dir, await choosePort(parsePort(flag("port"))));
+}
+
+async function cmdApp(dir: string): Promise<void> {
+  const port = await choosePort(parsePort(flag("port")));
+  const server = startStudio(dir, port);
+  openAppWindow(`http://localhost:${port}/`, path.resolve(dir), server);
 }
 
 function cmdLint(dir: string, fix: boolean): void {
@@ -216,14 +235,18 @@ try {
       startMcpServer(path.resolve(dir));
       break;
     case "studio":
-      startStudio(dir, Number(flag("port") ?? 4400));
+      await cmdStudio(dir);
+      break;
+    case "app":
+    case "exe":
+      await cmdApp(dir);
       break;
     default:
       console.log(
-        "usage: cli.ts <init|compile|lint|render|thumbs|plan|providers|mcp|studio> <projectDir>\n" +
+        "usage: cli.ts <init|compile|lint|render|thumbs|plan|providers|mcp|studio|app|exe> <projectDir>\n" +
           "  render: [--output FILE] [--format mp4|webm|mov|png-sequence] [--quality draft|standard|high] [--workers N] [--browser PATH]\n" +
           '  plan:   "<brief>" [--provider codex-cli|claude-code-cli|anthropic-api|openai-api]\n' +
-          "  studio: [--port N]    init: [--name X] [--showcase]",
+          "  studio: [--port N]    app/exe: [--port N]    init: [--name X] [--showcase]",
       );
       process.exit(command ? 1 : 0);
   }

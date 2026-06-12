@@ -10,54 +10,122 @@
   "brand": {
     "name": "Pulse",
     "colors": {
-      "primary": "#5B5BF0",
-      "surface": "#0E1016",
-      "text": "#F4F5F7",
-      "muted": "#9BA0AC",
-      "accent": "#27D9A1"
+      "primary": "#FF4FD8",
+      "surface": "#08080C",
+      "text": "#FFFDF5",
+      "muted": "#91F7FF",
+      "accent": "#C8FF3D"
     },
     "fonts": {
-      "display": "Segoe UI",
-      "body": "Segoe UI"
+      "display": "Bahnschrift",
+      "body": "Bahnschrift"
     }
   },
   "motionProfile": "bold-launch",
   "scenes": [
     {
-      "id": "hook",
+      "id": "cold-open",
       "archetype": "hook-opener",
-      "durationFrames": 84,
+      "layout": "left",
+      "durationFrames": 126,
       "slots": {
-        "headline": "Stop guessing. Start shipping.",
-        "subline": "Product data in. Answers out."
+        "headline": "PULSE GOES BANG.",
+        "subline": "dashboard proof with a pulse"
       },
-      "choreography": {},
-      "overrides": {},
-      "camera": {
-        "move": "pushIn",
-        "scale": "subtle"
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "decor-glow",
+          "headline",
+          "subline"
+        ]
+      },
+      "overrides": {
+        "decor-glow": {
+          "enterDuration": "dramatic"
+        },
+        "headline": {
+          "box": {
+            "x": 118,
+            "y": 278,
+            "w": 1360,
+            "h": 258,
+            "origin": "left center"
+          },
+          "typeToken": "display",
+          "colorToken": "text",
+          "enterPrimitive": "enter.charCascade",
+          "exitPrimitive": "exit.slideExit",
+          "enterDuration": "slow"
+        },
+        "subline": {
+          "box": {
+            "x": 124,
+            "y": 614,
+            "w": 820,
+            "h": 96,
+            "origin": "left center"
+          },
+          "typeToken": "title",
+          "colorToken": "accent",
+          "enterPrimitive": "enter.maskRevealUp",
+          "exitPrimitive": "exit.fadeDown",
+          "enterDuration": "relaxed"
+        }
       }
     },
     {
-      "id": "feature",
+      "id": "screen-slam",
       "archetype": "feature-reveal",
-      "durationFrames": 126,
+      "layout": "media-right",
+      "durationFrames": 132,
       "slots": {
-        "headline": "Your whole funnel. Live.",
+        "headline": "The UI hits first",
         "media": {
           "assetId": "dashboard"
         },
         "bullets": [
-          "Realtime dashboards",
-          "Alerts that matter",
-          "One-click reports"
+          "Goon Goon Goon",
+          "proof goes loud",
+          "cut on the spark"
         ]
       },
-      "choreography": {},
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "media",
+          "headline",
+          "bullet-0",
+          "bullet-1",
+          "bullet-2"
+        ]
+      },
       "overrides": {
         "headline": {
-          "enterPrimitive": "enter.maskRevealUp",
+          "enterPrimitive": "enter.charCascade",
+          "exitPrimitive": "exit.scaleAway",
           "enterDuration": "slow"
+        },
+        "media": {
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "bullet-0": {
+          "colorToken": "accent",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "bullet-1": {
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "bullet-2": {
+          "colorToken": "text",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
         }
       },
       "camera": {
@@ -66,95 +134,387 @@
       }
     },
     {
-      "id": "walkthrough",
+      "id": "hotspot-pop",
       "archetype": "ui-walkthrough",
-      "layout": "media-left",
-      "durationFrames": 150,
+      "layout": "full",
+      "durationFrames": 132,
       "slots": {
-        "headline": "From question to answer in three clicks",
+        "headline": "Tap. Glow. Launch.",
         "media": {
           "assetId": "dashboard"
         },
         "steps": [
-          "Ask in plain English",
-          "Watch the query build",
-          "Share the live chart"
+          "Spark",
+          "Zoom",
+          "Punch"
         ]
       },
-      "choreography": {},
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "quick",
+        "order": [
+          "headline",
+          "media",
+          "hotspot-0",
+          "step-0",
+          "hotspot-1",
+          "step-1",
+          "hotspot-2",
+          "step-2"
+        ]
+      },
       "overrides": {
+        "headline": {
+          "enterPrimitive": "enter.charCascade",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "media": {
+          "enterPrimitive": "enter.scaleIn",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "relaxed"
+        },
+        "hotspot-0": {
+          "box": {
+            "x": 548,
+            "y": 390,
+            "w": 114,
+            "h": 56,
+            "origin": "center center"
+          },
+          "enterPrimitive": "enter.scaleIn",
+          "enterDuration": "quick"
+        },
+        "hotspot-1": {
+          "box": {
+            "x": 962,
+            "y": 518,
+            "w": 132,
+            "h": 56,
+            "origin": "center center"
+          },
+          "enterPrimitive": "enter.scaleIn",
+          "enterDuration": "quick"
+        },
         "hotspot-2": {
-          "hidden": true
+          "box": {
+            "x": 1218,
+            "y": 356,
+            "w": 98,
+            "h": 56,
+            "origin": "center center"
+          },
+          "enterPrimitive": "enter.scaleIn",
+          "enterDuration": "quick"
+        },
+        "step-0": {
+          "colorToken": "accent",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "step-1": {
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "step-2": {
+          "colorToken": "text",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
         }
       },
       "camera": {
         "move": "pullBack",
-        "scale": "pop"
+        "scale": "subtle"
       }
     },
     {
-      "id": "stat",
+      "id": "stat-snap",
       "archetype": "stat-callout",
-      "durationFrames": 90,
-      "slots": {
-        "stat": {
-          "value": 12480,
-          "prefix": "",
-          "suffix": "+"
-        },
-        "caption": "teams ship faster with Pulse"
-      },
-      "choreography": {},
-      "overrides": {},
-      "camera": {
-        "move": "pushIn",
-        "scale": "pop"
-      }
-    },
-    {
-      "id": "social",
-      "archetype": "social-proof",
       "durationFrames": 108,
       "slots": {
-        "quote": "We replaced three dashboards with Pulse on day one.",
-        "source": "Maya Chen · CTO, Northbeam",
-        "logos": [
-          "NORTHBEAM",
-          "LINEAR",
-          "RAYCAST",
-          "ARC"
+        "stat": {
+          "value": 3,
+          "prefix": "",
+          "suffix": "x"
+        },
+        "caption": "motion before the blink"
+      },
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "stat",
+          "accent-bar",
+          "caption"
         ]
       },
-      "choreography": {},
-      "overrides": {},
+      "overrides": {
+        "stat": {
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "dramatic"
+        },
+        "accent-bar": {
+          "enterPrimitive": "enter.scaleIn",
+          "enterDuration": "base"
+        },
+        "caption": {
+          "enterPrimitive": "enter.maskRevealUp",
+          "exitPrimitive": "exit.fadeDown",
+          "enterDuration": "relaxed"
+        }
+      },
       "camera": {
         "move": "pushIn",
         "scale": "subtle"
       }
     },
     {
-      "id": "sting",
-      "archetype": "logo-sting-cta",
-      "durationFrames": 105,
+      "id": "side-whip",
+      "archetype": "feature-reveal",
+      "layout": "media-left",
+      "durationFrames": 126,
       "slots": {
-        "tagline": "Analytics for builders",
-        "cta": "Start free today"
+        "headline": "Proof catches fire",
+        "media": {
+          "assetId": "dashboard"
+        },
+        "bullets": [
+          "panels punch in",
+          "numbers climb",
+          "CTA lands loud"
+        ]
       },
-      "choreography": {},
-      "overrides": {},
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "headline",
+          "bullet-0",
+          "media",
+          "bullet-1",
+          "bullet-2"
+        ]
+      },
+      "overrides": {
+        "headline": {
+          "enterPrimitive": "enter.fadeIn",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "media": {
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "bullet-0": {
+          "colorToken": "accent",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "bullet-1": {
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "bullet-2": {
+          "colorToken": "text",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        }
+      },
       "camera": {
         "move": "pullBack",
         "scale": "subtle"
       }
+    },
+    {
+      "id": "deck-break",
+      "archetype": "hook-opener",
+      "layout": "center",
+      "durationFrames": 108,
+      "slots": {
+        "headline": "NO MORE DECK ENERGY",
+        "subline": "just cuts, pops, and proof"
+      },
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "headline",
+          "decor-glow",
+          "subline"
+        ]
+      },
+      "overrides": {
+        "decor-glow": {
+          "enterDuration": "slow"
+        },
+        "headline": {
+          "box": {
+            "x": 166,
+            "y": 318,
+            "w": 1588,
+            "h": 218,
+            "origin": "center center"
+          },
+          "typeToken": "display",
+          "colorToken": "text",
+          "enterPrimitive": "enter.charCascade",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "subline": {
+          "box": {
+            "x": 360,
+            "y": 606,
+            "w": 1200,
+            "h": 96,
+            "origin": "center center"
+          },
+          "typeToken": "title",
+          "colorToken": "muted",
+          "enterPrimitive": "enter.maskRevealUp",
+          "exitPrimitive": "exit.fadeDown",
+          "enterDuration": "relaxed"
+        }
+      }
+    },
+    {
+      "id": "quote-smash",
+      "archetype": "social-proof",
+      "layout": "left",
+      "durationFrames": 150,
+      "slots": {
+        "quote": "It made the dashboard feel alive.",
+        "source": "Maya - Northbeam",
+        "logos": [
+          "BOOM",
+          "ZIP",
+          "CLACK",
+          "SHINE",
+          "SHIP"
+        ]
+      },
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "base",
+        "order": [
+          "quote-mark",
+          "logo-0",
+          "quote",
+          "logo-1",
+          "source",
+          "logo-2",
+          "logo-3",
+          "logo-4"
+        ]
+      },
+      "overrides": {
+        "quote-mark": {
+          "box": {
+            "x": 108,
+            "y": 132,
+            "w": 138,
+            "h": 218,
+            "origin": "center center"
+          },
+          "enterDuration": "base"
+        },
+        "quote": {
+          "enterPrimitive": "enter.maskRevealUp",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "slow"
+        },
+        "source": {
+          "colorToken": "accent",
+          "enterPrimitive": "enter.blurIn",
+          "exitPrimitive": "exit.fadeDown",
+          "enterDuration": "relaxed"
+        },
+        "logo-0": {
+          "typeToken": "body",
+          "colorToken": "accent",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "logo-1": {
+          "typeToken": "body",
+          "colorToken": "muted",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "logo-2": {
+          "typeToken": "body",
+          "colorToken": "accent",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "logo-3": {
+          "typeToken": "body",
+          "colorToken": "muted",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        },
+        "logo-4": {
+          "typeToken": "body",
+          "colorToken": "text",
+          "enterPrimitive": "enter.slideInDirectional",
+          "exitPrimitive": "exit.slideExit"
+        }
+      },
+      "camera": {
+        "move": "pullBack",
+        "scale": "subtle"
+      }
+    },
+    {
+      "id": "launch-sting",
+      "archetype": "logo-sting-cta",
+      "durationFrames": 120,
+      "slots": {
+        "tagline": "Less deck. More launch.",
+        "cta": "Hit play"
+      },
+      "choreography": {
+        "stagger": "tight",
+        "settleGap": "slow",
+        "order": [
+          "logo",
+          "tagline",
+          "cta"
+        ]
+      },
+      "overrides": {
+        "logo": {
+          "enterPrimitive": "enter.charCascade",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "dramatic"
+        },
+        "tagline": {
+          "enterPrimitive": "enter.maskRevealUp",
+          "exitPrimitive": "exit.fadeDown",
+          "enterDuration": "relaxed"
+        },
+        "cta": {
+          "enterPrimitive": "enter.scaleIn",
+          "exitPrimitive": "exit.scaleAway",
+          "enterDuration": "base"
+        }
+      }
     }
   ],
   "transitions": {
-    "social": "fade"
+    "stat-snap": "fade",
+    "deck-break": "fade"
   },
   "assets": [
     {
       "id": "dashboard",
       "path": "assets/dashboard.svg",
+      "kind": "image"
+    },
+    {
+      "id": "file-0000000041d471f5bc8dd618aca64dc9-optimized-1000",
+      "path": "assets/Example/file_0000000041d471f5bc8dd618aca64dc9_optimized_1000.png",
       "kind": "image"
     }
   ]

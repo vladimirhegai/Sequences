@@ -22,6 +22,7 @@ let dragMode = false;
 let safeMode = false;
 let chatLog = []; // session-only agent transcript
 let player = null;
+let activeProjectDir = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -41,6 +42,13 @@ const ICONS = {
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   film: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 5v14M17 5v14M3 12h4M17 12h4M3 8.5h4M17 8.5h4M3 15.5h4M17 15.5h4"/>',
   text: '<path d="M5 7V5h14v2M12 5v14M9 19h6"/>',
+  cursor: '<path d="m4 3 7.5 18 2.2-7.4L21 11z"/>',
+  pen: '<path d="m17 3 4 4L8 20l-5 1 1-5z"/><path d="m14 6 4 4"/>',
+  eraser: '<path d="m7 21-4-4L14 6a2.8 2.8 0 0 1 4 0l1 1a2.8 2.8 0 0 1 0 4L9 21z"/><path d="M12 18h9"/>',
+  circle: '<circle cx="12" cy="12" r="8"/>',
+  diamond: '<path d="m12 3 9 9-9 9-9-9z"/>',
+  arrow: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+  line: '<path d="M5 19 19 5"/>',
   image:
     '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-4.5-4.5L7 21"/>',
   device: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M9 21h6M12 17v4"/>',
@@ -60,6 +68,8 @@ const ICONS = {
   copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   terminal: '<path d="m4 17 6-6-6-6M12 19h8"/>',
   music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  folder:
+    '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/>',
 };
 
 function icon(name, size = 15) {
@@ -148,6 +158,38 @@ async function sendCommand(command) {
   }
 }
 
+function adoptState(nextState) {
+  const changedProject = activeProjectDir !== null && nextState.projectDir !== activeProjectDir;
+  state = nextState;
+  if (changedProject) {
+    selectedSceneId = state.project.scenes[0]?.id ?? null;
+    selectedLayerId = null;
+    lastBuildVersion = -1;
+    lastRenderError = null;
+    lastAgentError = null;
+    chatLog = [];
+    closeMenus();
+    closeModal();
+    clearTimeout(renderPoll);
+    clearTimeout(agentPoll);
+    clearTimeout(thumbsPoll);
+    resetPagesForProject(); // pages.js — drop page-local editing state
+  }
+  activeProjectDir = state.projectDir;
+}
+
+async function switchProject(path, kind) {
+  const endpoint =
+    kind === "demo" ? "/api/project/demo" : kind === "new" ? "/api/project/new" : "/api/project/open";
+  const nextState = await api(endpoint, path);
+  adoptState(nextState);
+  closeMenus();
+  closeModal();
+  hideLauncher(); // launcher.js — entering a project always lands in the workspace
+  render();
+  toast(`${state.project.meta.title} loaded`);
+}
+
 /* ---------- popup menus ---------- */
 
 let openMenuEl = null;
@@ -191,6 +233,131 @@ function menuOption({ name, desc, selected, onpick }) {
   return opt;
 }
 
+function menuSep() {
+  return el("div", { class: "menu-sep" });
+}
+
+function projectModal(mode) {
+  closeModal();
+  closeMenus();
+
+  const isNew = mode === "new";
+  const pathInput = el("input", {
+    class: "input mono",
+    value: "",
+    placeholder: isNew ? "C:\\dev\\Coding\\Sequences\\projects\\my-project" : "C:\\path\\to\\project",
+    autocomplete: "off",
+  });
+  const nameInput = el("input", {
+    class: "input",
+    value: isNew ? "Untitled Promo" : "",
+    placeholder: "Project name",
+    autocomplete: "off",
+  });
+  const showcase = el("input", { type: "checkbox" });
+  const body = el("div", { class: "modal-body" }, [
+    el("div", { class: "modal-form" }, [
+      field("Project folder", pathInput),
+      ...(isNew
+        ? [
+            field("Name", nameInput),
+            el("label", { class: "check-row" }, [showcase, "Use showcase timeline"]),
+          ]
+        : []),
+    ]),
+  ]);
+
+  const primary = el("button", { class: "btn btn-primary" }, [icon(isNew ? "plus" : "folder", 13), isNew ? "Create" : "Open"]);
+  primary.onclick = async () => {
+    primary.disabled = true;
+    try {
+      await switchProject(
+        isNew
+          ? { dir: pathInput.value, name: nameInput.value, showcase: showcase.checked }
+          : { dir: pathInput.value },
+        isNew ? "new" : "open",
+      );
+    } catch (err) {
+      toast(`${isNew ? "create" : "open"} failed — ${err.message}`, "err");
+      primary.disabled = false;
+    }
+  };
+  const cancel = el("button", { class: "btn btn-ghost" }, ["Cancel"]);
+  cancel.onclick = closeModal;
+
+  const modal = el("div", { class: "modal" }, [
+    el("div", { class: "modal-head" }, [
+      el("span", { class: "mh-ico" }, [icon(isNew ? "plus" : "folder", 15)]),
+      el("div", {}, [
+        el("div", { class: "mh-title" }, [isNew ? "New project" : "Open project"]),
+        el("div", { class: "mh-sub mono" }, [state.projectDir]),
+      ]),
+    ]),
+    body,
+    el("div", { class: "modal-foot" }, [
+      primary,
+      el("span", { class: "spacer" }),
+      cancel,
+    ]),
+  ]);
+  const backdrop = el("div", { id: "modalBackdrop" }, [modal]);
+  backdrop.onclick = (e) => {
+    if (e.target === backdrop) closeModal();
+  };
+  document.body.appendChild(backdrop);
+  pathInput.focus();
+}
+
+function openProjectMenu() {
+  const btn = $("projectMenuBtn");
+  openMenu(
+    btn,
+    (menu) => {
+      menu.classList.add("left", "project-menu");
+      menu.appendChild(
+        menuOption({
+          name: "New Project...",
+          desc: "Create a local project folder",
+          onpick: () => projectModal("new"),
+        }),
+      );
+      menu.appendChild(
+        menuOption({
+          name: "Open Project...",
+          desc: "Load an existing project.json",
+          onpick: () => projectModal("open"),
+        }),
+      );
+      if (meta.demoProjectDir) {
+        menu.appendChild(
+          menuOption({
+            name: "Open Pulse Demo",
+            desc: meta.demoProjectDir,
+            selected: state.projectDir === meta.demoProjectDir,
+            onpick: () => switchProject({}, "demo").catch((err) => toast(`demo failed — ${err.message}`, "err")),
+          }),
+        );
+      }
+      menu.appendChild(menuSep());
+      menu.appendChild(
+        menuOption({
+          name: "Copy Project Path",
+          desc: state.projectDir,
+          onpick: async () => {
+            try {
+              await navigator.clipboard.writeText(state.projectDir);
+              toast("project path copied");
+            } catch {
+              toast("copy failed — select the path in the status bar", "err");
+            }
+          },
+        }),
+      );
+    },
+    { cls: "left" },
+  );
+}
+
 /* ---------- player + transport ---------- */
 
 function fps() {
@@ -212,7 +379,7 @@ function refreshPlayer() {
   player.style.width = "100%";
   player.style.height = "100%";
   player.addEventListener("ready", () => {
-    if (keepTime > 0 && keepTime < player.duration) player.seek(keepTime);
+    player.seek(keepTime > 0 && keepTime < player.duration ? keepTime : 0);
     if (wasPlaying) player.play();
   });
   host.appendChild(player);
@@ -1075,13 +1242,13 @@ function renderMediaTab(host) {
     }
     nodes.push(grid);
   }
+  const mediaPageLink = el("b", { style: "cursor:pointer;color:var(--silver-hi)" }, ["Media page"]);
+  mediaPageLink.onclick = () => setPage("media");
   nodes.push(
     el("div", { class: "media-note" }, [
-      "Drop files into the project's ",
-      el("code", {}, ["assets/"]),
-      " folder and reference them in ",
-      el("code", {}, ["project.json"]),
-      " — they appear here and in every media slot picker. In-app import arrives in Phase 2.",
+      "This is the pool at a glance — import, preview, and organize on the ",
+      mediaPageLink,
+      " (drag files straight into it from disk).",
     ]),
   );
   host.append(el("div", { class: "insp-section" }, [el("div", { class: "insp-sec-body", style: "padding-top:12px" }, nodes)]));
@@ -1426,6 +1593,11 @@ function renderStatusBar() {
   );
   chip.onclick = toggleLintPop;
 
+  const pathNode = $("projectPath");
+  pathNode.title = state.projectFile || state.projectDir;
+  pathNode.innerHTML = "";
+  pathNode.append(el("span", { class: "mono" }, [state.projectFile || state.projectDir]));
+
   $("solverInfo").textContent = `solver · ${state.manifest.scenes.length} scenes scheduled`;
 
   const events = $("eventsChip");
@@ -1542,6 +1714,8 @@ function renderEventsPop() {
 
 function renderTopbar() {
   $("projectTitle").innerHTML = `<b>${escapeHtml(state.project.meta.title)}</b> — ${escapeHtml(state.project.brand.name)}`;
+  $("projectMenuBtn").innerHTML = "";
+  $("projectMenuBtn").append("Project", icon("chev", 11));
   $("undoBtn").disabled = !state.canUndo;
   $("redoBtn").disabled = !state.canRedo;
 
@@ -1629,6 +1803,7 @@ function pollRender() {
     try {
       state.render = await api("/api/render");
       renderExport();
+      renderActivePage(); // keep the Render page's status live
       pollRender();
     } catch (err) {
       toast(`render status failed: ${err.message}`, "err");
@@ -1725,15 +1900,18 @@ function render() {
   renderStatusBar();
   refreshPlayer();
   renderOverlays();
+  renderActivePage(); // pages.js — refresh the active workspace page
 }
 
 /* ---------- init ---------- */
 
 async function init() {
   meta = await api("/api/meta");
-  state = await api("/api/state");
+  adoptState(await api("/api/state"));
+  initPages(); // pages.js — tab strip + page framework
 
   // topbar buttons
+  $("projectMenuBtn").onclick = openProjectMenu;
   $("undoBtn").append(icon("undo", 16));
   $("redoBtn").append(icon("redo", 16));
   $("undoBtn").onclick = async () => {
@@ -1829,6 +2007,9 @@ async function init() {
   pollAgent();
   pollThumbs();
   render();
+
+  // The Main Menu greets first (DaVinci-style); skip with ?workspace=1.
+  if (!new URLSearchParams(location.search).has("workspace")) showLauncher();
 }
 
 init().catch((err) => {
