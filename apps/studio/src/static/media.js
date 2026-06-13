@@ -60,6 +60,14 @@ function applyMediaZoom() {
   if (pct) pct.textContent = mediaZoom === 1 ? "Fit" : `${Math.round(mediaZoom * 100)}%`;
 }
 
+function mediaAdjustZoom(direction) {
+  if (!mediaPreview || (mediaPreview.kind !== "image" && mediaPreview.kind !== "video")) return false;
+  const step = direction > 0 ? 0.25 : -0.25;
+  mediaZoom = mediaClamp(Math.round((mediaZoom + step) * 100) / 100, 0.25, 4);
+  applyMediaZoom();
+  return true;
+}
+
 function assetUsedBy(assetId) {
   const used = [];
   for (const scene of state.project.scenes) {
@@ -410,12 +418,10 @@ function buildMediaControls(mediaEl) {
     const fit = el("button", { class: "mini-btn", title: "Fit to viewer" }, [icon("fit", 12)]);
     const value = el("span", { class: "mv-zoom-value mono" }, [mediaZoom === 1 ? "Fit" : `${Math.round(mediaZoom * 100)}%`]);
     zoomOut.onclick = () => {
-      mediaZoom = mediaClamp(Math.round((mediaZoom - 0.25) * 100) / 100, 0.25, 4);
-      applyMediaZoom();
+      mediaAdjustZoom(-1);
     };
     zoomIn.onclick = () => {
-      mediaZoom = mediaClamp(Math.round((mediaZoom + 0.25) * 100) / 100, 0.25, 4);
-      applyMediaZoom();
+      mediaAdjustZoom(1);
     };
     fit.onclick = () => {
       mediaZoom = 1;

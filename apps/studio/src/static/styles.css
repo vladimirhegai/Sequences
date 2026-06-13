@@ -619,6 +619,25 @@ input[type="color"].input { padding: 2px 3px; width: 46px; flex: 0 0 46px; curso
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.agent-model-current { align-items: center; }
+.agent-model-current .mo-desc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-model-back {
+  align-items: center;
+  color: var(--text-mid);
+}
+.mo-arrow {
+  flex: 0 0 auto;
+  color: var(--text-lo);
+  display: inline-grid;
+  place-items: center;
+  margin-top: 2px;
+}
+.agent-model-current:hover .mo-arrow,
+.agent-model-back:hover .mo-arrow { color: var(--text-hi); }
 
 /* ============================================================
    STATUS BAR

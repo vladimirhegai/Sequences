@@ -284,7 +284,7 @@ async function renderRenderPage() {
 
   const fmt = sessionStorage.getItem("seq.render.format") || "mp4";
   const quality = sessionStorage.getItem("seq.render.quality") || "standard";
-  form.append(
+  const outputFields = el("div", { class: "rd-section-body" }, [
     field("Format", selectInput(["mp4", "webm", "mov"], fmt, (v) => {
       sessionStorage.setItem("seq.render.format", v);
     })),
@@ -292,13 +292,22 @@ async function renderRenderPage() {
       sessionStorage.setItem("seq.render.quality", v);
       renderTopbar();
     }), "draft ≈ 540p fast"),
-    el("div", { class: "row2" }, [
+    el("div", { class: "row2 rd-row2" }, [
       field("Resolution", el("div", { class: "input mono", style: "display:flex;align-items:center" }, [
         `${state.project.meta.width} × ${state.project.meta.height}`,
       ])),
       field("Duration", el("div", { class: "input mono", style: "display:flex;align-items:center" }, [
         `${state.manifest.durationSec}s @ ${fps()}fps`,
       ])),
+    ]),
+  ]);
+  form.append(
+    el("div", { class: "rd-section" }, [
+      el("div", { class: "rd-section-head" }, [
+        el("span", { class: "rd-section-title" }, ["Output"]),
+        el("span", { class: "rd-section-sub mono" }, [fmt]),
+      ]),
+      outputFields,
     ]),
   );
 

@@ -320,7 +320,7 @@ function buildSbToolRail() {
     rail.appendChild(btn);
   }
   rail.append(el("div", { class: "tool-sep" }));
-  const clear = el("button", { class: "tool-btn", title: "Clear current frame" }, [icon("trash", 14)]);
+  const clear = el("button", { class: "tool-btn danger", title: "Clear current frame" }, [icon("trash", 14)]);
   clear.onclick = () => {
     const frame = sbFrame();
     if (!frame) return;

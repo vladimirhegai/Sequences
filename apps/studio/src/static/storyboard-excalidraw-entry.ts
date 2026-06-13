@@ -64,6 +64,7 @@ type BridgeHandle = {
   armMotionPath: () => boolean;
   insertMedia: (asset: SeqAsset) => Promise<void>;
   clear: () => void;
+  zoomBy: (direction: number) => boolean;
 };
 
 type ExcalidrawApi = {
@@ -261,6 +262,7 @@ function StoryboardExcalidraw({
   const optionsRef = useRef(options);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const restoringViewportRef = useRef(false);
+  const userZoomRef = useRef(1);
   const lastClickRef = useRef<{ id: string | null; time: number }>({ id: null, time: 0 });
   const lastSelectionRef = useRef("");
   const motionPathArmRef = useRef<{ targetId: string; before: Set<string> } | null>(null);
@@ -331,20 +333,22 @@ function StoryboardExcalidraw({
     [applyCommentToIds],
   );
 
-  /** Fit the locked viewport to the virtual 1280x720 stage. */
+  /** Fit the locked viewport to the virtual 1280x720 stage, with local zoom. */
   const fitViewport = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
     const appState = api.getAppState();
     const width = Number(appState.width ?? 0) || rootRef.current?.clientWidth || 0;
+    const height = Number(appState.height ?? 0) || rootRef.current?.clientHeight || 0;
     if (!width) return;
-    const zoom = Math.max(0.1, Math.min(4, width / STAGE_W));
+    const baseZoom = Math.max(0.1, Math.min(4, width / STAGE_W));
+    const zoom = Math.max(0.1, Math.min(4, baseZoom * userZoomRef.current));
     restoringViewportRef.current = true;
     api.updateScene({
       appState: {
         viewBackgroundColor: STORYBOARD_CANVAS_BG,
-        scrollX: 0,
-        scrollY: 0,
+        scrollX: width / 2 - (STAGE_W * zoom) / 2,
+        scrollY: height / 2 - (STAGE_H * zoom) / 2,
         zoom: { value: zoom },
         gridSize: null,
         gridModeEnabled: false,
@@ -364,6 +368,11 @@ function StoryboardExcalidraw({
   }, [fitViewport]);
 
   useEffect(() => {
+    userZoomRef.current = 1;
+    setTimeout(() => fitViewport(), 0);
+  }, [fitViewport, options.frame.id]);
+
+  useEffect(() => {
     bridge.setTool = (tool: string) => {
       const api = apiRef.current;
       if (motionPathArmRef.current) {
@@ -374,6 +383,13 @@ function StoryboardExcalidraw({
         });
       }
       api?.setActiveTool({ type: tool });
+    };
+    bridge.zoomBy = (direction: number) => {
+      const next = Math.max(0.5, Math.min(4, userZoomRef.current + (direction > 0 ? 0.25 : -0.25)));
+      if (next === userZoomRef.current) return true;
+      userZoomRef.current = next;
+      fitViewport();
+      return true;
     };
     bridge.setComment = (comment: string) => {
       const api = apiRef.current;
@@ -614,6 +630,9 @@ function mount(host: Element, options: BridgeOptions): BridgeHandle {
     },
     async insertMedia() {},
     clear() {},
+    zoomBy() {
+      return false;
+    },
   };
   mounted.set(host, { root, handle });
   handle.update(options);

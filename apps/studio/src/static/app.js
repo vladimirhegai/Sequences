@@ -35,6 +35,8 @@ const ICONS = {
   undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
   chev: '<path d="m6 9 6 6 6-6"/>',
+  chevRight: '<path d="m9 6 6 6-6 6"/>',
+  arrowLeft: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
   zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
@@ -279,6 +281,21 @@ function menuOption({ name, desc, selected, onpick }) {
 
 function menuSep() {
   return el("div", { class: "menu-sep" });
+}
+
+function handleLocalZoomWheel(e) {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const direction = e.deltaY <= 0 ? 1 : -1;
+  if (typeof activePage === "undefined") return;
+  if (activePage === "media" && typeof mediaAdjustZoom === "function") {
+    mediaAdjustZoom(direction);
+    return;
+  }
+  if (activePage === "storyboard" && typeof sbHandle !== "undefined" && sbHandle?.zoomBy) {
+    sbHandle.zoomBy(direction);
+  }
 }
 
 function projectModal(mode) {
@@ -1407,6 +1424,84 @@ function providerChipLabel(info, providerId) {
   return info.label.replace(" (ChatGPT login)", "").replace(" (subscription login)", "").replace(" (key)", "");
 }
 
+function renderAgentModelMainMenu(menu, providerId) {
+  const model = currentAgentModel(providerId);
+  const thinking = currentThinkingMode(providerId);
+  menu.innerHTML = "";
+  menu.classList.add("left", "up", "agent-model-menu");
+  menu.append(el("div", { class: "menu-label" }, ["Model"]));
+  const preset = modelPreset(providerId, model);
+  const modelRow = el("div", { class: "menu-opt sel agent-model-current" });
+  modelRow.append(
+    el("div", { class: "mo-main" }, [
+      el("div", { class: "mo-name" }, [modelLabel(providerId, model) || "Default model"]),
+      el("div", { class: "mo-desc mono" }, [preset ? preset.id : model || "Provider default"]),
+    ]),
+    el("span", { class: "mo-arrow" }, [icon("chevRight", 13)]),
+  );
+  modelRow.onclick = () => {
+    renderAgentModelListMenu(menu, providerId);
+    positionMenu(menu, menu._anchor);
+  };
+  menu.append(modelRow, menuSep(), el("div", { class: "menu-label" }, ["Thinking"]));
+  for (const mode of thinkingOptionsForProvider(providerId)) {
+    menu.appendChild(
+      menuOption({
+        name: THINKING_MODES[mode],
+        selected: thinking === mode,
+        onpick: () => {
+          if (mode === "auto") localStorage.removeItem(agentThinkingKey(providerId));
+          else localStorage.setItem(agentThinkingKey(providerId), mode);
+          renderAgent();
+        },
+      }),
+    );
+  }
+}
+
+function renderAgentModelListMenu(menu, providerId) {
+  const model = currentAgentModel(providerId);
+  menu.innerHTML = "";
+  menu.classList.add("left", "up", "agent-model-menu");
+  const back = el("div", { class: "menu-opt agent-model-back" }, [
+    el("span", { class: "mo-arrow" }, [icon("arrowLeft", 13)]),
+    el("div", { class: "mo-main" }, [el("div", { class: "mo-name" }, ["Model"])]),
+  ]);
+  back.onclick = () => {
+    renderAgentModelMainMenu(menu, providerId);
+    positionMenu(menu, menu._anchor);
+  };
+  menu.append(back, menuSep());
+  for (const preset of AGENT_MODEL_PRESETS[providerId] || []) {
+    menu.appendChild(
+      menuOption({
+        name: preset.label,
+        desc: `${preset.desc} - ${preset.id}`,
+        selected: model === preset.id,
+        onpick: () => {
+          localStorage.setItem(agentModelKey(providerId), preset.id);
+          renderAgent();
+        },
+      }),
+    );
+  }
+  menu.appendChild(
+    menuOption({
+      name: "Custom model...",
+      desc: "Enter an exact model id or CLI alias",
+      selected: model && !modelPresetIds(providerId).includes(model),
+      onpick: () => {
+        const next = prompt("Model id or alias", model || "");
+        if (next === null) return;
+        const cleaned = next.trim();
+        if (cleaned) localStorage.setItem(agentModelKey(providerId), cleaned);
+        else localStorage.removeItem(agentModelKey(providerId));
+        renderAgent();
+      },
+    }),
+  );
+}
+
 function renderAgentModelChip(info) {
   const providerId = info?.id ?? currentProviderId();
   const chip = $("modelChip");
@@ -1419,51 +1514,7 @@ function renderAgentModelChip(info) {
   chip.append(icon("chev", 11));
   chip.onclick = () =>
     openMenu(chip, (menu) => {
-      menu.classList.add("left", "up", "agent-model-menu");
-      menu.append(el("div", { class: "menu-label" }, ["Model"]));
-      for (const preset of AGENT_MODEL_PRESETS[providerId] || []) {
-        menu.appendChild(
-          menuOption({
-            name: preset.label,
-            desc: `${preset.desc} · ${preset.id}`,
-            selected: model === preset.id,
-            onpick: () => {
-              localStorage.setItem(agentModelKey(providerId), preset.id);
-              renderAgent();
-            },
-          }),
-        );
-      }
-      menu.appendChild(
-        menuOption({
-          name: "Custom model...",
-          desc: "Enter an exact model id or CLI alias",
-          selected: model && !modelPresetIds(providerId).includes(model),
-          onpick: () => {
-            const next = prompt("Model id or alias", model || "");
-            if (next === null) return;
-            const cleaned = next.trim();
-            if (cleaned) localStorage.setItem(agentModelKey(providerId), cleaned);
-            else localStorage.removeItem(agentModelKey(providerId));
-            renderAgent();
-          },
-        }),
-      );
-      menu.appendChild(menuSep());
-      menu.append(el("div", { class: "menu-label" }, ["Thinking"]));
-      for (const mode of thinkingOptionsForProvider(providerId)) {
-        menu.appendChild(
-          menuOption({
-            name: THINKING_MODES[mode],
-            selected: thinking === mode,
-            onpick: () => {
-              if (mode === "auto") localStorage.removeItem(agentThinkingKey(providerId));
-              else localStorage.setItem(agentThinkingKey(providerId), mode);
-              renderAgent();
-            },
-          }),
-        );
-      }
+      renderAgentModelMainMenu(menu, providerId);
     });
 }
 
@@ -2193,6 +2244,7 @@ async function init() {
     renderTimeline();
     renderOverlays();
   });
+  document.addEventListener("wheel", handleLocalZoomWheel, { passive: false, capture: true });
 
   document.addEventListener("keydown", (e) => {
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);

@@ -208,24 +208,27 @@
   position: relative;
 }
 .mv-viewport {
-  position: absolute; inset: 0; overflow: auto; padding: 18px;
-  display: flex; align-items: center; justify-content: center;
+  position: absolute; inset: 0; overflow: hidden; padding: 18px; box-sizing: border-box;
+  display: grid; place-items: center;
 }
 .mv-viewport.zoomed {
-  display: block;
+  display: block; overflow: auto;
 }
 .mv-figure {
   width: 100%;
   height: 100%;
-  min-width: 180px; min-height: 120px;
+  min-width: 0; min-height: 0;
   display: grid; place-items: center;
   margin: auto;
+  overflow: hidden;
 }
 .mv-viewport.zoomed .mv-figure {
   margin: 0;
+  overflow: visible;
 }
 .mv-media {
-  width: 100%; height: 100%; object-fit: contain; display: block;
+  width: 100%; height: 100%; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%;
+  object-fit: contain; display: block; box-sizing: border-box;
   border-radius: 6px; box-shadow: 0 18px 48px -16px rgba(0,0,0,0.8);
 }
 .mv-audio-card {
@@ -508,7 +511,27 @@
    RENDER PAGE
    ============================================================ */
 #page-render .page-cols { grid-template-columns: var(--render-left-w, 320px) minmax(0, 1fr); }
-.rd-form { display: flex; flex-direction: column; gap: 10px; padding: 13px; }
+.rd-form { display: flex; flex-direction: column; gap: 14px; padding: 13px; }
+.rd-section { border-bottom: 1px solid var(--line); padding-bottom: 13px; }
+.rd-section-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 0 10px;
+}
+.rd-section-title {
+  font-size: 10px; font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-mid);
+}
+.rd-section-sub { margin-left: auto; color: var(--text-dim); font-size: 10px; }
+.rd-section-body { display: flex; flex-direction: column; gap: 11px; }
+.rd-row2 { gap: 10px; }
+.rd-form > .btn-primary {
+  width: 100%;
+  min-height: 30px;
+  margin-top: 1px;
+}
+.rd-form > .sb-note {
+  margin-top: -6px;
+}
 .rd-stage {
   flex: 1; min-height: 0; display: grid; place-items: center; padding: 22px;
   background: radial-gradient(120% 95% at 50% 0%, #121418 0%, #0a0b0d 78%);
