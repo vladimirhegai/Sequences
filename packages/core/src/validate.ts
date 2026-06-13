@@ -4,7 +4,7 @@
  * command whose resulting state is invalid.
  */
 import { ProjectSchema, type Project } from "./schema.ts";
-import { ARCHETYPES, PROFILES, PRIMITIVES } from "./registry/index.ts";
+import { ARCHETYPES, PROFILES, PRIMITIVES, registryExtensionIds } from "./registry/index.ts";
 
 export interface ValidationIssue {
   path: string;
@@ -33,6 +33,18 @@ export function validateProject(input: unknown): ValidationResult {
   const issues: ValidationIssue[] = [];
   const assetIds = new Set(project.assets.map((a) => a.id));
   const sceneIds = new Set<string>();
+  const knownExtensions = new Set(registryExtensionIds());
+
+  if (project.extensions.enabled) {
+    project.extensions.enabled.forEach((id, i) => {
+      if (!knownExtensions.has(id)) {
+        issues.push({
+          path: `extensions.enabled.${i}`,
+          message: `unknown extension "${id}"`,
+        });
+      }
+    });
+  }
 
   if (!PROFILES[project.motionProfile]) {
     issues.push({

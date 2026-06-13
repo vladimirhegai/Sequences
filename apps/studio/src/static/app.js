@@ -130,6 +130,20 @@ function selectInput(options, current, onchange, labels) {
   return node;
 }
 
+function extensionLabel(id) {
+  return typeof extensionTitle === "function" ? extensionTitle(id) : id;
+}
+
+function uiEnabledExtensionSet() {
+  return typeof enabledExtensionSet === "function" ? enabledExtensionSet() : new Set();
+}
+
+function enabledCatalogEntries(entries, currentId = null) {
+  const enabled = uiEnabledExtensionSet();
+  if (enabled.size === 0 && !Array.isArray(state?.project?.extensions?.enabled)) return entries;
+  return entries.filter((entry) => enabled.has(entry.id) || entry.id === currentId);
+}
+
 /* ---------- toast ---------- */
 
 function toast(message, kind = "ok") {
@@ -645,7 +659,7 @@ const MOTION_GLYPH = { enter: "↘", exit: "↗", continuous: "∞" };
 /** A compact motion marker for a timeline clip: colored dot + short primitive
  * name. Stays readable in narrow clips; full detail lives in the inspector. */
 function motionMarker(primitive, phase, offsetLabel) {
-  const name = primitive.includes(".") ? primitive.split(".")[1] : primitive;
+  const name = extensionLabel(primitive);
   const chip = el("span", {
     class: "tl-mot",
     title: `${phase}: ${primitive}${offsetLabel ? ` (${offsetLabel})` : ""}`,
@@ -700,7 +714,7 @@ function renderTimeline() {
   state.manifest.scenes.forEach((scene, idx) => {
     const block = el("div", {
       class: `tl-scene ${scene.id === selectedSceneId ? "sel" : ""}`,
-      title: `${scene.id} — ${scene.archetype}${scene.transitionAfter ? ` → ${scene.transitionAfter}` : ""}`,
+      title: `${scene.id} - ${extensionLabel(scene.archetype)}${scene.transitionAfter ? ` -> ${scene.transitionAfter}` : ""}`,
     });
     block.style.left = `${(scene.startFrame / total) * 100}%`;
     block.style.width = `calc(${(scene.durationFrames / total) * 100}% - 3px)`;
@@ -711,7 +725,7 @@ function renderTimeline() {
     const body = el("div", { class: "tl-scene-body" }, [
       el("span", { class: "tl-scene-ico" }, [icon(ARCH_ICON[scene.archetype] ?? "film", 13)]),
       el("div", { class: "tl-scene-meta" }, [
-        el("div", { class: "tl-scene-name" }, [`${idx + 1} · ${scene.archetype}`]),
+        el("div", { class: "tl-scene-name" }, [`${idx + 1} · ${extensionLabel(scene.archetype)}`]),
         el("div", { class: "tl-scene-dur mono" }, [
           `${(scene.durationFrames / fps()).toFixed(1)}s · ${scene.durationFrames}f` +
             (scene.camera ? ` · ⤢${scene.camera.move}` : "") +
@@ -1020,7 +1034,7 @@ function renderSceneTab(host) {
 
   host.append(
     section(
-      `Scene · ${scene.archetype}`,
+      `Scene · ${extensionLabel(scene.archetype)}`,
       [
         el("div", { class: "row2" }, [
           field(
@@ -1066,11 +1080,12 @@ function renderSceneTab(host) {
 
   // camera
   const camera = scene.camera ?? null;
+  const cameraOptions = enabledCatalogEntries(meta.cameraMoves, camera?.move);
   const cameraNodes = [
     field(
       "Move",
       selectInput(
-        ["(none)", ...meta.cameraMoves.map((m) => m.id)],
+        ["(none)", ...cameraOptions.map((m) => m.id)],
         camera ? camera.move : "(none)",
         (move) =>
           sendCommand({
@@ -1078,6 +1093,7 @@ function renderSceneTab(host) {
             sceneId: scene.id,
             camera: move === "(none)" ? null : { move, scale: camera ? camera.scale : "subtle" },
           }),
+        ["(none)", ...cameraOptions.map((m) => extensionLabel(m.id))],
       ),
     ),
   ];
@@ -1118,7 +1134,6 @@ function renderLayersTab(host) {
     host.append(el("div", { class: "insp-empty" }, ["Select a scene in the timeline."]));
     return;
   }
-  const enterPrimitives = meta.primitives.filter((p) => p.kind === "enter").map((p) => p.id);
   const body = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
 
   for (const layer of manifestScene.layers) {
@@ -1143,12 +1158,21 @@ function renderLayersTab(host) {
     card.appendChild(head);
 
     if (layer.enter) {
+      const enterPrimitiveEntries = enabledCatalogEntries(
+        meta.primitives.filter((p) => p.kind === "enter"),
+        layer.enter.primitive,
+      );
+      const enterPrimitives = enterPrimitiveEntries.map((p) => p.id);
       const cardBody = el("div", { class: "layer-card-body" });
       cardBody.append(
         field(
           "Enter primitive",
-          selectInput(enterPrimitives, layer.enter.primitive, (primitive) =>
-            sendCommand({ type: "SwapMotion", sceneId: scene.id, layerId: layer.id, phase: "enter", primitive }),
+          selectInput(
+            enterPrimitives,
+            layer.enter.primitive,
+            (primitive) =>
+              sendCommand({ type: "SwapMotion", sceneId: scene.id, layerId: layer.id, phase: "enter", primitive }),
+            enterPrimitives.map(extensionLabel),
           ),
         ),
       );
@@ -1238,11 +1262,11 @@ function renderBrandTab(host) {
 
   // motion profile
   const list = el("div", { style: "display:flex;flex-direction:column;gap:7px" });
-  for (const profile of meta.profiles) {
+  for (const profile of enabledCatalogEntries(meta.profiles, state.project.motionProfile)) {
     const on = profile.id === state.project.motionProfile;
     const opt = el("div", { class: `profile-opt ${on ? "on" : ""}` }, [
       el("div", { class: "po-meta" }, [
-        el("div", { class: "po-name" }, [profile.id]),
+        el("div", { class: "po-name" }, [extensionLabel(profile.id)]),
         el("div", { class: "po-desc" }, [profile.summary]),
       ]),
     ]);
@@ -1986,13 +2010,13 @@ function renderTopbar() {
 
   const profileChip = $("profileChip");
   profileChip.innerHTML = "";
-  profileChip.append(el("b", {}, [state.project.motionProfile]), el("span", {}, ["profile"]), el("span", { class: "chev" }, [icon("chev", 12)]));
+  profileChip.append(el("b", {}, [extensionLabel(state.project.motionProfile)]), el("span", {}, ["profile"]), el("span", { class: "chev" }, [icon("chev", 12)]));
   profileChip.onclick = () =>
     openMenu(profileChip, (menu) => {
-      for (const profile of meta.profiles) {
+      for (const profile of enabledCatalogEntries(meta.profiles, state.project.motionProfile)) {
         menu.appendChild(
           menuOption({
-            name: profile.id,
+            name: extensionLabel(profile.id),
             desc: profile.summary,
             selected: profile.id === state.project.motionProfile,
             onpick: () => sendCommand({ type: "SetMotionProfile", profile: profile.id }),
@@ -2122,10 +2146,15 @@ function openAddSceneMenu() {
     wrap,
     (menu) => {
       menu.classList.add("left", "up");
-      for (const a of meta.archetypes) {
+      const archetypes = enabledCatalogEntries(meta.archetypes);
+      if (archetypes.length === 0) {
+        menu.appendChild(menuOption({ name: "No enabled archetypes", desc: "Enable one on the Extensions page.", onpick: () => setPage("extensions") }));
+        return;
+      }
+      for (const a of archetypes) {
         menu.appendChild(
           menuOption({
-            name: a.id,
+            name: extensionLabel(a.id),
             desc: a.summary,
             onpick: async () => {
               const slots = defaultSlots(a);

@@ -20,12 +20,12 @@ export const CAMERA_MOVES: Record<CameraMove, CameraMoveDef> = {
   pushIn: {
     id: "pushIn",
     summary:
-      "Slow whole-frame push toward the content across the scene. Use on the hero beat (feature reveal, walkthrough) — at most one or two per video.",
+      "A slow camera push toward the content across the scene. Use on the hero product beat, usually once or twice per video.",
   },
   pullBack: {
     id: "pullBack",
     summary:
-      "Starts close and settles out to the full frame. Use to open a scene with intimacy (a quote, a stat) before revealing context.",
+      "Starts close and eases back to the full frame. Use when a quote, stat, or product detail should reveal its context.",
   },
 };
 

@@ -37,6 +37,7 @@ export function createDefaultProject(options?: {
       fonts: { display: "Segoe UI", body: "Segoe UI" },
     },
     motionProfile: "crisp-saas",
+    extensions: { enabled: null },
     scenes: [
       {
         id: "hook",
@@ -131,6 +132,7 @@ export function createShowcaseProject(options?: {
       fonts: { display: "Segoe UI", body: "Segoe UI" },
     },
     motionProfile: "bold-launch",
+    extensions: { enabled: null },
     scenes: [
       {
         id: "hook",

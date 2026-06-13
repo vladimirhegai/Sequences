@@ -25,6 +25,8 @@ import {
   parsePlan,
   planToCommands,
   planningContext,
+  enabledExtensionIds,
+  registryExtensionIds,
   ProjectStore,
   type Command,
   type Project,
@@ -76,6 +78,46 @@ function lintText(project: Project): string {
     .join("\n");
 }
 
+function assertExtensionEnabled(kind: string, id: string, enabled: Set<string>, known: Set<string>): void {
+  if (!known.has(id)) return;
+  if (!enabled.has(id)) throw new Error(`extension disabled: ${kind} "${id}"`);
+}
+
+function assertCommandUsesEnabled(command: Command, enabled: Set<string>, known: Set<string>): void {
+  switch (command.type) {
+    case "Batch":
+      command.commands.forEach((sub) => assertCommandUsesEnabled(sub, enabled, known));
+      return;
+    case "AddScene":
+      assertExtensionEnabled("archetype", command.scene.archetype, enabled, known);
+      if (command.scene.camera && !enabled.has(command.scene.camera.move)) {
+        assertExtensionEnabled("camera move", command.scene.camera.move, enabled, known);
+      }
+      return;
+    case "SetMotionProfile":
+      assertExtensionEnabled("profile", command.profile, enabled, known);
+      return;
+    case "SwapMotion":
+      if (command.primitive) assertExtensionEnabled("primitive", command.primitive, enabled, known);
+      return;
+    case "SetLayerOverride":
+      if (command.patch?.enterPrimitive && !enabled.has(command.patch.enterPrimitive)) {
+        assertExtensionEnabled("primitive", command.patch.enterPrimitive, enabled, known);
+      }
+      if (command.patch?.exitPrimitive && !enabled.has(command.patch.exitPrimitive)) {
+        assertExtensionEnabled("primitive", command.patch.exitPrimitive, enabled, known);
+      }
+      return;
+    case "SetSceneCamera":
+      if (command.camera && !enabled.has(command.camera.move)) {
+        assertExtensionEnabled("camera move", command.camera.move, enabled, known);
+      }
+      return;
+    default:
+      return;
+  }
+}
+
 export function startMcpServer(projectDir: string): void {
   const store = new ProjectStore(loadProject(projectDir), (entry) => appendEvent(projectDir, entry));
   const persist = () => {
@@ -97,7 +139,7 @@ export function startMcpServer(projectDir: string): void {
           "",
           "## Plan shape for submit_plan",
           '{ "motionProfile": "<id>", "scenes": [ { "archetype": "<id>", "layout"?, "durationFrames"?, "slots": {...}, "camera"? } ] }',
-          "Rules: 3-6 scenes, open with hook-opener, close with logo-sting-cta, respect slot word budgets.",
+          "Rules: 3-6 scenes, use only enabled extension ids from the catalog, respect slot word budgets.",
         ].join("\n"),
     },
     {
@@ -110,7 +152,7 @@ export function startMcpServer(projectDir: string): void {
         required: ["plan"],
       },
       handler: (args) => {
-        const plan = parsePlan(args.plan);
+        const plan = parsePlan(args.plan, { project: store.project });
         const outcome = store.apply(planToCommands(store.project, plan), "agent");
         if (!outcome.ok) {
           throw new Error(
@@ -164,6 +206,7 @@ export function startMcpServer(projectDir: string): void {
           return c as Command;
         });
         const command: Command = commands.length === 1 ? commands[0]! : { type: "Batch", commands };
+        assertCommandUsesEnabled(command, enabledExtensionIds(store.project), new Set(registryExtensionIds()));
         const outcome = store.apply(command, "agent");
         if (!outcome.ok) {
           throw new Error(

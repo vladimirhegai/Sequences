@@ -16,7 +16,7 @@ export const fadeIn: MotionPrimitive = {
   id: "enter.fadeIn",
   kind: "enter",
   summary:
-    "Plain opacity entrance. The neutral default — use for supporting copy and decor; never the hero of a scene.",
+    "A gentle reveal that lets an element arrive without calling attention to itself. Use for background glow, small labels, and supporting copy.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "base", easing: "enter.glide" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -38,7 +38,7 @@ export const slideUpSoft: MotionPrimitive = {
   id: "enter.slideUpSoft",
   kind: "enter",
   summary:
-    "Rises a short distance while fading in. The workhorse entrance for body copy, bullets, captions.",
+    "A small upward lift with a soft settle. Reliable for captions, bullets, and secondary text that should feel polished but quiet.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "base", easing: "enter.glide", distance: "step" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -60,7 +60,7 @@ export const maskRevealUp: MotionPrimitive = {
   id: "enter.maskRevealUp",
   kind: "enter",
   summary:
-    "Text rises out of an invisible line (clip-mask wipe). The signature SaaS reveal — best for headlines; pairs with crisp profiles.",
+    "A clean headline reveal where type rises from a hidden baseline. Signature SaaS move for confident openers and feature titles.",
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "base", easing: "enter.snap" },
   needsMask: true,
@@ -83,7 +83,7 @@ export const slideInDirectional: MotionPrimitive = {
   id: "enter.slideInDirectional",
   kind: "enter",
   summary:
-    "Slides in from the nearest horizontal edge based on layer position. Use for UI panels, walkthrough callouts, and interface pieces that should feel spatial.",
+    "A panel-style entrance from the side that matches where the element lives on screen. Good for UI panels, steps, and callouts.",
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "base", easing: "enter.snap", distance: "travel" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -107,7 +107,7 @@ export const blurIn: MotionPrimitive = {
   id: "enter.blurIn",
   kind: "enter",
   summary:
-    "Fades in through a soft defocus. Use sparingly for screenshots and atmospheric support, never for dense copy.",
+    "A soft focus-to-sharp arrival. Good for screenshots and atmospheric support when the scene needs a little depth, not for dense copy.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "relaxed", easing: "enter.glide", distance: "step" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -130,7 +130,7 @@ export const charCascade: MotionPrimitive = {
   id: "enter.charCascade",
   kind: "enter",
   summary:
-    "Character-by-character kinetic type. Best for a short hook word or logo sting; avoid on paragraphs and long product copy.",
+    "Letters step on quickly like kinetic launch typography. Best for very short hook lines, product names, and logo stings.",
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "relaxed", easing: "enter.snap" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -162,7 +162,7 @@ export const scaleIn: MotionPrimitive = {
   id: "enter.scaleIn",
   kind: "enter",
   summary:
-    "Scales up from slightly small while fading in, from the layer's anchor. Use for media, cards, badges — not paragraphs.",
+    "A card or media element grows into place from its anchor with a subtle snap. Use for screenshots, badges, and feature cards.",
   tags: { energy: "punchy", style: "organic" },
   defaults: { duration: "base", easing: "enter.settle", scale: "pop" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -185,7 +185,7 @@ export const countUp: MotionPrimitive = {
   id: "enter.countUp",
   kind: "enter",
   summary:
-    "Number tween for stat callouts: counts to the final value with a hard ease-out, snapping exactly. Auto-assigned to number slots.",
+    "A number reveal that races to the final value and lands cleanly. Use for one hero metric that should feel earned.",
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "slow", easing: "enter.snap" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -204,7 +204,7 @@ export const countUp: MotionPrimitive = {
 export const fadeDown: MotionPrimitive = {
   id: "exit.fadeDown",
   kind: "exit",
-  summary: "Quiet exit: fades while drifting down a nudge. Default soft-profile exit.",
+  summary: "A quiet send-off that lets an element drift away without stealing the cut. Good for warm, calm scenes.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "quick", easing: "exit.fade", distance: "nudge" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -224,7 +224,7 @@ export const fadeDown: MotionPrimitive = {
 export const slideExit: MotionPrimitive = {
   id: "exit.slideExit",
   kind: "exit",
-  summary: "Departs upward with acceleration (slow-out, fast-in). Use when the next scene continues the motion direction.",
+  summary: "A crisp upward departure that carries energy into the next beat. Use when the cut should feel like continued motion.",
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "quick", easing: "exit.swift", distance: "step" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -245,7 +245,7 @@ export const scaleAway: MotionPrimitive = {
   id: "exit.scaleAway",
   kind: "exit",
   summary:
-    "Shrinks away from the layer anchor while fading out. Use for cards, badges, and UI pieces that should clear decisively.",
+    "A decisive shrink-and-clear exit for cards, badges, and UI pieces when the scene needs a clean reset.",
   tags: { energy: "punchy", style: "organic" },
   defaults: { duration: "quick", easing: "exit.swift", scale: "subtle" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -267,7 +267,7 @@ export const pop: MotionPrimitive = {
   id: "emphasis.pop",
   kind: "emphasis",
   summary:
-    "Quick scale punch and settle on the layer's anchor. One per scene max — emphasis is loud by definition.",
+    "A quick attention tap on one element. Use for a CTA, metric, or hotspot when it deserves the scene's single accent.",
   tags: { energy: "punchy", style: "organic" },
   defaults: { duration: "quick", easing: "enter.settle", scale: "pop" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -297,7 +297,7 @@ export const pulseGlow: MotionPrimitive = {
   id: "emphasis.pulseGlow",
   kind: "emphasis",
   summary:
-    "A brief accent-colored glow pulse. Use to call attention to one metric, CTA, or UI hotspot; one per scene maximum.",
+    "A brief accent glow that points the eye at one CTA, metric, or UI hotspot. Keep it rare and intentional.",
   tags: { energy: "punchy", style: "organic" },
   defaults: { duration: "quick", easing: "enter.settle", distance: "nudge" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -328,7 +328,7 @@ export const underlineSweep: MotionPrimitive = {
   id: "emphasis.underlineSweep",
   kind: "emphasis",
   summary:
-    "Draws an accent underline under text. Use for the one keyword that matters; pairs best with clean SaaS copy.",
+    "An accent underline that draws under the key word. Use to make one phrase feel chosen, not shouted.",
   tags: { energy: "calm", style: "mechanical" },
   defaults: { duration: "base", easing: "move.glide" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -346,7 +346,7 @@ export const kenBurns: MotionPrimitive = {
   id: "continuous.kenBurns",
   kind: "continuous",
   summary:
-    "Slow scale-and-drift on screenshots/media for the whole scene. Sub-perceptual; keeps held frames alive.",
+    "A slow camera-like drift for held screenshots and media. Keeps a product shot alive while copy lands around it.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "dramatic", easing: "linear.mech", scale: "subtle", distance: "nudge" },
   emit(ctx: EmitContext): GsapStep[] {
@@ -368,7 +368,7 @@ export const floatIdle: MotionPrimitive = {
   id: "continuous.floatIdle",
   kind: "continuous",
   summary:
-    "A quiet up-and-back drift for held UI cards or badges. Secondary motion only; keep it much quieter than foreground entrances.",
+    "A gentle hover for cards and badges during a hold. Background motion only, quieter than the main entrance.",
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "dramatic", easing: "move.glide", distance: "nudge" },
   emit(ctx: EmitContext): GsapStep[] {

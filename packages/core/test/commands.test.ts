@@ -29,6 +29,7 @@ const COMMANDS: Command[] = [
   { type: "SetSlotContent", sceneId: "hook", slot: "headline", value: "New headline" },
   { type: "SetTransition", afterSceneId: "hook", kind: "fade" },
   { type: "SetMotionProfile", profile: "warm-startup" },
+  { type: "SetEnabledExtensions", enabled: ["hook-opener", "logo-sting-cta", "crisp-saas"] },
   { type: "SetBrandColor", key: "accent", value: "#FF8800" },
   { type: "SetBrandFont", key: "display", value: "Georgia" },
   { type: "OverrideLayerBox", sceneId: "hook", layerId: "headline", box: { x: 200, y: 300 } },

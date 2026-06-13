@@ -140,6 +140,13 @@ export const AssetSchema = z.object({
 });
 export type Asset = z.infer<typeof AssetSchema>;
 
+export const EnabledExtensionsSchema = z.array(z.string()).nullable();
+export const ExtensionSettingsSchema = z.object({
+  /** null means "all installed registry entries"; [] is a deliberate empty skill list. */
+  enabled: EnabledExtensionsSchema.default(null),
+});
+export type ExtensionSettings = z.infer<typeof ExtensionSettingsSchema>;
+
 export const ProjectSchema = z.object({
   schemaVersion: z.literal(1),
   meta: z.object({
@@ -155,6 +162,7 @@ export const ProjectSchema = z.object({
   /** Transition AFTER the keyed scene (no entry → profile default). */
   transitions: z.record(z.string(), TransitionKindSchema).default({}),
   assets: z.array(AssetSchema).default([]),
+  extensions: ExtensionSettingsSchema.default({ enabled: null }),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 

@@ -37,7 +37,7 @@ export async function requestPlanWith(
   if (!brief.trim()) throw new Error("brief is empty");
   const prompt = buildPlanPrompt(brief, project);
   const raw = await provider.complete(prompt, options);
-  const plan = parsePlan(extractJsonObject(raw));
+  const plan = parsePlan(extractJsonObject(raw), { project });
   return { provider: provider.id, plan, raw };
 }
 

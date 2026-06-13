@@ -522,5 +522,36 @@
       "path": "assets/pulse-20260610-202405.mp4",
       "kind": "video"
     }
-  ]
+  ],
+  "extensions": {
+    "enabled": [
+      "enter.fadeIn",
+      "enter.slideUpSoft",
+      "enter.maskRevealUp",
+      "enter.slideInDirectional",
+      "enter.blurIn",
+      "enter.charCascade",
+      "enter.scaleIn",
+      "enter.countUp",
+      "exit.fadeDown",
+      "exit.slideExit",
+      "exit.scaleAway",
+      "emphasis.pop",
+      "emphasis.pulseGlow",
+      "emphasis.underlineSweep",
+      "continuous.kenBurns",
+      "continuous.floatIdle",
+      "hook-opener",
+      "feature-reveal",
+      "stat-callout",
+      "logo-sting-cta",
+      "ui-walkthrough",
+      "social-proof",
+      "crisp-saas",
+      "warm-startup",
+      "bold-launch",
+      "pushIn",
+      "pullBack"
+    ]
+  }
 }

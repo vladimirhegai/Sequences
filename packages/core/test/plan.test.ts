@@ -39,6 +39,22 @@ describe("plan layer (T4)", () => {
     ).toThrow(/has layouts center\/left, not "diagonal"/);
   });
 
+  it("parsePlan rejects catalog ids disabled by the project extension list", () => {
+    const project = createDefaultProject();
+    project.extensions = { enabled: ["crisp-saas", "hook-opener", "logo-sting-cta"] };
+
+    expect(() => parsePlan(GOOD_PLAN, { project })).toThrow(/motionProfile "bold-launch" is disabled/);
+    expect(() =>
+      parsePlan(
+        {
+          motionProfile: "crisp-saas",
+          scenes: [{ archetype: "stat-callout", slots: { stat: { value: 1 }, caption: "x" } }],
+        },
+        { project },
+      ),
+    ).toThrow(/archetype "stat-callout" is disabled/);
+  });
+
   it("planToCommands replaces scenes atomically through the store, and is undoable", () => {
     const store = new ProjectStore(createDefaultProject());
     const before = structuredClone(store.project);
@@ -104,5 +120,17 @@ describe("plan layer (T4)", () => {
     expect(prompt).toContain("- dash (image): assets/dash.png");
     expect(prompt).toContain("a punchy 20s promo");
     expect(prompt).toContain('"motionProfile"');
+  });
+
+  it("the plan prompt only exposes enabled extensions", () => {
+    const project = createDefaultProject();
+    project.extensions = { enabled: ["crisp-saas", "hook-opener", "logo-sting-cta"] };
+    const prompt = buildPlanPrompt("a focused promo", project);
+
+    expect(prompt).toContain("- crisp-saas:");
+    expect(prompt).toContain("- hook-opener");
+    expect(prompt).not.toContain("- bold-launch:");
+    expect(prompt).not.toContain("- stat-callout");
+    expect(prompt).toContain("- (none enabled)");
   });
 });

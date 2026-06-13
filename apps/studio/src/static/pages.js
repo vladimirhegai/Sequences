@@ -73,10 +73,12 @@ function initPages() {
   renderPageTabs();
   renderReferencesPage();
   renderExtensionsPage();
+  PAGE_HOOKS.references = { onEnter: () => renderReferencesPage(), onState: () => renderReferencesPage() };
   PAGE_HOOKS.media = { onEnter: () => renderMediaPage(), onState: () => renderMediaPage() };
   PAGE_HOOKS.design = { onEnter: () => enterDesignPage(), onState: () => designOnState() };
   PAGE_HOOKS.storyboard = { onEnter: () => enterStoryboardPage(), onState: () => storyboardOnState() };
   PAGE_HOOKS.render = { onEnter: () => renderRenderPage(), onState: () => renderRenderPage() };
+  PAGE_HOOKS.extensions = { onEnter: () => renderExtensionsPage(), onState: () => renderExtensionsPage() };
 }
 
 /** Called from app.js render() after every state change. */
@@ -157,6 +159,29 @@ const EXT_TYPE_META = {
   camera: { icon: "clapper", label: "Camera" },
 };
 
+function titleWord(word) {
+  const lower = word.toLowerCase();
+  if (lower === "saas") return "SaaS";
+  if (lower === "cta") return "CTA";
+  if (lower === "ui") return "UI";
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function extensionTitle(id) {
+  const raw = String(id).includes(".") ? String(id).split(".").pop() : String(id);
+  return raw
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(titleWord)
+    .join(" ");
+}
+
+function extensionKindTitle(kind) {
+  return kind ? titleWord(kind) : "";
+}
+
 function extCatalog() {
   const entries = [];
   for (const p of meta.primitives || []) entries.push({ type: "primitive", id: p.id, kind: p.kind, summary: p.summary });
@@ -164,6 +189,53 @@ function extCatalog() {
   for (const p of meta.profiles || []) entries.push({ type: "profile", id: p.id, summary: p.summary });
   for (const m of meta.cameraMoves || []) entries.push({ type: "camera", id: m.id, summary: m.summary });
   return entries;
+}
+
+function enabledExtensionSet() {
+  const all = extCatalog().map((e) => e.id);
+  const configured = state?.project?.extensions?.enabled;
+  if (!Array.isArray(configured)) return new Set(all);
+  return new Set(configured);
+}
+
+async function toggleExtension(id) {
+  const enabled = enabledExtensionSet();
+  if (enabled.has(id)) enabled.delete(id);
+  else enabled.add(id);
+  const ordered = extCatalog().map((e) => e.id).filter((entryId) => enabled.has(entryId));
+  await sendCommand({ type: "SetEnabledExtensions", enabled: ordered });
+}
+
+function extensionKindNode(entry) {
+  const tm = EXT_TYPE_META[entry.type];
+  const nodes = [tm.label];
+  if (entry.kind) nodes.push(" · ", el("span", { class: "ext-kind-em" }, [extensionKindTitle(entry.kind)]));
+  return nodes;
+}
+
+function openExtensionView(entry) {
+  closeModal();
+  closeMenus();
+  const tm = EXT_TYPE_META[entry.type];
+  const modal = el("div", { class: "modal ext-view-modal" }, [
+    el("div", { class: "modal-head" }, [
+      el("span", { class: "mh-ico" }, [icon(tm.icon, 15)]),
+      el("div", {}, [
+        el("div", { class: "mh-title" }, [extensionTitle(entry.id)]),
+        el("div", { class: "mh-sub" }, extensionKindNode(entry)),
+      ]),
+    ]),
+    el("div", { class: "modal-body ext-view-body" }),
+    el("div", { class: "modal-foot" }, [
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn btn-ghost", onclick: closeModal }, ["Close"]),
+    ]),
+  ]);
+  const backdrop = el("div", { id: "modalBackdrop" }, [modal]);
+  backdrop.onclick = (event) => {
+    if (event.target === backdrop) closeModal();
+  };
+  document.body.appendChild(backdrop);
 }
 
 function renderExtensionsPage() {
@@ -174,8 +246,8 @@ function renderExtensionsPage() {
   wrap.append(
     el("div", { class: "ext-head" }, [
       el("h2", {}, ["Extensions"]),
-      el("span", { class: "phase-tag" }, ["community marketplace · Phase 3"]),
-      el("span", { class: "sub" }, ["the curated motion system, installed — skills & community plugins arrive later"]),
+      el("span", { class: "phase-tag" }, ["project skill list"]),
+      el("span", { class: "sub" }, ["enable only the motion vocabulary this project should give the agent"]),
     ]),
   );
 
@@ -211,9 +283,7 @@ function renderExtensionsPage() {
     el("div", { class: "ext-banner" }, [
       icon("box", 14),
       el("span", {}, [
-        "Every card below is a live ",
-        el("b", {}, ["registry entry"]),
-        " — token-pure and lint-gated. Browsing and installing community skills & plugins opens when the registry goes remote in Phase 3.",
+        "Click a card to include or remove it from the agent's planning catalog. Disabled extensions stay installed, so existing scenes still render.",
       ]),
     ]),
   );
@@ -231,28 +301,57 @@ function fillExtGrid() {
   const entries = extCatalog().filter(
     (e) =>
       (extCategory === "all" || e.type === extCategory) &&
-      (!q || e.id.toLowerCase().includes(q) || (e.summary || "").toLowerCase().includes(q)),
+      (!q ||
+        e.id.toLowerCase().includes(q) ||
+        extensionTitle(e.id).toLowerCase().includes(q) ||
+        (e.summary || "").toLowerCase().includes(q)),
   );
   if (entries.length === 0) {
     grid.append(el("div", { class: "ext-none" }, ["No installed extensions match that search."]));
     return;
   }
+  const enabled = enabledExtensionSet();
   for (const e of entries) {
     const tm = EXT_TYPE_META[e.type];
-    const card = el("div", { class: "ext-card" }, [
+    const on = enabled.has(e.id);
+    const view = el("button", { class: "btn-sm ext-view-btn", title: `View ${extensionTitle(e.id)}` }, [
+      icon("film", 12),
+      "View",
+    ]);
+    view.onclick = (event) => {
+      event.stopPropagation();
+      openExtensionView(e);
+    };
+    const card = el("div", {
+      class: `ext-card ${on ? "on" : "off"}`,
+      role: "button",
+      tabindex: "0",
+      title: `${on ? "Disable" : "Enable"} ${extensionTitle(e.id)}`,
+    }, [
       el("div", { class: "ext-card-head" }, [
         el("span", { class: `ext-card-ico ext-ico-${e.type}` }, [icon(tm.icon, 15)]),
         el("div", { class: "ext-card-id" }, [
-          el("div", { class: "ext-card-name mono" }, [e.id]),
-          el("div", { class: "ext-card-kind" }, [e.kind ? `${tm.label} · ${e.kind}` : tm.label]),
+          el("div", { class: "ext-card-name" }, [extensionTitle(e.id)]),
+          el("div", { class: "ext-card-kind" }, extensionKindNode(e)),
         ]),
       ]),
-      el("div", { class: "ext-card-summary" }, [e.summary || "—"]),
+      el("div", { class: "ext-card-summary" }, [e.summary || ""]),
       el("div", { class: "ext-card-foot" }, [
-        el("span", { class: "ext-installed" }, [icon("check", 11), "Installed"]),
+        el("span", { class: `ext-installed ${on ? "on" : "off"}` }, [
+          icon(on ? "check" : "x", 11),
+          on ? "Enabled" : "Disabled",
+        ]),
+        view,
         el("span", { class: "ext-core" }, ["core"]),
       ]),
     ]);
+    card.onclick = () => toggleExtension(e.id);
+    card.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleExtension(e.id);
+      }
+    };
     grid.appendChild(card);
   }
 }
@@ -362,7 +461,7 @@ async function renderRenderPage() {
   const thumbs = (state.thumbs && state.thumbs.files) || {};
   state.manifest.scenes.forEach((scene, i) => {
     const block = el("div", { class: "rd-strip-scene", title: scene.id }, [
-      el("span", {}, [`${i + 1} · ${scene.archetype}`]),
+      el("span", {}, [`${i + 1} · ${extensionTitle(scene.archetype)}`]),
     ]);
     block.style.flex = `${scene.durationFrames / total} 1 0`;
     if (thumbs[scene.id]) block.style.backgroundImage = `url("${thumbs[scene.id]}?v=${state.thumbs.version}")`;

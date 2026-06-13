@@ -12,7 +12,7 @@ import type { MotionProfile } from "./types.ts";
 export const crispSaas: MotionProfile = {
   id: "crisp-saas",
   summary:
-    "Quick durations, snap/glide easings, tight staggers, mask reveals, hard cuts. The Linear/Vercel look. Default for dev tools and B2B SaaS.",
+    "Precise SaaS pacing with tight overlaps, crisp reveals, and clean cuts. Best for dev tools, dashboards, and polished B2B demos.",
   defaults: {
     stagger: "tight",
     settleGap: "quick",
@@ -58,7 +58,7 @@ export const crispSaas: MotionProfile = {
 export const warmStartup: MotionProfile = {
   id: "warm-startup",
   summary:
-    "Relaxed durations, settle easing, fades and soft slides, fade transitions, gentle exits. For consumer and friendly-brand promos.",
+    "A softer product story with relaxed arrivals, gentle exits, and more breathing room. Best for consumer or human-centered brands.",
   defaults: {
     stagger: "base",
     settleGap: "base",
@@ -146,7 +146,7 @@ export const warmStartup: MotionProfile = {
 export const boldLaunch: MotionProfile = {
   id: "bold-launch",
   summary:
-    "Punchier launch-film pacing: character hooks, directional UI motion, scale-away exits, and stronger continuous accents. Use for Product Hunt and release-day promos.",
+    "High-energy launch pacing with kinetic type, directional UI movement, and assertive exits. Best for Product Hunt and release-day promos.",
   defaults: {
     stagger: "tight",
     settleGap: "instant",

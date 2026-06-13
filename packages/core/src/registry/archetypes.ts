@@ -39,7 +39,7 @@ function mediaOf(value: SlotValue | undefined): string | undefined {
 export const hookOpener: Archetype = {
   id: "hook-opener",
   summary:
-    "Bold claim opener: one big headline, optional subline, soft brand-gradient backdrop. The first beat of nearly every promo.",
+    "A strong first beat with one clear headline, optional support line, and a soft branded backdrop. Use when the video needs to hook fast.",
   slots: {
     headline: { kind: "text", required: true, maxWords: 7 },
     subline: { kind: "text", required: false, maxWords: 14 },
@@ -97,7 +97,7 @@ export const hookOpener: Archetype = {
 export const featureReveal: Archetype = {
   id: "feature-reveal",
   summary:
-    "Screenshot hero with headline and up to 3 benefit bullets. Layouts media-left/media-right. The core 'show the product' beat.",
+    "A product proof beat with a screenshot, headline, and up to three benefits. Use when the viewer needs to see the product doing the work.",
   slots: {
     headline: { kind: "text", required: true, maxWords: 7 },
     media: { kind: "media", required: true },
@@ -155,7 +155,7 @@ export const featureReveal: Archetype = {
 export const statCallout: Archetype = {
   id: "stat-callout",
   summary:
-    "One big counted-up number with a caption and accent bar. Use for the single most impressive metric — never two per video back-to-back.",
+    "One large metric with a short caption and accent mark. Use for the single proof point that should stop the scroll.",
   slots: {
     stat: { kind: "number", required: true },
     caption: { kind: "text", required: true, maxWords: 10 },
@@ -205,7 +205,7 @@ export const statCallout: Archetype = {
 export const logoStingCta: Archetype = {
   id: "logo-sting-cta",
   summary:
-    "Closing sting: brand wordmark, optional tagline, CTA pill. One decisive motion and a hold — always the last beat.",
+    "A clean closing beat with the brand name, optional tagline, and CTA. Use when the story needs a confident final hold.",
   slots: {
     tagline: { kind: "text", required: false, maxWords: 8 },
     cta: { kind: "text", required: true, maxWords: 5 },
@@ -261,7 +261,7 @@ export const logoStingCta: Archetype = {
 export const uiWalkthrough: Archetype = {
   id: "ui-walkthrough",
   summary:
-    "Guided product walkthrough: screenshot, headline, numbered steps, and accent hotspots. Use when the video must teach a workflow quickly.",
+    "A guided workflow beat with product media, numbered steps, and accent hotspots. Use when the viewer should understand the flow quickly.",
   slots: {
     headline: { kind: "text", required: true, maxWords: 8 },
     media: { kind: "media", required: true },
@@ -344,7 +344,7 @@ export const uiWalkthrough: Archetype = {
 export const socialProof: Archetype = {
   id: "social-proof",
   summary:
-    "Credibility beat: testimonial quote, source, and optional customer/logo row. Use after the feature proof, before the CTA.",
+    "A trust beat with a quote, source, and optional customer names. Use after product proof and before the CTA.",
   slots: {
     quote: { kind: "text", required: true, maxWords: 18 },
     source: { kind: "text", required: true, maxWords: 6 },

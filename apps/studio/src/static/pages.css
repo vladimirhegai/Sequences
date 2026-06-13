@@ -601,8 +601,13 @@
 .ext-card {
   border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-1);
   padding: 13px 14px 12px; display: flex; flex-direction: column; gap: 9px; transition: 0.14s;
+  cursor: pointer;
 }
 .ext-card:hover { border-color: var(--line-hi); background: var(--bg-2); }
+.ext-card.on { border-color: var(--silver-line); box-shadow: inset 0 0 0 1px rgba(201,207,217,0.08); }
+.ext-card.off { opacity: 0.54; background: color-mix(in srgb, var(--bg-1) 78%, #050608); }
+.ext-card.off:hover { opacity: 0.78; }
+.ext-card:focus-visible { outline: 2px solid var(--silver-line); outline-offset: 2px; }
 .ext-card-head { display: flex; align-items: center; gap: 11px; }
 .ext-card-ico {
   width: 34px; height: 34px; border-radius: var(--r); flex: 0 0 auto; display: grid; place-items: center;
@@ -614,14 +619,20 @@
 .ext-ico-camera { color: var(--warn); }
 .ext-card-id { min-width: 0; }
 .ext-card-name { font-size: 12.5px; font-weight: 600; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ext-card-kind { margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-lo); }
+.ext-card-kind { margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-lo); }
+.ext-kind-em { color: var(--text-hi); font-weight: 800; }
 .ext-card-summary { font-size: 11.5px; line-height: 1.5; color: var(--text-lo); flex: 1 1 auto; }
 .ext-card-foot { display: flex; align-items: center; gap: 8px; padding-top: 3px; border-top: 1px solid var(--line); }
 .ext-installed {
   display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600;
-  color: var(--good); padding: 3px 0;
+  padding: 3px 0;
 }
+.ext-installed.on { color: var(--good); }
+.ext-installed.off { color: var(--text-lo); }
+.ext-view-btn { margin-left: auto; height: 24px; padding: 0 8px; }
 .ext-core {
-  margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--text-dim);
+  font-family: var(--mono); font-size: 9.5px; color: var(--text-dim);
   padding: 2px 7px; border-radius: var(--r-sm); background: var(--bg-2); border: 1px solid var(--line-2);
 }
+.ext-view-modal { width: min(760px, calc(100vw - 44px)); height: min(520px, calc(100vh - 80px)); }
+.ext-view-body { min-height: 360px; background: var(--bg-0); }

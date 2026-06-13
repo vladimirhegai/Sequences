@@ -13,6 +13,7 @@ import {
   BoxSchema,
   CameraSchema,
   ChoreographySchema,
+  EnabledExtensionsSchema,
   LayerOverrideSchema,
   SceneSchema,
   SlotValueSchema,
@@ -33,6 +34,7 @@ export const CommandSchema: z.ZodType<unknown> = z.lazy(() =>
     z.object({ type: z.literal("SetSlotContent"), sceneId: z.string(), slot: z.string(), value: SlotValueSchema.nullable() }),
     z.object({ type: z.literal("SetTransition"), afterSceneId: z.string(), kind: TransitionKindSchema.nullable() }),
     z.object({ type: z.literal("SetMotionProfile"), profile: z.string() }),
+    z.object({ type: z.literal("SetEnabledExtensions"), enabled: EnabledExtensionsSchema }),
     z.object({ type: z.literal("SetBrandColor"), key: z.enum(COLOR_TOKEN_IDS), value: HexColor }),
     z.object({ type: z.literal("SetBrandFont"), key: z.enum(["display", "body"]), value: z.string().min(1) }),
     z.object({ type: z.literal("OverrideLayerBox"), sceneId: z.string(), layerId: z.string(), box: BoxSchema.partial().nullable() }),
@@ -57,6 +59,7 @@ export type Command =
   | { type: "SetSlotContent"; sceneId: string; slot: string; value: z.infer<typeof SlotValueSchema> | null }
   | { type: "SetTransition"; afterSceneId: string; kind: z.infer<typeof TransitionKindSchema> | null }
   | { type: "SetMotionProfile"; profile: string }
+  | { type: "SetEnabledExtensions"; enabled: z.infer<typeof EnabledExtensionsSchema> }
   | { type: "SetBrandColor"; key: (typeof COLOR_TOKEN_IDS)[number]; value: string }
   | { type: "SetBrandFont"; key: "display" | "body"; value: string }
   | { type: "OverrideLayerBox"; sceneId: string; layerId: string; box: Partial<z.infer<typeof BoxSchema>> | null }
@@ -154,6 +157,17 @@ export function applyCommand(input: Project, cmd: Command): ApplyResult {
       const prev = project.motionProfile;
       project.motionProfile = cmd.profile;
       return { project, inverse: { type: "SetMotionProfile", profile: prev } };
+    }
+    case "SetEnabledExtensions": {
+      const prev = project.extensions?.enabled ?? null;
+      project.extensions = { enabled: cmd.enabled === null ? null : [...cmd.enabled] };
+      return {
+        project,
+        inverse: {
+          type: "SetEnabledExtensions",
+          enabled: prev === null ? null : [...prev],
+        },
+      };
     }
     case "SetBrandColor": {
       const prev = project.brand.colors[cmd.key];

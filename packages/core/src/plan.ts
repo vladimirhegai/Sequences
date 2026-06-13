@@ -14,12 +14,27 @@
  */
 import { z } from "zod";
 import { CameraSchema, SlotValueSchema, type Project } from "./schema.ts";
-import { ARCHETYPES, PROFILES, promptCatalog } from "./registry/index.ts";
+import {
+  ARCHETYPES,
+  CAMERA_MOVES,
+  enabledExtensionIds,
+  PROFILES,
+  promptCatalog,
+} from "./registry/index.ts";
 import type { Command } from "./commands.ts";
 
 export interface PlanningContextOptions {
   /** Optional deterministic storyboard serialization supplied by the host app/MCP server. */
   storyboardText?: string;
+  /** Override the project's enabled extension set. Mostly useful for tests. */
+  enabledExtensionIds?: Iterable<string> | null;
+}
+
+export interface ParsePlanOptions {
+  /** Optional project whose enabled extension list gates agent-selected ids. */
+  project?: Project;
+  /** Override the project's enabled extension set. Mostly useful for tests. */
+  enabledExtensionIds?: Iterable<string> | null;
 }
 
 /**
@@ -42,10 +57,10 @@ export const SEQUENCES_AGENT_SYSTEM_PROMPT = [
   "- If the brief asks for unsupported motion, approximate it with the nearest Phase-1 controls: profile choice, archetype order, layout choice, short copy, scene duration, and optional scene camera.",
   "",
   "### Phase-1 motion controls you may use",
-  "- motionProfile chooses the overall feel: crisp-saas for Linear/Vercel-style precision, warm-startup for softer product stories, bold-launch for punchy launch films.",
+  "- motionProfile chooses the overall feel. Use only enabled profile ids from the catalog below.",
   "- archetype and layout choose the scene structure. Prefer feature-reveal or ui-walkthrough when the user wants to show the product.",
   "- durationFrames may tune pacing inside each archetype's range; omit it when the ideal duration is fine.",
-  "- camera is optional and scene-level only: use pushIn or pullBack with scale subtle on at most two important scenes, never as constant decoration.",
+  "- camera is optional and scene-level only. Use only enabled camera move ids from the catalog below, on at most two important scenes, never as constant decoration.",
   "- The solver already enforces rank order, deterministic staggers, about 65% entrance overlap, settle gaps, and the one-loud-motion rule. Do not try to schedule these yourself.",
   "",
   "### SaaS motion design judgment",
@@ -53,8 +68,8 @@ export const SEQUENCES_AGENT_SYSTEM_PROMPT = [
   "- Keep one idea per scene. Give the rank-1 idea the loudest treatment by choosing the right archetype/profile; let support copy stay quiet.",
   "- Prefer real product media over abstract claims when assets exist. Use listed asset ids directly in media slots.",
   "- Write short, scannable copy. Product videos read at a glance; avoid paragraphs and generic filler.",
-  "- Use bold-launch sparingly for release-day energy, crisp-saas for most developer/B2B demos, and warm-startup when the brand should feel human or calm.",
-  "- Open with hook-opener and close with logo-sting-cta unless the user explicitly asks for a different structure.",
+  "- Choose the enabled profile whose summary best matches the brand and brief.",
+  "- Use the enabled opener and CTA archetypes when available. If they are disabled, build the closest coherent arc from enabled scene types.",
   "",
   "### Storyboard contract",
   "- If storyboard text is provided, treat frames as sequential beats and comments/motion paths as the highest-priority intent.",
@@ -86,20 +101,45 @@ export type Plan = z.infer<typeof PlanSchema>;
 
 export class PlanError extends Error {}
 
+function parseEnabledSet(options: ParsePlanOptions): Set<string> | null {
+  if (options.enabledExtensionIds !== undefined) {
+    return options.enabledExtensionIds === null ? null : new Set(options.enabledExtensionIds);
+  }
+  return options.project ? enabledExtensionIds(options.project) : null;
+}
+
+function enabledIds<T extends Record<string, unknown>>(record: T, enabled: Set<string> | null): string[] {
+  return Object.keys(record).filter((id) => enabled === null || enabled.has(id));
+}
+
+function idList(ids: string[]): string {
+  return ids.length === 0 ? "none enabled" : ids.join(", ");
+}
+
 /**
  * Parse + referentially pre-check a plan (clear errors an external agent can
  * self-correct from; the store's validator is the final gate either way).
  */
-export function parsePlan(input: unknown): Plan {
+export function parsePlan(input: unknown, options: ParsePlanOptions = {}): Plan {
   const parsed = PlanSchema.safeParse(input);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new PlanError(`plan does not match the plan schema — ${issues}`);
   }
   const plan = parsed.data;
+  const enabled = parseEnabledSet(options);
+  const validProfiles = enabledIds(PROFILES, enabled);
+  const validArchetypes = enabledIds(ARCHETYPES, enabled);
+  const validCameraMoves = enabledIds(CAMERA_MOVES, enabled);
+
   if (!PROFILES[plan.motionProfile]) {
     throw new PlanError(
       `unknown motionProfile "${plan.motionProfile}" (valid: ${Object.keys(PROFILES).join(", ")})`,
+    );
+  }
+  if (!validProfiles.includes(plan.motionProfile)) {
+    throw new PlanError(
+      `motionProfile "${plan.motionProfile}" is disabled for this project (enabled: ${idList(validProfiles)})`,
     );
   }
   for (const [i, scene] of plan.scenes.entries()) {
@@ -109,9 +149,19 @@ export function parsePlan(input: unknown): Plan {
         `scenes[${i}]: unknown archetype "${scene.archetype}" (valid: ${Object.keys(ARCHETYPES).join(", ")})`,
       );
     }
+    if (!validArchetypes.includes(scene.archetype)) {
+      throw new PlanError(
+        `scenes[${i}]: archetype "${scene.archetype}" is disabled for this project (enabled: ${idList(validArchetypes)})`,
+      );
+    }
     if (scene.layout && !archetype.layouts.includes(scene.layout)) {
       throw new PlanError(
         `scenes[${i}]: archetype ${archetype.id} has layouts ${archetype.layouts.join("/")}, not "${scene.layout}"`,
+      );
+    }
+    if (scene.camera && !validCameraMoves.includes(scene.camera.move)) {
+      throw new PlanError(
+        `scenes[${i}]: camera move "${scene.camera.move}" is disabled for this project (enabled: ${idList(validCameraMoves)})`,
       );
     }
   }
@@ -159,6 +209,8 @@ export function planToCommands(project: Project, plan: Plan): Command {
 
 /** The context a planning brain needs — same content for every provider. */
 export function planningContext(project: Project, options: PlanningContextOptions = {}): string {
+  const enabledIds =
+    options.enabledExtensionIds === undefined ? enabledExtensionIds(project) : options.enabledExtensionIds;
   const assets =
     project.assets.length === 0
       ? "(none — archetypes needing media are unavailable)"
@@ -169,7 +221,10 @@ export function planningContext(project: Project, options: PlanningContextOption
     "",
     SEQUENCES_AGENT_SYSTEM_PROMPT,
     "",
-    promptCatalog(),
+    "## Enabled extensions for this project",
+    "Only use the extension ids shown in the catalog below. Disabled extensions are not available to you.",
+    "",
+    promptCatalog({ enabledIds }),
     "",
     "## Project",
     `- title: ${project.meta.title}`,
@@ -186,6 +241,18 @@ export function planningContext(project: Project, options: PlanningContextOption
 
 /** The full prompt for a one-shot plan call against any text-completion brain. */
 export function buildPlanPrompt(brief: string, project: Project): string {
+  const enabled = enabledExtensionIds(project);
+  const cameraIds = enabledIds(CAMERA_MOVES, enabled);
+  const hasHookOpener = enabled.has("hook-opener");
+  const hasCta = enabled.has("logo-sting-cta");
+  const arcRule =
+    hasHookOpener && hasCta
+      ? "Rules: 3-6 scenes; open with hook-opener and close with logo-sting-cta;"
+      : "Rules: 3-6 scenes; use only enabled archetype ids and build a clear beginning, proof beat, and ending;";
+  const cameraRule =
+    cameraIds.length > 0
+      ? `      "camera": { "move": ${cameraIds.map((id) => `"${id}"`).join("|")}, "scale": "subtle" } (optional, max 2 scenes) }`
+      : '      "camera": omit camera because no camera moves are enabled }';
   return [
     planningContext(project),
     "",
@@ -200,10 +267,10 @@ export function buildPlanPrompt(brief: string, project: Project): string {
     '    { "archetype": "<archetype id>", "layout": "<optional layout id>",',
     '      "durationFrames": <optional int, omit to use the archetype ideal>,',
     '      "slots": { "<slot name>": <string | string[] | {"value":N,"prefix":"","suffix":""} | {"assetId":"<id>"}> },',
-    '      "camera": { "move": "pushIn"|"pullBack", "scale": "subtle" } (optional, max 2 scenes) }',
+    cameraRule,
     "  ]",
     "}",
-    "Rules: 3-6 scenes; open with hook-opener and close with logo-sting-cta;",
+    arcRule,
     "respect every slot's word budget; required slots must be filled;",
     "media slots may only reference the asset ids listed above.",
   ].join("\n");

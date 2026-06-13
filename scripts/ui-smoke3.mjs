@@ -117,7 +117,26 @@ const out = await page.evaluate(async () => {
   };
 
   await go("Extensions");
-  result.extensionsEmpty = !!document.querySelector("#page-extensions .ext-empty");
+  await sleep(450);
+  const firstExtCard = document.querySelector("#page-extensions .ext-card");
+  result.extensions = {
+    cards: document.querySelectorAll("#page-extensions .ext-card").length,
+    firstName: firstExtCard?.querySelector(".ext-card-name")?.textContent ?? null,
+    firstKind: firstExtCard?.querySelector(".ext-card-kind")?.textContent ?? null,
+    enabled: document.querySelectorAll("#page-extensions .ext-card.on").length,
+  };
+  const extCardOn = () => document.querySelector("#page-extensions .ext-card")?.classList.contains("on") ?? false;
+  const beforeToggle = extCardOn();
+  firstExtCard?.click();
+  await sleep(450);
+  result.extensions.toggled = beforeToggle !== extCardOn();
+  document.getElementById("undoBtn").click();
+  await sleep(450);
+  result.extensions.undoRestored = beforeToggle === extCardOn();
+  document.querySelector("#page-extensions .ext-card .ext-view-btn")?.click();
+  await sleep(250);
+  result.extensions.viewModal = !!document.querySelector("#modalBackdrop .ext-view-modal");
+  document.querySelector("#modalBackdrop .btn-ghost")?.click();
 
   await go("Timeline");
   result.timelineBack = document.querySelectorAll("#page-timeline .tl-scene").length;

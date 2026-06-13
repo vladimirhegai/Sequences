@@ -15,6 +15,7 @@ import {
   CAMERA_MOVES,
   CommandSchema,
   DURATION_TOKEN_IDS,
+  enabledExtensionIds,
   lintProject,
   PRIMITIVES,
   PROFILES,
@@ -182,7 +183,7 @@ export function startStudio(projectDir: string, port: number): http.Server {
       scaleTokens: SCALE_TOKEN_IDS,
       cameraMoves: Object.values(CAMERA_MOVES).map((m) => ({ id: m.id, summary: m.summary })),
       transitions: ["cut", "fade"],
-      promptCatalog: promptCatalog(),
+      promptCatalog: promptCatalog({ enabledIds: enabledExtensionIds(store.project) }),
       agentProviders: await detectProviders(),
       defaultAgentProvider: await defaultProvider(),
       demoProjectDir: fs.existsSync(path.join(demoProjectDir(), "project.json"))
