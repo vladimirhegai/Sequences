@@ -149,7 +149,7 @@ function renderDesignPage() {
     rail.appendChild(btn);
   }
   rail.append(el("div", { class: "tool-sep" }));
-  const clear = el("button", { class: "tool-btn", title: "Clear canvas" });
+  const clear = el("button", { class: "tool-btn danger", title: "Clear canvas" });
   clear.append(icon("trash", 14));
   clear.onclick = () => {
     if (designItems.length && confirm("Clear the design canvas?")) {
@@ -179,12 +179,13 @@ function renderDesignPage() {
   props.append(
     el("div", { class: "pane-head" }, [
       el("span", { class: "ph-title" }, ["Properties"]),
-      el("span", { class: "ph-sub" }, [designSelectedId ?? ""]),
+      el("span", { class: "ph-sub mono" }, [designSelectedId ?? ""]),
     ]),
   );
   const propsBody = el("div", { class: "pane-body" });
   fillDesignProps(propsBody);
   props.appendChild(propsBody);
+  props.appendChild(designSaveFoot());
   props.appendChild(splitHandle({ edge: "left", cssVar: "--design-props-w", min: 220, max: 480 }));
 
   cols.append(rail, stagePane, props);
@@ -684,15 +685,20 @@ function colorInput(value, onchange) {
   return input;
 }
 
+const DESIGN_TYPE_LABEL = { rect: "Rectangle", ellipse: "Ellipse", line: "Line", text: "Text" };
+
 function fillDesignProps(body) {
   const item = designSelected();
   if (!item) {
     body.append(
       el("div", { class: "props-empty" }, [
-        "Choose a tool and draw on the canvas. Select an object to edit fill, stroke, size, opacity, and text.",
+        el("div", { class: "props-empty-ico" }, [icon("cursor", 20)]),
+        el("div", { class: "props-empty-line" }, ["Nothing selected"]),
+        el("div", { class: "props-empty-sub" }, [
+          "Pick a tool from the rail and draw, or select an object to edit its fill, stroke, size and text.",
+        ]),
       ]),
     );
-    body.append(designSaveSection());
     return;
   }
 
@@ -706,7 +712,13 @@ function fillDesignProps(body) {
   };
 
   const sec = el("div", { class: "insp-section" });
-  const secBody = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
+  sec.append(
+    el("div", { class: "insp-sec-head" }, [
+      el("span", { class: "t" }, [DESIGN_TYPE_LABEL[item.type] ?? "Object"]),
+      el("span", { class: "x" }, [`${Math.round(item.w)}×${Math.round(item.h)}`]),
+    ]),
+  );
+  const secBody = el("div", { class: "insp-sec-body" });
 
   if (item.type === "text") {
     const textInput = el("textarea", {
@@ -778,34 +790,40 @@ function fillDesignProps(body) {
     field("Opacity", numberBox(item.opacity ?? 1, 0, 1, (v) => { item.opacity = clamp(v, 0, 1); softCommit(); }, 0.05)),
     designGeometryFields(item, hardCommit),
   );
+  sec.appendChild(secBody);
+  body.append(sec);
 
-  // arrange: stacking order + duplicate + delete
+  // arrange: stacking order + duplicate + delete (its own section)
   const idx = designItems.indexOf(item);
-  const back = el("button", { class: "btn-sm", title: "Send backward (draws earlier)" }, [icon("undo", 12), "Back"]);
-  back.disabled = idx <= 0;
-  back.onclick = () => {
+  const arrBtn = (cls, title, kids, onclick, disabled) => {
+    const b = el("button", { class: `btn-sm ${cls}`, title, style: "justify-content:center" }, kids);
+    if (disabled) b.disabled = true;
+    b.onclick = onclick;
+    return b;
+  };
+  const back = arrBtn("", "Send backward (draws earlier)", [icon("undo", 12), "Back"], () => {
     designItems.splice(idx, 1);
     designItems.splice(idx - 1, 0, item);
     hardCommit();
-  };
-  const fwd = el("button", { class: "btn-sm", title: "Bring forward (draws later)" }, ["Front", icon("redo", 12)]);
-  fwd.disabled = idx === designItems.length - 1;
-  fwd.onclick = () => {
+  }, idx <= 0);
+  const fwd = arrBtn("", "Bring forward (draws later)", ["Front", icon("redo", 12)], () => {
     designItems.splice(idx, 1);
     designItems.splice(idx + 1, 0, item);
     hardCommit();
-  };
-  const dup = el("button", { class: "btn-sm", title: "Duplicate (Ctrl+D)" }, [icon("copy", 12), "Duplicate"]);
-  dup.onclick = () => designDuplicateSelected();
-  const delBtn = el("button", { class: "btn-sm danger", style: "margin-left:auto" }, [icon("trash", 12), "Delete"]);
-  delBtn.onclick = () => {
+  }, idx === designItems.length - 1);
+  const dup = arrBtn("", "Duplicate (Ctrl+D)", [icon("copy", 12), "Duplicate"], () => designDuplicateSelected());
+  const delBtn = arrBtn("danger", "Delete (Del)", [icon("trash", 12), "Delete"], () => {
     designItems = designItems.filter((i) => i.id !== item.id);
     designSelectedId = null;
     hardCommit();
-  };
-  secBody.append(el("div", { class: "btn-row" }, [back, fwd, dup, delBtn]));
-  sec.appendChild(secBody);
-  body.append(sec, designSaveSection());
+  });
+  const arrange = el("div", { class: "insp-section" }, [
+    el("div", { class: "insp-sec-head" }, [el("span", { class: "t" }, ["Arrange"])]),
+    el("div", { class: "insp-sec-body" }, [
+      el("div", { class: "design-arrange-grid" }, [back, fwd, dup, delBtn]),
+    ]),
+  ]);
+  body.append(arrange);
 }
 
 function designGeometryFields(item, commit) {
@@ -834,11 +852,10 @@ function numberBox(value, min, max, onchange, step = 1) {
   return input;
 }
 
-function designSaveSection() {
-  const sec = el("div", { class: "insp-section" });
-  const secBody = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
+function designSaveFoot() {
+  const foot = el("div", { class: "design-foot" });
   const nameInput = el("input", { class: "input", value: "", placeholder: "asset name, e.g. cta-button", autocomplete: "off" });
-  const save = el("button", { class: "btn btn-primary", style: "justify-content:center" }, [icon("save", 13), "Save to media pool"]);
+  const save = el("button", { class: "btn btn-primary", style: "justify-content:center;flex:0 0 auto" }, [icon("save", 13), "Save"]);
   save.onclick = async () => {
     if (designItems.length === 0) {
       toast("the canvas is empty", "err");
@@ -856,15 +873,15 @@ function designSaveSection() {
     }
     save.disabled = false;
   };
-  secBody.append(
-    field("Save as asset", nameInput, "assets/design/"),
-    save,
-    el("div", { class: "sb-note" }, [
-      "Saved SVGs appear in the media pool and every image slot picker.",
+  nameInput.onkeydown = (e) => { if (e.key === "Enter") save.click(); };
+  foot.append(
+    el("div", { class: "design-foot-label" }, [
+      el("span", {}, ["Export to media pool"]),
+      el("span", { class: "mono" }, ["assets/design/"]),
     ]),
+    el("div", { class: "design-foot-row" }, [nameInput, save]),
   );
-  sec.appendChild(secBody);
-  return sec;
+  return foot;
 }
 
 function designToSvgString() {

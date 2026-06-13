@@ -36,6 +36,15 @@ const ICONS = {
   redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
   chev: '<path d="m6 9 6 6 6-6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  zoomIn: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
+  zoomOut: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8 11h6"/>',
+  fit: '<path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/>',
+  skipBack: '<path d="M11 19 3 12l8-7v14zM21 19l-8-7 8-7v14z"/>',
+  skipForward: '<path d="m13 19 8-7-8-7v14zM3 19l8-7-8-7v14z"/>',
+  volume: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7 7 0 0 1 0 10"/>',
+  volumeOff: '<path d="M4 9v6h4l5 4V5L8 9zM19 9l-5 5M14 9l5 5"/>',
+  repeat: '<path d="M17 2l4 4-4 4M3 11V8a2 2 0 0 1 2-2h16M7 22l-4-4 4-4M21 13v3a2 2 0 0 1-2 2H3"/>',
   trash:
     '<path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>',
   check: '<path d="m5 13 4 4L19 7"/>',
@@ -201,24 +210,59 @@ function closeMenus() {
   }
 }
 
-/** Attach a popup menu to an anchor (anchor must be position:relative-able). */
+/** Open a popup menu anchored to an element. The menu is portaled to <body>
+ * with fixed positioning so it never clips against an overflow:hidden panel
+ * (agent / inspector / timeline). `.left` / `.up` classes added during build
+ * are read as alignment hints; final placement is clamped to the viewport. */
 function openMenu(anchor, build, opts = {}) {
   if (openMenuEl && openMenuEl._anchor === anchor) {
     closeMenus();
     return;
   }
   closeMenus();
-  const menu = el("div", { class: `menu ${opts.cls ?? ""}` });
+  const menu = el("div", { class: `menu menu-portal ${opts.cls ?? ""}` });
   menu._anchor = anchor;
   build(menu);
-  anchor.style.position = "relative";
-  anchor.appendChild(menu);
+  menu.style.visibility = "hidden";
+  document.body.appendChild(menu);
+  positionMenu(menu, anchor);
+  menu.style.visibility = "";
   openMenuEl = menu;
+}
+
+function positionMenu(menu, anchor) {
+  const a = anchor.getBoundingClientRect();
+  const m = menu.getBoundingClientRect();
+  const gap = 6;
+  const pad = 8;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const wantUp = menu.classList.contains("up");
+  const wantLeft = menu.classList.contains("left");
+
+  // vertical: prefer the requested side, flip if it would overflow
+  let top = wantUp ? a.top - m.height - gap : a.bottom + gap;
+  if (top + m.height > vh - pad) top = a.top - m.height - gap;
+  if (top < pad) top = a.bottom + gap;
+  top = Math.max(pad, Math.min(top, vh - m.height - pad));
+
+  // horizontal: align to the requested edge, then clamp into the viewport
+  let left = wantLeft ? a.right - m.width : a.left;
+  left = Math.max(pad, Math.min(left, vw - m.width - pad));
+
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.left = `${Math.round(left)}px`;
 }
 
 document.addEventListener("pointerdown", (e) => {
   if (openMenuEl && !openMenuEl.contains(e.target) && !openMenuEl._anchor.contains(e.target)) closeMenus();
 });
+// a portaled menu can't follow its anchor — dismiss it when the view shifts
+window.addEventListener("scroll", (e) => {
+  if (openMenuEl && e.target instanceof Node && openMenuEl.contains(e.target)) return;
+  closeMenus();
+}, true);
+window.addEventListener("resize", () => closeMenus());
 
 function menuOption({ name, desc, selected, onpick }) {
   const opt = el("div", { class: `menu-opt ${selected ? "sel" : ""}` });
@@ -579,10 +623,17 @@ function clipClass(kind) {
 }
 
 const MOTION_COLORS = { enter: "#7c9fc4", exit: "#c4937c", continuous: "#8aa885" };
+const MOTION_GLYPH = { enter: "↘", exit: "↗", continuous: "∞" };
 
-function motionChip(label, phase) {
-  const chip = el("span", { class: "tl-mot" });
-  chip.append(el("span", { class: "mk", style: `background:${MOTION_COLORS[phase] ?? "#999"}` }), label);
+/** A compact motion marker for a timeline clip: colored dot + short primitive
+ * name. Stays readable in narrow clips; full detail lives in the inspector. */
+function motionMarker(primitive, phase, offsetLabel) {
+  const name = primitive.includes(".") ? primitive.split(".")[1] : primitive;
+  const chip = el("span", {
+    class: "tl-mot",
+    title: `${phase}: ${primitive}${offsetLabel ? ` (${offsetLabel})` : ""}`,
+  });
+  chip.append(el("span", { class: "mk", style: `background:${MOTION_COLORS[phase] ?? "#999"}` }), name);
   return chip;
 }
 
@@ -672,16 +723,15 @@ function renderTimeline() {
       clip.style.left = `${(manifestScene.startFrame / total) * 100}%`;
       clip.style.width = `calc(${(manifestScene.durationFrames / total) * 100}% - 3px)`;
       clip.append(el("span", { class: "tl-clip-label" }, [layer.label || layer.id]));
+      const motions = el("div", { class: "tl-clip-motions" });
       if (layer.enter) {
-        clip.append(
-          motionChip(
-            `${layer.enter.primitive.split(".")[1]} @${layer.enter.startFrame - manifestScene.startFrame}f`,
-            "enter",
-          ),
+        motions.append(
+          motionMarker(layer.enter.primitive, "enter", `@${layer.enter.startFrame - manifestScene.startFrame}f`),
         );
       }
-      if (layer.exit) clip.append(motionChip(layer.exit.primitive.split(".")[1], "exit"));
-      if (layer.continuous) clip.append(motionChip(layer.continuous.primitive.split(".")[1], "continuous"));
+      if (layer.exit) motions.append(motionMarker(layer.exit.primitive, "exit"));
+      if (layer.continuous) motions.append(motionMarker(layer.continuous.primitive, "continuous"));
+      if (motions.children.length) clip.append(motions);
       clip.onclick = () => {
         selectedLayerId = layer.id;
         inspectorTab = "layers";
@@ -831,7 +881,7 @@ function renderInspectorTabs() {
     };
     host.appendChild(tab);
   }
-  $("inspectorSub").textContent = inspectorTab === "scene" || inspectorTab === "layers" ? (selectedSceneId ?? "") : "";
+  $("inspectorSub").textContent = "";
 }
 
 function section(title, bodyNodes, tag) {
@@ -1364,12 +1414,9 @@ function renderAgentModelChip(info) {
   const model = currentAgentModel(providerId);
   const thinking = currentThinkingMode(providerId);
   chip.innerHTML = "";
-  chip.append(
-    icon("gear", 12),
-    el("span", { class: "am-model", title: model }, [modelLabel(providerId, model)]),
-    el("span", { class: "am-thinking" }, [THINKING_MODES[thinking]]),
-    icon("chev", 11),
-  );
+  chip.append(el("span", { class: "am-model", title: `${model} · click to change model & thinking` }, [modelLabel(providerId, model)]));
+  if (thinking !== "auto") chip.append(el("span", { class: "am-thinking" }, [THINKING_MODES[thinking]]));
+  chip.append(icon("chev", 11));
   chip.onclick = () =>
     openMenu(chip, (menu) => {
       menu.classList.add("left", "up", "agent-model-menu");
@@ -1445,12 +1492,12 @@ function renderAgent() {
   if (chatLog.length === 0) {
     body.append(
       agentMessage(
-        "Describe the video below and I'll plan it — scenes, copy, motion and camera — applied as <b>one undoable batch</b> through the same command API you're using." +
+        "Describe the video. I'll plan the scenes, copy, motion and camera as <b>one undoable batch</b>." +
           (providers.some((p) => p.kind === "cli" && p.available)
-            ? " Using your local CLI sign-in, <b>no API key needed</b>."
+            ? " Local CLI sign-in — <b>no API key</b>."
             : providers.some((p) => providerUsable(p))
               ? ""
-              : " <b>No provider detected</b> — open setup in the header to connect one."),
+              : " <b>No provider detected</b> — open setup to connect one."),
       ),
     );
   }
@@ -1873,7 +1920,14 @@ function renderEventsPop() {
 /* ---------- topbar: profile, quality, render ---------- */
 
 function renderTopbar() {
-  $("projectTitle").innerHTML = `<b>${escapeHtml(state.project.meta.title)}</b> — ${escapeHtml(state.project.brand.name)}`;
+  {
+    const title = state.project.meta.title;
+    const brandName = state.project.brand.name;
+    const same = brandName && brandName.trim().toLowerCase() === title.trim().toLowerCase();
+    $("projectTitle").innerHTML = same
+      ? `<b>${escapeHtml(title)}</b>`
+      : `<b>${escapeHtml(title)}</b> <span class="proj-brand">${escapeHtml(brandName)}</span>`;
+  }
   $("projectMenuBtn").innerHTML = "";
   $("projectMenuBtn").append("Project", icon("chev", 11));
   $("undoBtn").disabled = !state.canUndo;
@@ -1922,7 +1976,7 @@ function renderTopbar() {
 
 function renderExport() {
   const renderState = state.render || { status: "idle" };
-  const btn = $("renderBtn");
+  const btn = $("renderBtn") || { append: () => {} };
   const status = $("renderStatus");
   const link = $("renderDownload");
   btn.disabled = renderState.status === "rendering";
@@ -2082,7 +2136,7 @@ async function init() {
     state = await api("/api/redo", {});
     render();
   };
-  $("renderBtn").onclick = async () => {
+  if ($("renderBtn")) $("renderBtn").onclick = async () => {
     try {
       state.render = await api("/api/render", {
         format: "mp4",
@@ -2125,7 +2179,7 @@ async function init() {
   brief.oninput = () => {
     sessionStorage.setItem("seq.agent.brief", brief.value);
     brief.style.height = "auto";
-    brief.style.height = `${Math.min(brief.scrollHeight, 96)}px`;
+    brief.style.height = `${Math.min(brief.scrollHeight, 200)}px`;
   };
   brief.onkeydown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {

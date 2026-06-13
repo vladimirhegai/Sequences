@@ -80,11 +80,12 @@ const interact = await page.evaluate(async () => {
 
   document.getElementById("projectMenuBtn").click();
   await new Promise((r) => setTimeout(r, 120));
-  out.projectMenu = [...document.querySelectorAll("#projectMenuBtn .menu-opt .mo-name")].map((n) => n.textContent);
+  // menus portal to <body> (fixed-positioned, escapes overflow:hidden panels)
+  out.projectMenu = [...document.querySelectorAll(".menu .menu-opt .mo-name")].map((n) => n.textContent);
   document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 
-  const setupBtn = [...document.querySelectorAll("#agentBody .btn-sm")].find((b) => b.textContent.includes("Agent setup"));
-  setupBtn.click();
+  // agent setup lives in the panel header (icon button)
+  document.getElementById("agentSetupBtn").click();
   await new Promise((r) => setTimeout(r, 150));
   out.modalProviderCards = document.querySelectorAll("#modalBackdrop .prov-card").length;
   out.modalCmdLines = document.querySelectorAll("#modalBackdrop .cmd-line").length;

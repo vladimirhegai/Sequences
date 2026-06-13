@@ -12,6 +12,7 @@ let sbKeysBound = false;
 let sbHandle = null;
 let sbSelection = sbEmptySelection();
 let sbDragFrameId = null;
+let sbSideTab = "frame";
 
 function sbEmptySelection() {
   return { ids: [], count: 0, id: null, type: null, text: "", comment: "", assetId: null, fontFamily: null, fontSize: null, motionPathFor: null };
@@ -33,6 +34,7 @@ function storyboardResetForProject() {
   sbFrameId = null;
   sbLoadedFor = null;
   sbSelection = sbEmptySelection();
+  sbSideTab = "frame";
 }
 
 async function enterStoryboardPage() {
@@ -347,14 +349,25 @@ function buildSbStage() {
 function buildSbSidePane() {
   const side = el("div", { class: "page-pane" });
   side.append(
-    el("div", { class: "pane-head" }, [
-      el("span", { class: "ph-title" }, ["Frame"]),
-      el("span", { class: "ph-sub", id: "sbPaneSub" }, [sbFrame() ? sbFrameLabel(sbFrame()) : ""]),
-    ]),
+    el("div", { class: "pane-head sb-pane-head" }, [buildSbSideTabs()]),
     el("div", { class: "pane-body", id: "sbSidebar" }),
   );
   side.appendChild(splitHandle({ edge: "left", cssVar: "--sb-side-w", min: 220, max: 480 }));
   return side;
+}
+
+function buildSbSideTabs() {
+  const tabs = el("div", { class: "tabs sb-pane-tabs", id: "sbSideTabs" });
+  for (const [id, label] of [["frame", "Frame"], ["selection", "Selection"]]) {
+    const tab = el("button", { class: `tab ${sbSideTab === id ? "on" : ""}` }, [label]);
+    tab.onclick = () => {
+      sbSideTab = id;
+      $("sbSideTabs")?.replaceWith(buildSbSideTabs());
+      renderSbSidebar();
+    };
+    tabs.appendChild(tab);
+  }
+  return tabs;
 }
 
 function mountSbExcalidraw() {
@@ -506,16 +519,95 @@ function renderSbSidebar() {
   const body = $("sbSidebar");
   if (!body || !sbBoard) return;
   body.innerHTML = "";
-  fillSbSidebar(body);
+  fillSbSidebarTabbed(body);
+}
+
+function sbSection(headLabel, headHint) {
+  const sec = el("div", { class: "insp-section" });
+  const head = [el("span", { class: "t" }, [headLabel])];
+  if (headHint) head.push(el("span", { class: "x" }, [headHint]));
+  sec.append(el("div", { class: "insp-sec-head" }, head));
+  const secBody = el("div", { class: "insp-sec-body" });
+  sec.appendChild(secBody);
+  return { sec, secBody };
+}
+
+function fillSbSidebarTabbed(body) {
+  const frame = sbFrame();
+  if (!frame) return;
+
+  if (sbSideTab === "frame") {
+    const frameSec = sbSection("Frame", sbFrameLabel(frame));
+    const note = el("textarea", { class: "input", rows: 3, placeholder: "What happens in this beat?" });
+    note.value = frame.comment ?? "";
+    note.onchange = () => {
+      frame.comment = note.value.trim() || undefined;
+      sbQueueSave();
+      renderStoryboardPage();
+    };
+    frameSec.secBody.append(field("Beat note", note, "agent-visible"));
+    body.appendChild(frameSec.sec);
+
+    const contextSec = sbSection("Agent context");
+    const copy = el("button", { class: "btn-sm", style: "width:100%;justify-content:center" }, [icon("copy", 12), "Copy storyboard for AI"]);
+    copy.onclick = async () => {
+      try {
+        await sbSaveNow();
+        const { text } = await api("/api/storyboard/text");
+        if (!text) return toast("storyboard is empty", "err");
+        try {
+          await navigator.clipboard.writeText(text);
+          toast("storyboard text copied");
+        } catch {
+          openSbCopyTextModal(text);
+          toast("clipboard blocked - text is ready");
+        }
+      } catch (err) {
+        toast(`copy failed - ${err.message}`, "err");
+      }
+    };
+    contextSec.secBody.append(
+      el("div", { class: "sb-note" }, [
+        "The agent reads this storyboard automatically when you plan from the Timeline.",
+      ]),
+      copy,
+    );
+    body.appendChild(contextSec.sec);
+    return;
+  }
+
+  const selectionSec = sbSection("Selection");
+  if (sbSelection.count === 0) {
+    selectionSec.secBody.append(
+      el("div", { class: "sb-empty" }, [
+        el("span", { class: "sb-empty-ico" }, [icon("cursor", 16)]),
+        el("div", { class: "sb-empty-line" }, ["Nothing selected"]),
+        el("div", { class: "sb-empty-sub" }, ["Select an object to add a comment for the agent."]),
+      ]),
+    );
+  } else {
+    const comment = el("textarea", {
+      class: "input",
+      rows: 4,
+      placeholder: "What should the agent understand?",
+      "data-sb-role": "selection-comment",
+    });
+    comment.value = sbSelection.comment ?? "";
+    comment.oninput = () => {
+      sbHandle?.setComment?.(comment.value);
+      sbSelection = { ...sbSelection, comment: comment.value.trim() };
+    };
+    selectionSec.secBody.append(field("Comment for AI", comment));
+  }
+  body.appendChild(selectionSec.sec);
 }
 
 function fillSbSidebar(body) {
   const frame = sbFrame();
   if (!frame) return;
 
-  const sec1 = el("div", { class: "insp-section" });
-  const sec1Body = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
-  sec1Body.append(field("Frame", el("div", { class: "input mono", style: "display:flex;align-items:center" }, [sbFrameLabel(frame)])));
+  /* ---- Frame: the beat-level note ---- */
+  const f1 = sbSection("Frame", sbFrameLabel(frame));
   const note = el("textarea", { class: "input", rows: 3, placeholder: "What happens in this beat?" });
   note.value = frame.comment ?? "";
   note.onchange = () => {
@@ -523,30 +615,33 @@ function fillSbSidebar(body) {
     sbQueueSave();
     renderStoryboardPage();
   };
-  sec1Body.append(field("Frame note", note, "agent-visible"));
-  sec1.appendChild(sec1Body);
-  body.appendChild(sec1);
+  f1.secBody.append(field("Beat note", note, "agent-visible"));
+  body.appendChild(f1.sec);
 
-  const sec2 = el("div", { class: "insp-section" });
-  const sec2Body = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
+  /* ---- Selection: per-object comment + motion path ---- */
+  const f2 = sbSection("Selection");
   if (sbSelection.count === 0) {
-    sec2Body.append(
-      el("div", { class: "sb-note" }, [
-        "Select any Excalidraw object to add a Comment for AI. Double-click an object for the same comment prompt. With an object selected, the ",
-        el("b", {}, ["motion path"]),
-        " tool draws the path it moves along during this beat.",
+    f2.secBody.append(
+      el("div", { class: "sb-empty" }, [
+        el("span", { class: "sb-empty-ico" }, [icon("cursor", 16)]),
+        el("div", { class: "sb-empty-line" }, ["Nothing selected"]),
+        el("div", { class: "sb-empty-sub" }, [
+          "Select an object to attach a comment, or press ",
+          el("b", {}, ["P"]),
+          " to draw the path it moves along this beat.",
+        ]),
       ]),
     );
   } else {
     const label = sbSelection.count === 1
-      ? `${sbSelection.type}${sbSelection.assetId ? ` - ${sbSelection.assetId}` : ""}`
-      : `${sbSelection.count} selected objects`;
-    sec2Body.append(el("div", { class: "sb-note" }, [el("b", {}, [label])]));
+      ? `${sbSelection.type}${sbSelection.assetId ? ` · ${sbSelection.assetId}` : ""}`
+      : `${sbSelection.count} objects`;
+    f2.secBody.append(el("div", { class: "sb-sel-tag" }, [label]));
     if (sbSelection.motionPathFor) {
-      sec2Body.append(
+      f2.secBody.append(
         el("div", { class: "sb-note sb-motion-note" }, [
           icon("route", 11),
-          " motion path — describes how the attached object moves during this beat",
+          " motion path — how the attached object moves this beat",
         ]),
       );
     }
@@ -567,7 +662,7 @@ function fillSbSidebar(body) {
           sbHandle?.setFontSize?.(Number(sizeBox.value) || 36);
           sbSelection = { ...sbSelection, fontSize: Number(sizeBox.value) || 36 };
         };
-        sec2Body.append(
+        f2.secBody.append(
           el("div", { class: "row2" }, [field("Font", fontSel), field("Size", sizeBox)]),
         );
       }
@@ -583,14 +678,13 @@ function fillSbSidebar(body) {
       sbHandle?.setComment?.(comment.value);
       sbSelection = { ...sbSelection, comment: comment.value.trim() };
     };
-    sec2Body.append(field("Comment for AI", comment));
+    f2.secBody.append(field("Comment for AI", comment));
   }
-  sec2.appendChild(sec2Body);
-  body.appendChild(sec2);
+  body.appendChild(f2.sec);
 
-  const sec3 = el("div", { class: "insp-section" });
-  const sec3Body = el("div", { class: "insp-sec-body", style: "padding-top:12px" });
-  const copy = el("button", { class: "btn-sm" }, [icon("copy", 12), "Copy for AI"]);
+  /* ---- Agent context: the storyboard rides with the plan ---- */
+  const f3 = sbSection("Agent context");
+  const copy = el("button", { class: "btn-sm", style: "width:100%;justify-content:center" }, [icon("copy", 12), "Copy storyboard for AI"]);
   copy.onclick = async () => {
     try {
       await sbSaveNow();
@@ -607,15 +701,13 @@ function fillSbSidebar(body) {
       toast(`copy failed - ${err.message}`, "err");
     }
   };
-  sec3Body.append(
+  f3.secBody.append(
     el("div", { class: "sb-note" }, [
-      el("b", {}, ["The agent already sees this storyboard"]),
-      " when you plan from the Timeline page. Element comments are included.",
+      "The agent reads this storyboard automatically when you plan from the Timeline.",
     ]),
-    el("div", { class: "btn-row" }, [copy]),
+    copy,
   );
-  sec3.appendChild(sec3Body);
-  body.appendChild(sec3);
+  body.appendChild(f3.sec);
 }
 
 function openSbCopyTextModal(text) {

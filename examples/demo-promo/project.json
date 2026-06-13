@@ -516,6 +516,11 @@
       "id": "file-0000000041d471f5bc8dd618aca64dc9-optimized-1000",
       "path": "assets/Example/file_0000000041d471f5bc8dd618aca64dc9_optimized_1000.png",
       "kind": "image"
+    },
+    {
+      "id": "pulse-20260610-202405",
+      "path": "assets/pulse-20260610-202405.mp4",
+      "kind": "video"
     }
   ]
 }

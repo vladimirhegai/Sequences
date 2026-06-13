@@ -96,38 +96,42 @@ function resetPagesForProject() {
    REFERENCES — Phase-3 shell (layout in place, honestly empty)
    ============================================================ */
 
-function refsPlaceholder(text) {
-  return el("div", { class: "refs-card" }, [text]);
-}
-
 function renderReferencesPage() {
   const host = pageHost("references");
   host.innerHTML = "";
   const wrap = el("div", { class: "refs-wrap" });
-  wrap.append(
-    el("div", { class: "refs-head" }, [
-      el("h2", {}, ["References"]),
-      el("span", { class: "phase-tag" }, ["arrives in phase 3"]),
-      el("span", { class: "sub" }, ["pin websites, motion examples, and example projects next to your work"]),
+  const inner = el("div", { class: "refs-inner" });
+
+  inner.append(
+    el("div", { class: "refs-hero" }, [
+      el("div", { class: "refs-icon" }, [icon("bookmark", 22)]),
+      el("h2", { class: "refs-h2" }, ["References"]),
+      el("p", { class: "refs-lead" }, [
+        "A quiet pinboard for the work that sets the tone — landing pages, motion you admire, projects worth remixing — kept beside the canvas so the agent can read it.",
+      ]),
+      el("span", { class: "phase-tag" }, ["Arrives in Phase 3"]),
     ]),
-    el("div", { class: "refs-search" }, [icon("search", 13), "Search references — coming with the capture tools"]),
   );
 
-  const sections = [
-    ["Websites", "Paste a URL to pin a landing page — shares the brand-kit scraper", ["+ Pin a website", "Landing page", "Pricing page"]],
-    ["Motion examples", "Clips and reels that show the feel you're after", ["+ Add an example", "Launch promo ref", "Kinetic type ref", "Product walkthrough ref"]],
-    ["Example projects", "Remixable Sequences projects — the template gallery lands here", ["Pulse — demo reel", "Feature clip", "App Store preview"]],
+  const cats = [
+    ["bookmark", "Websites", "Pin a URL; it shares plumbing with the brand-kit scraper."],
+    ["clapper", "Motion examples", "Clips and reels that capture the feel you're after."],
+    ["box", "Example projects", "Remixable Sequences projects — the template gallery."],
   ];
-  for (const [title, sub, cards] of sections) {
-    const grid = el("div", { class: "refs-grid" });
-    for (const c of cards) grid.appendChild(refsPlaceholder(c));
-    wrap.append(
-      el("div", { class: "refs-sec" }, [
-        el("div", { class: "refs-sec-title" }, [title, el("span", { class: "ph-sub" }, [` · ${sub}`])]),
-        grid,
+  const list = el("div", { class: "refs-cats" });
+  for (const [ico, title, desc] of cats) {
+    list.append(
+      el("div", { class: "refs-cat" }, [
+        el("span", { class: "refs-cat-ico" }, [icon(ico, 15)]),
+        el("div", { class: "refs-cat-meta" }, [
+          el("div", { class: "refs-cat-name" }, [title]),
+          el("div", { class: "refs-cat-desc" }, [desc]),
+        ]),
       ]),
     );
   }
+  inner.append(list);
+  wrap.appendChild(inner);
   host.appendChild(wrap);
 }
 
@@ -135,36 +139,122 @@ function renderReferencesPage() {
    EXTENSIONS — Phase-3 empty shell (the registry's future storefront)
    ============================================================ */
 
+let extCategory = "all";
+let extQuery = "";
+
+const EXT_CATS = [
+  ["all", "All"],
+  ["primitive", "Motion primitives"],
+  ["archetype", "Archetypes"],
+  ["profile", "Profiles"],
+  ["camera", "Camera"],
+];
+
+const EXT_TYPE_META = {
+  primitive: { icon: "sparkle", label: "Primitive" },
+  archetype: { icon: "grid2", label: "Archetype" },
+  profile: { icon: "sliders", label: "Profile" },
+  camera: { icon: "clapper", label: "Camera" },
+};
+
+function extCatalog() {
+  const entries = [];
+  for (const p of meta.primitives || []) entries.push({ type: "primitive", id: p.id, kind: p.kind, summary: p.summary });
+  for (const a of meta.archetypes || []) entries.push({ type: "archetype", id: a.id, summary: a.summary });
+  for (const p of meta.profiles || []) entries.push({ type: "profile", id: p.id, summary: p.summary });
+  for (const m of meta.cameraMoves || []) entries.push({ type: "camera", id: m.id, summary: m.summary });
+  return entries;
+}
+
 function renderExtensionsPage() {
   const host = pageHost("extensions");
   host.innerHTML = "";
   const wrap = el("div", { class: "ext-wrap" });
+
   wrap.append(
     el("div", { class: "ext-head" }, [
       el("h2", {}, ["Extensions"]),
-      el("span", { class: "phase-tag" }, ["marketplace arrives in phase 3"]),
-      el("span", { class: "sub" }, ["skills & plugins — defaults, community, and your own"]),
+      el("span", { class: "phase-tag" }, ["community marketplace · Phase 3"]),
+      el("span", { class: "sub" }, ["the curated motion system, installed — skills & community plugins arrive later"]),
     ]),
-    el("div", { class: "refs-search" }, [icon("search", 13), "Search the marketplace — opens when the registry goes remote"]),
   );
+
+  const search = el("input", {
+    class: "ext-search-input",
+    type: "search",
+    placeholder: "Search installed extensions…",
+    value: extQuery,
+    autocomplete: "off",
+  });
+  search.oninput = () => {
+    extQuery = search.value;
+    fillExtGrid();
+  };
+  wrap.append(el("div", { class: "ext-search" }, [icon("search", 14), search]));
+
   const cats = el("div", { class: "ext-cats" });
-  for (const [i, c] of ["Skills", "Plugins"].entries()) {
-    cats.appendChild(el("button", { class: `ext-cat ${i === 0 ? "on" : ""}`, disabled: "true" }, [c]));
+  for (const [id, label] of EXT_CATS) {
+    const count = id === "all" ? extCatalog().length : extCatalog().filter((e) => e.type === id).length;
+    const btn = el("button", { class: `ext-cat ${extCategory === id ? "on" : ""}` }, [
+      label,
+      el("span", { class: "ext-cat-n" }, [String(count)]),
+    ]);
+    btn.onclick = () => {
+      extCategory = id;
+      renderExtensionsPage();
+    };
+    cats.appendChild(btn);
   }
+  wrap.append(cats);
+
   wrap.append(
-    cats,
-    el("div", { class: "ext-empty" }, [
-      el("div", { class: "big" }, ["Nothing to browse yet — and that's deliberate."]),
-      el("div", { style: "margin-top:10px" }, [
-        "Plugins already exist under the hood: every primitive, archetype, profile, and token set is a ",
+    el("div", { class: "ext-banner" }, [
+      icon("box", 14),
+      el("span", {}, [
+        "Every card below is a live ",
         el("b", {}, ["registry entry"]),
-        " (token-pure, lint-gated, with its own summary the agent reads). ",
-        "This page becomes their storefront when the registry goes remote in Phase 3 — ",
-        "browse and install community skills & plugins, or author your own with AI assistance.",
+        " — token-pure and lint-gated. Browsing and installing community skills & plugins opens when the registry goes remote in Phase 3.",
       ]),
     ]),
   );
+
+  wrap.append(el("div", { class: "ext-grid", id: "extGrid" }));
   host.appendChild(wrap);
+  fillExtGrid();
+}
+
+function fillExtGrid() {
+  const grid = $("extGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  const q = extQuery.trim().toLowerCase();
+  const entries = extCatalog().filter(
+    (e) =>
+      (extCategory === "all" || e.type === extCategory) &&
+      (!q || e.id.toLowerCase().includes(q) || (e.summary || "").toLowerCase().includes(q)),
+  );
+  if (entries.length === 0) {
+    grid.append(el("div", { class: "ext-none" }, ["No installed extensions match that search."]));
+    return;
+  }
+  for (const e of entries) {
+    const tm = EXT_TYPE_META[e.type];
+    const card = el("div", { class: "ext-card" }, [
+      el("div", { class: "ext-card-head" }, [
+        el("span", { class: `ext-card-ico ext-ico-${e.type}` }, [icon(tm.icon, 15)]),
+        el("div", { class: "ext-card-id" }, [
+          el("div", { class: "ext-card-name mono" }, [e.id]),
+          el("div", { class: "ext-card-kind" }, [e.kind ? `${tm.label} · ${e.kind}` : tm.label]),
+        ]),
+      ]),
+      el("div", { class: "ext-card-summary" }, [e.summary || "—"]),
+      el("div", { class: "ext-card-foot" }, [
+        el("span", { class: "ext-installed" }, [icon("check", 11), "Installed"]),
+        el("span", { class: "ext-core" }, ["core"]),
+      ]),
+    ]);
+    grid.appendChild(card);
+  }
 }
 
 /* ============================================================

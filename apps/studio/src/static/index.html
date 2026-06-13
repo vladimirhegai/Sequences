@@ -34,7 +34,6 @@
       <span id="renderStatus"></span>
       <a id="renderDownload" href="" download></a>
       <div id="qualityChip" class="chip" title="Render quality"></div>
-      <button id="renderBtn" class="btn btn-primary"></button>
     </header>
 
     <!-- ============ MAIN (workspace pages) ============ -->
@@ -58,12 +57,14 @@
           <div id="agentBody"></div>
           <div id="agentFoot">
             <div class="composer">
-              <textarea id="agentBrief" rows="1" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
-              <button id="planBtn" class="composer-send" title="Plan the video from this brief"></button>
-            </div>
-            <div class="composer-meta">
-              <button id="modelChip" class="agent-select-chip"></button>
-              <span class="cm-right"><span id="composerHint"></span></span>
+              <textarea id="agentBrief" rows="3" placeholder="Describe the video — “a punchy 20s promo for our analytics dashboard”…"></textarea>
+              <div class="composer-bar">
+                <span class="cm-right">
+                  <button id="modelChip" class="agent-select-chip" title="Model & thinking"></button>
+                  <span id="composerHint"></span>
+                  <button id="planBtn" class="composer-send" title="Plan the video (Enter)"></button>
+                </span>
+              </div>
             </div>
           </div>
         </div>

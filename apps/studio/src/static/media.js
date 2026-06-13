@@ -10,6 +10,9 @@ let mediaPreview = null; // { src, name, kind, info } shown in the viewer
 let mediaBin = ""; // "" = all assets, otherwise assets/<bin>/ prefix
 let mediaSelectedAssetId = null;
 let mediaPathEditing = false;
+let mediaZoom = 1;
+let mediaLoop = false;
+let mediaMuted = false;
 
 const MIME_DRAG_ASSET = "application/x-seq-asset-id";
 const MIME_DRAG_DISK = "application/x-seq-disk-path";
@@ -20,11 +23,41 @@ function mediaResetForProject() {
   mediaBin = "";
   mediaSelectedAssetId = null;
   mediaPathEditing = false;
+  mediaZoom = 1;
+  mediaLoop = false;
+  mediaMuted = false;
 }
 
 function assetPoolHref(asset) {
   // serve straight from the project assets dir (subfolders included)
   return `/${asset.path.replace(/\\/g, "/")}`;
+}
+
+function mediaClamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function setMediaPreview(next) {
+  const changed = !mediaPreview || mediaPreview.src !== next.src || mediaPreview.kind !== next.kind;
+  mediaPreview = next;
+  if (changed) {
+    mediaZoom = 1;
+    mediaLoop = false;
+    mediaMuted = false;
+  }
+}
+
+function applyMediaZoom() {
+  const host = pageHost("media");
+  const viewport = host?.querySelector(".mv-viewport");
+  if (viewport) viewport.classList.toggle("zoomed", mediaZoom > 1);
+  const figure = host?.querySelector(".mv-figure");
+  if (figure) {
+    figure.style.width = `${mediaZoom * 100}%`;
+    figure.style.height = `${mediaZoom * 100}%`;
+  }
+  const pct = host?.querySelector(".mv-zoom-value");
+  if (pct) pct.textContent = mediaZoom === 1 ? "Fit" : `${Math.round(mediaZoom * 100)}%`;
 }
 
 function assetUsedBy(assetId) {
@@ -234,13 +267,13 @@ async function fillFileBrowser() {
       el("span", { class: "fi-kind" }, [f.kind]),
     ]);
     item.onclick = () => {
-      mediaPreview = {
+      setMediaPreview({
         src: `/api/fs/file?path=${encodeURIComponent(f.path)}`,
         name: f.name,
         kind: f.kind,
         info: `${fmtBytes(f.size)} · on disk`,
         diskPath: f.path,
-      };
+      });
       renderMediaPage();
     };
     item.ondblclick = () => importDiskFile(f.path);
@@ -296,30 +329,49 @@ async function uploadFiles(files, folder = mediaBin) {
 
 function buildMediaViewer() {
   const pane = el("div", { class: "page-pane" });
+  let mediaEl = null;
   pane.append(
     el("div", { class: "pane-head" }, [
       el("span", { class: "ph-title" }, ["Viewer"]),
       el("span", { class: "ph-sub" }, [mediaPreview ? mediaPreview.name : "nothing selected"]),
     ]),
   );
-  const stage = el("div", { class: "mv-stage" });
+  const stage = el("div", { class: `mv-stage ${mediaPreview ? "has-media" : ""}` });
   if (!mediaPreview) {
     stage.append(
       el("div", { class: "mv-empty" }, [
-        "Select a file on the left or an asset in the pool below.",
-        el("br"),
-        el("b", {}, ["Images, video and audio"]),
-        " preview here before you commit them to the pool.",
+        el("div", { class: "mv-empty-ico" }, [icon("image", 24)]),
+        el("div", { class: "mv-empty-line" }, ["Select a file or a pool asset to preview"]),
+        el("div", { class: "mv-empty-sub" }, ["Images, video and audio play here"]),
       ]),
     );
   } else if (mediaPreview.kind === "image") {
-    stage.append(el("img", { src: mediaPreview.src, alt: mediaPreview.name }));
+    stage.append(buildMediaViewport(el("img", { class: "mv-media", src: mediaPreview.src, alt: mediaPreview.name })));
   } else if (mediaPreview.kind === "video") {
-    stage.append(el("video", { src: mediaPreview.src, controls: "true" }));
+    mediaEl = el("video", {
+      class: "mv-media",
+      src: mediaPreview.src,
+      controls: "true",
+      preload: "metadata",
+      playsinline: "true",
+    });
+    mediaEl.loop = mediaLoop;
+    mediaEl.muted = mediaMuted;
+    stage.append(buildMediaViewport(mediaEl));
   } else {
-    stage.append(el("audio", { src: mediaPreview.src, controls: "true" }));
+    mediaEl = el("audio", { class: "mv-audio-el", src: mediaPreview.src, controls: "true", preload: "metadata" });
+    mediaEl.loop = mediaLoop;
+    mediaEl.muted = mediaMuted;
+    stage.append(
+      el("div", { class: "mv-audio-card" }, [
+        el("div", { class: "mv-audio-ico" }, [icon("music", 24)]),
+        el("div", { class: "mv-audio-name mono" }, [mediaPreview.name]),
+        mediaEl,
+      ]),
+    );
   }
   pane.appendChild(stage);
+  if (mediaPreview) pane.appendChild(buildMediaControls(mediaEl));
 
   const bar = el("div", { class: "mv-bar" });
   if (mediaPreview) {
@@ -333,10 +385,103 @@ function buildMediaViewer() {
       bar.append(importBtn);
     }
   } else {
-    bar.append(el("span", {}, ["media viewer"]));
+    bar.append(el("span", { style: "color:var(--text-dim)" }, ["No media selected"]));
   }
   pane.appendChild(bar);
   return pane;
+}
+
+function buildMediaViewport(node) {
+  const viewport = el("div", { class: `mv-viewport ${mediaZoom > 1 ? "zoomed" : ""}` });
+  const figure = el("div", { class: "mv-figure" });
+  figure.style.width = `${mediaZoom * 100}%`;
+  figure.style.height = `${mediaZoom * 100}%`;
+  figure.append(node);
+  viewport.appendChild(figure);
+  return viewport;
+}
+
+function buildMediaControls(mediaEl) {
+  const strip = el("div", { class: "mv-controls" });
+
+  if (mediaPreview.kind === "image" || mediaPreview.kind === "video") {
+    const zoomOut = el("button", { class: "mini-btn", title: "Zoom out" }, [icon("zoomOut", 12)]);
+    const zoomIn = el("button", { class: "mini-btn", title: "Zoom in" }, [icon("zoomIn", 12)]);
+    const fit = el("button", { class: "mini-btn", title: "Fit to viewer" }, [icon("fit", 12)]);
+    const value = el("span", { class: "mv-zoom-value mono" }, [mediaZoom === 1 ? "Fit" : `${Math.round(mediaZoom * 100)}%`]);
+    zoomOut.onclick = () => {
+      mediaZoom = mediaClamp(Math.round((mediaZoom - 0.25) * 100) / 100, 0.25, 4);
+      applyMediaZoom();
+    };
+    zoomIn.onclick = () => {
+      mediaZoom = mediaClamp(Math.round((mediaZoom + 0.25) * 100) / 100, 0.25, 4);
+      applyMediaZoom();
+    };
+    fit.onclick = () => {
+      mediaZoom = 1;
+      applyMediaZoom();
+    };
+    strip.append(el("div", { class: "mv-control-group" }, [zoomOut, value, zoomIn, fit]));
+  }
+
+  if (mediaEl) {
+    const play = el("button", { class: "mini-btn", title: "Play / pause" }, [icon("play", 12)]);
+    const back = el("button", { class: "mini-btn", title: "Back 5 seconds" }, [icon("skipBack", 12)]);
+    const fwd = el("button", { class: "mini-btn", title: "Forward 5 seconds" }, [icon("skipForward", 12)]);
+    const loop = el("button", { class: `mini-btn ${mediaLoop ? "on" : ""}`, title: "Loop" }, [icon("repeat", 12)]);
+    const mute = el("button", { class: `mini-btn ${mediaMuted ? "on" : ""}`, title: "Mute" }, [icon(mediaMuted ? "volumeOff" : "volume", 12)]);
+    const time = el("span", { class: "mv-time mono" }, ["00:00 / 00:00"]);
+    const fmt = (seconds) => {
+      if (!Number.isFinite(seconds)) return "00:00";
+      const s = Math.max(0, Math.floor(seconds));
+      return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    };
+    const sync = () => {
+      play.replaceChildren(icon(mediaEl.paused ? "play" : "pause", 12));
+      mute.replaceChildren(icon(mediaEl.muted ? "volumeOff" : "volume", 12));
+      mute.classList.toggle("on", mediaEl.muted);
+      loop.classList.toggle("on", mediaEl.loop);
+      time.textContent = `${fmt(mediaEl.currentTime)} / ${fmt(mediaEl.duration)}`;
+    };
+    play.onclick = async () => {
+      if (mediaEl.paused) {
+        try {
+          await mediaEl.play();
+        } catch {
+          /* Native controls remain available if autoplay policy blocks this click. */
+        }
+      } else {
+        mediaEl.pause();
+      }
+      sync();
+    };
+    back.onclick = () => {
+      mediaEl.currentTime = Math.max(0, (mediaEl.currentTime || 0) - 5);
+      sync();
+    };
+    fwd.onclick = () => {
+      mediaEl.currentTime = Math.min(mediaEl.duration || Number.MAX_SAFE_INTEGER, (mediaEl.currentTime || 0) + 5);
+      sync();
+    };
+    loop.onclick = () => {
+      mediaEl.loop = !mediaEl.loop;
+      mediaLoop = mediaEl.loop;
+      sync();
+    };
+    mute.onclick = () => {
+      mediaEl.muted = !mediaEl.muted;
+      mediaMuted = mediaEl.muted;
+      sync();
+    };
+    mediaEl.addEventListener("loadedmetadata", sync);
+    mediaEl.addEventListener("timeupdate", sync);
+    mediaEl.addEventListener("play", sync);
+    mediaEl.addEventListener("pause", sync);
+    strip.append(el("div", { class: "mv-control-group mv-playback" }, [play, back, fwd, loop, mute, time]));
+    setTimeout(sync, 0);
+  }
+
+  return strip;
 }
 
 /* ---------------- bins (bottom left) ---------------- */
@@ -439,7 +584,7 @@ function buildPool() {
       el("span", { class: "ph-title" }, ["Media pool"]),
       el("span", { class: "ph-sub mono" }, [mediaBin ? `assets/${mediaBin}/` : "assets/"]),
       el("div", { class: "ph-tools" }, [
-        el("span", { class: "ph-sub" }, ["drop files here · everything is referenced by asset id"]),
+        el("span", { class: "ph-sub" }, ["referenced by asset id"]),
       ]),
     ]),
   );
@@ -524,12 +669,12 @@ function poolCard(asset) {
   card.append(del);
   card.onclick = () => {
     mediaSelectedAssetId = asset.id;
-    mediaPreview = {
+    setMediaPreview({
       src: assetPoolHref(asset),
       name: asset.path.split("/").pop(),
       kind: asset.kind,
       info: `asset "${asset.id}" · in the pool${bin ? ` · bin ${bin}/` : ""}`,
-    };
+    });
     renderMediaPage();
   };
   return card;
