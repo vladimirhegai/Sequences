@@ -96,6 +96,9 @@ describe("plan layer (T4)", () => {
     const project = createDefaultProject();
     project.assets.push({ id: "dash", path: "assets/dash.png", kind: "image" });
     const prompt = buildPlanPrompt("a punchy 20s promo", project);
+    expect(prompt).toContain("## Sequences agent system prompt (Phase 1)");
+    expect(prompt).toContain("Do not output prose, markdown, HTML, CSS, GSAP");
+    expect(prompt).toContain("unsupported motion");
     expect(prompt).toContain("## Motion primitives");
     expect(prompt).toContain("## Camera moves");
     expect(prompt).toContain("- dash (image): assets/dash.png");

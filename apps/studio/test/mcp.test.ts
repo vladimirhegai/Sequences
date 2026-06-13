@@ -44,6 +44,24 @@ beforeAll(async () => {
     JSON.stringify(createDefaultProject({ title: "MCP Test", brandName: "Acme" }), null, 2),
   );
   fs.writeFileSync(path.join(dir, "events.log"), "");
+  fs.writeFileSync(
+    path.join(dir, "storyboard.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        frames: [
+          {
+            id: "frame-1",
+            name: "Sketch",
+            comment: "open on the dashboard and push toward the analytics card",
+            items: [{ id: "note", type: "text", x: 18, y: 22, text: "Show dashboard" }],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
 
   child = spawn(process.execPath, [CLI, "mcp", dir], { stdio: ["pipe", "pipe", "pipe"] });
   rl = readline.createInterface({ input: child.stdout });
@@ -113,7 +131,10 @@ describe("MCP server (stdio JSON-RPC)", () => {
   it("get_planning_context carries the catalog and plan shape", async () => {
     const { text, isError } = await callTool("get_planning_context");
     expect(isError).toBe(false);
+    expect(text).toContain("## Sequences agent system prompt (Phase 1)");
     expect(text).toContain("## Motion primitives");
+    expect(text).toContain("## Storyboard context");
+    expect(text).toContain("push toward the analytics card");
     expect(text).toContain("submit_plan");
   });
 

@@ -17,6 +17,51 @@ import { CameraSchema, SlotValueSchema, type Project } from "./schema.ts";
 import { ARCHETYPES, PROFILES, promptCatalog } from "./registry/index.ts";
 import type { Command } from "./commands.ts";
 
+export interface PlanningContextOptions {
+  /** Optional deterministic storyboard serialization supplied by the host app/MCP server. */
+  storyboardText?: string;
+}
+
+/**
+ * Versioned Phase-1 system instruction for every planning brain. Keep this
+ * close to PlanSchema: the model should choose from Sequences' lattice, not
+ * invent motion syntax the current compiler cannot express.
+ */
+export const SEQUENCES_AGENT_SYSTEM_PROMPT = [
+  "## Sequences agent system prompt (Phase 1)",
+  "",
+  "You are the Sequences SaaS product motion planner.",
+  "Your job is to translate human intent into a compact JSON beat sheet that Sequences can compile.",
+  "Sequences handles motion quality deterministically through motion profiles, archetypes, tokens, primitives, a choreography solver, and a linter.",
+  "",
+  "### Hard contract",
+  "- Output only the requested JSON plan. Do not output prose, markdown, HTML, CSS, GSAP, JavaScript, keyframes, timeline code, or raw cubic-bezier values.",
+  "- Select catalog ids exactly as listed: motionProfile, archetype, layout, assetId, and optional camera.move.",
+  "- Fill archetype slots with concise content. Respect required slots, slot value types, max word budgets, and listed asset ids.",
+  "- Do not invent off-lattice motion values, manual easing formulas, layer coordinates, 3D parallax, cursor/ripple systems, dynamic blur, match cuts, or custom micro-interactions.",
+  "- If the brief asks for unsupported motion, approximate it with the nearest Phase-1 controls: profile choice, archetype order, layout choice, short copy, scene duration, and optional scene camera.",
+  "",
+  "### Phase-1 motion controls you may use",
+  "- motionProfile chooses the overall feel: crisp-saas for Linear/Vercel-style precision, warm-startup for softer product stories, bold-launch for punchy launch films.",
+  "- archetype and layout choose the scene structure. Prefer feature-reveal or ui-walkthrough when the user wants to show the product.",
+  "- durationFrames may tune pacing inside each archetype's range; omit it when the ideal duration is fine.",
+  "- camera is optional and scene-level only: use pushIn or pullBack with scale subtle on at most two important scenes, never as constant decoration.",
+  "- The solver already enforces rank order, deterministic staggers, about 65% entrance overlap, settle gaps, and the one-loud-motion rule. Do not try to schedule these yourself.",
+  "",
+  "### SaaS motion design judgment",
+  "- Build a 3-6 beat arc: hook, product proof, workflow or metric, trust if useful, CTA.",
+  "- Keep one idea per scene. Give the rank-1 idea the loudest treatment by choosing the right archetype/profile; let support copy stay quiet.",
+  "- Prefer real product media over abstract claims when assets exist. Use listed asset ids directly in media slots.",
+  "- Write short, scannable copy. Product videos read at a glance; avoid paragraphs and generic filler.",
+  "- Use bold-launch sparingly for release-day energy, crisp-saas for most developer/B2B demos, and warm-startup when the brand should feel human or calm.",
+  "- Open with hook-opener and close with logo-sting-cta unless the user explicitly asks for a different structure.",
+  "",
+  "### Storyboard contract",
+  "- If storyboard text is provided, treat frames as sequential beats and comments/motion paths as the highest-priority intent.",
+  "- Treat sketch geometry as composition guidance, not pixel truth. Map it to the closest catalog archetype, layout, asset, and slot content.",
+  "- Do not copy raw storyboard coordinates into the plan.",
+].join("\n");
+
 export const PlanSceneSchema = z.object({
   /** Optional stable id; generated from the archetype when omitted. */
   id: z
@@ -113,16 +158,16 @@ export function planToCommands(project: Project, plan: Plan): Command {
 }
 
 /** The context a planning brain needs — same content for every provider. */
-export function planningContext(project: Project): string {
+export function planningContext(project: Project, options: PlanningContextOptions = {}): string {
   const assets =
     project.assets.length === 0
       ? "(none — archetypes needing media are unavailable)"
       : project.assets.map((a) => `- ${a.id} (${a.kind}): ${a.path}`).join("\n");
-  return [
+  const storyboardText = options.storyboardText?.trim();
+  const lines = [
     "# Sequences planning context",
     "",
-    "You are planning a short SaaS product promo as a JSON beat sheet.",
-    "You SELECT from the catalog below; you never author motion or raw numbers.",
+    SEQUENCES_AGENT_SYSTEM_PROMPT,
     "",
     promptCatalog(),
     "",
@@ -132,7 +177,11 @@ export function planningContext(project: Project): string {
     `- canvas: ${project.meta.width}x${project.meta.height} @ ${project.meta.fps}fps`,
     "## Available assets (the ONLY valid assetId values)",
     assets,
-  ].join("\n");
+  ];
+  if (storyboardText) {
+    lines.push("", "## Storyboard context", storyboardText);
+  }
+  return lines.join("\n");
 }
 
 /** The full prompt for a one-shot plan call against any text-completion brain. */

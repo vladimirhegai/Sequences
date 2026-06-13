@@ -2,50 +2,8 @@
   "version": 1,
   "frames": [
     {
-      "id": "frame-2",
-      "name": "Frame 1",
-      "items": [],
-      "excalidraw": {
-        "elements": [],
-        "appState": {
-          "viewBackgroundColor": "#e7e8eb",
-          "currentItemStrokeColor": "#111827",
-          "currentItemBackgroundColor": "transparent",
-          "currentItemFillStyle": "hachure",
-          "currentItemStrokeWidth": 2,
-          "currentItemStrokeStyle": "solid",
-          "currentItemRoughness": 1,
-          "currentItemOpacity": 100,
-          "currentItemFontFamily": 5,
-          "currentItemFontSize": 36
-        },
-        "files": {}
-      }
-    },
-    {
       "id": "frame-1",
-      "name": "Frame 2",
-      "items": [],
-      "excalidraw": {
-        "elements": [],
-        "appState": {
-          "viewBackgroundColor": "#e7e8eb",
-          "currentItemStrokeColor": "#111827",
-          "currentItemBackgroundColor": "transparent",
-          "currentItemFillStyle": "hachure",
-          "currentItemStrokeWidth": 2,
-          "currentItemStrokeStyle": "solid",
-          "currentItemRoughness": 1,
-          "currentItemOpacity": 100,
-          "currentItemFontFamily": 5,
-          "currentItemFontSize": 36
-        },
-        "files": {}
-      }
-    },
-    {
-      "id": "frame-3",
-      "name": "Frame 3",
+      "name": "Frame 1",
       "items": [],
       "excalidraw": {
         "elements": [],

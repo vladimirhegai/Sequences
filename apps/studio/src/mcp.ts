@@ -31,6 +31,7 @@ import {
 } from "@sequences/core";
 import { appendEvent, buildProject, loadProject, saveProject } from "./projectIo.ts";
 import { renderProject } from "./render.ts";
+import { loadStoryboard, storyboardToText } from "./workspace.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -90,7 +91,9 @@ export function startMcpServer(projectDir: string): void {
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       handler: () =>
         [
-          planningContext(store.project),
+          planningContext(store.project, {
+            storyboardText: storyboardToText(loadStoryboard(projectDir)).slice(0, 4000),
+          }),
           "",
           "## Plan shape for submit_plan",
           '{ "motionProfile": "<id>", "scenes": [ { "archetype": "<id>", "layout"?, "durationFrames"?, "slots": {...}, "camera"? } ] }',
