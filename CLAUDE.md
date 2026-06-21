@@ -1,8 +1,9 @@
 # CLAUDE.md — Sequences
 
 Agent-first motion graphics editor for SaaS product video, built on HyperFrames.
-Local-first, deterministic, TypeScript everywhere. **An agent does ~90%; a real
-visual editor fixes the last 10% non-destructively.**
+Local-first, deterministic, TypeScript everywhere. An agent can create and
+revise structured first passes; the visual editor keeps human changes
+non-destructive and reversible.
 
 ## Read first (don't skip)
 

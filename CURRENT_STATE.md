@@ -186,17 +186,15 @@ Sequences/
   SEQUENCES_MASTER_PLAN.md
                           Product/research roadmap; intentionally aspirational
   STORYBOARD_AI_PLAN.md   Post-rewrite storyboard-to-agent research plan
-  deep-research-report.md Broad market/motion research; private, reviewed
-  KIMI_RESEARCH.md        Skill/motion research; private, reviewed
-  RESEARCH_REVIEW.md      Private assessment of both research reports
+  MOTION_RESEARCH.md      Consolidated, source-checked private research
 
   hyperframes/            Ignored local upstream checkout for research
   excalidraw/             Ignored local reference/notes directory
   node_modules/           Installed dependencies
 ```
 
-`README_dev.md`, `SEQUENCES_MASTER_PLAN.md`, `STORYBOARD_AI_PLAN.md`, the three
-research documents, `hyperframes/`, and `excalidraw/` are ignored by
+`README_dev.md`, `SEQUENCES_MASTER_PLAN.md`, `STORYBOARD_AI_PLAN.md`,
+`MOTION_RESEARCH.md`, `hyperframes/`, and `excalidraw/` are ignored by
 `.gitignore`. They are local working references, not public sources of truth.
 
 ## 5. Runtime and dependency stack
@@ -2086,8 +2084,8 @@ The documentation was reconciled on June 21, 2026:
 - `DESIGN.md` separates durable design principles from layout hypotheses.
 - Local planning documents carry status notes and no longer claim known-fixed
   gaps such as missing MCP storyboard context.
-- The private research reports are explicitly non-canonical and assessed in
-  `RESEARCH_REVIEW.md`.
+- The two raw research exports were replaced by one source-checked,
+  explicitly non-canonical `MOTION_RESEARCH.md`.
 
 Historical sections of the master plan still preserve original estimates and
 rationale. Current implementation facts in this document take precedence.
