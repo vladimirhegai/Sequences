@@ -8,6 +8,7 @@ import {
 } from "../src/plan.ts";
 import { ProjectStore } from "../src/store.ts";
 import { createDefaultProject } from "../src/defaults.ts";
+import { testAsset } from "./helpers.ts";
 
 const GOOD_PLAN = {
   motionProfile: "bold-launch",
@@ -108,16 +109,24 @@ describe("plan layer (T4)", () => {
     expect(() => extractJsonObject("{ broken")).toThrow(PlanError);
   });
 
+  it("extractJsonObject skips earlier non-JSON brace blocks", () => {
+    const output =
+      'Ignore this malformed example {not json}. Final answer: {"motionProfile":"crisp-saas","scenes":[{"archetype":"hook-opener","slots":{"headline":"Hi"}}]}';
+    const parsed = extractJsonObject(output) as { motionProfile: string };
+    expect(parsed.motionProfile).toBe("crisp-saas");
+  });
+
   it("the plan prompt carries the catalog, assets, and output contract", () => {
     const project = createDefaultProject();
-    project.assets.push({ id: "dash", path: "assets/dash.png", kind: "image" });
+    const dash = testAsset("dash", "assets/dash.png");
+    project.assets.push(dash);
     const prompt = buildPlanPrompt("a punchy 20s promo", project);
     expect(prompt).toContain("## Sequences agent system prompt (Phase 1)");
     expect(prompt).toContain("Do not output prose, markdown, HTML, CSS, GSAP");
     expect(prompt).toContain("unsupported motion");
     expect(prompt).toContain("## Motion primitives");
     expect(prompt).toContain("## Camera moves");
-    expect(prompt).toContain("- dash (image): assets/dash.png");
+    expect(prompt).toContain(`- ${dash.id} (image): assets/dash.png`);
     expect(prompt).toContain("a punchy 20s promo");
     expect(prompt).toContain('"motionProfile"');
   });
@@ -132,5 +141,14 @@ describe("plan layer (T4)", () => {
     expect(prompt).not.toContain("- bold-launch:");
     expect(prompt).not.toContain("- stat-callout");
     expect(prompt).toContain("- (none enabled)");
+  });
+
+  it("the plan prompt scales catalog frame ranges for 60fps projects", () => {
+    const project = createDefaultProject();
+    project.meta.fps = 60;
+    const prompt = buildPlanPrompt("a promo", project);
+    expect(prompt).toContain("120-300f @60fps");
+    expect(prompt).toContain("durations (frames@60)");
+    expect(prompt).toContain("base=32");
   });
 });

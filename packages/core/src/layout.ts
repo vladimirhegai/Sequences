@@ -17,7 +17,7 @@ export interface GridSpec {
   y: number;
   /** Height as a fraction of canvas height. */
   h: number;
-  origin?: string;
+  origin?: Box["origin"];
 }
 
 export function gridBox(W: number, H: number, spec: GridSpec): Box {
@@ -32,6 +32,26 @@ export function gridBox(W: number, H: number, spec: GridSpec): Box {
     w: Math.round(w),
     h: Math.round(spec.h * H),
     origin: spec.origin ?? "center center",
+  };
+}
+
+export function gridMetrics(W: number): { margin: number; gutter: number; colW: number } {
+  const margin = SAFE_MARGIN_FRAC * W;
+  const gutter = 24 * (W / 1920);
+  const colW = (W - 2 * margin - (GRID_COLS - 1) * gutter) / GRID_COLS;
+  return { margin, gutter, colW };
+}
+
+/** Snap horizontal geometry to the nearest 12-column start/span. */
+export function snapBoxToGrid(W: number, box: Pick<Box, "x" | "w">): { x: number; w: number } {
+  const { margin, gutter, colW } = gridMetrics(W);
+  const pitch = colW + gutter;
+  const col = Math.max(0, Math.min(GRID_COLS - 1, Math.round((box.x - margin) / pitch)));
+  const rawSpan = (box.w + gutter) / pitch;
+  const span = Math.max(1, Math.min(GRID_COLS - col, Math.round(rawSpan)));
+  return {
+    x: Math.round(margin + col * pitch),
+    w: Math.round(span * colW + (span - 1) * gutter),
   };
 }
 

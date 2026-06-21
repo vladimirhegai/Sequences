@@ -1064,12 +1064,17 @@ function renderSceneTab(host) {
             selectInput(
               ["(profile)", ...meta.staggerTokens],
               scene.choreography.stagger ?? "(profile)",
-              (token) =>
-                sendCommand({
-                  type: "SetChoreography",
-                  sceneId: scene.id,
-                  choreography: token === "(profile)" ? {} : { stagger: token },
-                }),
+               (token) =>
+                 sendCommand({
+                   type: "SetChoreography",
+                   sceneId: scene.id,
+                   choreography:
+                     token === "(profile)"
+                       ? Object.fromEntries(
+                           Object.entries(scene.choreography).filter(([key]) => key !== "stagger"),
+                         )
+                       : { ...scene.choreography, stagger: token },
+                 }),
             ),
           ),
         ]),
@@ -1255,6 +1260,14 @@ function renderBrandTab(host) {
           class: "input",
           value: brand.fonts.display,
           onchange: (e) => sendCommand({ type: "SetBrandFont", key: "display", value: e.target.value }),
+        }),
+      ),
+      field(
+        "Body font",
+        el("input", {
+          class: "input",
+          value: brand.fonts.body,
+          onchange: (e) => sendCommand({ type: "SetBrandFont", key: "body", value: e.target.value }),
         }),
       ),
     ]),
@@ -1588,7 +1601,7 @@ function renderAgent() {
   // live planning status (covers reloads mid-plan)
   if (agentState.status === "planning" && !chatLog.some((e) => e.spinner)) {
     body.append(
-      agentMessage(`Planning with <b>${agentState.provider}</b>… CLI providers can take a minute.`, {
+      agentMessage(`Planning with <b>${escapeHtml(agentState.provider)}</b>… CLI providers can take a minute.`, {
         spinner: true,
         label: "planning",
       }),
@@ -1669,7 +1682,7 @@ async function startPlan() {
   const model = currentAgentModel(providerId);
   const thinkingMode = currentThinkingMode(providerId);
   chatLog.push({ kind: "user", text: brief });
-  chatLog.push({ kind: "agent", html: `Planning with <b>${providerId}</b>… CLI providers can take a minute.`, spinner: true, label: "planning" });
+  chatLog.push({ kind: "agent", html: `Planning with <b>${escapeHtml(providerId)}</b>… CLI providers can take a minute.`, spinner: true, label: "planning" });
   $("agentBrief").value = "";
   sessionStorage.setItem("seq.agent.brief", "");
   try {
@@ -1686,6 +1699,147 @@ async function startPlan() {
     chatLog = chatLog.filter((e) => !e.spinner);
     chatLog.push({ kind: "agent", html: `Plan failed — ${escapeHtml(err.message)}`, failed: true, label: "failed" });
     renderAgent();
+  }
+}
+
+function showDirectionPicker(directions) {
+  closeModal();
+  const grid = el("div", { class: "direction-grid" });
+  for (const direction of directions || []) {
+    const first = direction.plan.scenes[0];
+    const apply = el("button", { class: "btn btn-primary" }, ["Use direction"]);
+    apply.onclick = async () => {
+      apply.disabled = true;
+      try {
+        const next = await api("/api/agent/apply-direction", { plan: direction.plan });
+        adoptState(next);
+        chatLog.push({
+          kind: "agent",
+          html: `Applied <b>${escapeHtml(direction.name)}</b> as one undoable batch.`,
+        });
+        closeModal();
+        render();
+      } catch (err) {
+        toast(`direction failed — ${err.message}`, "err");
+        apply.disabled = false;
+      }
+    };
+    grid.append(
+      el("div", { class: "direction-card" }, [
+        el("h3", {}, [direction.name]),
+        el("p", {}, [direction.rationale]),
+        el("p", { class: "mono" }, [
+          `${direction.plan.motionProfile} · ${first?.archetype ?? ""}/${first?.layout ?? "default"} · ${direction.plan.scenes.length} scenes`,
+        ]),
+        apply,
+      ]),
+    );
+  }
+  const modal = el("div", { class: "modal" }, [
+    el("div", { class: "modal-head" }, [
+      el("span", { class: "mh-ico" }, [icon("sparkle", 15)]),
+      el("div", {}, [
+        el("div", { class: "mh-title" }, ["Choose a direction"]),
+        el("div", { class: "mh-sub" }, ["One taste checkpoint before deterministic fill"]),
+      ]),
+    ]),
+    el("div", { class: "modal-body" }, [grid]),
+    el("div", { class: "modal-foot" }, [
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn btn-ghost", onclick: closeModal }, ["Cancel"]),
+    ]),
+  ]);
+  const backdrop = el("div", { id: "modalBackdrop" }, [modal]);
+  backdrop.onclick = (event) => {
+    if (event.target === backdrop) closeModal();
+  };
+  document.body.appendChild(backdrop);
+}
+
+function openStructuredBrief() {
+  closeModal();
+  const product = el("input", { class: "input", placeholder: "Product name" });
+  const audience = el("input", { class: "input", placeholder: "Audience" });
+  const promise = el("input", { class: "input", placeholder: "Core promise" });
+  const feature1 = el("input", { class: "input", placeholder: "Feature 1" });
+  const feature2 = el("input", { class: "input", placeholder: "Feature 2" });
+  const feature3 = el("input", { class: "input", placeholder: "Feature 3" });
+  const cta = el("input", { class: "input", placeholder: "CTA" });
+  const vibe = el("input", { class: "input", type: "range", min: "0", max: "100", value: "50" });
+  const submit = el("button", { class: "btn btn-primary" }, ["Generate directions"]);
+  submit.onclick = async () => {
+    submit.disabled = true;
+    try {
+      const result = await api("/api/agent/directions", {
+        structured: {
+          productName: product.value,
+          audience: audience.value || "product teams",
+          promise: promise.value,
+          features: [feature1.value, feature2.value, feature3.value].filter((value) => value.trim()),
+          cta: cta.value,
+          vibe: Number(vibe.value),
+        },
+      });
+      showDirectionPicker(result.directions);
+    } catch (err) {
+      toast(`brief failed — ${err.message}`, "err");
+      submit.disabled = false;
+    }
+  };
+  const form = el("div", { class: "structured-grid" }, [
+    field("Product", product),
+    field("Audience", audience),
+    el("div", { class: "wide" }, [field("Promise", promise)]),
+    field("Feature 1", feature1),
+    field("Feature 2", feature2),
+    field("Feature 3", feature3),
+    field("CTA", cta),
+    el("div", { class: "wide" }, [field("Vibe · calm → bold", vibe)]),
+  ]);
+  const modal = el("div", { class: "modal" }, [
+    el("div", { class: "modal-head" }, [
+      el("span", { class: "mh-ico" }, [icon("wand", 15)]),
+      el("div", {}, [
+        el("div", { class: "mh-title" }, ["Structured brief"]),
+        el("div", { class: "mh-sub" }, ["Zero-token deterministic planning"]),
+      ]),
+    ]),
+    el("div", { class: "modal-body" }, [form]),
+    el("div", { class: "modal-foot" }, [
+      submit,
+      el("span", { class: "spacer" }),
+      el("button", { class: "btn btn-ghost", onclick: closeModal }, ["Cancel"]),
+    ]),
+  ]);
+  document.body.appendChild(el("div", { id: "modalBackdrop" }, [modal]));
+  product.focus();
+}
+
+async function startTweak() {
+  const text = ($("agentBrief").value || "").trim();
+  if (!text) return toast("write a tweak first", "err");
+  const providerId = currentProviderId();
+  try {
+    const next = await api("/api/agent/tweak", {
+      text,
+      sceneId: selectedSceneId,
+      layerId: selectedLayerId,
+      provider: providerId,
+      model: currentAgentModel(providerId),
+      ...(localStorage.getItem(`seq.agent.key.${providerId}`)
+        ? { apiKey: localStorage.getItem(`seq.agent.key.${providerId}`) }
+        : {}),
+    });
+    adoptState(next);
+    $("agentBrief").value = "";
+    chatLog.push({ kind: "user", text });
+    chatLog.push({
+      kind: "agent",
+      html: `<b>${escapeHtml(next.tweak.mode)}</b> — ${escapeHtml(next.tweak.explanation)}`,
+    });
+    render();
+  } catch (err) {
+    toast(`tweak failed — ${err.message}`, "err");
   }
 }
 
@@ -1887,7 +2041,11 @@ function renderStatusBar() {
   events.append(el("span", { class: "mono" }, [`events.log · ${state.eventCount} ops`]));
   events.onclick = toggleEventsPop;
 
-  $("buildInfo").textContent = `build v${state.buildVersion} · ${state.manifest.durationSec}s @ ${fps()}fps`;
+  $("buildInfo").textContent =
+    `build v${state.buildVersion} · ${state.manifest.durationSec}s @ ${fps()}fps` +
+    (state.performance
+      ? ` · ${state.performance.commandToPreviewMs}ms · ${state.performance.changedSceneIds.length} dirty`
+      : "");
 
   // keep popovers live if open
   if (!$("lintPop").classList.contains("hidden")) renderLintPop();
@@ -2268,6 +2426,8 @@ async function init() {
     }
   };
   $("planBtn").onclick = startPlan;
+  $("structuredBriefBtn").onclick = openStructuredBrief;
+  $("tweakBtn").onclick = startTweak;
 
   window.addEventListener("resize", () => {
     renderTimeline();

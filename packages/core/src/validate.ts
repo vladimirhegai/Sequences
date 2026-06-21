@@ -5,6 +5,7 @@
  */
 import { ProjectSchema, type Project } from "./schema.ts";
 import { ARCHETYPES, PROFILES, PRIMITIVES, registryExtensionIds } from "./registry/index.ts";
+import { migrateProject, type MigrationOptions } from "./migrations.ts";
 
 export interface ValidationIssue {
   path: string;
@@ -18,8 +19,17 @@ export interface ValidationResult {
   project?: Project;
 }
 
-export function validateProject(input: unknown): ValidationResult {
-  const parsed = ProjectSchema.safeParse(input);
+export function validateProject(input: unknown, migrationOptions: MigrationOptions = {}): ValidationResult {
+  let migrated: unknown;
+  try {
+    migrated = migrateProject(input, migrationOptions);
+  } catch (error) {
+    return {
+      ok: false,
+      issues: [{ path: "schemaVersion", message: error instanceof Error ? error.message : String(error) }],
+    };
+  }
+  const parsed = ProjectSchema.safeParse(migrated);
   if (!parsed.success) {
     return {
       ok: false,
@@ -31,11 +41,63 @@ export function validateProject(input: unknown): ValidationResult {
   }
   const project = parsed.data;
   const issues: ValidationIssue[] = [];
-  const assetIds = new Set(project.assets.map((a) => a.id));
+  const assetIds = new Set<string>();
+  const assetPaths = new Set<string>();
+  const assetHashes = new Set<string>();
   const sceneIds = new Set<string>();
   const knownExtensions = new Set(registryExtensionIds());
 
+  project.assets.forEach((asset, ai) => {
+    if (assetIds.has(asset.id)) {
+      issues.push({ path: `assets.${ai}.id`, message: `duplicate asset id "${asset.id}"` });
+    }
+    assetIds.add(asset.id);
+    if (assetPaths.has(asset.path)) {
+      issues.push({ path: `assets.${ai}.path`, message: `duplicate asset path "${asset.path}"` });
+    }
+    assetPaths.add(asset.path);
+    const expectedId = `asset-${asset.contentHash.slice(0, 16)}`;
+    if (asset.id !== expectedId) {
+      issues.push({
+        path: `assets.${ai}.id`,
+        message: `content-addressed asset id must be "${expectedId}"`,
+      });
+    }
+    if (assetHashes.has(asset.contentHash)) {
+      issues.push({
+        path: `assets.${ai}.contentHash`,
+        message: `duplicate asset content hash "${asset.contentHash}"`,
+      });
+    }
+    assetHashes.add(asset.contentHash);
+  });
+
+  if (project.brand.logoAssetId && !assetIds.has(project.brand.logoAssetId)) {
+    issues.push({
+      path: "brand.logoAssetId",
+      message: `unknown logo asset "${project.brand.logoAssetId}"`,
+    });
+  }
+
+  const audioIds = new Set<string>();
+  project.audio.forEach((clip, index) => {
+    if (audioIds.has(clip.id)) {
+      issues.push({ path: `audio.${index}.id`, message: `duplicate audio clip id "${clip.id}"` });
+    }
+    audioIds.add(clip.id);
+    const asset = project.assets.find((candidate) => candidate.id === clip.assetId);
+    if (!asset) {
+      issues.push({ path: `audio.${index}.assetId`, message: `unknown asset "${clip.assetId}"` });
+    } else if (asset.kind !== "audio") {
+      issues.push({
+        path: `audio.${index}.assetId`,
+        message: `asset "${clip.assetId}" is ${asset.kind}, not audio`,
+      });
+    }
+  });
+
   if (project.extensions.enabled) {
+    const enabledSeen = new Set<string>();
     project.extensions.enabled.forEach((id, i) => {
       if (!knownExtensions.has(id)) {
         issues.push({
@@ -43,6 +105,13 @@ export function validateProject(input: unknown): ValidationResult {
           message: `unknown extension "${id}"`,
         });
       }
+      if (enabledSeen.has(id)) {
+        issues.push({
+          path: `extensions.enabled.${i}`,
+          message: `duplicate extension "${id}"`,
+        });
+      }
+      enabledSeen.add(id);
     });
   }
 
@@ -117,15 +186,49 @@ export function validateProject(input: unknown): ValidationResult {
     }
 
     // Overrides must reference real layers and role-correct primitives.
+    const archetypeLayers = archetype.materialize(scene, {
+      W: project.meta.width,
+      H: project.meta.height,
+      brandName: project.brand.name,
+      logoAssetId: project.brand.logoAssetId,
+      assetKinds: Object.fromEntries(project.assets.map((asset) => [asset.id, asset.kind])),
+    });
+    const archetypeLayerIds = new Set(archetypeLayers.map((layer) => layer.id));
     const layerIds = new Set(
-      archetype
-        .materialize(scene, {
-          W: project.meta.width,
-          H: project.meta.height,
-          brandName: project.brand.name,
-        })
-        .map((l) => l.id),
+      [...archetypeLayers, ...(scene.customLayers ?? [])].map((layer) => layer.id),
     );
+    for (const [layerIndex, layer] of (scene.customLayers ?? []).entries()) {
+      const duplicates = (scene.customLayers ?? []).filter((candidate) => candidate.id === layer.id);
+      if (duplicates.length > 1 || archetypeLayerIds.has(layer.id)) {
+        issues.push({
+          path: `${base}.customLayers.${layerIndex}.id`,
+          message: `duplicate custom layer id "${layer.id}"`,
+        });
+      }
+      if (layer.content.assetId && !assetIds.has(layer.content.assetId)) {
+        issues.push({
+          path: `${base}.customLayers.${layerIndex}.content.assetId`,
+          message: `unknown asset "${layer.content.assetId}"`,
+        });
+      }
+    }
+    if (scene.choreography.order) {
+      const orderedIds = new Set<string>();
+      scene.choreography.order.forEach((layerId, oi) => {
+        if (!layerIds.has(layerId)) {
+          issues.push({
+            path: `${base}.choreography.order.${oi}`,
+            message: `no layer "${layerId}" in this scene`,
+          });
+        } else if (orderedIds.has(layerId)) {
+          issues.push({
+            path: `${base}.choreography.order.${oi}`,
+            message: `duplicate layer "${layerId}" in choreography order`,
+          });
+        }
+        orderedIds.add(layerId);
+      });
+    }
     for (const [layerId, override] of Object.entries(scene.overrides)) {
       if (!layerIds.has(layerId)) {
         issues.push({
@@ -137,6 +240,8 @@ export function validateProject(input: unknown): ValidationResult {
       for (const [field, expectedKind] of [
         ["enterPrimitive", "enter"],
         ["exitPrimitive", "exit"],
+        ["emphasisPrimitive", "emphasis"],
+        ["continuousPrimitive", "continuous"],
       ] as const) {
         const primitiveId = override[field];
         if (primitiveId === undefined) continue;

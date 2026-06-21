@@ -11,16 +11,29 @@ import net from "node:net";
 import {
   applyAutoFixes,
   lintProject,
+  planToCommands,
   ProjectStore,
+  type EventEntry,
   type Finding,
 } from "@sequences/core";
-import { appendEvent, buildProject, loadProject, saveProject } from "./projectIo.ts";
+import {
+  buildProject,
+  commitProject,
+  loadProject,
+  readEventSequence,
+  withProjectWriteLock,
+} from "./projectIo.ts";
 import { renderProject, type RenderFormat, type RenderQuality } from "./render.ts";
 import { startStudio } from "./server.ts";
 import { startMcpServer } from "./mcp.ts";
 import { detectProviders, defaultProvider, type ProviderId } from "./agentConfig.ts";
-import { runPlan } from "./agent/planRunner.ts";
-import { extractRenderPoster, generateSceneThumbnails } from "./thumbs.ts";
+import { requestPlan } from "./agent/planRunner.ts";
+import { requestTweak } from "./agent/tweakRunner.ts";
+import {
+  extractRenderPoster,
+  generatePrimitiveThumbnails,
+  generateSceneThumbnails,
+} from "./thumbs.ts";
 import { openAppWindow } from "./desktopApp.ts";
 import { initializeProject } from "./projectTemplates.ts";
 
@@ -92,19 +105,26 @@ async function cmdApp(dir: string): Promise<void> {
   openAppWindow(`http://localhost:${port}/`, path.resolve(dir), server);
 }
 
-function cmdLint(dir: string, fix: boolean): void {
+async function cmdLint(dir: string, fix: boolean): Promise<void> {
   if (!fix) {
     printFindings(lintProject(loadProject(dir)));
     return;
   }
-  const store = new ProjectStore(loadProject(dir), (entry) => appendEvent(dir, entry));
-  const result = applyAutoFixes(store);
-  if (result.applied.length > 0) {
-    saveProject(dir, store.project);
-    buildProject(dir, store.project);
-  }
-  console.log(`applied ${result.applied.length} auto-fixes`);
-  printFindings(result.remaining);
+  await withProjectWriteLock(dir, () => {
+    const pendingEvents: EventEntry[] = [];
+    const store = new ProjectStore(
+      loadProject(dir),
+      (entry) => pendingEvents.push(entry),
+      readEventSequence(dir),
+    );
+    const result = applyAutoFixes(store);
+    if (result.applied.length > 0) {
+      commitProject(dir, store.project, pendingEvents);
+      buildProject(dir, store.project);
+    }
+    console.log(`applied ${result.applied.length} auto-fixes`);
+    printFindings(result.remaining);
+  });
 }
 
 function enumFlag<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
@@ -150,6 +170,14 @@ async function cmdRender(dir: string): Promise<void> {
 }
 
 async function cmdThumbs(dir: string): Promise<void> {
+  if (rest.includes("--primitives")) {
+    const result = await generatePrimitiveThumbnails(dir);
+    for (const [primitiveId, rel] of Object.entries(result.files)) {
+      console.log(`${primitiveId} -> ${path.join(dir, "build", rel)}`);
+    }
+    console.log(`${Object.keys(result.files).length} primitive thumbnails in ${result.elapsedMs}ms`);
+    return;
+  }
   const project = loadProject(dir);
   const result = await generateSceneThumbnails(dir, project);
   for (const [sceneId, rel] of Object.entries(result.files)) {
@@ -184,17 +212,72 @@ async function cmdPlan(dir: string, brief: string | undefined): Promise<void> {
       "no agent provider available — run `cli.ts providers` for setup instructions (no API key needed)",
     );
   }
-  const store = new ProjectStore(loadProject(dir), (entry) => appendEvent(dir, entry));
+  const startingProject = loadProject(dir);
+  const startingFingerprint = JSON.stringify(startingProject);
   console.log(`planning with ${providerId}…`);
-  const result = await runPlan(providerId, brief, store);
-  saveProject(dir, store.project);
-  buildProject(dir, store.project);
+  const result = await requestPlan(providerId, brief, startingProject);
+  const project = await withProjectWriteLock(dir, () => {
+    const currentProject = loadProject(dir);
+    if (JSON.stringify(currentProject) !== startingFingerprint) {
+      throw new Error("project changed while the plan was being generated; run the plan again");
+    }
+    const pendingEvents: EventEntry[] = [];
+    const store = new ProjectStore(
+      currentProject,
+      (entry) => pendingEvents.push(entry),
+      readEventSequence(dir),
+    );
+    const outcome = store.apply(planToCommands(store.project, result.plan), "agent");
+    if (!outcome.ok) {
+      throw new Error(
+        `plan failed project validation — ${outcome.errors
+          .map((issue) => `${issue.path}: ${issue.message}`)
+          .join("; ")}`,
+      );
+    }
+    commitProject(dir, store.project, pendingEvents);
+    buildProject(dir, store.project);
+    return store.project;
+  });
   console.log(
     `plan applied: ${result.plan.scenes.length} scenes ` +
       `(${result.plan.scenes.map((s) => s.archetype).join(" → ")}), profile ${result.plan.motionProfile}`,
   );
-  printFindings(lintProject(store.project));
+  printFindings(lintProject(project));
   console.log(`next: node apps/studio/src/cli.ts studio ${dir}`);
+}
+
+async function cmdTweak(dir: string, text: string | undefined): Promise<void> {
+  if (!text?.trim()) {
+    throw new Error('usage: cli.ts tweak <projectDir> "<request>" [--scene id] [--layer id] [--provider id]');
+  }
+  const startingProject = loadProject(dir);
+  const providerId = (flag("provider") as ProviderId | undefined) ?? (await defaultProvider());
+  const result = await requestTweak(
+    providerId,
+    text,
+    startingProject,
+    { sceneId: flag("scene"), layerId: flag("layer") },
+  );
+  await withProjectWriteLock(dir, () => {
+    const pendingEvents: EventEntry[] = [];
+    const store = new ProjectStore(
+      loadProject(dir),
+      (entry) => pendingEvents.push(entry),
+      readEventSequence(dir),
+    );
+    const command =
+      result.commands.length === 1
+        ? result.commands[0]!
+        : { type: "Batch" as const, commands: result.commands };
+    const outcome = store.apply(command, result.mode === "zero-token" ? "cli" : "agent");
+    if (!outcome.ok) {
+      throw new Error(outcome.errors.map((issue) => `${issue.path}: ${issue.message}`).join("; "));
+    }
+    commitProject(dir, store.project, pendingEvents);
+    buildProject(dir, store.project);
+  });
+  console.log(`${result.mode}: ${result.explanation}`);
 }
 
 const [, , command, dirArg, ...rest] = process.argv;
@@ -213,7 +296,7 @@ try {
       cmdCompile(dir);
       break;
     case "lint":
-      cmdLint(dir, rest.includes("--fix"));
+      await cmdLint(dir, rest.includes("--fix"));
       break;
     case "render":
       await cmdRender(dir);
@@ -227,6 +310,15 @@ try {
         dir,
         rest.find((a, i) => !a.startsWith("--") && !(i > 0 && rest[i - 1]!.startsWith("--"))),
       );
+      break;
+    case "tweak":
+      await cmdTweak(
+        dir,
+        rest.find((a, i) => !a.startsWith("--") && !(i > 0 && rest[i - 1]!.startsWith("--"))),
+      );
+      break;
+    case "preview":
+      await cmdStudio(dir);
       break;
     case "providers":
       await cmdProviders();
@@ -243,9 +335,11 @@ try {
       break;
     default:
       console.log(
-        "usage: cli.ts <init|compile|lint|render|thumbs|plan|providers|mcp|studio|app|exe> <projectDir>\n" +
+        "usage: cli.ts <init|compile|lint|render|thumbs|plan|preview|tweak|providers|mcp|studio|app|exe> <projectDir>\n" +
           "  render: [--output FILE] [--format mp4|webm|mov|png-sequence] [--quality draft|standard|high] [--workers N] [--browser PATH]\n" +
+          "  thumbs: [--primitives]\n" +
           '  plan:   "<brief>" [--provider codex-cli|claude-code-cli|anthropic-api|openai-api]\n' +
+          '  tweak:  "<request>" [--scene ID] [--layer ID] [--provider ID]\n' +
           "  studio: [--port N]    app/exe: [--port N]    init: [--name X] [--showcase]",
       );
       process.exit(command ? 1 : 0);

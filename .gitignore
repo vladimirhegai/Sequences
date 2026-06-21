@@ -1,6 +1,8 @@
 node_modules/
 .spike/
 **/build/
+**/.sequences-build-*/
+**/.sequences-build-previous-*/
 **/renders/
 *.log
 !events.log
@@ -26,3 +28,6 @@ SEQUENCES_MASTER_PLAN.md
 **/SEQUENCES_MASTER_PLAN.md
 excalidraw/
 STORYBOARD_AI_PLAN.md
+deep-research-report.md
+KIMI_RESEARCH.md
+RESEARCH_REVIEW.md

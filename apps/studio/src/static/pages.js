@@ -213,10 +213,49 @@ function extensionKindNode(entry) {
   return nodes;
 }
 
+/** A live, compiled-on-demand preview of one extension (never pre-rendered):
+ * a real HyperFrames player running the actual compiler/primitive path, looped
+ * so the motion reads at a glance. Phase 2 re-parameterizes the same scene. */
 function openExtensionView(entry) {
   closeModal();
   closeMenus();
   const tm = EXT_TYPE_META[entry.type];
+
+  const stage = el("div", { class: "ext-preview-stage" });
+  const src = `/ext-preview/${encodeURIComponent(entry.id)}.html?type=${encodeURIComponent(entry.type)}`;
+  const player = document.createElement("hyperframes-player");
+  player.setAttribute("src", src);
+  player.setAttribute("width", "1280");
+  player.setAttribute("height", "720");
+  player.addEventListener("ready", () => {
+    player.seek(0);
+    player.play();
+  });
+  player.addEventListener("error", () => {
+    stage.classList.add("err");
+    stage.append(el("div", { class: "ext-preview-err" }, ["Preview unavailable"]));
+  });
+  stage.appendChild(player);
+
+  // Loop the demo: when the timeline reaches the end, restart it. Self-stops
+  // once the modal (and the player) leave the DOM.
+  const tick = () => {
+    if (!player.isConnected) return;
+    if (player.ready && player.duration > 0 && player.currentTime >= player.duration - 0.05) {
+      player.seek(0);
+      player.play();
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  const replay = el("button", { class: "btn btn-ghost", title: "Replay" }, [icon("play", 13), "Replay"]);
+  replay.onclick = () => {
+    if (!player.ready) return;
+    player.seek(0);
+    player.play();
+  };
+
   const modal = el("div", { class: "modal ext-view-modal" }, [
     el("div", { class: "modal-head" }, [
       el("span", { class: "mh-ico" }, [icon(tm.icon, 15)]),
@@ -225,8 +264,15 @@ function openExtensionView(entry) {
         el("div", { class: "mh-sub" }, extensionKindNode(entry)),
       ]),
     ]),
-    el("div", { class: "modal-body ext-view-body" }),
+    el("div", { class: "modal-body ext-view-body" }, [
+      stage,
+      el("div", { class: "ext-preview-meta" }, [
+        el("div", { class: "ext-preview-summary" }, [entry.summary || ""]),
+        el("code", { class: "ext-preview-id" }, [entry.id]),
+      ]),
+    ]),
     el("div", { class: "modal-foot" }, [
+      replay,
       el("span", { class: "spacer" }),
       el("button", { class: "btn btn-ghost", onclick: closeModal }, ["Close"]),
     ]),

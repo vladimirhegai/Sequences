@@ -1,8 +1,8 @@
 /* Design page - curated motion-design asset editor.
  *
  * The working surface is an SVG in project-independent design units. Scratch
- * state lives in localStorage until the user saves the drawing into the media
- * pool as a normal SVG image asset.
+ * state lives in the portable project design.json sidecar until the user
+ * saves the drawing into the media pool as a normal SVG image asset.
  */
 
 const DESIGN_W = 1280;
@@ -43,10 +43,7 @@ let designIdSeq = 1;
 let designSvg = null;
 let designFocusTextOnRender = false;
 let designKeysBound = false;
-
-function designStorageKey() {
-  return `seq.design.${state ? state.projectDir : ""}`;
-}
+let designSaveTimer = null;
 
 function designResetForProject() {
   designItems = [];
@@ -56,23 +53,31 @@ function designResetForProject() {
 }
 
 function designPersist() {
-  try {
-    localStorage.setItem(designStorageKey(), JSON.stringify(designItems));
-  } catch {
-    /* Scratch persistence is best-effort. */
-  }
+  clearTimeout(designSaveTimer);
+  designSaveTimer = setTimeout(() => {
+    fetch("/api/design", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ version: 1, items: designItems }),
+    }).catch(() => {});
+  }, 120);
 }
 
 function designRestore() {
   if (designLoaded) return;
   designLoaded = true;
-  try {
-    const raw = localStorage.getItem(designStorageKey());
-    designItems = raw ? JSON.parse(raw).map(designNormalizeItem).filter(Boolean) : [];
-  } catch {
-    designItems = [];
-  }
-  if (!designItems.some((i) => i.id === designSelectedId)) designSelectedId = null;
+  fetch("/api/design")
+    .then((response) => response.json())
+    .then((scratch) => {
+      designItems = Array.isArray(scratch.items)
+        ? scratch.items.map(designNormalizeItem).filter(Boolean)
+        : [];
+      if (!designItems.some((i) => i.id === designSelectedId)) designSelectedId = null;
+      if (typeof activePage !== "undefined" && activePage === "design") renderDesignPage();
+    })
+    .catch(() => {
+      designItems = [];
+    });
 }
 
 function designNormalizeItem(raw) {

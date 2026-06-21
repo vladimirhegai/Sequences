@@ -43,7 +43,16 @@ beforeAll(async () => {
     path.join(dir, "project.json"),
     JSON.stringify(createDefaultProject({ title: "MCP Test", brandName: "Acme" }), null, 2),
   );
-  fs.writeFileSync(path.join(dir, "events.log"), "");
+  fs.writeFileSync(
+    path.join(dir, "events.log"),
+    JSON.stringify({
+      seq: 41,
+      at: "2026-01-01T00:00:00.000Z",
+      kind: "apply",
+      command: { type: "SetSceneDuration", sceneId: "hook", durationFrames: 96 },
+      source: "test",
+    }) + "\n",
+  );
   fs.writeFileSync(
     path.join(dir, "storyboard.json"),
     JSON.stringify(
@@ -148,6 +157,45 @@ describe("MCP server (stdio JSON-RPC)", () => {
       scenes: Array<{ id: string; durationFrames: number }>;
     };
     expect(onDisk.scenes.find((s) => s.id === "hook")!.durationFrames).toBe(120);
+    const latestEvent = JSON.parse(
+      fs.readFileSync(path.join(dir, "events.log"), "utf8").trim().split(/\r?\n/).at(-1)!,
+    ) as { seq: number };
+    expect(latestEvent.seq).toBe(42);
+  });
+
+  it("merges a newer external Studio snapshot instead of overwriting it", async () => {
+    const projectFile = path.join(dir, "project.json");
+    const externallyEdited = JSON.parse(fs.readFileSync(projectFile, "utf8")) as ReturnType<
+      typeof createDefaultProject
+    >;
+    externallyEdited.brand.colors.accent = "#123456";
+    fs.writeFileSync(projectFile, JSON.stringify(externallyEdited, null, 2) + "\n");
+    fs.appendFileSync(
+      path.join(dir, "events.log"),
+      JSON.stringify({
+        seq: 43,
+        at: "2026-01-01T00:00:01.000Z",
+        kind: "apply",
+        command: { type: "SetBrandColor", key: "accent", value: "#123456" },
+        source: "user",
+      }) + "\n",
+    );
+
+    const { text, isError } = await callTool("apply_commands", {
+      commands: [{ type: "SetSceneDuration", sceneId: "stat", durationFrames: 150 }],
+    });
+    expect(isError, text).toBe(false);
+
+    const onDisk = JSON.parse(fs.readFileSync(projectFile, "utf8")) as {
+      brand: { colors: { accent: string } };
+      scenes: Array<{ id: string; durationFrames: number }>;
+    };
+    expect(onDisk.brand.colors.accent).toBe("#123456");
+    expect(onDisk.scenes.find((scene) => scene.id === "stat")?.durationFrames).toBe(150);
+    const latestEvent = JSON.parse(
+      fs.readFileSync(path.join(dir, "events.log"), "utf8").trim().split(/\r?\n/).at(-1)!,
+    ) as { seq: number };
+    expect(latestEvent.seq).toBe(44);
   });
 
   it("invalid commands come back as structured tool errors, not crashes", async () => {

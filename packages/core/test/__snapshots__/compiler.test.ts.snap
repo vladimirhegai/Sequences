@@ -28,11 +28,15 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
     .seq-mask { overflow: hidden; }
     .seq-inner { width: 100%; height: 100%; display: flex; align-items: center; backface-visibility: hidden; -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
     .seq-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .seq-device { width:100%; height:100%; padding:18px; border-radius:28px; background:#10131b; border:1px solid rgba(255,255,255,.16); box-shadow:0 24px 64px rgba(0,0,0,.35); }
+    .seq-device-bar { height:24px; display:flex; gap:8px; align-items:flex-start; }
+    .seq-device-bar i { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.28); }
+    .seq-device .seq-img { height:calc(100% - 24px); border-radius:12px; object-fit:contain; background:#05060a; }
   </style>
 </head>
 <body>
   <div id="stage" data-composition-id="seq-compiler-test-promo" data-width="1920" data-height="1080">
-    <div id="sc-hook" class="clip seq-scene" data-start="0" data-duration="3.2" data-track-index="0">
+    <div id="sc-hook" class="clip seq-scene scene" data-start="0" data-duration="3.2" data-track-index="0">
       <div class="seq-camera">
       <div id="sc-hook__decor-glow" class="seq-layer" style="left:0px;top:0px;width:1920px;height:1080px;opacity:0.28">
         <div class="seq-inner" style="transform-origin:center center;background:radial-gradient(circle at 30% 25%, var(--c-primary), transparent 62%)"></div>
@@ -45,7 +49,7 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       </div>
       </div>
     </div>
-    <div id="sc-feature" class="clip seq-scene" data-start="3.2" data-duration="5" data-track-index="0">
+    <div id="sc-feature" class="clip seq-scene scene" data-start="3.067" data-duration="5.133" data-track-index="1">
       <div class="seq-camera">
       <div id="sc-feature__headline" class="seq-layer seq-mask" style="left:96px;top:194px;width:706px;height:259px">
         <div class="seq-inner" style="transform-origin:center center;font-family:'Segoe UI', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;font-size:84px;font-weight:700;line-height:1.1;letter-spacing:-0.01em;color:var(--c-text);justify-content:flex-start;text-align:left">Your whole funnel, live</div>
@@ -64,7 +68,7 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       </div>
       </div>
     </div>
-    <div id="sc-stat" class="clip seq-scene" data-start="8.2" data-duration="3" data-track-index="0">
+    <div id="sc-stat" class="clip seq-scene scene" data-start="8.067" data-duration="3.133" data-track-index="0">
       <div class="seq-camera">
       <div id="sc-stat__stat" class="seq-layer" style="left:242px;top:281px;width:1436px;height:346px">
         <div class="seq-inner" style="transform-origin:center center;font-family:'Segoe UI', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;font-size:220px;font-weight:800;line-height:1;letter-spacing:-0.02em;color:var(--c-accent);justify-content:center;text-align:center">12,480+</div>
@@ -77,7 +81,7 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       </div>
       </div>
     </div>
-    <div id="sc-sting" class="clip seq-scene" data-start="11.2" data-duration="3.5" data-track-index="0">
+    <div id="sc-sting" class="clip seq-scene scene" data-start="11.067" data-duration="3.633" data-track-index="1">
       <div class="seq-camera">
       <div id="sc-sting__logo" class="seq-layer seq-mask" style="left:242px;top:324px;width:1436px;height:238px">
         <div class="seq-inner" style="transform-origin:center center;font-family:'Segoe UI', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;font-size:120px;font-weight:800;line-height:1.05;letter-spacing:-0.02em;color:var(--c-text);justify-content:center;text-align:center">Acme</div>
@@ -90,9 +94,12 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       </div>
       </div>
     </div>
+
   </div>
   <script>
     window.__timelines = window.__timelines || {};
+    window.__hf = window.__hf || {};
+    window.__hf.transitions = [];
     (function () {
       gsap.registerPlugin(CustomEase);
       CustomEase.create("seqEnterSnap","0.2,0.9,0.3,1");
@@ -105,18 +112,18 @@ exports[`compiler > golden snapshot of the example compile (retune tokens consci
       tl.fromTo("#sc-hook__subline > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},0.533);
       tl.fromTo("#sc-hook__decor-glow > .seq-inner",{"opacity":0},{"opacity":1,"duration":1.2,"ease":"seqEnterGlide"},0.867);
       tl.fromTo("#sc-feature > .seq-camera",{"scale":1,"force3D":false},{"scale":1.03,"force3D":false,"autoRound":false,"duration":5,"ease":"seqMoveGlide"},3.2);
-      tl.fromTo("#sc-feature__headline > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},3.2);
-      tl.fromTo("#sc-feature__media > .seq-inner",{"scale":0.971,"opacity":0},{"scale":1,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},3.733);
-      tl.fromTo("#sc-feature__bullet-0 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.067);
-      tl.fromTo("#sc-feature__bullet-1 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.3);
-      tl.fromTo("#sc-feature__bullet-2 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.533);
+      tl.fromTo("#sc-feature__headline > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},3.067);
+      tl.fromTo("#sc-feature__media > .seq-inner",{"scale":0.971,"opacity":0},{"scale":1,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},3.6);
+      tl.fromTo("#sc-feature__bullet-0 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},3.933);
+      tl.fromTo("#sc-feature__bullet-1 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.167);
+      tl.fromTo("#sc-feature__bullet-2 > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.333,"ease":"seqEnterGlide"},4.4);
       tl.fromTo("#sc-feature__media > .seq-inner",{"scale":1,"x":0},{"scale":1.03,"x":-22,"duration":5,"ease":"none"},3.2);
-      (function(){var el=document.querySelector("#sc-stat__stat > .seq-inner");var o={v:0};var fmt=function(v){return ""+Math.round(v).toLocaleString("en-US")+"+";};el.textContent=fmt(0);tl.fromTo("#sc-stat__stat > .seq-inner",{opacity:0},{opacity:1,duration:0.3,ease:"seqEnterSnap"},8.2);tl.to(o,{v:12480,duration:1.2,ease:"seqEnterSnap",onUpdate:function(){el.textContent=fmt(o.v);}},8.2);})();
-      tl.fromTo("#sc-stat__caption > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},8.967);
-      tl.fromTo("#sc-stat__accent-bar > .seq-inner",{"opacity":0},{"opacity":1,"duration":1.2,"ease":"seqEnterGlide"},9.3);
-      tl.fromTo("#sc-sting__logo > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},11.2);
-      tl.fromTo("#sc-sting__tagline > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},11.733);
-      tl.fromTo("#sc-sting__cta > .seq-inner",{"scale":0.893,"opacity":0},{"scale":1,"opacity":1,"duration":0.533,"ease":"seqEnterSettle"},12.067);
+      (function(){var el=document.querySelector("#sc-stat__stat \\u003e .seq-inner");var o={v:0};var fmt=function(v){return ""+Math.round(v).toLocaleString("en-US")+"+";};el.textContent=fmt(0);tl.fromTo("#sc-stat__stat \\u003e .seq-inner",{opacity:0},{opacity:1,duration:0.333,ease:"seqEnterSnap"},8.067);tl.to(o,{v:12480,duration:1.2,ease:"seqEnterSnap",onUpdate:function(){el.textContent=fmt(o.v);}},8.067);})();
+      tl.fromTo("#sc-stat__caption > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},8.833);
+      tl.fromTo("#sc-stat__accent-bar > .seq-inner",{"opacity":0},{"opacity":1,"duration":1.2,"ease":"seqEnterGlide"},9.167);
+      tl.fromTo("#sc-sting__logo > .seq-inner",{"yPercent":110},{"yPercent":0,"duration":0.8,"ease":"seqEnterSnap"},11.067);
+      tl.fromTo("#sc-sting__tagline > .seq-inner",{"y":65,"opacity":0},{"y":0,"opacity":1,"duration":0.533,"ease":"seqEnterGlide"},11.6);
+      tl.fromTo("#sc-sting__cta > .seq-inner",{"scale":0.893,"opacity":0},{"scale":1,"opacity":1,"duration":0.533,"ease":"seqEnterSettle"},11.933);
       tl.set({}, {}, 14.7); /* extend timeline to full composition duration */
       window.__timelines["seq-compiler-test-promo"] = tl;
     })();

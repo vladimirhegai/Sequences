@@ -103,6 +103,16 @@ export const BLUR_TOKENS = {
 } as const;
 export type BlurToken = keyof typeof BLUR_TOKENS;
 
+/** Primitive-only style/geometry constants. Kept here so emitters stay token-pure. */
+export const PRIMITIVE_STYLE_TOKENS = {
+  maskRevealOffsetPercent: 110,
+  charRisePercent: 80,
+  countRevealDuration: "quick" as DurationToken,
+  glowBlur: "heavy" as BlurToken,
+  underlineYPercent: 95,
+  underlineThicknessEm: 0.08,
+} as const;
+
 /**
  * Type scale in px at the 1920×1080 design resolution. The compiler scales
  * proportionally for other resolutions.
@@ -136,4 +146,9 @@ export const CHOREO_DEFAULTS = {
 export function framesToSeconds(frames: number, fps: number = FPS): number {
   // Round to ms precision so emitted HTML is stable across platforms.
   return Math.round((frames / fps) * 1000) / 1000;
+}
+
+/** Scale a duration authored in the 30fps token lattice to project frames. */
+export function scaleFrames30(frames: number, fps: number): number {
+  return Math.max(1, Math.round((frames * fps) / FPS));
 }

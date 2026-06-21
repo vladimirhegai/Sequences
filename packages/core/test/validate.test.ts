@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateProject } from "../src/validate.ts";
 import { createDefaultProject } from "../src/defaults.ts";
+import { testAsset } from "./helpers.ts";
 
 describe("project validation", () => {
   it("accepts the default project", () => {
@@ -69,5 +70,86 @@ describe("project validation", () => {
     project.scenes[0]!.overrides["headline"] = { enterDuration: 0.4 };
     const result = validateProject(project);
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects duplicate asset ids and paths", () => {
+    const project = createDefaultProject();
+    const shot = testAsset("shot", "assets/shot.png");
+    project.assets.push(
+      shot,
+      { ...testAsset("other-hash", "assets/other.png"), id: shot.id },
+      { ...testAsset("other", "assets/shot.png") },
+    );
+    const result = validateProject(project);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.message.includes("duplicate asset id"))).toBe(true);
+    expect(result.issues.some((i) => i.message.includes("duplicate asset path"))).toBe(true);
+  });
+
+  it("rejects asset paths outside assets/ and unsafe transform origins", () => {
+    const project = createDefaultProject();
+    project.assets.push(testAsset("escape", "../../outside.png"));
+    // @ts-expect-error deliberately malformed persisted project data
+    project.scenes[0]!.overrides["headline"] = { box: { origin: "center;background:red" } };
+    const result = validateProject(project);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.path.includes("assets.0.path"))).toBe(true);
+    expect(result.issues.some((i) => i.path.includes("origin"))).toBe(true);
+  });
+
+  it("rejects duplicate and unknown choreography order entries", () => {
+    const project = createDefaultProject();
+    project.scenes[0]!.choreography.order = ["headline", "headline", "ghost"];
+    const result = validateProject(project);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.message.includes('duplicate layer "headline"'))).toBe(true);
+    expect(result.issues.some((i) => i.message.includes('no layer "ghost"'))).toBe(true);
+  });
+
+  it("rejects duplicate enabled extension ids", () => {
+    const project = createDefaultProject();
+    project.extensions.enabled = ["crisp-saas", "crisp-saas"];
+    const result = validateProject(project);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.message.includes('duplicate extension "crisp-saas"'))).toBe(
+      true,
+    );
+  });
+
+  it("allows disabling an extension already referenced by the graph", () => {
+    const project = createDefaultProject();
+    project.scenes[0]!.overrides.headline = { emphasisPrimitive: "emphasis.pop" };
+    project.extensions.enabled = [
+      "hook-opener",
+      "feature-reveal",
+      "stat-callout",
+      "logo-sting-cta",
+      "ui-walkthrough",
+      "social-proof",
+      "stat-chart",
+      "crisp-saas",
+      "pushIn",
+      "pullBack",
+    ];
+    const result = validateProject(project);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects custom-layer CSS that can escape or fetch from an inline style", () => {
+    const project = createDefaultProject() as unknown as Record<string, unknown>;
+    const scenes = project.scenes as Array<Record<string, unknown>>;
+    scenes[0]!.customLayers = [
+      {
+        id: "unsafe-shape",
+        role: "decor",
+        rank: 9,
+        kind: "shape",
+        content: { css: 'red";background:url(https://evil.example)' },
+        box: { x: 0, y: 0, w: 100, h: 100, origin: "center center" },
+      },
+    ];
+    const result = validateProject(project);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((issue) => issue.message.includes("safe CSS"))).toBe(true);
   });
 });

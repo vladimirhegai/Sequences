@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyAutoFixes, contrastRatio, lintProject } from "../src/linter.ts";
 import { ProjectStore } from "../src/store.ts";
 import { createDefaultProject } from "../src/defaults.ts";
+import { testAsset } from "./helpers.ts";
 
 describe("motion linter (T3)", () => {
   it("text-readability: short scene with long copy gets an extend-duration fix", () => {
@@ -38,6 +39,22 @@ describe("motion linter (T3)", () => {
     const safeArea = findings.find((f) => f.rule === "safe-area");
     expect(safeArea).toBeDefined();
     expect(safeArea!.fix).toMatchObject({ type: "OverrideLayerBox", layerId: "headline" });
+  });
+
+  it("safe-area: oversized text is resized as well as repositioned", () => {
+    const project = createDefaultProject();
+    project.scenes[0]!.overrides["headline"] = {
+      box: { x: -100, y: -100, w: 3000, h: 2000 },
+    };
+    const finding = lintProject(project).find((item) => item.rule === "safe-area");
+    expect(finding?.fix).toMatchObject({
+      type: "OverrideLayerBox",
+      layerId: "headline",
+      box: { x: 96, y: 54, w: 1728, h: 972 },
+    });
+    const store = new ProjectStore(project);
+    applyAutoFixes(store);
+    expect(lintProject(store.project).some((item) => item.rule === "safe-area")).toBe(false);
   });
 
   it("scene-duration-range: clamps to archetype heuristics", () => {
@@ -81,26 +98,31 @@ describe("motion linter (T3)", () => {
     expect(snap!.fix).toMatchObject({
       type: "OverrideLayerBox",
       layerId: "headline",
-      box: { x: 202, y: 334 },
+      box: { x: 242 },
     });
   });
 
-  it("motion-density: a crowded walkthrough scene gets an info finding", () => {
+  it("motion-density: a crowded walkthrough scene gets a warning", () => {
     const project = createDefaultProject();
-    project.assets.push({ id: "shot", path: "assets/shot.svg", kind: "image" });
+    const shot = testAsset("shot", "assets/shot.svg");
+    project.assets.push(shot);
     project.scenes.push({
       id: "walk",
       archetype: "ui-walkthrough",
       durationFrames: 150,
       slots: {
         headline: "Do the thing",
-        media: { assetId: "shot" },
+        media: { assetId: shot.id },
         steps: ["One", "Two", "Three", "Four"],
       },
       choreography: {},
       overrides: {},
     });
     const findings = lintProject(project);
-    expect(findings.some((f) => f.rule === "motion-density" && f.sceneId === "walk")).toBe(true);
+    expect(
+      findings.some(
+        (f) => f.rule === "motion-density" && f.sceneId === "walk" && f.severity === "warn",
+      ),
+    ).toBe(true);
   });
 });

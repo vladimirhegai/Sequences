@@ -63,7 +63,7 @@ out.undo = await page.evaluate(async () => {
 out.addMenu = await page.evaluate(async () => {
   document.getElementById("addSceneBtn").click();
   await new Promise((r) => setTimeout(r, 150));
-  const opts = [...document.querySelectorAll("#addSceneWrap .menu-opt .mo-name")].map((n) => n.textContent);
+  const opts = [...document.querySelectorAll("body > .menu .menu-opt .mo-name")].map((n) => n.textContent);
   document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   return opts;
 });
@@ -72,7 +72,7 @@ out.addMenu = await page.evaluate(async () => {
 out.misc = await page.evaluate(async () => {
   document.getElementById("profileChip").click();
   await new Promise((r) => setTimeout(r, 150));
-  const profiles = [...document.querySelectorAll("#profileChip .menu-opt .mo-name")].map((n) => n.textContent);
+  const profiles = [...document.querySelectorAll("body > .menu .menu-opt .mo-name")].map((n) => n.textContent);
   document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   const f0 = document.getElementById("frameLabel").textContent;
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }));
@@ -83,3 +83,14 @@ out.misc = await page.evaluate(async () => {
 
 console.log(JSON.stringify({ out, errors }, null, 2));
 await browser.close();
+if (
+  errors.length > 0 ||
+  !out.playback.moved ||
+  out.command.before === out.command.after ||
+  !out.undo.redoEnabled ||
+  out.addMenu.length === 0 ||
+  out.misc.profiles.length === 0 ||
+  out.misc.f0 === out.misc.f1
+) {
+  process.exitCode = 1;
+}

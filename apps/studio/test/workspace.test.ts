@@ -4,10 +4,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   defaultStoryboard,
+  createLibraryFolder,
   listLibrary,
+  loadDesignScratch,
   loadStoryboard,
   mediaKind,
   placeAsset,
+  saveDesignScratch,
   saveStoryboard,
   storyboardToText,
   type Storyboard,
@@ -37,7 +40,8 @@ describe("workspace host services", () => {
     const a = placeAsset(tmp, "Shot.png", "bin one", ids, (dest) => fs.writeFileSync(dest, "x"));
     expect(a.relPath).toBe("assets/bin one/Shot.png");
     expect(a.kind).toBe("image");
-    expect(a.id).toBe("shot-2"); // "shot" already taken
+    expect(a.id).toMatch(/^asset-[0-9a-f]{16}$/);
+    expect(a.contentHash).toMatch(/^[0-9a-f]{64}$/);
     expect(fs.existsSync(path.join(tmp, "assets", "bin one", "Shot.png"))).toBe(true);
 
     // same file name again → file gets -2 suffix, id keeps deduping
@@ -48,7 +52,12 @@ describe("workspace host services", () => {
   });
 
   it("placeAsset refuses escapes and non-media", () => {
-    expect(() => placeAsset(tmp, "x.png", "../outside", new Set(), () => {})).toThrow(/escapes/);
+    expect(() => placeAsset(tmp, "x.png", "../outside", new Set(), () => {})).toThrow(
+      /invalid asset folder|escapes/,
+    );
+    expect(() => placeAsset(tmp, "x.png", "safe/../outside", new Set(), () => {})).toThrow(
+      /invalid asset folder/,
+    );
     expect(() => placeAsset(tmp, "x.txt", "", new Set(), () => {})).toThrow(/unsupported/);
   });
 
@@ -204,5 +213,24 @@ describe("workspace host services", () => {
     } finally {
       delete process.env.SEQUENCES_LIBRARY_DIR;
     }
+  });
+
+  it("createLibraryFolder rejects parent-directory traversal", () => {
+    process.env.SEQUENCES_LIBRARY_DIR = tmp;
+    try {
+      expect(() => createLibraryFolder("", "..")).toThrow(/invalid folder name/);
+      expect(() => createLibraryFolder("", ".")).toThrow(/invalid folder name/);
+      const created = createLibraryFolder("", "Client work");
+      expect(created).toBe(path.join(tmp, "Client work"));
+    } finally {
+      delete process.env.SEQUENCES_LIBRARY_DIR;
+    }
+  });
+
+  it("design scratch is a portable project sidecar", () => {
+    expect(loadDesignScratch(tmp)).toEqual({ version: 1, items: [] });
+    saveDesignScratch(tmp, { version: 1, items: [{ id: "d1", type: "rect", x: 10 }] });
+    expect(loadDesignScratch(tmp).items).toEqual([{ id: "d1", type: "rect", x: 10 }]);
+    expect(fs.existsSync(path.join(tmp, "design.json"))).toBe(true);
   });
 });

@@ -18,6 +18,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:perf": "node scripts/perf-budget.mjs",
+    "test:golden": "node scripts/golden-renders.mjs projects/Starter",
+    "test:ci": "npm run typecheck && npm test && npm run test:perf",
     "build:storyboard": "esbuild apps/studio/src/static/storyboard-excalidraw-entry.ts --bundle --format=iife --target=es2022 --outfile=apps/studio/src/static/storyboard-excalidraw-bundle.js",
     "studio": "node apps/studio/src/cli.ts app examples/demo-promo",
     "studio:app": "node apps/studio/src/cli.ts app examples/demo-promo",
@@ -30,13 +33,20 @@
     "@types/node": "^25.9.2",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "esbuild": "^0.25.12",
+    "esbuild": "0.28.1",
+    "fast-check": "^4.8.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "0.18.0",
+    "@excalidraw/excalidraw": "^0.18.1",
     "react": "19.0.0",
     "react-dom": "19.0.0"
+  },
+  "overrides": {
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "esbuild": "0.28.1",
+    "lodash-es": "4.18.1",
+    "nanoid": "5.1.15"
   }
 }

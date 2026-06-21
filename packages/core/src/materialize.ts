@@ -6,7 +6,7 @@
 import type { Project, Scene } from "./schema.ts";
 import { sceneStartFrame } from "./schema.ts";
 import { ARCHETYPES, PROFILES, PRIMITIVES } from "./registry/index.ts";
-import type { MaterializedLayer, ResolvedMotion } from "./registry/types.ts";
+import type { MaterializedLayer, ProtoLayer, ResolvedMotion } from "./registry/types.ts";
 import { solveScene, type SceneSchedule } from "./solver.ts";
 
 export interface ResolvedScene {
@@ -28,11 +28,16 @@ export function materializeScene(project: Project, scene: Scene): MaterializedLa
   const profile = PROFILES[project.motionProfile];
   if (!profile) throw new Error(`unknown profile: ${project.motionProfile}`);
 
-  const protos = archetype.materialize(scene, {
-    W: project.meta.width,
-    H: project.meta.height,
-    brandName: project.brand.name,
-  });
+  const protos = [
+    ...archetype.materialize(scene, {
+      W: project.meta.width,
+      H: project.meta.height,
+      brandName: project.brand.name,
+      logoAssetId: project.brand.logoAssetId,
+      assetKinds: Object.fromEntries(project.assets.map((asset) => [asset.id, asset.kind])),
+    }),
+    ...((scene.customLayers ?? []) as ProtoLayer[]),
+  ];
 
   const layers: MaterializedLayer[] = [];
   for (const proto of protos) {
@@ -46,19 +51,36 @@ export function materializeScene(project: Project, scene: Scene): MaterializedLa
         ? { primitive: "enter.countUp", duration: "slow", easing: "enter.snap" }
         : assignment.enter;
     let exit: ResolvedMotion | undefined = profile.defaults.exits ? assignment.exit : undefined;
-    const continuous = assignment.continuous;
+    let continuous = assignment.continuous;
+    let emphasis: ResolvedMotion | undefined;
 
     if (override?.enterPrimitive) enter = motionFromPrimitiveDefaults(override.enterPrimitive);
     if (override?.exitPrimitive) exit = motionFromPrimitiveDefaults(override.exitPrimitive);
+    if (override?.continuousPrimitive) {
+      continuous = motionFromPrimitiveDefaults(override.continuousPrimitive);
+    }
+    if (override?.emphasisPrimitive) {
+      emphasis = {
+        ...motionFromPrimitiveDefaults(override.emphasisPrimitive),
+        ...(override.emphasisAtFrame !== undefined ? { atFrame: override.emphasisAtFrame } : {}),
+      };
+    }
     if (enter && override?.enterDuration) enter = { ...enter, duration: override.enterDuration };
+    if (emphasis && override?.emphasisDuration) {
+      emphasis = { ...emphasis, duration: override.emphasisDuration };
+    }
 
     layers.push({
       ...proto,
       box: override?.box ? { ...proto.box, ...override.box } : proto.box,
       typeToken: override?.typeToken ?? proto.typeToken,
       colorToken: override?.colorToken ?? proto.colorToken,
+      content:
+        override?.text !== undefined && proto.kind === "text"
+          ? { ...proto.content, text: override.text }
+          : proto.content,
       sceneId: scene.id,
-      motions: { enter, exit, continuous },
+      motions: { enter, exit, continuous, emphasis },
     });
   }
   return layers;
@@ -69,7 +91,7 @@ export function resolveProject(project: Project): ResolvedScene[] {
   return project.scenes.map((scene) => {
     const layers = materializeScene(project, scene);
     const profile = PROFILES[project.motionProfile]!;
-    const schedule = solveScene(scene, layers, profile);
+    const schedule = solveScene(scene, layers, profile, project.meta.fps);
     return { scene, startFrame: sceneStartFrame(project, scene.id), layers, schedule };
   });
 }

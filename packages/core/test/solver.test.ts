@@ -3,6 +3,7 @@ import { solveScene } from "../src/solver.ts";
 import { materializeScene } from "../src/materialize.ts";
 import { PROFILES } from "../src/registry/index.ts";
 import { createDefaultProject } from "../src/defaults.ts";
+import { testAsset } from "./helpers.ts";
 import { CHOREO_DEFAULTS, STAGGER_TOKENS } from "../src/tokens.ts";
 import type { Project, Scene } from "../src/schema.ts";
 
@@ -11,12 +12,13 @@ function sceneWithBullets(bullets: string[], durationFrames = 150): {
   scene: Scene;
 } {
   const project = createDefaultProject({ title: "Solver Test" });
-  project.assets.push({ id: "shot", path: "assets/shot.svg", kind: "image" });
+  const shot = testAsset("shot", "assets/shot.svg");
+  project.assets.push(shot);
   const scene: Scene = {
     id: "feat",
     archetype: "feature-reveal",
     durationFrames,
-    slots: { headline: "Headline here", media: { assetId: "shot" }, bullets },
+    slots: { headline: "Headline here", media: { assetId: shot.id }, bullets },
     choreography: {},
     overrides: {},
   };

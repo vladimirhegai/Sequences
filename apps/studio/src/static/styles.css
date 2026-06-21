@@ -580,6 +580,12 @@ input[type="color"].input { padding: 2px 3px; width: 46px; flex: 0 0 46px; curso
 .composer textarea::placeholder { color: var(--text-dim); }
 .composer-bar { display: flex; align-items: center; gap: 8px; }
 .composer-bar .cm-right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.direction-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.direction-card { border:1px solid var(--line-2); border-radius:10px; padding:12px; background:var(--bg-1); display:flex; flex-direction:column; gap:8px; }
+.direction-card h3 { margin:0; font-size:13px; color:var(--text-hi); }
+.direction-card p { margin:0; color:var(--text-lo); font-size:11px; line-height:1.45; }
+.structured-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.structured-grid .wide { grid-column:1 / -1; }
 .composer-bar #composerHint { font-size: 10.5px; color: var(--text-lo); }
 .composer-send {
   width: 30px; height: 30px; border-radius: var(--r); flex: 0 0 auto;

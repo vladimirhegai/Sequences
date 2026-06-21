@@ -15,6 +15,8 @@ export interface MaterializeCtx {
   H: number;
   /** Brand display name (used by logo-sting-cta's text logo). */
   brandName: string;
+  logoAssetId?: string;
+  assetKinds: Record<string, "image" | "video" | "audio">;
 }
 
 function textOf(value: SlotValue | undefined): string | undefined {
@@ -34,6 +36,11 @@ function mediaOf(value: SlotValue | undefined): string | undefined {
   return typeof value === "object" && value !== null && "assetId" in value
     ? value.assetId
     : undefined;
+}
+function mediaPresentation(value: SlotValue | undefined): "plain" | "device" {
+  return typeof value === "object" && value !== null && "assetId" in value
+    ? value.presentation ?? "plain"
+    : "plain";
 }
 
 export const hookOpener: Archetype = {
@@ -103,12 +110,15 @@ export const featureReveal: Archetype = {
     media: { kind: "media", required: true },
     bullets: { kind: "textList", required: false, maxItems: 3, maxWords: 8 },
   },
-  layouts: ["media-right", "media-left"],
+  layouts: ["media-right", "media-left", "center", "full-bleed"],
   defaultLayout: "media-right",
   duration: { min: 75, ideal: 120, max: 240 },
   materialize(scene: Scene, ctx: MaterializeCtx): ProtoLayer[] {
     const { W, H } = ctx;
-    const mediaLeft = (scene.layout ?? this.defaultLayout) === "media-left";
+    const layout = scene.layout ?? this.defaultLayout;
+    const mediaLeft = layout === "media-left";
+    const centered = layout === "center";
+    const fullBleed = layout === "full-bleed";
     const textCol = mediaLeft ? 7 : 0;
     const mediaCol = mediaLeft ? 0 : 6;
     const layers: ProtoLayer[] = [];
@@ -118,10 +128,12 @@ export const featureReveal: Archetype = {
       rank: 1,
       kind: "text",
       content: { text: textOf(scene.slots["headline"]) ?? "" },
-      box: gridBox(W, H, { col: textCol, span: 5, y: 0.18, h: 0.24 }),
+      box: centered || fullBleed
+        ? gridBox(W, H, { col: 2, span: 8, y: fullBleed ? 0.08 : 0.12, h: 0.16 })
+        : gridBox(W, H, { col: textCol, span: 5, y: 0.18, h: 0.24 }),
       typeToken: "headline",
       colorToken: "text",
-      align: "left",
+      align: centered || fullBleed ? "center" : "left",
     });
     const assetId = mediaOf(scene.slots["media"]);
     if (assetId) {
@@ -129,9 +141,21 @@ export const featureReveal: Archetype = {
         id: "media",
         role: "media",
         rank: 2,
-        kind: "image",
-        content: { assetId },
-        box: gridBox(W, H, { col: mediaCol, span: 6, y: 0.15, h: 0.7 }),
+        kind:
+          mediaPresentation(scene.slots["media"]) === "device"
+            ? "device"
+            : ctx.assetKinds[assetId] === "video"
+              ? "video"
+              : "image",
+        content: {
+          assetId,
+          mediaKind: ctx.assetKinds[assetId] === "video" ? "video" : "image",
+        },
+        box: fullBleed
+          ? { x: 0, y: 0, w: W, h: H, origin: "center center" }
+          : centered
+            ? gridBox(W, H, { col: 2, span: 8, y: 0.3, h: 0.58 })
+            : gridBox(W, H, { col: mediaCol, span: 6, y: 0.15, h: 0.7 }),
       });
     }
     const bullets = listOf(scene.slots["bullets"]) ?? [];
@@ -142,10 +166,12 @@ export const featureReveal: Archetype = {
         rank: 3 + i,
         kind: "text",
         content: { text: bullet },
-        box: gridBox(W, H, { col: textCol, span: 5, y: 0.48 + i * 0.105, h: 0.09 }),
+        box: centered || fullBleed
+          ? gridBox(W, H, { col: 2 + i * 3, span: 2, y: 0.9, h: 0.07 })
+          : gridBox(W, H, { col: textCol, span: 5, y: 0.48 + i * 0.105, h: 0.09 }),
         typeToken: "body",
         colorToken: "muted",
-        align: "left",
+        align: centered || fullBleed ? "center" : "left",
       });
     });
     return layers;
@@ -220,8 +246,13 @@ export const logoStingCta: Archetype = {
         id: "logo",
         role: "hero",
         rank: 1,
-        kind: "text",
-        content: { text: ctx.brandName },
+        kind: ctx.logoAssetId ? "image" : "text",
+        content: ctx.logoAssetId
+          ? {
+              assetId: ctx.logoAssetId,
+              mediaKind: ctx.assetKinds[ctx.logoAssetId] === "video" ? "video" : "image",
+            }
+          : { text: ctx.brandName },
         box: gridBox(W, H, { col: 1, span: 10, y: 0.3, h: 0.22 }),
         typeToken: "display",
         colorToken: "text",
@@ -298,8 +329,16 @@ export const uiWalkthrough: Archetype = {
         id: "media",
         role: "media",
         rank: 2,
-        kind: "image",
-        content: { assetId },
+        kind:
+          mediaPresentation(scene.slots["media"]) === "device"
+            ? "device"
+            : ctx.assetKinds[assetId] === "video"
+              ? "video"
+              : "image",
+        content: {
+          assetId,
+          mediaKind: ctx.assetKinds[assetId] === "video" ? "video" : "image",
+        },
         box: full
           ? gridBox(W, H, { col: mediaCol, span: mediaSpan, y: 0.26, h: 0.56 })
           : gridBox(W, H, { col: mediaCol, span: mediaSpan, y: 0.14, h: 0.72 }),
@@ -416,6 +455,87 @@ export const socialProof: Archetype = {
   },
 };
 
+export const statChart: Archetype = {
+  id: "stat-chart",
+  summary:
+    "A HyperFrames data-chart wrapper: one compact chart, a short headline, and an optional caption.",
+  slots: {
+    headline: { kind: "text", required: true, maxWords: 7 },
+    values: { kind: "textList", required: true, maxItems: 6, maxWords: 3 },
+    caption: { kind: "text", required: false, maxWords: 10 },
+  },
+  layouts: ["center", "full"],
+  defaultLayout: "center",
+  duration: { min: 75, ideal: 120, max: 210 },
+  materialize(scene: Scene, ctx: MaterializeCtx): ProtoLayer[] {
+    const { W, H } = ctx;
+    const values = (listOf(scene.slots["values"]) ?? []).slice(0, 6);
+    const parsed = values.map((value) => {
+      const [label, raw] = value.split(":");
+      return { label: label?.trim() || value, value: Math.max(0, Number(raw ?? value) || 0) };
+    });
+    const max = Math.max(1, ...parsed.map((item) => item.value));
+    const layers: ProtoLayer[] = [
+      {
+        id: "headline",
+        role: "hero",
+        rank: 1,
+        kind: "text",
+        content: { text: textOf(scene.slots["headline"]) ?? "" },
+        box: gridBox(W, H, { col: 2, span: 8, y: 0.1, h: 0.14 }),
+        typeToken: "headline",
+        colorToken: "text",
+        align: "center",
+      },
+    ];
+    parsed.forEach((item, index) => {
+      const height = 0.42 * (item.value / max);
+      layers.push(
+        {
+          id: `bar-${index}`,
+          role: index === parsed.length - 1 ? "media" : "list",
+          rank: 2 + index,
+          kind: "shape",
+          content: { css: index === parsed.length - 1 ? "var(--c-accent)" : "var(--c-primary)" },
+          box: gridBox(W, H, {
+            col: 2 + index,
+            span: 1,
+            y: 0.72 - height,
+            h: height,
+            origin: "center bottom",
+          }),
+        },
+        {
+          id: `label-${index}`,
+          role: "support",
+          rank: 8 + index,
+          kind: "text",
+          content: { text: item.label },
+          box: gridBox(W, H, { col: 2 + index, span: 1, y: 0.75, h: 0.07 }),
+          typeToken: "caption",
+          colorToken: "muted",
+          align: "center",
+        },
+      );
+    });
+    const caption = textOf(scene.slots["caption"]);
+    if (caption) {
+      layers.push({
+        id: "caption",
+        role: "support",
+        rank: 20,
+        kind: "text",
+        content: { text: caption },
+        box: gridBox(W, H, { col: 3, span: 6, y: 0.87, h: 0.08 }),
+        typeToken: "body",
+        colorToken: "muted",
+        align: "center",
+      });
+    }
+    return layers;
+  },
+};
+
 export const ARCHETYPES: Record<string, Archetype> = Object.fromEntries(
   [
     hookOpener,
@@ -424,5 +544,6 @@ export const ARCHETYPES: Record<string, Archetype> = Object.fromEntries(
     logoStingCta,
     uiWalkthrough,
     socialProof,
+    statChart,
   ].map((a) => [a.id, a]),
 );

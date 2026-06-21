@@ -5,7 +5,9 @@
  * project into build/ and hands that folder to @hyperframes/producer.
  */
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import type { Manifest, Project } from "@sequences/core";
@@ -25,7 +27,6 @@ export interface RenderOptions {
 
 export interface RenderResult {
   outputPath: string;
-  buildDir: string;
   manifest: Manifest;
   ffmpegPath: string;
   browserPath?: string;
@@ -186,10 +187,32 @@ function defaultOutputPath(projectDir: string, project: Project, format: RenderF
   return path.join(rendersDir, name);
 }
 
-function resolveOutputPath(projectDir: string, project: Project, options: RenderOptions): string {
+export function resolveRenderOutputPath(
+  projectDir: string,
+  project: Project,
+  options: RenderOptions,
+): string {
   const format = options.format ?? "mp4";
   const raw = options.output ?? defaultOutputPath(projectDir, project, format);
-  return path.resolve(projectDir, raw);
+  const root = path.resolve(projectDir);
+  const output = path.resolve(root, raw);
+  if (output === root || !output.startsWith(root + path.sep)) {
+    throw new Error(`render output must stay inside the project directory: ${raw}`);
+  }
+  let existing = path.dirname(output);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
+  }
+  if (fs.existsSync(existing)) {
+    const realRoot = fs.realpathSync(root);
+    const realExisting = fs.realpathSync(existing);
+    if (realExisting !== realRoot && !realExisting.startsWith(realRoot + path.sep)) {
+      throw new Error(`render output parent escapes the project through a link: ${raw}`);
+    }
+  }
+  return output;
 }
 
 export async function renderProject(
@@ -201,54 +224,103 @@ export async function renderProject(
   const format = options.format ?? "mp4";
   const quality = options.quality ?? "standard";
   const ffmpegPath = ensureFfmpegOnPath();
-  const compileResult = buildProject(dir, project);
-  const buildDir = path.join(dir, "build");
-  const outputPath = resolveOutputPath(dir, project, options);
-
-  if (format === "png-sequence") {
-    fs.mkdirSync(outputPath, { recursive: true });
-  } else {
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  }
-
-  (globalThis as { require?: NodeRequire }).require ??= createRequire(import.meta.url);
-  const producerSpecifier: string = "@hyperframes/producer";
-  const producer = (await import(producerSpecifier)) as ProducerModule;
-  const browserPath = options.browserPath ?? findBrowserExecutable();
-  const logger = options.quiet
-    ? undefined
-    : producer.createConsoleLogger?.("info");
-
+  const outputPath = resolveRenderOutputPath(dir, project, options);
+  const jobDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-render-"));
+  const buildDir = path.join(jobDir, "build");
+  const temporaryOutput =
+    format === "png-sequence"
+      ? path.join(jobDir, "frames")
+      : path.join(jobDir, `output${FORMAT_EXT[format]}`);
   const started = Date.now();
-  const job = producer.createRenderJob({
-    fps: project.meta.fps,
-    quality,
-    format,
-    workers: options.workers,
-    entryFile: "index.html",
-    logger,
-    producerConfig: producer.resolveConfig({
-      browserGpuMode: "software",
-      forceScreenshot: true,
-      ...(browserPath ? { chromePath: browserPath } : {}),
-    }),
-  });
+  try {
+    const compileResult = buildProject(dir, project, { buildDir });
+    if (format === "png-sequence") {
+      fs.mkdirSync(temporaryOutput, { recursive: true });
+    } else {
+      fs.mkdirSync(path.dirname(temporaryOutput), { recursive: true });
+    }
 
-  await producer.executeRenderJob(job, buildDir, outputPath, (progressJob, message) => {
-    if (options.quiet) return;
-    const percent = Math.round(progressJob.progress);
-    process.stdout.write(`\rrender ${percent}% ${message.padEnd(40).slice(0, 40)}`);
-    if (percent >= 100) process.stdout.write("\n");
-  });
+    (globalThis as { require?: NodeRequire }).require ??= createRequire(import.meta.url);
+    const producerSpecifier: string = "@hyperframes/producer";
+    const producer = (await import(producerSpecifier)) as ProducerModule;
+    const browserPath = options.browserPath ?? findBrowserExecutable();
+    const logger = options.quiet ? undefined : producer.createConsoleLogger?.("info");
+    const job = producer.createRenderJob({
+      fps: project.meta.fps,
+      quality,
+      format,
+      workers: options.workers,
+      entryFile: "index.html",
+      logger,
+      producerConfig: producer.resolveConfig({
+        browserGpuMode: "software",
+        forceScreenshot: true,
+        ...(browserPath ? { chromePath: browserPath } : {}),
+      }),
+    });
 
-  return {
-    outputPath,
-    buildDir,
-    manifest: compileResult.manifest,
-    ffmpegPath,
-    browserPath,
-    format,
-    quality,
-    elapsedMs: Date.now() - started,
-  };
+    await producer.executeRenderJob(job, buildDir, temporaryOutput, (progressJob, message) => {
+      if (options.quiet) return;
+      const percent = Math.round(progressJob.progress);
+      process.stdout.write(`\rrender ${percent}% ${message.padEnd(40).slice(0, 40)}`);
+      if (percent >= 100) process.stdout.write("\n");
+    });
+
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    if (format === "png-sequence") {
+      const staged = `${outputPath}.tmp-${randomUUID()}`;
+      const backup = `${outputPath}.previous-${randomUUID()}`;
+      fs.cpSync(temporaryOutput, staged, { recursive: true });
+      let movedPrevious = false;
+      try {
+        if (fs.existsSync(outputPath)) {
+          fs.renameSync(outputPath, backup);
+          movedPrevious = true;
+        }
+        fs.renameSync(staged, outputPath);
+        if (movedPrevious) fs.rmSync(backup, { recursive: true, force: true });
+      } catch (error) {
+        if (!fs.existsSync(outputPath) && movedPrevious && fs.existsSync(backup)) {
+          fs.renameSync(backup, outputPath);
+        }
+        throw error;
+      } finally {
+        fs.rmSync(staged, { recursive: true, force: true });
+        fs.rmSync(backup, { recursive: true, force: true });
+      }
+    } else {
+      const staged = `${outputPath}.tmp-${randomUUID()}`;
+      const backup = `${outputPath}.previous-${randomUUID()}`;
+      fs.copyFileSync(temporaryOutput, staged);
+      let movedPrevious = false;
+      try {
+        if (fs.existsSync(outputPath)) {
+          fs.renameSync(outputPath, backup);
+          movedPrevious = true;
+        }
+        fs.renameSync(staged, outputPath);
+        if (movedPrevious) fs.rmSync(backup, { force: true });
+      } catch (error) {
+        if (!fs.existsSync(outputPath) && movedPrevious && fs.existsSync(backup)) {
+          fs.renameSync(backup, outputPath);
+        }
+        throw error;
+      } finally {
+        fs.rmSync(staged, { force: true });
+        fs.rmSync(backup, { force: true });
+      }
+    }
+
+    return {
+      outputPath,
+      manifest: compileResult.manifest,
+      ffmpegPath,
+      browserPath,
+      format,
+      quality,
+      elapsedMs: Date.now() - started,
+    };
+  } finally {
+    fs.rmSync(jobDir, { recursive: true, force: true });
+  }
 }

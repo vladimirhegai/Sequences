@@ -25,14 +25,20 @@ import {
   parsePlan,
   planToCommands,
   planningContext,
-  enabledExtensionIds,
-  registryExtensionIds,
   ProjectStore,
   type Command,
+  type EventEntry,
   type Project,
 } from "@sequences/core";
-import { appendEvent, buildProject, loadProject, saveProject } from "./projectIo.ts";
+import {
+  buildProject,
+  commitProject,
+  loadProject,
+  readEventSequence,
+  withProjectWriteLock,
+} from "./projectIo.ts";
 import { renderProject } from "./render.ts";
+import { generateSceneThumbnails } from "./thumbs.ts";
 import { loadStoryboard, storyboardToText } from "./workspace.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -78,50 +84,40 @@ function lintText(project: Project): string {
     .join("\n");
 }
 
-function assertExtensionEnabled(kind: string, id: string, enabled: Set<string>, known: Set<string>): void {
-  if (!known.has(id)) return;
-  if (!enabled.has(id)) throw new Error(`extension disabled: ${kind} "${id}"`);
-}
-
-function assertCommandUsesEnabled(command: Command, enabled: Set<string>, known: Set<string>): void {
-  switch (command.type) {
-    case "Batch":
-      command.commands.forEach((sub) => assertCommandUsesEnabled(sub, enabled, known));
-      return;
-    case "AddScene":
-      assertExtensionEnabled("archetype", command.scene.archetype, enabled, known);
-      if (command.scene.camera && !enabled.has(command.scene.camera.move)) {
-        assertExtensionEnabled("camera move", command.scene.camera.move, enabled, known);
-      }
-      return;
-    case "SetMotionProfile":
-      assertExtensionEnabled("profile", command.profile, enabled, known);
-      return;
-    case "SwapMotion":
-      if (command.primitive) assertExtensionEnabled("primitive", command.primitive, enabled, known);
-      return;
-    case "SetLayerOverride":
-      if (command.patch?.enterPrimitive && !enabled.has(command.patch.enterPrimitive)) {
-        assertExtensionEnabled("primitive", command.patch.enterPrimitive, enabled, known);
-      }
-      if (command.patch?.exitPrimitive && !enabled.has(command.patch.exitPrimitive)) {
-        assertExtensionEnabled("primitive", command.patch.exitPrimitive, enabled, known);
-      }
-      return;
-    case "SetSceneCamera":
-      if (command.camera && !enabled.has(command.camera.move)) {
-        assertExtensionEnabled("camera move", command.camera.move, enabled, known);
-      }
-      return;
-    default:
-      return;
-  }
-}
-
 export function startMcpServer(projectDir: string): void {
-  const store = new ProjectStore(loadProject(projectDir), (entry) => appendEvent(projectDir, entry));
+  let pendingEvents: EventEntry[] = [];
+  const createStore = (project = loadProject(projectDir)) =>
+    new ProjectStore(
+      project,
+      (entry) => pendingEvents.push(entry),
+      readEventSequence(projectDir),
+    );
+  let store = createStore();
+  let projectFingerprint = JSON.stringify(store.project);
+
+  const syncFromDisk = () => {
+    if (pendingEvents.length > 0 && JSON.stringify(store.project) === projectFingerprint) {
+      commitProject(projectDir, store.project, pendingEvents.splice(0));
+    }
+    const diskProject = loadProject(projectDir);
+    const diskFingerprint = JSON.stringify(diskProject);
+    const diskSequence = readEventSequence(projectDir);
+    if (diskFingerprint !== projectFingerprint || diskSequence !== store.eventCount) {
+      pendingEvents = [];
+      store = createStore(diskProject);
+      projectFingerprint = diskFingerprint;
+    }
+  };
+
+  const withCurrentProject = <T>(action: () => T | Promise<T>) =>
+    withProjectWriteLock(projectDir, async () => {
+      syncFromDisk();
+      return action();
+    });
+
   const persist = () => {
-    saveProject(projectDir, store.project);
+    commitProject(projectDir, store.project, pendingEvents.splice(0));
+    projectFingerprint = JSON.stringify(store.project);
     buildProject(projectDir, store.project);
   };
 
@@ -132,15 +128,17 @@ export function startMcpServer(projectDir: string): void {
         "Returns everything needed to plan this video: the motion catalog (archetypes, primitives, profiles, camera moves, tokens), brand, assets, and the required plan JSON shape. Call this FIRST, then submit_plan.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       handler: () =>
-        [
-          planningContext(store.project, {
-            storyboardText: storyboardToText(loadStoryboard(projectDir)).slice(0, 4000),
-          }),
-          "",
-          "## Plan shape for submit_plan",
-          '{ "motionProfile": "<id>", "scenes": [ { "archetype": "<id>", "layout"?, "durationFrames"?, "slots": {...}, "camera"? } ] }',
-          "Rules: 3-6 scenes, use only enabled extension ids from the catalog, respect slot word budgets.",
-        ].join("\n"),
+        withCurrentProject(() =>
+          [
+            planningContext(store.project, {
+              storyboardText: storyboardToText(loadStoryboard(projectDir)).slice(0, 4000),
+            }),
+            "",
+            "## Plan shape for submit_plan",
+            '{ "motionProfile": "<id>", "scenes": [ { "archetype": "<id>", "layout"?, "durationFrames"?, "slots": {...}, "camera"? } ] }',
+            "Rules: 3-6 scenes, use only enabled extension ids from the catalog, respect slot word budgets.",
+          ].join("\n"),
+        ),
     },
     {
       name: "submit_plan",
@@ -151,23 +149,24 @@ export function startMcpServer(projectDir: string): void {
         properties: { plan: { type: "object", description: "The plan JSON (see get_planning_context)" } },
         required: ["plan"],
       },
-      handler: (args) => {
-        const plan = parsePlan(args.plan, { project: store.project });
-        const outcome = store.apply(planToCommands(store.project, plan), "agent");
-        if (!outcome.ok) {
-          throw new Error(
-            `plan failed validation: ${outcome.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
-          );
-        }
-        persist();
-        return `plan applied.\n${outline(store.project)}\n${lintText(store.project)}`;
-      },
+      handler: (args) =>
+        withCurrentProject(() => {
+          const plan = parsePlan(args.plan, { project: store.project });
+          const outcome = store.apply(planToCommands(store.project, plan), "agent");
+          if (!outcome.ok) {
+            throw new Error(
+              `plan failed validation: ${outcome.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
+            );
+          }
+          persist();
+          return `plan applied.\n${outline(store.project)}\n${lintText(store.project)}`;
+        }),
     },
     {
       name: "get_project_outline",
       description: "Compact outline of the project: scenes, archetypes, durations, slots, profile.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      handler: () => outline(store.project),
+      handler: () => withCurrentProject(() => outline(store.project)),
     },
     {
       name: "get_scene",
@@ -177,11 +176,12 @@ export function startMcpServer(projectDir: string): void {
         properties: { sceneId: { type: "string" } },
         required: ["sceneId"],
       },
-      handler: (args) => {
-        const scene = store.project.scenes.find((s) => s.id === args.sceneId);
-        if (!scene) throw new Error(`unknown scene "${String(args.sceneId)}"`);
-        return JSON.stringify(scene, null, 2);
-      },
+      handler: (args) =>
+        withCurrentProject(() => {
+          const scene = store.project.scenes.find((s) => s.id === args.sceneId);
+          if (!scene) throw new Error(`unknown scene "${String(args.sceneId)}"`);
+          return JSON.stringify(scene, null, 2);
+        }),
     },
     {
       name: "apply_commands",
@@ -194,63 +194,80 @@ export function startMcpServer(projectDir: string): void {
         },
         required: ["commands"],
       },
-      handler: (args) => {
-        const raw = args.commands as unknown[];
-        const commands: Command[] = raw.map((c, i) => {
-          const parsed = CommandSchema.safeParse(c);
-          if (!parsed.success) {
+      handler: (args) =>
+        withCurrentProject(() => {
+          const raw = args.commands as unknown[];
+          const commands: Command[] = raw.map((c, i) => {
+            const parsed = CommandSchema.safeParse(c);
+            if (!parsed.success) {
+              throw new Error(
+                `commands[${i}] invalid: ${parsed.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`).join("; ")}`,
+              );
+            }
+            return c as Command;
+          });
+          const command: Command =
+            commands.length === 1 ? commands[0]! : { type: "Batch", commands };
+          const outcome = store.apply(command, "agent");
+          if (!outcome.ok) {
             throw new Error(
-              `commands[${i}] invalid: ${parsed.error.issues.map((iss) => `${iss.path.join(".")}: ${iss.message}`).join("; ")}`,
+              `rejected: ${outcome.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
             );
           }
-          return c as Command;
-        });
-        const command: Command = commands.length === 1 ? commands[0]! : { type: "Batch", commands };
-        assertCommandUsesEnabled(command, enabledExtensionIds(store.project), new Set(registryExtensionIds()));
-        const outcome = store.apply(command, "agent");
-        if (!outcome.ok) {
-          throw new Error(
-            `rejected: ${outcome.errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`,
-          );
-        }
-        persist();
-        return `applied.\n${outline(store.project)}\n${lintText(store.project)}`;
-      },
+          persist();
+          return `applied.\n${outline(store.project)}\n${lintText(store.project)}`;
+        }),
     },
     {
       name: "lint_report",
       description: "Run the deterministic motion linter. Findings marked auto-fixable can be fixed with autofix.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      handler: () => lintText(store.project),
+      handler: () => withCurrentProject(() => lintText(store.project)),
     },
     {
       name: "autofix",
       description: "Apply every available lint auto-fix (as journaled, undoable commands).",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      handler: () => {
-        const result = applyAutoFixes(store);
-        persist();
-        return `applied ${result.applied.length} fixes.\n${lintText(store.project)}`;
-      },
+      handler: () =>
+        withCurrentProject(() => {
+          const result = applyAutoFixes(store);
+          if (result.applied.length > 0) persist();
+          return `applied ${result.applied.length} fixes.\n${lintText(store.project)}`;
+        }),
     },
     {
       name: "undo",
       description: "Undo the most recent change (including everything a submitted plan did).",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      handler: () => {
-        const moved = store.undo("agent");
-        if (moved) persist();
-        return moved ? `undone.\n${outline(store.project)}` : "nothing to undo";
-      },
+      handler: () =>
+        withCurrentProject(() => {
+          const moved = store.undo("agent");
+          if (moved) persist();
+          return moved ? `undone.\n${outline(store.project)}` : "nothing to undo";
+        }),
     },
     {
       name: "redo",
       description: "Redo the most recently undone change.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      handler: () => {
-        const moved = store.redo("agent");
-        if (moved) persist();
-        return moved ? `redone.\n${outline(store.project)}` : "nothing to redo";
+      handler: () =>
+        withCurrentProject(() => {
+          const moved = store.redo("agent");
+          if (moved) persist();
+          return moved ? `redone.\n${outline(store.project)}` : "nothing to redo";
+        }),
+    },
+    {
+      name: "render_preview",
+      description:
+        "Render deterministic scene preview PNGs from the current compiled project. Returns project-relative paths.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      handler: async () => {
+        const project = await withCurrentProject(() => store.project);
+        const result = await generateSceneThumbnails(projectDir, project);
+        return Object.entries(result.files)
+          .map(([sceneId, file]) => `${sceneId}: ${file}`)
+          .join("\n");
       },
     },
     {
@@ -266,7 +283,8 @@ export function startMcpServer(projectDir: string): void {
       handler: async (args) => {
         const quality =
           args.quality === "standard" || args.quality === "high" ? args.quality : "draft";
-        const result = await renderProject(projectDir, store.project, { quality, quiet: true });
+        const project = await withCurrentProject(() => store.project);
+        const result = await renderProject(projectDir, project, { quality, quiet: true });
         return `rendered ${result.manifest.durationSec}s → ${result.outputPath}`;
       },
     },

@@ -18,6 +18,7 @@ export const crispSaas: MotionProfile = {
     settleGap: "quick",
     overlapBudget: 0.65,
     transition: "cut",
+    motionDensityCeiling: 1.4,
     exits: false,
   },
   selection: {
@@ -64,6 +65,7 @@ export const warmStartup: MotionProfile = {
     settleGap: "base",
     overlapBudget: 0.65,
     transition: "fade",
+    motionDensityCeiling: 2.2,
     exits: true,
   },
   selection: {
@@ -152,6 +154,7 @@ export const boldLaunch: MotionProfile = {
     settleGap: "instant",
     overlapBudget: 0.65,
     transition: "cut",
+    motionDensityCeiling: 2.6,
     exits: true,
   },
   selection: {

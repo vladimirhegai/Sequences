@@ -21,6 +21,7 @@ import {
   CHOREO_DEFAULTS,
   DURATION_TOKENS,
   STAGGER_TOKENS,
+  scaleFrames30,
   type DurationToken,
   type StaggerToken,
 } from "./tokens.ts";
@@ -28,7 +29,7 @@ import type { MaterializedLayer, MotionProfile, ResolvedMotion } from "./registr
 
 export interface ScheduledMotion {
   layerId: string;
-  phase: "enter" | "exit" | "continuous";
+  phase: "enter" | "exit" | "emphasis" | "continuous";
   motion: ResolvedMotion;
   /** Scene-relative start frame. */
   startFrame: number;
@@ -52,19 +53,20 @@ export interface SceneSchedule {
   diagnostics: SceneDiagnostics;
 }
 
-function durFrames(token: DurationToken): number {
-  return DURATION_TOKENS[token];
+function durFrames(token: DurationToken, fps: number): number {
+  return scaleFrames30(DURATION_TOKENS[token], fps);
 }
 
 export function solveScene(
   scene: Scene,
   layers: MaterializedLayer[],
   profile: MotionProfile,
+  fps = 30,
 ): SceneSchedule {
   const staggerToken: StaggerToken = scene.choreography.stagger ?? profile.defaults.stagger;
-  const stagger = STAGGER_TOKENS[staggerToken];
+  const stagger = scaleFrames30(STAGGER_TOKENS[staggerToken], fps);
   const overlap = profile.defaults.overlapBudget;
-  const settleGap = durFrames(scene.choreography.settleGap ?? profile.defaults.settleGap);
+  const settleGap = durFrames(scene.choreography.settleGap ?? profile.defaults.settleGap, fps);
   const cap = CHOREO_DEFAULTS.simultaneityCap;
   const sceneDur = scene.durationFrames;
 
@@ -88,7 +90,7 @@ export function solveScene(
   for (const layer of ordered) {
     const enter = layer.motions.enter;
     if (!enter) continue;
-    const dur = durFrames(enter.duration);
+    const dur = durFrames(enter.duration, fps);
     let start: number;
     if (first) {
       start = 0;
@@ -127,8 +129,8 @@ export function solveScene(
   let firstExitStart: number | null = null;
   exiting.forEach((layer, i) => {
     const exit = layer.motions.exit!;
-    const dur = durFrames(exit.duration);
-    const start = sceneDur - dur - i * STAGGER_TOKENS.tight;
+    const dur = durFrames(exit.duration, fps);
+    const start = sceneDur - dur - i * scaleFrames30(STAGGER_TOKENS.tight, fps);
     motions.push({
       layerId: layer.id,
       phase: "exit",
@@ -152,12 +154,34 @@ export function solveScene(
     });
   }
 
+  // Emphasis lands during the hold by default, or at an explicit scene frame.
+  for (const layer of layers) {
+    const emphasis = layer.motions.emphasis;
+    if (!emphasis) continue;
+    const durationFrames = durFrames(emphasis.duration, fps);
+    const defaultStart = Math.max(
+      lastEnterEnd,
+      Math.round((lastEnterEnd + (firstExitStart ?? sceneDur)) / 2 - durationFrames / 2),
+    );
+    const startFrame = Math.max(
+      0,
+      Math.min(emphasis.atFrame ?? defaultStart, Math.max(0, sceneDur - durationFrames)),
+    );
+    motions.push({
+      layerId: layer.id,
+      phase: "emphasis",
+      motion: emphasis,
+      startFrame,
+      durationFrames,
+    });
+  }
+
   // Diagnostics.
   const settleBoundary = firstExitStart ?? sceneDur;
   const settleShortfallFrames = Math.max(0, lastEnterEnd + settleGap - settleBoundary);
 
   const hero = layers.find((l) => l.rank === 1);
-  const heroDur = hero?.motions.enter ? durFrames(hero.motions.enter.duration) : 0;
+  const heroDur = hero?.motions.enter ? durFrames(hero.motions.enter.duration, fps) : 0;
   // Decor is exempt: slow background fades are quiet by nature, not "loud".
   const heroNotLoudest = layers.some(
     (l) =>
@@ -165,7 +189,7 @@ export function solveScene(
       l.role !== "decor" &&
       l.kind !== "number" &&
       l.motions.enter !== undefined &&
-      durFrames(l.motions.enter.duration) > heroDur,
+      durFrames(l.motions.enter.duration, fps) > heroDur,
   );
 
   let peakConcurrency = 0;

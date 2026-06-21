@@ -19,7 +19,7 @@ import type {
 import type { Box, Scene, TransitionKind } from "../schema.ts";
 
 export type LayerRole = "hero" | "support" | "media" | "list" | "badge" | "decor";
-export type LayerKind = "text" | "number" | "image" | "shape";
+export type LayerKind = "text" | "number" | "image" | "video" | "device" | "shape";
 
 export interface ResolvedMotion {
   primitive: string;
@@ -27,6 +27,8 @@ export interface ResolvedMotion {
   easing: EasingToken;
   distance?: DistanceToken;
   scale?: ScaleToken;
+  /** Scene-relative explicit emphasis frame. */
+  atFrame?: number;
 }
 
 /** A layer after deterministic layout, before choreography. */
@@ -41,6 +43,7 @@ export interface ProtoLayer {
     text?: string;
     number?: { value: number; prefix: string; suffix: string };
     assetId?: string;
+    mediaKind?: "image" | "video";
     /** For shape layers: a CSS background value (brand vars allowed). */
     css?: string;
   };
@@ -59,6 +62,7 @@ export interface MaterializedLayer extends ProtoLayer {
     enter?: ResolvedMotion;
     exit?: ResolvedMotion;
     continuous?: ResolvedMotion;
+    emphasis?: ResolvedMotion;
   };
 }
 
@@ -143,7 +147,16 @@ export interface Archetype {
   /** Duration heuristics in frames @30fps. */
   duration: { min: number; ideal: number; max: number };
   /** Pure layout: scene + canvas size → positioned proto-layers. */
-  materialize(scene: Scene, ctx: { W: number; H: number; brandName: string }): ProtoLayer[];
+  materialize(
+    scene: Scene,
+    ctx: {
+      W: number;
+      H: number;
+      brandName: string;
+      logoAssetId?: string;
+      assetKinds: Record<string, "image" | "video" | "audio">;
+    },
+  ): ProtoLayer[];
 }
 
 export interface ProfileMotionAssignment {
@@ -160,6 +173,8 @@ export interface MotionProfile {
     settleGap: DurationToken;
     overlapBudget: number;
     transition: TransitionKind;
+    /** Sum of foreground animation frames divided by scene frames. */
+    motionDensityCeiling: number;
     /** Whether layers get per-layer exit motions (vs persist to the cut). */
     exits: boolean;
   };

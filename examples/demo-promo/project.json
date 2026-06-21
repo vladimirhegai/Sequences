@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 3,
   "meta": {
     "title": "Pulse",
     "width": 1920,
@@ -21,13 +21,13 @@
       "body": "Bahnschrift"
     }
   },
-  "motionProfile": "bold-launch",
+  "motionProfile": "crisp-saas",
   "scenes": [
     {
       "id": "cold-open",
       "archetype": "hook-opener",
       "layout": "left",
-      "durationFrames": 126,
+      "durationFrames": 115,
       "slots": {
         "headline": "PULSE GOES BANG.",
         "subline": "dashboard proof with a pulse"
@@ -47,9 +47,9 @@
         },
         "headline": {
           "box": {
-            "x": 118,
+            "x": 96,
             "y": 278,
-            "w": 1360,
+            "w": 1290,
             "h": 258,
             "origin": "left center"
           },
@@ -61,9 +61,9 @@
         },
         "subline": {
           "box": {
-            "x": 124,
+            "x": 96,
             "y": 614,
-            "w": 820,
+            "w": 852,
             "h": 96,
             "origin": "left center"
           },
@@ -79,11 +79,11 @@
       "id": "screen-slam",
       "archetype": "feature-reveal",
       "layout": "media-right",
-      "durationFrames": 132,
+      "durationFrames": 116,
       "slots": {
         "headline": "The UI hits first",
         "media": {
-          "assetId": "dashboard"
+          "assetId": "asset-f0d7252e999ec1d3"
         },
         "bullets": [
           "Goon Goon Goon",
@@ -105,27 +105,22 @@
       "overrides": {
         "headline": {
           "enterPrimitive": "enter.charCascade",
-          "exitPrimitive": "exit.scaleAway",
           "enterDuration": "slow"
         },
         "media": {
           "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.scaleAway",
           "enterDuration": "slow"
         },
         "bullet-0": {
           "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         },
         "bullet-1": {
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         },
         "bullet-2": {
           "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         }
       },
       "camera": {
@@ -134,103 +129,9 @@
       }
     },
     {
-      "id": "hotspot-pop",
-      "archetype": "ui-walkthrough",
-      "layout": "full",
-      "durationFrames": 132,
-      "slots": {
-        "headline": "Tap. Glow. Launch.",
-        "media": {
-          "assetId": "dashboard"
-        },
-        "steps": [
-          "Spark",
-          "Zoom",
-          "Punch"
-        ]
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "quick",
-        "order": [
-          "headline",
-          "media",
-          "hotspot-0",
-          "step-0",
-          "hotspot-1",
-          "step-1",
-          "hotspot-2",
-          "step-2"
-        ]
-      },
-      "overrides": {
-        "headline": {
-          "enterPrimitive": "enter.charCascade",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "slow"
-        },
-        "media": {
-          "enterPrimitive": "enter.scaleIn",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "relaxed"
-        },
-        "hotspot-0": {
-          "box": {
-            "x": 548,
-            "y": 390,
-            "w": 114,
-            "h": 56,
-            "origin": "center center"
-          },
-          "enterPrimitive": "enter.scaleIn",
-          "enterDuration": "quick"
-        },
-        "hotspot-1": {
-          "box": {
-            "x": 962,
-            "y": 518,
-            "w": 132,
-            "h": 56,
-            "origin": "center center"
-          },
-          "enterPrimitive": "enter.scaleIn",
-          "enterDuration": "quick"
-        },
-        "hotspot-2": {
-          "box": {
-            "x": 1218,
-            "y": 356,
-            "w": 98,
-            "h": 56,
-            "origin": "center center"
-          },
-          "enterPrimitive": "enter.scaleIn",
-          "enterDuration": "quick"
-        },
-        "step-0": {
-          "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "step-1": {
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "step-2": {
-          "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        }
-      },
-      "camera": {
-        "move": "pullBack",
-        "scale": "subtle"
-      }
-    },
-    {
       "id": "stat-snap",
       "archetype": "stat-callout",
-      "durationFrames": 108,
+      "durationFrames": 97,
       "slots": {
         "stat": {
           "value": 3,
@@ -272,11 +173,11 @@
       "id": "side-whip",
       "archetype": "feature-reveal",
       "layout": "media-left",
-      "durationFrames": 126,
+      "durationFrames": 116,
       "slots": {
         "headline": "Proof catches fire",
         "media": {
-          "assetId": "dashboard"
+          "assetId": "asset-f0d7252e999ec1d3"
         },
         "bullets": [
           "panels punch in",
@@ -298,27 +199,22 @@
       "overrides": {
         "headline": {
           "enterPrimitive": "enter.fadeIn",
-          "exitPrimitive": "exit.scaleAway",
           "enterDuration": "slow"
         },
         "media": {
           "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.scaleAway",
           "enterDuration": "slow"
         },
         "bullet-0": {
           "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         },
         "bullet-1": {
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         },
         "bullet-2": {
           "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
+          "enterPrimitive": "enter.slideInDirectional"
         }
       },
       "camera": {
@@ -330,7 +226,7 @@
       "id": "deck-break",
       "archetype": "hook-opener",
       "layout": "center",
-      "durationFrames": 108,
+      "durationFrames": 103,
       "slots": {
         "headline": "NO MORE DECK ENERGY",
         "subline": "just cuts, pops, and proof"
@@ -350,9 +246,9 @@
         },
         "headline": {
           "box": {
-            "x": 166,
+            "x": 96,
             "y": 318,
-            "w": 1588,
+            "w": 1582,
             "h": 218,
             "origin": "center center"
           },
@@ -364,9 +260,9 @@
         },
         "subline": {
           "box": {
-            "x": 360,
+            "x": 388,
             "y": 606,
-            "w": 1200,
+            "w": 1144,
             "h": 96,
             "origin": "center center"
           },
@@ -379,97 +275,9 @@
       }
     },
     {
-      "id": "quote-smash",
-      "archetype": "social-proof",
-      "layout": "left",
-      "durationFrames": 150,
-      "slots": {
-        "quote": "It made the dashboard feel alive.",
-        "source": "Maya - Northbeam",
-        "logos": [
-          "BOOM",
-          "ZIP",
-          "CLACK",
-          "SHINE",
-          "SHIP"
-        ]
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "quote-mark",
-          "logo-0",
-          "quote",
-          "logo-1",
-          "source",
-          "logo-2",
-          "logo-3",
-          "logo-4"
-        ]
-      },
-      "overrides": {
-        "quote-mark": {
-          "box": {
-            "x": 108,
-            "y": 132,
-            "w": 138,
-            "h": 218,
-            "origin": "center center"
-          },
-          "enterDuration": "base"
-        },
-        "quote": {
-          "enterPrimitive": "enter.maskRevealUp",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "slow"
-        },
-        "source": {
-          "colorToken": "accent",
-          "enterPrimitive": "enter.blurIn",
-          "exitPrimitive": "exit.fadeDown",
-          "enterDuration": "relaxed"
-        },
-        "logo-0": {
-          "typeToken": "body",
-          "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "logo-1": {
-          "typeToken": "body",
-          "colorToken": "muted",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "logo-2": {
-          "typeToken": "body",
-          "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "logo-3": {
-          "typeToken": "body",
-          "colorToken": "muted",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        },
-        "logo-4": {
-          "typeToken": "body",
-          "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional",
-          "exitPrimitive": "exit.slideExit"
-        }
-      },
-      "camera": {
-        "move": "pullBack",
-        "scale": "subtle"
-      }
-    },
-    {
       "id": "launch-sting",
       "archetype": "logo-sting-cta",
-      "durationFrames": 120,
+      "durationFrames": 117,
       "slots": {
         "tagline": "Less deck. More launch.",
         "cta": "Hit play"
@@ -503,26 +311,42 @@
     }
   ],
   "transitions": {
-    "stat-snap": "fade",
-    "deck-break": "fade"
+    "stat-snap": "crossFade",
+    "deck-break": "crossFade"
   },
   "assets": [
     {
-      "id": "dashboard",
+      "id": "asset-f0d7252e999ec1d3",
       "path": "assets/dashboard.svg",
-      "kind": "image"
+      "kind": "image",
+      "contentHash": "f0d7252e999ec1d3880670d5df5103a0ff5f696a191ef90781984bbc6a07aff2",
+      "metadata": {
+        "dominantColors": [],
+        "cacheHint": "migrated-v1"
+      }
     },
     {
-      "id": "file-0000000041d471f5bc8dd618aca64dc9-optimized-1000",
+      "id": "asset-0220b8fa934d2c39",
       "path": "assets/Example/file_0000000041d471f5bc8dd618aca64dc9_optimized_1000.png",
-      "kind": "image"
+      "kind": "image",
+      "contentHash": "0220b8fa934d2c392d3826d8eee70ffb08fc56ccf288f5fcb2fcf7d917991044",
+      "metadata": {
+        "dominantColors": [],
+        "cacheHint": "migrated-v1"
+      }
     },
     {
-      "id": "pulse-20260610-202405",
+      "id": "asset-94e730f99d98dff6",
       "path": "assets/pulse-20260610-202405.mp4",
-      "kind": "video"
+      "kind": "video",
+      "contentHash": "94e730f99d98dff6729bf6447173f2a3abf1c9f56ed5e24dd9b1494b5cd4b884",
+      "metadata": {
+        "dominantColors": [],
+        "cacheHint": "migrated-v1"
+      }
     }
   ],
+  "audio": [],
   "extensions": {
     "enabled": [
       "enter.fadeIn",
@@ -547,6 +371,7 @@
       "logo-sting-cta",
       "ui-walkthrough",
       "social-proof",
+      "stat-chart",
       "crisp-saas",
       "warm-startup",
       "bold-launch",

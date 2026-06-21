@@ -15,6 +15,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Asset } from "@sequences/core";
+import { contentAssetId, extractAssetMetadata, sha256File } from "./assetMetadata.ts";
 
 /* ---------------------------------------------------------------- library */
 
@@ -91,10 +93,13 @@ function projectMtime(dir: string): Date {
 
 export function createLibraryFolder(rel: string, name: string): string {
   const clean = name.trim();
-  if (!clean || /[\\/:*?"<>|]/.test(clean)) throw new Error("invalid folder name");
+  if (!clean || clean === "." || clean === ".." || /[\\/:*?"<>|]/.test(clean)) {
+    throw new Error("invalid folder name");
+  }
   const parent = safeChild(libraryDir(), rel || ".");
   if (!parent) throw new Error("path escapes the project library");
-  const dir = path.join(parent, clean);
+  const dir = safeChild(parent, clean);
+  if (!dir) throw new Error("path escapes the project library");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -124,10 +129,11 @@ export function findProjectPoster(dir: string): string | null {
 /* ------------------------------------------------------------- disk browse */
 
 const MEDIA_EXT: Record<string, "image" | "video" | "audio"> = {
-  ".png": "image", ".jpg": "image", ".jpeg": "image", ".gif": "image", ".webp": "image",
-  ".svg": "image", ".bmp": "image", ".avif": "image",
-  ".mp4": "video", ".mov": "video", ".webm": "video", ".mkv": "video", ".avi": "video",
-  ".mp3": "audio", ".wav": "audio", ".ogg": "audio", ".m4a": "audio", ".flac": "audio",
+  // Phase 1 only advertises formats Chromium + the producer can consume
+  // deterministically. Animated GIF, BMP, MKV/AVI and FLAC are deferred.
+  ".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".svg": "image",
+  ".mp4": "video", ".webm": "video",
+  ".mp3": "audio", ".wav": "audio", ".ogg": "audio",
 };
 
 export function mediaKind(file: string): "image" | "video" | "audio" | null {
@@ -195,11 +201,29 @@ function slugify(base: string): string {
   return slug || "asset";
 }
 
+function atomicWriteJson(file: string, value: unknown): void {
+  const temporary = `${file}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + "\n");
+    const handle = fs.openSync(temporary, "r+");
+    try {
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
 export interface ImportedAsset {
   id: string;
   /** project-relative, forward slashes (Asset.path contract) */
   relPath: string;
   kind: "image" | "video" | "audio";
+  contentHash: string;
+  metadata: Asset["metadata"];
 }
 
 /**
@@ -210,13 +234,21 @@ export function placeAsset(
   projectDir: string,
   fileName: string,
   folder: string,
-  existingIds: ReadonlySet<string>,
+  _existingIds: ReadonlySet<string>,
   write: (destination: string) => void,
 ): ImportedAsset {
   const kind = mediaKind(fileName);
   if (!kind) throw new Error(`unsupported media type: ${path.extname(fileName) || fileName}`);
   const assetsRoot = path.join(projectDir, "assets");
-  const cleanFolder = folder.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const folderParts = folder.replace(/\\/g, "/").split("/").filter(Boolean);
+  if (
+    folderParts.some(
+      (part) => part === "." || part === ".." || /[<>:"|?*\0]/.test(part),
+    )
+  ) {
+    throw new Error("invalid asset folder");
+  }
+  const cleanFolder = folderParts.join("/");
   const destDir = cleanFolder ? safeChild(assetsRoot, cleanFolder) : assetsRoot;
   if (!destDir) throw new Error("asset folder escapes assets/");
   fs.mkdirSync(destDir, { recursive: true });
@@ -226,14 +258,29 @@ export function placeAsset(
   let name = `${base}${ext}`;
   let n = 2;
   while (fs.existsSync(path.join(destDir, name))) name = `${base}-${n++}${ext}`;
-  write(path.join(destDir, name));
-
-  let id = slugify(path.basename(name, ext));
-  n = 2;
-  while (existingIds.has(id)) id = `${slugify(base)}-${n++}`;
-
   const rel = ["assets", ...(cleanFolder ? [cleanFolder] : []), name].join("/");
-  return { id, relPath: rel, kind };
+  const destination = path.join(destDir, name);
+  const temporary = `${destination}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    write(temporary);
+    const handle = fs.openSync(temporary, "r+");
+    try {
+      fs.fsyncSync(handle);
+    } finally {
+      fs.closeSync(handle);
+    }
+    fs.renameSync(temporary, destination);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  const contentHash = sha256File(destination);
+  return {
+    id: contentAssetId(contentHash),
+    relPath: rel,
+    kind,
+    contentHash,
+    metadata: extractAssetMetadata(destination, kind),
+  };
 }
 
 export function safeChild(root: string, rel: string): string | null {
@@ -241,6 +288,32 @@ export function safeChild(root: string, rel: string): string | null {
   const file = path.resolve(rootPath, path.normalize(rel));
   if (file !== rootPath && !file.startsWith(rootPath + path.sep)) return null;
   return file;
+}
+
+/* ----------------------------------------------------------- design scratch */
+
+export interface DesignScratch {
+  version: 1;
+  items: Array<Record<string, unknown>>;
+}
+
+export function loadDesignScratch(projectDir: string): DesignScratch {
+  const file = path.join(projectDir, "design.json");
+  if (!fs.existsSync(file)) return { version: 1, items: [] };
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8")) as DesignScratch;
+    if (value.version === 1 && Array.isArray(value.items)) return value;
+  } catch {
+    // Corrupt scratch state must not block the project.
+  }
+  return { version: 1, items: [] };
+}
+
+export function saveDesignScratch(projectDir: string, scratch: DesignScratch): void {
+  if (scratch.version !== 1 || !Array.isArray(scratch.items)) {
+    throw new Error("invalid design sidecar");
+  }
+  atomicWriteJson(path.join(projectDir, "design.json"), scratch);
 }
 
 /* -------------------------------------------------------------- storyboard */
@@ -299,7 +372,7 @@ export function loadStoryboard(projectDir: string): Storyboard {
 
 export function saveStoryboard(projectDir: string, board: Storyboard): void {
   if (board.version !== 1 || !Array.isArray(board.frames)) throw new Error("invalid storyboard");
-  fs.writeFileSync(path.join(projectDir, "storyboard.json"), JSON.stringify(board, null, 2) + "\n");
+  atomicWriteJson(path.join(projectDir, "storyboard.json"), board);
 }
 
 const pct = (v: number | undefined) => `${Math.round(v ?? 0)}%`;

@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type http from "node:http";
 
@@ -39,6 +41,11 @@ export function findAppBrowser(): string | null {
   return browserCandidates().find((candidate) => candidate && fs.existsSync(candidate)) ?? null;
 }
 
+export function appProfileDir(projectDir: string): string {
+  const profileKey = createHash("sha256").update(path.resolve(projectDir)).digest("hex").slice(0, 16);
+  return path.join(os.homedir(), ".sequences", "browser-profiles", profileKey);
+}
+
 export function openAppWindow(url: string, projectDir: string, server: http.Server): void {
   const browser = findAppBrowser();
   if (!browser) {
@@ -47,7 +54,7 @@ export function openAppWindow(url: string, projectDir: string, server: http.Serv
     return;
   }
 
-  const profileDir = path.join(projectDir, ".sequences-app-profile");
+  const profileDir = appProfileDir(projectDir);
   fs.mkdirSync(profileDir, { recursive: true });
   const child = spawn(
     browser,

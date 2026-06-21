@@ -23,7 +23,7 @@ export function createDefaultProject(options?: {
   const screenshot = options?.screenshotAssetId;
 
   const project: Project = {
-    schemaVersion: 1,
+    schemaVersion: 3,
     meta: { title, width: 1920, height: 1080, fps: 30, background: "surface" },
     brand: {
       name: brandName,
@@ -93,6 +93,7 @@ export function createDefaultProject(options?: {
     ],
     transitions: {},
     assets: [],
+    audio: [],
   };
   return project;
 }
@@ -118,7 +119,7 @@ export function createShowcaseProject(options?: {
   const screenshot = options?.screenshotAssetId;
 
   const project: Project = {
-    schemaVersion: 1,
+    schemaVersion: 3,
     meta: { title, width: 1920, height: 1080, fps: 30, background: "surface" },
     brand: {
       name: brandName,
@@ -222,6 +223,7 @@ export function createShowcaseProject(options?: {
     // Hard cuts everywhere except one fade where the story exhales.
     transitions: { social: "fade" },
     assets: [],
+    audio: [],
   };
   return project;
 }

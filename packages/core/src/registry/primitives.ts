@@ -7,9 +7,21 @@
  * the review amendment ("first primitives implemented after fadeIn").
  */
 import type { EmitContext, GsapStep, MotionPrimitive } from "./types.ts";
+import {
+  BLUR_TOKENS,
+  DURATION_TOKENS,
+  framesToSeconds,
+  PRIMITIVE_STYLE_TOKENS,
+  STAGGER_TOKENS,
+} from "../tokens.ts";
 
 function js(value: string): string {
-  return JSON.stringify(value);
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
 }
 
 export const fadeIn: MotionPrimitive = {
@@ -69,7 +81,7 @@ export const maskRevealUp: MotionPrimitive = {
       {
         kind: "fromTo",
         target: ctx.innerSel,
-        from: { yPercent: 110 },
+        from: { yPercent: PRIMITIVE_STYLE_TOKENS.maskRevealOffsetPercent },
         to: { yPercent: 0 },
         durationSec: ctx.durationSec,
         ease: ctx.ease,
@@ -111,7 +123,7 @@ export const blurIn: MotionPrimitive = {
   tags: { energy: "calm", style: "organic" },
   defaults: { duration: "relaxed", easing: "enter.glide", distance: "step" },
   emit(ctx: EmitContext): GsapStep[] {
-    const blurPx = Math.max(4, Math.round(ctx.distancePx * 0.18));
+    const blurPx = Math.round(BLUR_TOKENS.soft * (ctx.stageHeight / 1080));
     return [
       {
         kind: "fromTo",
@@ -134,7 +146,7 @@ export const charCascade: MotionPrimitive = {
   tags: { energy: "punchy", style: "mechanical" },
   defaults: { duration: "relaxed", easing: "enter.snap" },
   emit(ctx: EmitContext): GsapStep[] {
-    const stagger = Math.round((ctx.durationSec / 18) * 1000) / 1000;
+    const stagger = framesToSeconds(STAGGER_TOKENS.tight, ctx.fps);
     // Chars are inline-block (yPercent transforms need it), grouped into
     // per-word nowrap spans separated by real spaces. Everything sits in one
     // block wrapper because the layer's .seq-inner is a flex container —
@@ -153,7 +165,7 @@ export const charCascade: MotionPrimitive = {
       `ws.appendChild(s);spans.push(s);}` +
       `wrap.appendChild(ws);}` +
       `el.appendChild(wrap);` +
-      `tl.fromTo(spans,{yPercent:80,opacity:0},{yPercent:0,opacity:1,duration:${ctx.durationSec},ease:${js(ctx.ease)},stagger:${stagger}},${ctx.startSec});})();`;
+      `tl.fromTo(spans,{yPercent:${PRIMITIVE_STYLE_TOKENS.charRisePercent},opacity:0},{yPercent:0,opacity:1,duration:${ctx.durationSec},ease:${js(ctx.ease)},stagger:${stagger}},${ctx.startSec});})();`;
     return [{ kind: "custom", code, easesUsed: [ctx.ease] }];
   },
 };
@@ -195,7 +207,7 @@ export const countUp: MotionPrimitive = {
       `(function(){var el=document.querySelector(${js(ctx.innerSel)});` +
       `var o={v:0};var fmt=function(v){return ${js(num.prefix)}+Math.round(v).toLocaleString("en-US")+${js(num.suffix)};};` +
       `el.textContent=fmt(0);` +
-      `tl.fromTo(${js(ctx.innerSel)},{opacity:0},{opacity:1,duration:${Math.min(0.3, ctx.durationSec)},ease:${js(ctx.ease)}},${ctx.startSec});` +
+      `tl.fromTo(${js(ctx.innerSel)},{opacity:0},{opacity:1,duration:${Math.min(framesToSeconds(DURATION_TOKENS[PRIMITIVE_STYLE_TOKENS.countRevealDuration], ctx.fps), ctx.durationSec)},ease:${js(ctx.ease)}},${ctx.startSec});` +
       `tl.to(o,{v:${num.value},duration:${ctx.durationSec},ease:${js(ctx.ease)},onUpdate:function(){el.textContent=fmt(o.v);}},${ctx.startSec});})();`;
     return [{ kind: "custom", code, easesUsed: [ctx.ease] }];
   },
@@ -301,7 +313,7 @@ export const pulseGlow: MotionPrimitive = {
   tags: { energy: "punchy", style: "organic" },
   defaults: { duration: "quick", easing: "enter.settle", distance: "nudge" },
   emit(ctx: EmitContext): GsapStep[] {
-    const glow = Math.max(12, Math.round(ctx.distancePx * 1.5));
+    const glow = Math.round(BLUR_TOKENS[PRIMITIVE_STYLE_TOKENS.glowBlur] * (ctx.stageHeight / 1080));
     const half = Math.round((ctx.durationSec / 2) * 1000) / 1000;
     return [
       {
@@ -335,9 +347,9 @@ export const underlineSweep: MotionPrimitive = {
     const code =
       `(function(){var el=document.querySelector(${js(ctx.innerSel)});if(!el)return;` +
       `el.style.backgroundImage="linear-gradient(var(--c-accent),var(--c-accent))";` +
-      `el.style.backgroundRepeat="no-repeat";el.style.backgroundPosition="0 95%";` +
-      `el.style.backgroundSize="0% 0.08em";` +
-      `tl.to(${js(ctx.innerSel)},{backgroundSize:"100% 0.08em",duration:${ctx.durationSec},ease:${js(ctx.ease)}},${ctx.startSec});})();`;
+      `el.style.backgroundRepeat="no-repeat";el.style.backgroundPosition="0 ${PRIMITIVE_STYLE_TOKENS.underlineYPercent}%";` +
+      `el.style.backgroundSize="0% ${PRIMITIVE_STYLE_TOKENS.underlineThicknessEm}em";` +
+      `tl.to(${js(ctx.innerSel)},{backgroundSize:"100% ${PRIMITIVE_STYLE_TOKENS.underlineThicknessEm}em",duration:${ctx.durationSec},ease:${js(ctx.ease)}},${ctx.startSec});})();`;
     return [{ kind: "custom", code, easesUsed: [ctx.ease] }];
   },
 };

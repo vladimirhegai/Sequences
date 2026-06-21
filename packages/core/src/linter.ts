@@ -11,8 +11,8 @@ import type { Project } from "./schema.ts";
 import { ARCHETYPES, PROFILES } from "./registry/index.ts";
 import { resolveProject } from "./materialize.ts";
 import { compile, allowedRuntimeEases } from "./compiler.ts";
-import { SAFE_MARGIN_FRAC, wordCount } from "./layout.ts";
-import { CHOREO_DEFAULTS, DURATION_TOKENS } from "./tokens.ts";
+import { SAFE_MARGIN_FRAC, snapBoxToGrid, wordCount } from "./layout.ts";
+import { CHOREO_DEFAULTS, scaleFrames30, STAGGER_TOKENS } from "./tokens.ts";
 import type { Command } from "./commands.ts";
 import type { ProjectStore } from "./store.ts";
 
@@ -60,19 +60,21 @@ export function lintProject(project: Project): Finding[] {
   const findings: Finding[] = [];
   const resolved = resolveProject(project);
   const { width: W, height: H } = project.meta;
+  const fps = project.meta.fps;
 
   for (const { scene, layers, schedule } of resolved) {
     const archetype = ARCHETYPES[scene.archetype]!;
-    const maxDur = archetype.duration.max;
+    const minDur = scaleFrames30(archetype.duration.min, fps);
+    const maxDur = scaleFrames30(archetype.duration.max, fps);
 
     // scene-duration-range - scene length within the archetype's heuristics.
-    if (scene.durationFrames < archetype.duration.min || scene.durationFrames > maxDur) {
-      const clamped = Math.min(Math.max(scene.durationFrames, archetype.duration.min), maxDur);
+    if (scene.durationFrames < minDur || scene.durationFrames > maxDur) {
+      const clamped = Math.min(Math.max(scene.durationFrames, minDur), maxDur);
       findings.push({
         rule: "scene-duration-range",
         severity: "warn",
         sceneId: scene.id,
-        message: `scene is ${scene.durationFrames}f; ${archetype.id} wants ${archetype.duration.min}-${maxDur}f`,
+        message: `scene is ${scene.durationFrames}f; ${archetype.id} wants ${minDur}-${maxDur}f at ${fps}fps`,
         fix: { type: "SetSceneDuration", sceneId: scene.id, durationFrames: clamped },
       });
     }
@@ -82,7 +84,7 @@ export function lintProject(project: Project): Finding[] {
       if (layer.kind !== "text" || layer.role === "decor") continue;
       const words = wordCount(layer.content.text ?? "");
       if (words === 0) continue;
-      const required = 12 + 9 * words;
+      const required = scaleFrames30(12 + 9 * words, fps);
       const enter = schedule.motions.find(
         (m) => m.layerId === layer.id && m.phase === "enter",
       );
@@ -129,6 +131,29 @@ export function lintProject(project: Project): Finding[] {
       });
     }
 
+    // stagger-required - every sibling entrance must respect at least tight.
+    const entrances = schedule.motions
+      .filter((motion) => motion.phase === "enter")
+      .sort((a, b) => a.startFrame - b.startFrame);
+    const staggerFloor = scaleFrames30(STAGGER_TOKENS.tight, fps);
+    const tooTight = entrances.some(
+      (motion, index) =>
+        index > 0 && motion.startFrame - entrances[index - 1]!.startFrame < staggerFloor,
+    );
+    if (tooTight) {
+      findings.push({
+        rule: "stagger-required",
+        severity: "warn",
+        sceneId: scene.id,
+        message: `sibling entrances must start at least ${staggerFloor}f apart`,
+        fix: {
+          type: "SetChoreography",
+          sceneId: scene.id,
+          choreography: { ...scene.choreography, stagger: PROFILES[project.motionProfile]!.defaults.stagger },
+        },
+      });
+    }
+
     // one-loud-motion sanity.
     if (schedule.diagnostics.heroNotLoudest) {
       findings.push({
@@ -165,8 +190,10 @@ export function lintProject(project: Project): Finding[] {
       if (layer.kind !== "text" && layer.kind !== "number") continue;
       const b = layer.box;
       if (b.x < mx || b.y < my || b.x + b.w > W - mx || b.y + b.h > H - my) {
-        const fixedX = Math.min(Math.max(b.x, mx), W - mx - b.w);
-        const fixedY = Math.min(Math.max(b.y, my), H - my - b.h);
+        const fixedW = Math.min(b.w, W - 2 * mx);
+        const fixedH = Math.min(b.h, H - 2 * my);
+        const fixedX = Math.min(Math.max(b.x, mx), W - mx - fixedW);
+        const fixedY = Math.min(Math.max(b.y, my), H - my - fixedH);
         findings.push({
           rule: "safe-area",
           severity: "warn",
@@ -177,31 +204,39 @@ export function lintProject(project: Project): Finding[] {
             type: "OverrideLayerBox",
             sceneId: scene.id,
             layerId: layer.id,
-            box: { x: Math.round(fixedX), y: Math.round(fixedY) },
+            box: {
+              x: Math.round(fixedX),
+              y: Math.round(fixedY),
+              ...(fixedW !== b.w ? { w: Math.round(fixedW) } : {}),
+              ...(fixedH !== b.h ? { h: Math.round(fixedH) } : {}),
+            },
           },
         });
       }
     }
 
-    // grid-snap: explicit layer position overrides should land on the 2px lattice.
+    // grid-snap: explicit horizontal geometry lands on the 12-column grid.
     for (const layer of layers) {
       const override = scene.overrides[layer.id]?.box;
       if (!override) continue;
-      const snapped: { x?: number; y?: number } = {};
-      if (override.x !== undefined && override.x % 2 !== 0) {
-        snapped.x = Math.round(override.x / 2) * 2;
-      }
-      if (override.y !== undefined && override.y % 2 !== 0) {
-        snapped.y = Math.round(override.y / 2) * 2;
-      }
-      if (snapped.x !== undefined || snapped.y !== undefined) {
+      const snappedGrid = snapBoxToGrid(W, layer.box);
+      const tolerance = Math.max(2, Math.round(W / 240));
+      if (
+        Math.abs(layer.box.x - snappedGrid.x) > tolerance ||
+        Math.abs(layer.box.w - snappedGrid.w) > tolerance
+      ) {
         findings.push({
           rule: "grid-snap",
           severity: "info",
           sceneId: scene.id,
           layerId: layer.id,
-          message: `layer "${layer.id}" override is off the 2px position lattice`,
-          fix: { type: "OverrideLayerBox", sceneId: scene.id, layerId: layer.id, box: snapped },
+          message: `layer "${layer.id}" is off the 12-column grid`,
+          fix: {
+            type: "OverrideLayerBox",
+            sceneId: scene.id,
+            layerId: layer.id,
+            box: snappedGrid,
+          },
         });
       }
     }
@@ -241,20 +276,42 @@ export function lintProject(project: Project): Finding[] {
 
   for (const { scene, layers, schedule } of resolved) {
     const animatedForeground = schedule.motions.filter((motion) => {
-      if (motion.phase !== "enter") return false;
+      if (motion.phase === "continuous") return false;
       const layer = layers.find((l) => l.id === motion.layerId);
       return layer !== undefined && layer.role !== "decor";
-    }).length;
-    if (animatedForeground > 7) {
+    });
+    const animatedFrames = animatedForeground.reduce(
+      (sum, motion) => sum + motion.durationFrames,
+      0,
+    );
+    const profile = PROFILES[project.motionProfile]!;
+    const density = animatedFrames / scene.durationFrames;
+    if (density > profile.defaults.motionDensityCeiling || animatedForeground.length > 7) {
+      const removableEmphasis = [...animatedForeground]
+        .filter((motion) => motion.phase === "emphasis")
+        .sort((a, b) => {
+          const rankA = layers.find((layer) => layer.id === a.layerId)?.rank ?? 0;
+          const rankB = layers.find((layer) => layer.id === b.layerId)?.rank ?? 0;
+          return rankB - rankA;
+        })[0];
       findings.push({
         rule: "motion-density",
-        severity: "info",
+        severity: "warn",
         sceneId: scene.id,
-        message: `${animatedForeground} foreground entrances in one scene; consider splitting the beat or hiding secondary layers`,
+        message: `motion density ${density.toFixed(2)} (${animatedForeground.length} foreground motions) exceeds ${profile.id} budget`,
+        ...(removableEmphasis
+          ? {
+              fix: {
+                type: "RemoveMotion",
+                sceneId: scene.id,
+                layerId: removableEmphasis.layerId,
+                phase: "emphasis",
+              } as Command,
+            }
+          : {}),
       });
     }
 
-    const profile = PROFILES[project.motionProfile];
     if (profile?.defaults.exits) {
       for (const layer of layers) {
         if (layer.role === "decor") continue;
@@ -265,14 +322,54 @@ export function lintProject(project: Project): Finding[] {
             sceneId: scene.id,
             layerId: layer.id,
             message: `profile "${profile.id}" uses exits, but "${layer.id}" has no exit motion`,
+            fix: {
+              type: "AddMotion",
+              sceneId: scene.id,
+              layerId: layer.id,
+              phase: "exit",
+              primitive: profile.selection[layer.role].exit?.primitive ?? "exit.fadeDown",
+            },
           });
         }
       }
     }
   }
 
+  // duration-tiling: nominal scene starts tile exactly and overlap windows fit
+  // inside both adjacent scenes.
+  const compiledForTiling = compile(project);
+  let nominalCursor = 0;
+  compiledForTiling.manifest.scenes.forEach((scene, index) => {
+    if (scene.startFrame !== nominalCursor) {
+      findings.push({
+        rule: "duration-tiling",
+        severity: "error",
+        sceneId: scene.id,
+        message: `scene starts at ${scene.startFrame}f; expected ${nominalCursor}f`,
+      });
+    }
+    nominalCursor += scene.durationFrames;
+    if (index > 0) {
+      const previous = compiledForTiling.manifest.scenes[index - 1]!;
+      const overlap = scene.startFrame - scene.clipStartFrame;
+      if (overlap >= previous.durationFrames || overlap >= scene.durationFrames) {
+        findings.push({
+          rule: "duration-tiling",
+          severity: "warn",
+          sceneId: scene.id,
+          message: `transition overlap ${overlap}f does not fit adjacent scene durations`,
+          fix: {
+            type: "SetSceneDuration",
+            sceneId: scene.id,
+            durationFrames: Math.max(scene.durationFrames, overlap + scaleFrames30(15, fps)),
+          },
+        });
+      }
+    }
+  });
+
   const allowed = allowedRuntimeEases();
-  const compiled = compile(project);
+  const compiled = compiledForTiling;
   for (const step of compiled.steps) {
     const eases =
       step.kind === "custom" ? step.easesUsed : step.kind === "set" ? [] : [step.ease];

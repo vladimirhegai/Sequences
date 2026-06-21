@@ -23,6 +23,9 @@ page.on("console", (msg) => {
   if (msg.type() === "error") errors.push(msg.text());
 });
 page.on("pageerror", (err) => errors.push(String(err)));
+page.on("response", (response) => {
+  if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);
+});
 
 await page.goto(`http://localhost:${port}/`, { waitUntil: "domcontentloaded", timeout: 20000 });
 await new Promise((r) => setTimeout(r, 3500));
@@ -39,8 +42,10 @@ const out = await page.evaluate(async () => {
   result.launcherButtons = [...document.querySelectorAll("#launcher .lr-foot .btn")].map((b) => b.textContent.trim());
 
   // open the demo (first project card) → workspace
-  const demoCard = document.querySelector("#launcher .lr-card");
-  demoCard.click();
+  const projectCard =
+    document.querySelector("#launcher .lr-card.current") ??
+    document.querySelector("#launcher .lr-card");
+  projectCard.click();
   await sleep(700);
   result.launcherClosedAfterOpen = $("launcher").classList.contains("hidden");
 
@@ -136,7 +141,11 @@ const out = await page.evaluate(async () => {
   document.querySelector("#page-extensions .ext-card .ext-view-btn")?.click();
   await sleep(250);
   result.extensions.viewModal = !!document.querySelector("#modalBackdrop .ext-view-modal");
-  document.querySelector("#modalBackdrop .btn-ghost")?.click();
+  // The preview is a live compiled composition, not a static image.
+  const previewPlayer = document.querySelector("#modalBackdrop .ext-preview-stage hyperframes-player");
+  result.extensions.previewPlayer = !!previewPlayer;
+  result.extensions.previewSrc = previewPlayer?.getAttribute("src") ?? null;
+  document.querySelector("#modalBackdrop .modal-foot .btn-ghost:last-child")?.click();
 
   await go("Timeline");
   result.timelineBack = document.querySelectorAll("#page-timeline .tl-scene").length;

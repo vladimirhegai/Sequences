@@ -22,6 +22,9 @@ page.on("console", (msg) => {
   if (msg.type() === "error") errors.push(msg.text());
 });
 page.on("pageerror", (err) => errors.push(String(err)));
+page.on("response", (response) => {
+  if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);
+});
 
 await page.goto(`http://localhost:${port}/`, { waitUntil: "domcontentloaded", timeout: 20000 });
 await new Promise((r) => setTimeout(r, 3500));
@@ -95,3 +98,17 @@ const interact = await page.evaluate(async () => {
 
 console.log(JSON.stringify({ checks, interact, errors }, null, 2));
 await browser.close();
+if (
+  errors.length > 0 ||
+  !checks.title ||
+  checks.scenes === 0 ||
+  checks.laneRows === 0 ||
+  !checks.player ||
+  checks.tabs.length === 0 ||
+  checks.inspectorFields === 0 ||
+  !interact.selectedAfterClick ||
+  interact.projectMenu.length === 0 ||
+  interact.modalProviderCards === 0
+) {
+  process.exitCode = 1;
+}

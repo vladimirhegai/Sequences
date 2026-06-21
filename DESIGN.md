@@ -4,6 +4,14 @@
 > the shipped studio CSS variables in `apps/studio/src/static/styles.css` — change
 > them in both places together.
 
+> **June 21, 2026 rewrite status:** the shipped UI is now treated as a
+> functional prototype. The visual language, accessibility rules, command
+> model, preview-first hierarchy, and scarcity of primary actions remain
+> durable. Exact page boundaries, panel placement, dimensions, and components
+> are hypotheses to test during the interface-first Phase 1.5 described in
+> `UI_REWRITE_PLAN.md`. New UI work does not need to preserve the current DOM or
+> layout, but it must preserve the deterministic product contracts.
+
 ## Overview
 
 Sequences is a local-first, agent-first motion graphics studio for SaaS product video.
@@ -17,8 +25,9 @@ hairline borders, and a single neutral **silver** that carries selection, focus,
 action through *brightness*, not saturation. Color appears only where it means something —
 the user's preview, a timeline clip lane, a linter state.
 
-The signature surface is the **Timeline workspace**, and its layout is mandatory:
-**agent left · viewer center · inspector right · timeline along the bottom.** The agent is not
+The signature surface is the **Timeline workspace**. Its current layout—
+**agent left · viewer center · inspector right · timeline along the bottom**—is
+the primary rewrite hypothesis, not a mandatory final arrangement. The agent is not
 a chat toy; it is a command layer that proposes beat sheets and reversible, inspectable diffs.
 Every mutation — agent edit, drag, inspector change, MCP call — is the same typed command underneath.
 
@@ -137,7 +146,7 @@ Marketing gets the only large type.
 **The app shell** is full-viewport, no centered container — fixed regions + resizable split panes
 (drag any panel edge; sizes persist; double-click resets). Top bar `46px`, status bar `26px`.
 
-**Timeline workspace grid (mandatory):**
+**Current Timeline workspace grid (rewrite hypothesis):**
 ```
 ┌─ top bar (46) ───────────────────────────────────────────────┐
 ├──────────────┬───────────────────────────┬──────────────────┤
@@ -242,6 +251,7 @@ The **viewer frame** preserves output aspect (16:9 / 9:16 / 1:1 / custom), lette
 - **`menu`** *(popup)* — `{color.surface-card}`, `{color.hairline-hi}`, `{radius.md}`, menu shadow; options 7px-padded with `{type.label}` name + `{color.mute}` description; selected → `{color.silver-soft}` + check in `{color.silver-hi}`; uppercase `{type.micro}` group labels.
 - **`command-palette`** — same shell at `{radius.lg}`, ~720px: 48px borderless search row, 40px rows (active → `{color.surface-active}`), keycap hints right. Exposes every command + NL fallback.
 - **`modal`** — `{color.surface-raised}`, `{color.hairline-hi}`, 14px radius, deep shadow, `modalIn` 0.18s ease; header with soft-silver icon tile + title/sub, scrollable body, footer on `{color.surface}`.
+- **`extension-preview` modal** — the Extensions "View": a 16:9 stage on `{color.canvas}` (`{radius.lg}`, 1px `{color.hairline-2}`) playing the extension's **real compiled motion** on loop (never a pre-rendered image), summary in `{type.caption}` + mono id chip below, Replay/Close in the footer.
 - **`toast`** — `{color.surface-active}` + `{color.hairline-hi}`, `{radius.lg}`, bottom-center, `toastIn` 0.22s; error variant borders `{color.bad}`.
 - **`keycap`** — the one 3D surface: dark vertical gradient + `{color.hairline-hi}`, mono `{color.body}`, 20px, `{radius.xs}`. For `⌘K`, `Space`, `Esc`, frame-step keys, etc.
 
@@ -269,7 +279,9 @@ Dark-first, same `{color.canvas}` base, editorial spacing (`{space.section}`).
 - Keep the chrome monochrome; let the user's video be the only color on screen.
 - Use `{color.silver}` only for selection, focus, primary action, and the brand mark — keep it scarce.
 - Build hierarchy from the surface ladder, hairlines, and text brightness before weight/size.
-- Hold the mandatory Timeline layout: agent left · viewer center · inspector right · timeline bottom.
+- Start from the Timeline hypothesis: agent left · viewer center · inspector
+  right · timeline bottom, then change it only when workflow testing supports
+  a clearer arrangement.
 - Make every AI change an inspectable, reversible diff; route every mutation through a typed command.
 - Use mono for time, frames, IDs, tokens, logs; pair semantic color with text or icon.
 - Dogfood the motion system for chrome transitions; respect `prefers-reduced-motion`.
@@ -277,7 +289,8 @@ Dark-first, same `{color.canvas}` base, editorial spacing (`{space.section}`).
 **Don't**
 - Don't introduce a chromatic brand hue, neon gradient, AI sparkle, bot mascot, or mesh background.
 - Don't make the agent panel louder than the viewer; don't use big rounded chat bubbles.
-- Don't put the inspector on the left or the agent on the right in the Timeline workspace.
+- Don't move major regions merely for novelty; require a workflow reason and
+  test the result.
 - Don't ship a generic Tailwind dashboard or a black-box clip with no editable scene graph.
 - Don't drop-shadow normal panels/cards; don't pill-round every control.
 - Don't use color as the only signal for clip type, lint, or render state.
@@ -318,4 +331,7 @@ Touch: primary buttons ≥44px; timeline rows ≥32px interactive; keyframes ≥
 - Light mode is docs/legal only — never the editor.
 - Alpha-over-dark tokens (silver/semantic softs) need contrast verification in implementation.
 - Timeline clip palette may need retuning once real clips, waveforms, and beat markers coexist.
-- References/Design/Extensions ship as honest Phase-1/3 shells; empty states must state that scope, not fake features.
+- References remains a shell. Design is a functional SVG sidecar editor.
+  Extensions is a working per-project registry scope and live-preview surface.
+- Exact control placement and navigation remain unresolved until the Phase 1.5
+  workflow prototypes are tested.

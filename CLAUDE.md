@@ -6,18 +6,19 @@ visual editor fixes the last 10% non-destructively.**
 
 ## Read first (don't skip)
 
-- [SEQUENCES_MASTER_PLAN.md](SEQUENCES_MASTER_PLAN.md) — the product/architecture
-  bible (what & why). Skim the part relevant to your task; it's long.
-- [README_dev.md](README_dev.md) — what is **actually built**, the substrate
-  contract, the laws, and the ordered backlog. Start here for "how do I…".
+- [CURRENT_STATE.md](CURRENT_STATE.md) — exhaustive description of what is
+  actually present in the working tree.
+- [UI_REWRITE_PLAN.md](UI_REWRITE_PLAN.md) — the current product priority:
+  redesign the Studio before Phase 2.
 - [DESIGN.md](DESIGN.md) — the single source for how the studio looks & feels.
-  **Any UI/CSS work must obey it**; tokens mirror
-  [styles.css](apps/studio/src/static/styles.css) 1:1 — edit both together.
+  Preserve its durable principles, but treat the current component/layout
+  specification as a rewrite hypothesis rather than immutable structure.
+- `README_dev.md` and `SEQUENCES_MASTER_PLAN.md` are local working references.
+  The former is an implementation guide; the latter is historical/aspirational.
 
-**When you finish a feature, update the docs you touched the contract of:**
-add a dated implementation-pass note to README_dev.md (§ top), tick the backlog
-(§7), and reflect new design decisions in DESIGN.md. The plan/README/DESIGN are
-load-bearing — drift here is a real bug.
+When a contract changes, update `CURRENT_STATE.md`, the relevant public guide,
+and `DESIGN.md` or `UI_REWRITE_PLAN.md` when the product interaction changes.
+Documentation drift is a bug.
 
 ## The 8 laws (these ARE the product — never break them)
 
@@ -104,8 +105,8 @@ npx sequences <init|compile|lint --fix|render|thumbs|plan|providers|mcp|studio|a
 Monochrome graphite + one neutral **silver** accent (`{color.silver}` `#c9cfd9`)
 for selection/focus/the single primary action — **no chromatic brand hue, no
 neon, no AI sparkle, no mesh.** The chrome is monochrome so the user's video is
-the only color on screen. Mandatory Timeline layout: **agent left · viewer
-center · inspector right · timeline bottom.** Every editor component must answer:
-does it mutate, inspect, preview, or command the project? If it mutates, it maps
-to a typed command. Reference tokens by name (`{color.silver-line}`,
-`{radius.md}`, `{type.mono}`) — never paraphrase hexes.
+the only color on screen. The current four-region Timeline layout is the
+starting hypothesis for the rewrite, not an untouchable result. Every editor
+component must answer: does it mutate, inspect, preview, or command the project?
+If it mutates, it maps to a typed command. Reference tokens by name
+(`{color.silver-line}`, `{radius.md}`, `{type.mono}`).

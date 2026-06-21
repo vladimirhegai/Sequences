@@ -32,6 +32,25 @@ export interface CompleteOptions {
   /** Per-request thinking/effort override. "auto" keeps the provider default. */
   thinkingMode?: "auto" | "low" | "medium" | "high" | "xhigh" | "max";
   timeoutMs?: number;
+  cacheHint?: string;
+}
+
+export interface ProviderMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface ProviderTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface ProviderRequest {
+  messages: ProviderMessage[];
+  tools?: ProviderTool[];
+  toolChoice?: string;
+  cacheHint?: string;
 }
 
 export interface AgentProvider {
@@ -43,6 +62,7 @@ export interface AgentProvider {
   /** Quick availability probe (CLI on PATH / key in env). */
   detect(): Promise<{ available: boolean; detail: string }>;
   complete(prompt: string, options?: CompleteOptions): Promise<string>;
+  completeRequest?(request: ProviderRequest, options?: CompleteOptions): Promise<string>;
 }
 
 export interface ProviderInfo {
@@ -55,6 +75,35 @@ export interface ProviderInfo {
 }
 
 const DEFAULT_TIMEOUT_MS = 240_000;
+
+export function completeProviderRequest(
+  provider: AgentProvider,
+  request: ProviderRequest,
+  options: CompleteOptions = {},
+): Promise<string> {
+  if (provider.completeRequest) {
+    return provider.completeRequest(request, {
+      ...options,
+      cacheHint: options.cacheHint ?? request.cacheHint,
+    });
+  }
+  const prompt = [
+    ...request.messages.map((message) => `${message.role.toUpperCase()}:\n${message.content}`),
+    ...(request.tools?.length
+      ? [
+          "TOOLS:",
+          JSON.stringify(request.tools),
+          request.toolChoice ? `TOOL CHOICE: ${request.toolChoice}` : "",
+        ]
+      : []),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  return provider.complete(prompt, {
+    ...options,
+    cacheHint: options.cacheHint ?? request.cacheHint,
+  });
+}
 
 function modelOverride(options: CompleteOptions): string | undefined {
   const model = options.model?.trim();

@@ -3,6 +3,7 @@ import { applyCommand, CommandSchema, type Command } from "../src/commands.ts";
 import { ProjectStore, type EventEntry } from "../src/store.ts";
 import { createDefaultProject } from "../src/defaults.ts";
 import type { Project } from "../src/schema.ts";
+import { testAsset } from "./helpers.ts";
 
 function freshProject(): Project {
   return createDefaultProject({ title: "Cmd Test", brandName: "Acme" });
@@ -42,7 +43,7 @@ const COMMANDS: Command[] = [
   },
   { type: "SetChoreography", sceneId: "hook", choreography: { stagger: "loose" } },
   { type: "SetSceneCamera", sceneId: "hook", camera: { move: "pushIn", scale: "pop" } },
-  { type: "AddAsset", asset: { id: "shot", path: "assets/shot.png", kind: "image" } },
+  { type: "AddAsset", asset: testAsset("shot", "assets/shot.png") },
 ];
 
 describe("command API (T5)", () => {
@@ -108,16 +109,15 @@ describe("command API (T5)", () => {
 
   it("RemoveAsset roundtrips (and restores position), duplicates are rejected", () => {
     const seeded = freshProject();
-    seeded.assets.push(
-      { id: "a", path: "assets/a.png", kind: "image" },
-      { id: "b", path: "assets/b.png", kind: "image" },
-    );
-    const { project: after, inverse } = applyCommand(seeded, { type: "RemoveAsset", assetId: "a" });
-    expect(after.assets.map((x) => x.id)).toEqual(["b"]);
+    const a = testAsset("a", "assets/a.png");
+    const b = testAsset("b", "assets/b.png");
+    seeded.assets.push(a, b);
+    const { project: after, inverse } = applyCommand(seeded, { type: "RemoveAsset", assetId: a.id });
+    expect(after.assets.map((x) => x.id)).toEqual([b.id]);
     const { project: restored } = applyCommand(after, inverse);
     expect(restored).toEqual(seeded);
     expect(() =>
-      applyCommand(seeded, { type: "AddAsset", asset: { id: "b", path: "assets/b2.png", kind: "image" } }),
+      applyCommand(seeded, { type: "AddAsset", asset: { ...testAsset("b2", "assets/b2.png"), id: b.id } }),
     ).toThrow(/already exists/);
   });
 
@@ -132,5 +132,120 @@ describe("command API (T5)", () => {
       primitive: "exit.fadeDown",
     });
     expect(outcome.ok).toBe(false);
+  });
+
+  it("removing and undoing a scene restores its transition exactly", () => {
+    const project = freshProject();
+    project.transitions["stat"] = "fade";
+    const store = new ProjectStore(project);
+    expect(store.apply({ type: "RemoveScene", sceneId: "stat" }).ok).toBe(true);
+    expect(store.project.transitions["stat"]).toBeUndefined();
+    expect(store.undo()).toBe(true);
+    expect(store.project).toEqual(project);
+  });
+
+  it("rejects direct command references to disabled extensions", () => {
+    const project = freshProject();
+    project.extensions.enabled = [
+      "hook-opener",
+      "stat-callout",
+      "logo-sting-cta",
+      "crisp-saas",
+      "enter.fadeIn",
+    ];
+    const store = new ProjectStore(project);
+    const outcome = store.apply({
+      type: "SwapMotion",
+      sceneId: "hook",
+      layerId: "headline",
+      phase: "enter",
+      primitive: "enter.scaleIn",
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.errors[0]?.message).toContain("extension disabled");
+  });
+
+  it("evaluates extension enablement in Batch command order", () => {
+    const project = freshProject();
+    project.extensions.enabled = [
+      "hook-opener",
+      "stat-callout",
+      "logo-sting-cta",
+      "crisp-saas",
+      "enter.fadeIn",
+    ];
+    const store = new ProjectStore(project);
+    const enabled = [...project.extensions.enabled, "enter.scaleIn"];
+    const outcome = store.apply({
+      type: "Batch",
+      commands: [
+        { type: "SetEnabledExtensions", enabled },
+        {
+          type: "SwapMotion",
+          sceneId: "hook",
+          layerId: "headline",
+          phase: "enter",
+          primitive: "enter.scaleIn",
+        },
+      ],
+    });
+    expect(outcome.ok).toBe(true);
+  });
+
+  it("continues event sequence numbers from a durable starting point", () => {
+    const events: EventEntry[] = [];
+    const store = new ProjectStore(freshProject(), (event) => events.push(event), 41);
+    store.apply({ type: "SetSceneDuration", sceneId: "hook", durationFrames: 120 });
+    expect(events[0]?.seq).toBe(42);
+    expect(store.eventCount).toBe(42);
+  });
+
+  it("does not expose mutable project state outside the command pathway", () => {
+    const store = new ProjectStore(freshProject());
+    expect(() => {
+      store.project.meta.title = "bypassed";
+    }).toThrow();
+    expect(store.project.meta.title).toBe("Cmd Test");
+  });
+
+  it("removing emphasis also clears its schedule and undo restores it exactly", () => {
+    const before = freshProject();
+    before.scenes[0]!.overrides.headline = {
+      emphasisPrimitive: "emphasis.pop",
+      emphasisAtFrame: 42,
+      emphasisDuration: "slow",
+    };
+    const removed = applyCommand(before, {
+      type: "RemoveMotion",
+      sceneId: "hook",
+      layerId: "headline",
+      phase: "emphasis",
+    });
+    expect(removed.project.scenes[0]!.overrides.headline).toBeUndefined();
+    expect(applyCommand(removed.project, removed.inverse).project).toEqual(before);
+  });
+
+  it("rejects phase-incompatible motion parameter values", () => {
+    const store = new ProjectStore(freshProject());
+    expect(
+      store.apply({
+        type: "SetMotionParam",
+        sceneId: "hook",
+        layerId: "headline",
+        phase: "enter",
+        param: "atFrame",
+        value: 12,
+      }).ok,
+    ).toBe(false);
+    expect(
+      store.apply({
+        type: "SetMotionParam",
+        sceneId: "hook",
+        layerId: "headline",
+        phase: "emphasis",
+        param: "duration",
+        value: 12,
+      }).ok,
+    ).toBe(false);
   });
 });

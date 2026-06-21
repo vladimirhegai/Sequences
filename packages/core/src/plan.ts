@@ -22,6 +22,7 @@ import {
   promptCatalog,
 } from "./registry/index.ts";
 import type { Command } from "./commands.ts";
+import { scaleFrames30 } from "./tokens.ts";
 
 export interface PlanningContextOptions {
   /** Optional deterministic storyboard serialization supplied by the host app/MCP server. */
@@ -100,6 +101,26 @@ export const PlanSchema = z.object({
 export type Plan = z.infer<typeof PlanSchema>;
 
 export class PlanError extends Error {}
+
+export function tightenPlanCopy(plan: Plan): Plan {
+  const next = structuredClone(plan);
+  for (const scene of next.scenes) {
+    const archetype = ARCHETYPES[scene.archetype];
+    if (!archetype) continue;
+    for (const [slot, spec] of Object.entries(archetype.slots)) {
+      const value = scene.slots[slot];
+      if (spec.maxWords === undefined) continue;
+      if (typeof value === "string") {
+        scene.slots[slot] = value.trim().split(/\s+/).slice(0, spec.maxWords).join(" ");
+      } else if (Array.isArray(value)) {
+        scene.slots[slot] = value.map((item) =>
+          item.trim().split(/\s+/).slice(0, spec.maxWords).join(" "),
+        );
+      }
+    }
+  }
+  return next;
+}
 
 function parseEnabledSet(options: ParsePlanOptions): Set<string> | null {
   if (options.enabledExtensionIds !== undefined) {
@@ -196,7 +217,8 @@ export function planToCommands(project: Project, plan: Plan): Command {
         id: sceneIds[i]!,
         archetype: scene.archetype,
         ...(scene.layout ? { layout: scene.layout } : {}),
-        durationFrames: scene.durationFrames ?? archetype.duration.ideal,
+        durationFrames:
+          scene.durationFrames ?? scaleFrames30(archetype.duration.ideal, project.meta.fps),
         slots: scene.slots,
         choreography: {},
         overrides: {},
@@ -214,7 +236,24 @@ export function planningContext(project: Project, options: PlanningContextOption
   const assets =
     project.assets.length === 0
       ? "(none — archetypes needing media are unavailable)"
-      : project.assets.map((a) => `- ${a.id} (${a.kind}): ${a.path}`).join("\n");
+      : project.assets
+          .map((asset) => {
+            const metadata = [
+              asset.metadata.width && asset.metadata.height
+                ? `${asset.metadata.width}x${asset.metadata.height}`
+                : "",
+              asset.metadata.durationSec !== undefined
+                ? `${asset.metadata.durationSec.toFixed(2)}s`
+                : "",
+              asset.metadata.dominantColors.length
+                ? `colors ${asset.metadata.dominantColors.join(",")}`
+                : "",
+              asset.metadata.ocrText ? `OCR "${asset.metadata.ocrText.slice(0, 160)}"` : "",
+              asset.metadata.cacheHint ? `cache ${asset.metadata.cacheHint}` : "",
+            ].filter(Boolean);
+            return `- ${asset.id} (${asset.kind}): ${asset.path}${metadata.length ? ` [${metadata.join("; ")}]` : ""}`;
+          })
+          .join("\n");
   const storyboardText = options.storyboardText?.trim();
   const lines = [
     "# Sequences planning context",
@@ -224,7 +263,7 @@ export function planningContext(project: Project, options: PlanningContextOption
     "## Enabled extensions for this project",
     "Only use the extension ids shown in the catalog below. Disabled extensions are not available to you.",
     "",
-    promptCatalog({ enabledIds }),
+    promptCatalog({ enabledIds, fps: project.meta.fps }),
     "",
     "## Project",
     `- title: ${project.meta.title}`,
@@ -278,32 +317,40 @@ export function buildPlanPrompt(brief: string, project: Project): string {
 
 /** Extract the first balanced top-level JSON object from model/CLI output. */
 export function extractJsonObject(text: string): unknown {
-  const start = text.indexOf("{");
-  if (start === -1) throw new PlanError("no JSON object found in the response");
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) {
-        const candidate = text.slice(start, i + 1);
-        try {
-          return JSON.parse(candidate);
-        } catch (err) {
-          throw new PlanError(`response contained malformed JSON: ${String(err)}`);
+  let sawObjectStart = false;
+  let lastParseError: unknown;
+  for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
+    sawObjectStart = true;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i]!;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          const candidate = text.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch (err) {
+            lastParseError = err;
+            break;
+          }
         }
       }
     }
+  }
+  if (!sawObjectStart) throw new PlanError("no JSON object found in the response");
+  if (lastParseError) {
+    throw new PlanError(`response contained malformed JSON: ${String(lastParseError)}`);
   }
   throw new PlanError("no complete JSON object found in the response");
 }

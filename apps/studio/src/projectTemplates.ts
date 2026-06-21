@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDefaultProject, createShowcaseProject } from "@sequences/core";
 import { saveProject } from "./projectIo.ts";
+import { contentAssetId, extractAssetMetadata, sha256File } from "./assetMetadata.ts";
 
 const STUDIO_SRC_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(STUDIO_SRC_DIR, "../../..");
@@ -42,9 +43,24 @@ export function initializeProject(
   const project = factory({
     title: name,
     brandName: name,
-    screenshotAssetId: "dashboard",
+    screenshotAssetId: null,
   });
-  project.assets.push({ id: "dashboard", path: "assets/dashboard.svg", kind: "image" });
+  const dashboardFile = path.join(dir, "assets", "dashboard.svg");
+  const dashboardHash = sha256File(dashboardFile);
+  const dashboardId = contentAssetId(dashboardHash);
+  project.assets.push({
+    id: dashboardId,
+    path: "assets/dashboard.svg",
+    kind: "image",
+    contentHash: dashboardHash,
+    metadata: extractAssetMetadata(dashboardFile, "image"),
+  });
+  const withScreenshot = factory({
+    title: name,
+    brandName: name,
+    screenshotAssetId: dashboardId,
+  });
+  project.scenes = withScreenshot.scenes;
 
   saveProject(dir, project);
   fs.writeFileSync(path.join(dir, "events.log"), "");
