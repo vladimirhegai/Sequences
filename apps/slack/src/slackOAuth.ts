@@ -152,9 +152,11 @@ export async function handleSlackOAuthRequest(
 
   if (url.pathname === "/slack/install") {
     const { state, nonce } = makeState(url.searchParams.get("team") ?? undefined, oauth.stateSecret);
-    // oauth.v2.user.access currently enforces the v2 authorization endpoint.
-    // Supplying only user-classified scopes yields a user-only grant.
-    const authorize = new URL("https://slack.com/oauth/v2/authorize");
+    // Slack's hosted-MCP OAuth metadata (mcp.slack.com/.well-known/
+    // oauth-authorization-server) sets authorization_endpoint to /oauth/v2_user/
+    // authorize and token_endpoint to oauth.v2.user.access. The v2_user endpoint
+    // issues a user-only grant for the requested user scopes.
+    const authorize = new URL("https://slack.com/oauth/v2_user/authorize");
     authorize.searchParams.set("client_id", oauth.clientId);
     authorize.searchParams.set("scope", USER_SCOPES.join(","));
     authorize.searchParams.set("redirect_uri", oauth.redirectUri);

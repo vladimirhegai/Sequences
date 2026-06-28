@@ -12,6 +12,15 @@ RUN apt-get update \
     fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/*
 
+# Headless Chromium runs as root in this container and refuses to start without
+# --no-sandbox (crbug.com/638180). The producer launches whatever
+# PUPPETEER_EXECUTABLE_PATH points at, so wrap chromium to always inject the
+# container-safe flags (--disable-dev-shm-usage avoids crashes on Railway's
+# small /dev/shm).
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage "$@"\n' \
+      > /usr/local/bin/chromium-no-sandbox \
+  && chmod +x /usr/local/bin/chromium-no-sandbox
+
 WORKDIR /app
 
 # Never download a bundled Chromium during install — the image already has one,
@@ -20,7 +29,7 @@ WORKDIR /app
 ENV PUPPETEER_SKIP_DOWNLOAD=1 \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
-COPY --chown=node:node . .
+COPY . .
 
 # Install the whole workspace from the committed lockfile. There is no compile
 # step: the slack app runs `.ts` directly via tsx, and typecheck stays in CI.
@@ -28,14 +37,17 @@ RUN npm ci
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium-no-sandbox \
     PRODUCER_LOW_MEMORY_MODE=true \
     SLACK_SEQUENCES_DATA_DIR=/data
 
 # Persistent volume for projects, renders, encrypted user tokens, and the job map.
-RUN mkdir -p /data && chown node:node /data
+# Run as root (the image default — note no USER directive): Railway mounts the
+# volume root-owned, so a non-root user can't write /data
+# (docs.railway.com/volumes/reference), and headless Chromium also needs root to
+# start under the producer. RAILWAY_RUN_UID=0 is the alternative if a USER is set.
+RUN mkdir -p /data
 VOLUME ["/data"]
-USER node
 
 # Railway injects PORT; the HTTP server (health + OAuth) binds it on 0.0.0.0.
 CMD ["npm", "run", "start", "-w", "@sequences/slack"]

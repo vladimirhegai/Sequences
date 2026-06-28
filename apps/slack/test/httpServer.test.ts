@@ -57,7 +57,7 @@ describe("deployment HTTP server", () => {
 
     expect(response.status).toBe(302);
     const location = new URL(response.headers.get("location")!);
-    expect(location.origin + location.pathname).toBe("https://slack.com/oauth/v2/authorize");
+    expect(location.origin + location.pathname).toBe("https://slack.com/oauth/v2_user/authorize");
     expect(location.searchParams.get("client_id")).toBe("123.456");
     expect(location.searchParams.get("scope")).toContain("search:read.public");
     expect(location.searchParams.get("redirect_uri")).toBe(

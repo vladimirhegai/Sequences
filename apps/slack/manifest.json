@@ -16,7 +16,7 @@
       {
         "command": "/sequences",
         "description": "Turn a launch into an on-brand video",
-        "usage_hint": "[demo | help]",
+        "usage_hint": "[demo | mcp-test | help]",
         "should_escape": false
       }
     ],

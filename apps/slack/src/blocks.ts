@@ -9,6 +9,7 @@ import type {
   Tone,
   ToolCallReceipt,
 } from "./orchestrator.ts";
+import type { CheckStatus, DiagnosticsReport } from "./diagnostics.ts";
 
 export interface ModalContext {
   channel: string;
@@ -39,6 +40,27 @@ function escapeMrkdwn(text: string): string {
 
 function codeBlock(text: string): string {
   return "```\n" + text.replaceAll("```", "'''").slice(0, 2_500) + "\n```";
+}
+
+const STATUS_ICON: Record<CheckStatus, string> = { ok: "✅", warn: "⚠️", fail: "❌" };
+
+/** Render a `/sequences mcp-test` self-check report as a compact Block Kit board. */
+export function diagnosticsBlocks(report: DiagnosticsReport): KnownBlock[] {
+  const headline = report.healthy
+    ? "✅ *All core services healthy* — good to continue."
+    : "❌ *Some core services need attention.*";
+  const lines = report.checks
+    .map((check) => `${STATUS_ICON[check.status]} *${escapeMrkdwn(check.label)}* — ${escapeMrkdwn(check.detail)}`)
+    .join("\n");
+  return [
+    { type: "header", text: plain("Sequences self-check") },
+    { type: "section", text: { type: "mrkdwn", text: headline } },
+    { type: "section", text: { type: "mrkdwn", text: lines } },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "Run `/sequences demo` for a full end-to-end render smoke." }],
+    },
+  ];
 }
 
 /** The /sequences create modal. private_metadata carries where to post back. */

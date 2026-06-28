@@ -45,6 +45,11 @@ rm -rf "$STAGE/apps/slack/node_modules" \
 cp "$ROOT/tsconfig.base.json" "$STAGE/tsconfig.base.json"
 cp "$ROOT/.gitignore"         "$STAGE/.gitignore"
 
+# Deployment files (Railway builds the public repo from these).
+cp "$ROOT/Dockerfile"     "$STAGE/Dockerfile"
+cp "$ROOT/railway.json"   "$STAGE/railway.json"
+cp "$ROOT/.dockerignore"  "$STAGE/.dockerignore"
+
 # --- tailored root files (this monorepo is the single source of truth) ----
 cat > "$STAGE/package.json" <<'EOF'
 {

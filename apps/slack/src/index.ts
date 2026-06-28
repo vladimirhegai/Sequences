@@ -10,6 +10,7 @@ import {
   buildReviseModal,
   buildShareModal,
   buildingBlocks,
+  diagnosticsBlocks,
   errorBlocks,
   hdReadyBlocks,
   resultBlocks,
@@ -40,6 +41,7 @@ import { summarizeThread, type ThreadMessage } from "./thread.ts";
 import { getSlackUserToken } from "./slackTokenStore.ts";
 import { slackInstallUrl } from "./slackOAuth.ts";
 import { retrieveSlackMcpContext } from "./slackMcpContext.ts";
+import { runDiagnostics } from "./diagnostics.ts";
 
 const botToken = process.env.SLACK_BOT_TOKEN;
 const appToken = process.env.SLACK_APP_TOKEN;
@@ -691,9 +693,31 @@ app.command("/sequences", async ({ command, ack, client, respond }) => {
         "*Sequences — from shipped to shown.*\n" +
         "• `/sequences` — open the modal and turn a launch into an on-brand video.\n" +
         "• `/sequences demo` — build a ready-made *Relay v2* launch reel (no setup).\n" +
+        "• `/sequences mcp-test` — self-check every service (MCP, render host, Slack, config).\n" +
         "• *🎬 Make a launch video* message shortcut — draft a video from any message.\n" +
         "• Reply in a reel’s thread to revise it; common tweaks like “shorter” and “warmer” need no model.",
     });
+    return;
+  }
+
+  if (text === "mcp-test" || text === "check" || text === "doctor") {
+    await respond({ response_type: "ephemeral", text: "Running the Sequences self-check… :stethoscope:" });
+    runInBackground(
+      "/sequences mcp-test",
+      (async () => {
+        const report = await runDiagnostics({
+          client,
+          teamId: command.team_id,
+          userId: command.user_id,
+        });
+        await respond({
+          response_type: "ephemeral",
+          replace_original: false,
+          blocks: diagnosticsBlocks(report),
+          text: report.healthy ? "Self-check: all core services healthy." : "Self-check: some services need attention.",
+        });
+      })(),
+    );
     return;
   }
 

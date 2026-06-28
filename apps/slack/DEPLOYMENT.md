@@ -87,9 +87,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # 
 - `https://YOUR-SERVICE.up.railway.app/healthz` returns `ready` (it returns
   `starting` with HTTP 503 until the Slack socket connects).
 - In a **public** channel (or after `/invite @Sequences` in a private one):
+  - `/sequences mcp-test` runs a self-check and posts a pass/warn/fail board for
+    every service (Slack API, Sequences MCP engine, render host, planning brain,
+    hosted MCP, token encryption, data dir) — the fastest "is it healthy?" signal.
   - `/sequences demo` renders without any user OAuth (deterministic fallback).
   - `/sequences` after `/slack/install` creates a real video; the result shows a
     **Slack context (hosted MCP)** receipt and a Sequences MCP build trace.
+
+> The image runs as **root** by design (no `USER` directive): Railway mounts the
+> `/data` volume root-owned, and headless Chromium needs root + `--no-sandbox`
+> (injected via a wrapper at `/usr/local/bin/chromium-no-sandbox`). Nothing to
+> configure — it's baked into the `Dockerfile`.
 
 ## Test the image locally (optional, before pushing)
 
