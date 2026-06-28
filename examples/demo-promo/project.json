@@ -1,382 +1,143 @@
 {
   "schemaVersion": 3,
   "meta": {
-    "title": "Pulse",
+    "title": "Relay",
     "width": 1920,
     "height": 1080,
     "fps": 30,
     "background": "surface"
   },
   "brand": {
-    "name": "Pulse",
+    "name": "Relay",
     "colors": {
-      "primary": "#FF4FD8",
-      "surface": "#08080C",
-      "text": "#FFFDF5",
-      "muted": "#91F7FF",
-      "accent": "#C8FF3D"
+      "primary": "#1C2230",
+      "surface": "#0A0B0D",
+      "text": "#ECEEF2",
+      "muted": "#8A919C",
+      "accent": "#5C8DFF"
     },
     "fonts": {
-      "display": "Bahnschrift",
-      "body": "Bahnschrift"
+      "display": "Inter",
+      "body": "Inter"
     }
   },
   "motionProfile": "crisp-saas",
   "scenes": [
     {
-      "id": "cold-open",
-      "archetype": "hook-opener",
-      "layout": "left",
-      "durationFrames": 115,
-      "slots": {
-        "headline": "PULSE GOES BANG.",
-        "subline": "dashboard proof with a pulse"
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "decor-glow",
-          "headline",
-          "subline"
-        ]
-      },
-      "overrides": {
-        "decor-glow": {
-          "enterDuration": "dramatic"
-        },
-        "headline": {
-          "box": {
-            "x": 96,
-            "y": 278,
-            "w": 1290,
-            "h": 258,
-            "origin": "left center"
-          },
-          "typeToken": "display",
-          "colorToken": "text",
-          "enterPrimitive": "enter.charCascade",
-          "exitPrimitive": "exit.slideExit",
-          "enterDuration": "slow"
-        },
-        "subline": {
-          "box": {
-            "x": 96,
-            "y": 614,
-            "w": 852,
-            "h": 96,
-            "origin": "left center"
-          },
-          "typeToken": "title",
-          "colorToken": "accent",
-          "enterPrimitive": "enter.maskRevealUp",
-          "exitPrimitive": "exit.fadeDown",
-          "enterDuration": "relaxed"
-        }
-      }
-    },
-    {
-      "id": "screen-slam",
-      "archetype": "feature-reveal",
-      "layout": "media-right",
-      "durationFrames": 116,
-      "slots": {
-        "headline": "The UI hits first",
-        "media": {
-          "assetId": "asset-f0d7252e999ec1d3"
-        },
-        "bullets": [
-          "Goon Goon Goon",
-          "proof goes loud",
-          "cut on the spark"
-        ]
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "media",
-          "headline",
-          "bullet-0",
-          "bullet-1",
-          "bullet-2"
-        ]
-      },
-      "overrides": {
-        "headline": {
-          "enterPrimitive": "enter.charCascade",
-          "enterDuration": "slow"
-        },
-        "media": {
-          "enterPrimitive": "enter.slideInDirectional",
-          "enterDuration": "slow"
-        },
-        "bullet-0": {
-          "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional"
-        },
-        "bullet-1": {
-          "enterPrimitive": "enter.slideInDirectional"
-        },
-        "bullet-2": {
-          "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional"
-        }
-      },
-      "camera": {
-        "move": "pushIn",
-        "scale": "subtle"
-      }
-    },
-    {
-      "id": "stat-snap",
-      "archetype": "stat-callout",
-      "durationFrames": 97,
-      "slots": {
-        "stat": {
-          "value": 3,
-          "prefix": "",
-          "suffix": "x"
-        },
-        "caption": "motion before the blink"
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "stat",
-          "accent-bar",
-          "caption"
-        ]
-      },
-      "overrides": {
-        "stat": {
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "dramatic"
-        },
-        "accent-bar": {
-          "enterPrimitive": "enter.scaleIn",
-          "enterDuration": "base"
-        },
-        "caption": {
-          "enterPrimitive": "enter.maskRevealUp",
-          "exitPrimitive": "exit.fadeDown",
-          "enterDuration": "relaxed"
-        }
-      },
-      "camera": {
-        "move": "pushIn",
-        "scale": "subtle"
-      }
-    },
-    {
-      "id": "side-whip",
-      "archetype": "feature-reveal",
-      "layout": "media-left",
-      "durationFrames": 116,
-      "slots": {
-        "headline": "Proof catches fire",
-        "media": {
-          "assetId": "asset-f0d7252e999ec1d3"
-        },
-        "bullets": [
-          "panels punch in",
-          "numbers climb",
-          "CTA lands loud"
-        ]
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "headline",
-          "bullet-0",
-          "media",
-          "bullet-1",
-          "bullet-2"
-        ]
-      },
-      "overrides": {
-        "headline": {
-          "enterPrimitive": "enter.fadeIn",
-          "enterDuration": "slow"
-        },
-        "media": {
-          "enterPrimitive": "enter.slideInDirectional",
-          "enterDuration": "slow"
-        },
-        "bullet-0": {
-          "colorToken": "accent",
-          "enterPrimitive": "enter.slideInDirectional"
-        },
-        "bullet-1": {
-          "enterPrimitive": "enter.slideInDirectional"
-        },
-        "bullet-2": {
-          "colorToken": "text",
-          "enterPrimitive": "enter.slideInDirectional"
-        }
-      },
-      "camera": {
-        "move": "pullBack",
-        "scale": "subtle"
-      }
-    },
-    {
-      "id": "deck-break",
+      "id": "hook",
       "archetype": "hook-opener",
       "layout": "center",
-      "durationFrames": 103,
+      "durationFrames": 96,
       "slots": {
-        "headline": "NO MORE DECK ENERGY",
-        "subline": "just cuts, pops, and proof"
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "base",
-        "order": [
-          "headline",
-          "decor-glow",
-          "subline"
-        ]
-      },
-      "overrides": {
-        "decor-glow": {
-          "enterDuration": "slow"
-        },
-        "headline": {
-          "box": {
-            "x": 96,
-            "y": 318,
-            "w": 1582,
-            "h": 218,
-            "origin": "center center"
-          },
-          "typeToken": "display",
-          "colorToken": "text",
-          "enterPrimitive": "enter.charCascade",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "slow"
-        },
-        "subline": {
-          "box": {
-            "x": 388,
-            "y": 606,
-            "w": 1144,
-            "h": 96,
-            "origin": "center center"
-          },
-          "typeToken": "title",
-          "colorToken": "muted",
-          "enterPrimitive": "enter.maskRevealUp",
-          "exitPrimitive": "exit.fadeDown",
-          "enterDuration": "relaxed"
-        }
+        "headline": "Know it broke before they do.",
+        "subline": "Production observability for teams that ship daily."
       }
     },
     {
-      "id": "launch-sting",
-      "archetype": "logo-sting-cta",
-      "durationFrames": 117,
+      "id": "overview",
+      "archetype": "feature-reveal",
+      "layout": "media-right",
+      "durationFrames": 132,
       "slots": {
-        "tagline": "Less deck. More launch.",
-        "cta": "Hit play"
-      },
-      "choreography": {
-        "stagger": "tight",
-        "settleGap": "slow",
-        "order": [
-          "logo",
-          "tagline",
-          "cta"
+        "headline": "Every signal, one screen.",
+        "media": {
+          "assetId": "asset-6e079146590ccede",
+          "presentation": "device"
+        },
+        "bullets": [
+          "p99 latency, live",
+          "Error budgets that mean something",
+          "Alerts before incidents, not after"
         ]
       },
-      "overrides": {
-        "logo": {
-          "enterPrimitive": "enter.charCascade",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "dramatic"
+      "camera": {
+        "move": "pushIn",
+        "scale": "subtle"
+      }
+    },
+    {
+      "id": "proof",
+      "archetype": "stat-callout",
+      "durationFrames": 90,
+      "slots": {
+        "stat": {
+          "value": 94,
+          "suffix": "%"
         },
-        "tagline": {
-          "enterPrimitive": "enter.maskRevealUp",
-          "exitPrimitive": "exit.fadeDown",
-          "enterDuration": "relaxed"
+        "caption": "of regressions caught before release"
+      }
+    },
+    {
+      "id": "rootcause",
+      "archetype": "feature-reveal",
+      "layout": "media-left",
+      "durationFrames": 138,
+      "slots": {
+        "headline": "From alert to root cause.",
+        "media": {
+          "assetId": "asset-08ccba315987b26f",
+          "presentation": "device"
         },
-        "cta": {
-          "enterPrimitive": "enter.scaleIn",
-          "exitPrimitive": "exit.scaleAway",
-          "enterDuration": "base"
-        }
+        "bullets": [
+          "Open the failing trace",
+          "Spot the slow span",
+          "Ship the fix in minutes"
+        ]
+      },
+      "camera": {
+        "move": "pushIn",
+        "scale": "subtle"
+      }
+    },
+    {
+      "id": "trust",
+      "archetype": "social-proof",
+      "layout": "center",
+      "durationFrames": 126,
+      "slots": {
+        "quote": "We catch regressions in minutes, long before our users feel them.",
+        "source": "Dana Ruiz, Staff Eng at Vellum",
+        "logos": [
+          "Vellum",
+          "Northwind",
+          "Tessar",
+          "Orbit"
+        ]
+      }
+    },
+    {
+      "id": "cta",
+      "archetype": "logo-sting-cta",
+      "durationFrames": 108,
+      "slots": {
+        "tagline": "Catch it before they do.",
+        "cta": "Start free"
       }
     }
   ],
-  "transitions": {
-    "stat-snap": "crossFade",
-    "deck-break": "crossFade"
-  },
+  "transitions": {},
   "assets": [
     {
-      "id": "asset-f0d7252e999ec1d3",
-      "path": "assets/dashboard.svg",
+      "id": "asset-6e079146590ccede",
+      "path": "assets/relay-overview.svg",
       "kind": "image",
-      "contentHash": "f0d7252e999ec1d3880670d5df5103a0ff5f696a191ef90781984bbc6a07aff2",
+      "contentHash": "6e079146590cceded1d4ab063dd15e980ab966187f5eb044036da3a0531d6855",
       "metadata": {
-        "dominantColors": [],
-        "cacheHint": "migrated-v1"
+        "dominantColors": []
       }
     },
     {
-      "id": "asset-0220b8fa934d2c39",
-      "path": "assets/Example/file_0000000041d471f5bc8dd618aca64dc9_optimized_1000.png",
+      "id": "asset-08ccba315987b26f",
+      "path": "assets/relay-trace.svg",
       "kind": "image",
-      "contentHash": "0220b8fa934d2c392d3826d8eee70ffb08fc56ccf288f5fcb2fcf7d917991044",
+      "contentHash": "08ccba315987b26f4e67fcdd6bf2f9154eb644b39b0f388c25216b47aeff07db",
       "metadata": {
-        "dominantColors": [],
-        "cacheHint": "migrated-v1"
-      }
-    },
-    {
-      "id": "asset-94e730f99d98dff6",
-      "path": "assets/pulse-20260610-202405.mp4",
-      "kind": "video",
-      "contentHash": "94e730f99d98dff6729bf6447173f2a3abf1c9f56ed5e24dd9b1494b5cd4b884",
-      "metadata": {
-        "dominantColors": [],
-        "cacheHint": "migrated-v1"
+        "dominantColors": []
       }
     }
   ],
   "audio": [],
   "extensions": {
-    "enabled": [
-      "enter.fadeIn",
-      "enter.slideUpSoft",
-      "enter.maskRevealUp",
-      "enter.slideInDirectional",
-      "enter.blurIn",
-      "enter.charCascade",
-      "enter.scaleIn",
-      "enter.countUp",
-      "exit.fadeDown",
-      "exit.slideExit",
-      "exit.scaleAway",
-      "emphasis.pop",
-      "emphasis.pulseGlow",
-      "emphasis.underlineSweep",
-      "continuous.kenBurns",
-      "continuous.floatIdle",
-      "hook-opener",
-      "feature-reveal",
-      "stat-callout",
-      "logo-sting-cta",
-      "ui-walkthrough",
-      "social-proof",
-      "stat-chart",
-      "crisp-saas",
-      "warm-startup",
-      "bold-launch",
-      "pushIn",
-      "pullBack"
-    ]
+    "enabled": null
   }
 }
