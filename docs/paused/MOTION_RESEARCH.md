@@ -328,7 +328,7 @@ panel positions and navigation structure remain open in `UI_REWRITE_PLAN.md`.
 
 Sequences currently has one external-agent skill:
 
-- `skills/sequences/SKILL.md`
+- `apps/sequences/knowledge/agent-workflow.md`
 
 It describes an MCP workflow: obtain planning context, submit a constrained
 plan, lint, preview, edit through commands, and render.

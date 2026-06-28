@@ -5,7 +5,7 @@
   "description": "Sequences — agent-first motion graphics editor for SaaS product video, built on HyperFrames.",
   "type": "module",
   "bin": {
-    "sequences": "./apps/studio/src/cli.ts"
+    "sequences": "./apps/sequences/src/cli.ts"
   },
   "engines": {
     "node": ">=22.18"
@@ -19,34 +19,20 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:perf": "node scripts/perf-budget.mjs",
-    "test:golden": "node scripts/golden-renders.mjs projects/Starter",
+    "test:forge-ui": "node scripts/forge-ui-smoke.mjs",
+    "test:golden": "node scripts/golden-renders.mjs fixtures/sequences/starter",
     "test:ci": "npm run typecheck && npm test && npm run test:perf",
-    "build:storyboard": "esbuild apps/studio/src/static/storyboard-excalidraw-entry.ts --bundle --format=iife --target=es2022 --outfile=apps/studio/src/static/storyboard-excalidraw-bundle.js",
-    "studio": "node apps/studio/src/cli.ts app examples/demo-promo",
-    "studio:app": "node apps/studio/src/cli.ts app examples/demo-promo",
-    "studio:exe": "node apps/studio/src/cli.ts exe examples/demo-promo",
-    "studio:web": "node apps/studio/src/cli.ts studio examples/demo-promo",
-    "compile:example": "node apps/studio/src/cli.ts compile examples/demo-promo",
-    "render:example": "node apps/studio/src/cli.ts render examples/demo-promo"
+    "sequences": "node apps/sequences/src/cli.ts app examples/sequences/demo-promo",
+    "sequences:exe": "node apps/sequences/src/cli.ts exe examples/sequences/demo-promo",
+    "sequences:web": "node apps/sequences/src/cli.ts studio examples/sequences/demo-promo",
+    "forge": "node apps/forge/src/cli.ts serve",
+    "compile:example": "node apps/sequences/src/cli.ts compile examples/sequences/demo-promo",
+    "render:example": "node apps/sequences/src/cli.ts render examples/sequences/demo-promo"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
-    "esbuild": "0.28.1",
     "fast-check": "^4.8.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
-  },
-  "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.1",
-    "react": "19.0.0",
-    "react-dom": "19.0.0"
-  },
-  "overrides": {
-    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
-    "esbuild": "0.28.1",
-    "lodash-es": "4.18.1",
-    "nanoid": "5.1.15"
   }
 }

@@ -21,4 +21,4 @@ jobs:
       - name: Golden render determinism
         run: npm run test:golden
       - name: Primitive probe thumbnails
-        run: node apps/studio/src/cli.ts thumbs projects/Starter --primitives
+        run: node apps/sequences/src/cli.ts thumbs fixtures/sequences/starter --primitives

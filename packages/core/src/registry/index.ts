@@ -28,6 +28,8 @@ export { CAMERA_MOVES, CAMERA_MOVE_IDS, type CameraMoveDef } from "./camera.ts";
 export { TOKEN_SETS, type TokenSetPlugin } from "./tokenSets.ts";
 export { TRANSITION_PLUGINS, type TransitionPlugin } from "./transitions.ts";
 export * from "./types.ts";
+export * from "./stepTemplate.ts";
+export * from "./extensionBundle.ts";
 
 export type ExtensionKind = "primitive" | "archetype" | "profile" | "camera" | "token-set" | "transition";
 

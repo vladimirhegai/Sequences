@@ -5,7 +5,7 @@
 > engine guarantees quality, the human nudges. Fast. Cross-platform. Simple.
 
 This plan goes back to the ground floor **without throwing away the robust
-parts.** The engine (`packages/core`) and the IO layer (`apps/studio` minus its
+parts.** The engine (`packages/core`) and the IO layer (`apps/sequences` minus its
 UI) are kept wholesale. What gets rebuilt is the surface: a sprawling 7-page
 studio (timeline, Excalidraw storyboard, SVG design page, references) collapses
 into **three panes** and a real native shell.
@@ -112,17 +112,17 @@ working tree still lives on the `OLD` branch.
 | Area | Decision | Notes |
 |---|---|---|
 | `packages/core/**` | **Keep** | The entire deterministic spine. Untouched except taste tuning. |
-| `apps/studio/src/server.ts` | **Keep (trim)** | Reused as the engine API. Remove routes for dropped pages (design/storyboard sidecars, fs browser) as their UIs go. |
+| `apps/sequences/src/server.ts` | **Keep (trim)** | Reused as the engine API. Remove routes for dropped pages (design/storyboard sidecars, fs browser) as their UIs go. |
 | `projectIo · render · thumbs · mcp · agent/* · workspace · assetMetadata · cli` | **Keep** | Core IO. `workspace.ts` loses storyboard-serializer + disk-browser bits over time. |
 | `projectTemplates.ts` | **Keep** | Project init + demo path. |
 | `desktopApp.ts` (system-browser app mode) | **Keep as fallback** | Superseded by Tauri for the shipped app. |
-| `apps/studio/src/static/**` (vanilla-JS UI) | **Rebuild** | Replaced by the Svelte 3-pane app. Delete page-by-page only as each is migrated. |
+| `apps/sequences/src/static/**` (vanilla-JS UI) | **Rebuild** | Replaced by the Svelte 3-pane app. Delete page-by-page only as each is migrated. |
 | Excalidraw storyboard (`storyboard*.{js,ts}`, the ~14 MB bundle, `build:storyboard`) | **Drop** | No storyboard in the new app. Removing the bundle also de-bloats the repo. The "drawn intent" idea returns later as agent *reference* input (text/image), not an editor. |
 | SVG Design page (`design.js`) + `design.json` sidecar | **Drop** | Asset design is out of scope for the simple app. |
 | References page | **Drop now, reimagine** | Returns as agent reference/taste input (§6), not a pinboard. |
 | Timeline editor UI | **Drop** | Explicit product decision: no timeline. Scene/transport surfaced minimally in viewer/inspector. |
 | React dependency | **Drop** | Only existed for Excalidraw. Svelte replaces it. |
-| `evals/`, `scripts/`, `skills/`, golden/perf tests | **Keep** | Quality gates and the external-agent skill stay. |
+| `evals/`, `scripts/`, app-owned `knowledge/`, golden/perf tests | **Keep** | Quality gates and external-agent prompt knowledge stay. |
 
 ## 5. The app — three panes
 
@@ -225,6 +225,39 @@ needed to discover gaps). Use it to:
 
 This de-risks the entire product: you cannot tune taste, or trust the agent, or
 sell the app, without a known-good target render to measure against.
+
+**Status — done (2026-06-24).** `examples/sequences/demo-promo` is now
+**"Relay"**, a
+fictional dev-observability SaaS (6 beats / 23s, crisp-saas, monochrome graphite
++ one electric-blue accent), replacing the old neon "Pulse" placeholder. Two
+hand-authored dark-UI SVGs (an observability dashboard + a trace waterfall) are
+shown in `presentation:"device"` frames. Lint clean; 1080p render verified; all
+engine gates green. Findings worth acting on:
+
+- **The architecture works.** The whole reference was authored with **zero
+  token/profile/archetype overrides** — the crisp-saas defaults produced good
+  motion unaided. Strong evidence for the "taste in code, agent only selects"
+  thesis. No taste-file edits were needed this pass.
+- **Media aspect gap (backlog).** `feature-reveal` / `ui-walkthrough` media boxes
+  assume ~4:3; real 16:9 screenshots letterbox badly inside the device frame.
+  Worked around by authoring the SVGs at ~4:3. Proper fix: per-archetype media
+  aspect (or an aspect-aware device frame).
+- **`ui-walkthrough` hotspots are noise (backlog).** Three grid-placed accent
+  dots can't point at anything meaningful over contained media and push the scene
+  past the 7-foreground-motion cap (`defaults.ts` already hides `hotspot-2`). The
+  reference uses `feature-reveal` instead. Rework or drop the hotspots.
+- **Extension wishlist** (from "I wish I had X"): a true rolling **odometer**
+  number primitive, and a **morph/FLIP** transition for UI-to-UI cuts.
+
+**Repo makeover — done (2026-06-24).** The §4 Drop column is executed for the
+dead surface: the Excalidraw storyboard (incl. the committed ~14.5 MB bundle),
+the SVG design page, and the references page are removed — frontend pages,
+`server.ts`/`workspace.ts` routes + sidecar serializers, the `react` /
+`react-dom` / `@excalidraw/excalidraw` deps (+ `@types/react*`, `esbuild`, the
+`build:storyboard` script and stale overrides), and their tests. `npm install`
+dropped **251 packages**; the studio app still boots and smoke-tests clean (tabs
+are now Media / Timeline / Render / Extensions). The timeline editor stays until
+the Svelte 3-pane app replaces it (Phase 1–2). Recoverable from the `OLD` branch.
 
 ## 8. Extensions architecture (keep it)
 
