@@ -136,8 +136,8 @@ npm run dev
 
 Create or update the Slack app from
 [apps/slack/manifest.json](apps/slack/manifest.json), then reinstall it whenever
-OAuth scopes change. The complete five-minute walkthrough is in
-[apps/slack/SETUP.md](apps/slack/SETUP.md).
+OAuth scopes change. The complete setup + deploy walkthrough is in
+[apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
 
 Node ≥ 22.18. Rendering previews additionally needs Chrome/Edge (and FFmpeg for
 MP4).
