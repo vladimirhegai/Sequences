@@ -40,9 +40,12 @@ cp -r "$ROOT/packages/core"     "$STAGE/packages/core"
 cp -r "$ROOT/packages/platform" "$STAGE/packages/platform"
 cp -r "$ROOT/apps/slack"        "$STAGE/apps/slack"
 
-# Strip secrets / heavy / generated dirs from the copies.
-rm -f  "$STAGE/apps/slack/.env"
+# Strip secrets / local research / heavy / generated dirs from the copies.
+find "$STAGE/apps/slack" -maxdepth 1 -type f -name '.env*' \
+  ! -name '.env.example' ! -name '.env.railway.example' -delete
 rm -rf "$STAGE/apps/slack/node_modules" \
+       "$STAGE/apps/slack/.data" \
+       "$STAGE/apps/slack/vendor/brag" \
        "$STAGE/packages/core/node_modules" \
        "$STAGE/packages/platform/node_modules" \
        "$STAGE"/apps/slack/build "$STAGE"/apps/slack/renders
@@ -51,12 +54,18 @@ rm -rf "$STAGE/apps/slack/node_modules" \
 cp "$ROOT/tsconfig.base.json" "$STAGE/tsconfig.base.json"
 cp "$ROOT/.gitignore"         "$STAGE/.gitignore"
 
+# Data-only fixtures used by the shared package tests. The paused applications
+# are never copied.
+cp -r "$ROOT/evals" "$STAGE/evals"
+mkdir -p "$STAGE/examples/forge"
+cp -r "$ROOT/examples/forge/extensions" "$STAGE/examples/forge/extensions"
+
 # Deployment files (Railway builds the public repo from these).
 cp "$ROOT/Dockerfile"     "$STAGE/Dockerfile"
 cp "$ROOT/railway.json"   "$STAGE/railway.json"
 cp "$ROOT/.dockerignore"  "$STAGE/.dockerignore"
 
-# --- tailored root files (this monorepo is the single source of truth) ----
+# --- tailored standalone-repo root files generated from this workspace ----
 cat > "$STAGE/package.json" <<'EOF'
 {
   "name": "slack-sequences",
@@ -92,13 +101,75 @@ cat > "$STAGE/tsconfig.json" <<'EOF'
 }
 EOF
 
+cat > "$STAGE/vitest.config.ts" <<'EOF'
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "packages/platform/test/architecture.test.ts",
+    ],
+    watch: false,
+    server: {
+      deps: {
+        inline: [/@hyperframes[\\/]core/],
+      },
+    },
+  },
+});
+EOF
+
+cat > "$STAGE/.puppeteerrc.cjs" <<'EOF'
+/** @type {import("puppeteer").Configuration} */
+module.exports = {
+  // Runtime resolves system Chrome/Edge; avoid Puppeteer's separate download.
+  skipDownload: true,
+};
+EOF
+
+mkdir -p "$STAGE/.github/workflows"
+cat > "$STAGE/.github/workflows/ci.yml" <<'EOF'
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+EOF
+
 cat > "$STAGE/README.md" <<'EOF'
 # Sequences for Slack
 
 An agentic Slack bot for the **Slack Agent Builder Challenge** that turns a
 product-launch brief — or a whole release thread — into a **revisable product
-demo video**, without leaving Slack. The agent plans from a constrained motion
-catalog, renders a draft, and posts the storyboard and video back to Slack.
+demo video**, without leaving Slack. The authoring bot writes native HyperFrames
+HTML/CSS/GSAP, a deterministic gate validates it, and Slack receives the
+storyboard followed by the rendered video.
+
+This is the canonical Slack app repository:
+**https://github.com/vladimirhegai/Slack_Sequences**.
 
 > Track: **New Slack Agent** · Tech: **MCP / agentic video pipeline** on a real
 > deterministic engine — not a prompt-and-pray wrapper.
@@ -129,7 +200,7 @@ Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md),
   then the rendered MP4 replaces them inline when it's ready.
 - **Revise**, **Undo**, and **Approve & share** (repost the finished reel to
   another channel) run in-channel.
-- Plan / preview / render / undo are driven over the included **MCP server**
+- Composition checkpoint / preview / render / undo are driven over the included **MCP server**
   (with an in-process fallback); each result shows a tool receipt.
 
 ## Setup and run
@@ -155,11 +226,20 @@ npm run typecheck
 npm test
 npm run demo --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
+npm run direct:demo --workspace @sequences/slack
 ```
 EOF
 
 cat > "$STAGE/CLAUDE.md" <<'EOF'
 # CLAUDE.md — Sequences for Slack (published repo)
+
+## GitHub destination
+
+This repository is **https://github.com/vladimirhegai/Slack_Sequences**. Push
+Slack app changes here. If you are working from the larger `Sequences`
+development monorepo, publish its standalone subset with
+`scripts/publish-public.sh`; do not use the monorepo GitHub remote as the Slack
+delivery destination.
 
 This is the **public subset** of a larger private monorepo. It contains only the
 Slack bot and the shared engine it depends on:

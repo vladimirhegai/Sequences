@@ -1,5 +1,17 @@
 # CLAUDE.md — workspace pointer
 
+## GitHub destination — do not get this wrong
+
+All Slack Sequences code must be published to:
+
+> **https://github.com/vladimirhegai/Slack_Sequences**
+
+This `Sequences` monorepo is the local development workspace, not the GitHub
+delivery destination for Slack work. Never treat a push to
+`vladimirhegai/Sequences` as publishing the Slack app. After committing local
+source, run `bash scripts/publish-public.sh "<message>"`; it creates and pushes
+the standalone Slack repository on `Slack_Sequences/main`.
+
 ## Active work lives in `apps/slack`
 
 The active work in this repo is **Sequences for Slack** — a Slack agent for the

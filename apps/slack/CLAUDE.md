@@ -4,6 +4,14 @@ The active hackathon app (Slack Agent Builder Challenge, deadline **Jul 13 2026*
 It turns a release thread into an on-brand launch video, in the channel. Bolt +
 Socket Mode; `tsx` runs the TS directly. Pitch: *from shipped to shown*.
 
+## GitHub destination
+
+Publish this app to **https://github.com/vladimirhegai/Slack_Sequences**.
+`vladimirhegai/Sequences` is the local/private development monorepo and is not
+the Slack app's GitHub delivery target. From the monorepo root, use
+`bash scripts/publish-public.sh "<message>"`; do not finish Slack work by pushing
+the monorepo branch and calling it published.
+
 **Deep docs (read only when this file is insufficient):**
 [ARCHITECTURE.md](ARCHITECTURE.md) (target design) ·
 [SLACK_PLAN.md](SLACK_PLAN.md) (current state / what's built) ·

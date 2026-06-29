@@ -19,21 +19,24 @@ commands only in the sandbox. Verification ladder: [TESTING.md](TESTING.md).
 | Project ID | `89e9d2b7-5b63-4b09-8799-ccae5b2c707e` |
 | Environment / ID | `production` / `48c3d11b-1807-42d0-85a3-1e6c67ab9c3c` |
 | Service / ID | `sequences-slack` / `ce64ff82-0f2a-4193-b138-c62cc8784d8a` |
-| Source of truth + deploy origin | `vladimirhegai/Sequences` (private monorepo) — you edit AND deploy from here |
+| Slack GitHub repository | **`vladimirhegai/Slack_Sequences`** — the required GitHub destination for all Slack app changes |
+| Local development workspace | `vladimirhegai/Sequences` monorepo checkout — edit/test here, but do not treat its GitHub remote as the Slack publish target |
 | Deploy mechanism | **`railway up` — CLI upload of the committed monorepo tree.** GitHub autodeploy is intentionally OFF |
-| Public mirror | `vladimirhegai/Slack_Sequences` (lean subset for the hackathon submission), published via `scripts/publish-public.sh` — **NOT a deploy path** |
+| GitHub publish mechanism | `bash scripts/publish-public.sh "message"` commits the standalone subset to `Slack_Sequences/main` |
 | Public domain | `https://sequences-slack-production.up.railway.app` |
 | Persistent mount | `/data`, one volume, one replica |
 
 IDs are not credentials, but confirm with `railway status` before changing
 infrastructure. Never print Railway variables or tokens into chat/logs.
 
-**Deploy via Railway CLI, not GitHub.** Railway has the `Slack_Sequences` repo
+**GitHub publication and Railway deployment are separate.** Publish source to
+`vladimirhegai/Slack_Sequences` with `scripts/publish-public.sh`. Deploy the
+running bot via Railway CLI, not GitHub autodeploy. Railway has the `Slack_Sequences` repo
 linked as a source-of-record, but **autodeploy-on-push is deliberately disabled**
 (it kept picking the wrong branch). The live bot is deployed by `railway up`,
 which uploads the committed **monorepo** tree and builds it with the root
-Dockerfile. The public mirror repo is only for the hackathon submission / open
-source — pushing to it does **not** deploy anything.
+Dockerfile. Pushing `Slack_Sequences` publishes the code but does **not** deploy
+it; pushing `vladimirhegai/Sequences` does neither for the Slack deliverable.
 
 ## What Railway hosts
 
@@ -258,15 +261,19 @@ npm run mcp:demo --workspace @sequences/slack
 npm run typecheck; npm test; npm run test:perf
 ```
 
-2. **Commit + push the monorepo** (source of truth, history, CI):
+2. **Commit locally, then publish to the correct Slack GitHub repository:**
 
 ```powershell
 git add <intentional-files>
 git commit -m "type(scope): concise change"
-git push origin HEAD
+bash scripts/publish-public.sh "type(scope): concise change"
 ```
 
-3. **Deploy the committed tree to Railway** (from the repo root):
+The publish script commits and pushes the standalone subset to
+`https://github.com/vladimirhegai/Slack_Sequences.git` on `main`. **Do not use
+`git push origin HEAD` from this monorepo as the Slack publication step.**
+
+3. **Deploy the same committed tree to Railway** (from the repo root):
 
 ```powershell
 railway up --detach --service sequences-slack --environment production `
@@ -280,9 +287,8 @@ until the new build is healthy, so a broken build never takes the bot down. Plai
 `railway redeploy` just restarts the same source (use it after a variables-only
 change).
 
-> Separately, to refresh the public hackathon mirror, run
-> `bash scripts/publish-public.sh "msg"`. That publishes the lean subset to
-> `Slack_Sequences` for submission/open-source — it does **not** deploy.
+GitHub publish and Railway deploy are both required release steps:
+`publish-public.sh` updates `Slack_Sequences`; `railway up` updates the live bot.
 
 ### Verify every deployment
 
