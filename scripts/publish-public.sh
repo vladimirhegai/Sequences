@@ -278,7 +278,15 @@ echo "→ generating package-lock.json"
   || echo "  (lockfile generation skipped — npm install on clone will create it)"
 
 # --- commit + push --------------------------------------------------------
-gh auth setup-git >/dev/null 2>&1 || true
+# In WSL, Git is Linux-native while GitHub CLI is commonly `gh.exe`; global
+# credential-helper setup then lands in the Windows config and Linux Git hangs
+# at an invisible username prompt. Bind the authenticated CLI directly to this
+# push and disable prompts so auth failures are immediate.
+GH_BIN="$(command -v gh || command -v gh.exe || true)"
+if [ -z "$GH_BIN" ]; then
+  echo "error: GitHub CLI is required (gh or gh.exe)" >&2
+  exit 1
+fi
 git -C "$STAGE" add -A
 if git -C "$STAGE" diff --cached --quiet; then
   echo "→ no changes to publish"
@@ -290,5 +298,7 @@ echo "→ pushing to $REMOTE (main)"
 # (e.g. a PR merged on GitHub) — safer than a blind --force. Run a fetch first so
 # the lease has a ref to compare against; ignore failure on the very first push.
 git -C "$STAGE" fetch origin main -q || true
-git -C "$STAGE" push -u origin main --force-with-lease
+GIT_TERMINAL_PROMPT=0 git -C "$STAGE" \
+  -c credential.helper="!\"$GH_BIN\" auth git-credential" \
+  push -u origin main --force-with-lease
 echo "✓ published"
