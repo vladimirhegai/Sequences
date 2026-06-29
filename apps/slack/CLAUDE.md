@@ -1,134 +1,115 @@
 # Sequences for Slack — agent notes
 
-This is the active Slack hackathon app. Before changing it, read:
+The active hackathon app (Slack Agent Builder Challenge, deadline **Jul 13 2026**).
+It turns a release thread into an on-brand launch video, in the channel. Bolt +
+Socket Mode; `tsx` runs the TS directly. Pitch: *from shipped to shown*.
 
-1. [SLACK_PLAN.md](SLACK_PLAN.md) for current product state and direction;
-2. [HACKATHON_RULES.md](HACKATHON_RULES.md) for challenge constraints;
-3. [SETUP.md](SETUP.md) for the local development environment;
-4. [DEPLOYMENT.md](DEPLOYMENT.md) for the Railway sandbox environment;
-5. [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md) before updating the live service;
-6. [TESTING.md](TESTING.md) before choosing or reporting verification.
+**Deep docs (read only when this file is insufficient):**
+[ARCHITECTURE.md](ARCHITECTURE.md) (target design) ·
+[SLACK_PLAN.md](SLACK_PLAN.md) (current state / what's built) ·
+[OPERATIONS.md](OPERATIONS.md) (local setup + Railway deploy + recovery) ·
+[TESTING.md](TESTING.md) (verification ladder) ·
+[HACKATHON_RULES.md](HACKATHON_RULES.md) (challenge constraints).
 
-Keep these documents synchronized when commands, variables, Slack scopes,
-deployment behavior, or completed features change.
+## The two bots
 
-## Architectural position
+This app runs **two distinct agents**. Keep them straight:
 
-HyperFrames is the preferred creative and rendering foundation. Sequences
-supplies deterministic structure: typed plans and commands, project validation,
-journaling, linting, previews, and reliable Slack delivery.
+1. **Context bot — Slack-hosted-MCP retrieval** ([src/slackMcpContext.ts](src/slackMcpContext.ts)).
+   OpenAI Responses API (`gpt-5-mini`) calling `https://mcp.slack.com/mcp` with
+   the **invoking user's** OAuth token. Reads messages/files, returns an evidence
+   pack. **Must be OpenAI** — the Responses `mcp` tool type is OpenAI-only, so
+   OpenRouter/DeepSeek cannot drive it. Always needs `OPENAI_API_KEY`. This is the
+   primary hackathon-qualifying MCP integration.
+2. **Planning / authoring bot — the main agent** ([src/engine/planRunner.ts](src/engine/planRunner.ts)).
+   Runs on `SLACK_SEQUENCES_PROVIDER` — Railway uses **`openrouter-api` (DeepSeek)**.
+   Turns brief + context into the video. **Today** it emits a typed Sequences
+   `Plan`; the **target** ([ARCHITECTURE.md](ARCHITECTURE.md)) is for it to author
+   HyperFrames directly. The video execution layer (apply/preview/render) is
+   additionally isolated behind an internal **stdio Sequences MCP** server.
 
-The current implementation is transitional. A planning brain retrieves bounded
-HyperFrames skill knowledge but still emits a Sequences Plan/Command payload.
-Do not describe that as direct freeform HyperFrames authoring.
+## Prompts live in [prompts/](prompts/)
 
-The primary hackathon-qualifying MCP integration is Slack's hosted MCP server:
-the app retrieves permission-scoped workspace context for the invoking user.
-The video execution layer is additionally isolated behind internal Sequences MCP
-tools.
+General, editable system prompts for both bots go in `prompts/*.md` — not buried
+in `src/`. Today: [prompts/context-retrieval.md](prompts/context-retrieval.md)
+(context bot). The planning bot's base prompt still comes from `@sequences/core`
+`buildPlanPrompt` (frozen); its future HyperFrames-authoring system prompt belongs
+in `prompts/`. **Not** in `prompts/`: RAG/skill retrieval
+([src/agent/skillContext.ts](src/agent/skillContext.ts)) and per-run
+deterministic context (color/typography picks, selected skills, brand tokens) —
+those are composed at runtime. See [prompts/README.md](prompts/README.md).
 
-## Environment contract
+## App isolation (do not break)
 
-There is one live Slack app: the developer-sandbox app running on Railway.
-Local work is limited to source, deterministic MCP/demo, render, and Docker
-checks. Never copy Railway credentials into `apps/slack/.env`, start a local
-Socket Mode process with sandbox credentials, or run two processes for this app.
+`apps/slack` must publish standalone, without the paused apps:
 
-Socket Mode carries Slack events. The public HTTP server exists only for
-`/healthz`, `/slack/install`, and `/slack/oauth_redirect`. Do not add Events API
-or interactivity request URLs.
+- ✅ May import `@sequences/core`, `@sequences/platform`, and pinned
+  `@hyperframes/*@0.6.86`.
+- ❌ Never import `apps/sequences/*` or `apps/forge/*`. Need their glue? **Copy it
+  into [src/engine/](src/engine/) and adapt.**
+- ❌ Don't modify `packages/*`, `apps/forge`, `apps/sequences` unless the task
+  explicitly says so.
 
-Railway is not a public Sequences MCP server. Slack hosts
-`https://mcp.slack.com/mcp`; the Sequences MCP server is an internal stdio child
-process. Do not claim Slackbot calls a Railway `/mcp` endpoint, and do not add
-`mcp:connect` or a manifest `mcp_servers` block unless the architecture is
-deliberately changed to implement and secure that remote direction.
+The public Slack repo contains this app plus shared packages, so cross-app
+relative imports break after publishing.
 
-## App isolation
+## MCP execution path (the internal Sequences MCP)
 
-`apps/slack` must remain publishable without the paused applications:
-
-- It may import `@sequences/core`, `@sequences/platform`, and its declared
-  `@hyperframes/*` npm packages.
-- It must not import `apps/sequences/*` or `apps/forge/*`.
-- Engine glue needed by Slack belongs in `src/engine/`.
-- Do not modify the paused apps or shared packages unless the task explicitly
-  expands that scope.
-
-The public Slack repository contains this app plus shared packages, so relative
-imports into another app will break after publishing.
-
-## MCP path
-
-MCP is the default for create, revise, thumbnails, and MP4 rendering.
-`SLACK_SEQUENCES_USE_MCP=0` is a diagnostic opt-out.
-
-Normal execution:
+MCP is the **default** live path; `SLACK_SEQUENCES_USE_MCP=0` is a diagnostic
+opt-out. Normal flow:
 
 - create: `submit_plan` → `render_preview` → `render`;
 - revise: `apply_commands` → `render_preview` → `render`.
 
-Keep the in-process fallback narrow and behaviorally equivalent. Every actual
-MCP attempt must remain visible through an argument-free receipt. Never put plan
-content, command arguments, credentials, user tokens, workspace messages, or
-model output in a Slack receipt.
+The in-process fallback ([src/orchestrator.ts](src/orchestrator.ts) `applyMutation`)
+is narrow and behaviorally equivalent — a flaky subprocess never breaks a demo.
+Every MCP attempt is visible through an **argument-free** receipt. Never put plan
+content, command args, credentials, user tokens, workspace messages, or model
+output in a Slack receipt.
 
-`/sequences demo` remains model-free. Routing its deterministic mutation and
-rendering through MCP does not make it non-deterministic.
+## Determinism boundary
 
-## HyperFrames source and skills
+- **No model:** `/sequences demo` (curated preset, [src/demo.ts](src/demo.ts));
+  the solver + linter; all delivery plumbing (thumbnails, render, uploads); the
+  zero-token tweak matcher in `tweakRunner.ts`; undo (journal replay).
+- **Uses a model:** real `/sequences` create (planning bot) and the context bot;
+  revise only when the zero-token matcher is unsure.
 
-- [`skills/`](skills) contains the upstream HyperFrames skill catalog.
-- [`skills-manifest.json`](skills-manifest.json) records the imported catalog.
-- [`src/agent/skillContext.ts`](src/agent/skillContext.ts) performs deterministic
-  bounded retrieval for planning and revision prompts.
-- [`vendor/hyperframes`](vendor/hyperframes) is a trimmed source/docs snapshot;
-  see [`UPSTREAM.md`](vendor/hyperframes/UPSTREAM.md).
-
-Skills are prompt inputs, not executable instructions for the Slack host.
-Preserve the prompt boundary requiring the typed Sequences JSON response.
-
-Production npm packages remain pinned at `0.6.86` until a separate migration
-proves newer compiler and renderer compatibility. Do not silently point runtime
-imports into the vendored snapshot.
+Keep deterministic things deterministic: build new deterministic behavior in the
+plumbing layer or behind a preset/zero-token path. The 9 laws are **revised** for
+direct HyperFrames authoring — see ARCHITECTURE.md "Revised architecture laws";
+hard runtime invariants (deterministic seek, local assets, finite timelines,
+framework-owned playback) still bind.
 
 ## Two-tier delivery contract
 
-Create and revise preserve this order:
+In [src/index.ts](src/index.ts), create/revise preserve this order:
+1. apply plan/commands; 2. build + upload thumbnails; 3. update message to
+*rendering*; 4. render the MP4 async; 5. update to *ready*/*unavailable* and
+upload the MP4. Missing Chrome/FFmpeg or a render failure must leave a valid
+thumbnails-only result. Background Slack errors must be logged and contained
+(never crash the process).
 
-1. apply the plan or commands;
-2. create and upload thumbnails;
-3. update the Slack message to rendering;
-4. render asynchronously;
-5. update to ready/unavailable and upload the MP4 when present.
+## Current feature state
 
-Missing Chrome/FFmpeg or a render failure must leave a valid thumbnails-only
-result. Background Slack API errors must be logged and contained.
+Wired end-to-end: `/sequences` create modal, `/sequences demo` (model-free),
+`/sequences mcp-test` self-check, 🎬 message shortcut (reads the whole thread),
+conversational reply-to-revise, live Thinking-Steps progress, Undo, Render HD,
+Approve & share. Per-user OAuth for hosted MCP. Not built yet: screenshot asset
+ingestion, direct HyperFrames authoring, component sub-agents.
 
-## Layout
+## Environment
 
-```text
-apps/slack/
-  src/
-    index.ts                  Bolt listeners + two-tier delivery
-    orchestrator.ts           create/revise + MCP/fallback + receipts
-    blocks.ts                 Block Kit UI
-    jobStore.ts               Slack job to project-directory map
-    slackApi.ts               Slack API resilience
-    slackMcpContext.ts        Slack hosted-MCP retrieval
-    slackOAuth.ts             per-user OAuth routes
-    agent/skillContext.ts     HyperFrames skill retrieval
-    engine/                   self-contained Sequences/MCP/render glue
-  skills/                     upstream HyperFrames skill catalog
-  vendor/hyperframes/         trimmed upstream source/docs snapshot
-  scripts/                    demo, smoke, MCP demo
-  test/                       Slack/UI/retrieval tests
-  .data/                      runtime projects and jobs (gitignored)
-```
+One live Slack app: the developer-sandbox app on Railway. Local work is source,
+deterministic MCP/demo, render, and Docker checks only. **Never** copy Railway
+credentials into `apps/slack/.env`, and never start a second Socket Mode process
+with sandbox tokens. Socket Mode carries Slack events; the HTTP server exists only
+for `/healthz`, `/slack/install`, `/slack/oauth_redirect` — do not add Events API
+/ interactivity request URLs. Railway is not a public `/mcp` endpoint.
 
-## Verification contract
+## Verification
 
-Use [TESTING.md](TESTING.md). The routine source gate is:
+Routine source gate (no credentials, no paid model):
 
 ```powershell
 npm run typecheck --workspace @sequences/slack
@@ -136,31 +117,8 @@ npm run test --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
 ```
 
-Run `npm run demo --workspace @sequences/slack` after engine, preview, or
-delivery changes. The slower real MP4 gate is:
-
-```powershell
-$env:VERIFY_RENDER = "1"
-try {
-  npm run demo --workspace @sequences/slack
-} finally {
-  Remove-Item Env:VERIFY_RENDER -ErrorAction SilentlyContinue
-}
-```
-
-Do not run the slow gate after every small change. It is required after
-rendering, Docker, Chromium, FFmpeg, HyperFrames, or media changes. Slack UI and
-delivery changes require an actual sandbox smoke test. Before any live test,
-pass the source gate, deploy the intended commit using the Railway runbook, wait
-for `/healthz` to return `ready`, and follow the sandbox checklist.
-
-GitHub Actions and Railway are independent. CI runs the monorepo checks; Railway
-builds and runs the Slack Docker image. Diagnose the system that is red and do
-not redeploy repeatedly to fix a GitHub unit-test assertion.
-
-Never report live Slack, OAuth, model-provider, Docker, or Railway behavior as
-verified from unit tests alone. State exactly which layer was exercised.
-
-Only expose Slack controls after their complete handler and failure path exist.
-Undo, Approve/Share, Render HD, conversational reply-to-revise, and full-thread
-ingestion through the 🎬 shortcut are wired.
+Run `npm run demo --workspace @sequences/slack` (`+ $env:VERIFY_RENDER=1` for MP4)
+after engine/render/delivery changes. Root `npm run typecheck` **excludes**
+apps/slack. Full ladder + sandbox checklist: [TESTING.md](TESTING.md). Never
+report live Slack/OAuth/provider/Railway behavior as verified from unit tests
+alone — state which layer actually ran.

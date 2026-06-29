@@ -116,6 +116,25 @@ tab run in the opposite direction: Slackbot calls a remote server we publish.
 That is optional future distribution, not part of the hackathon-critical path.
 The result message exposes receipts from both planes so MCP is demonstrable.
 
+### The two model agents
+
+Two different LLMs run, on two different providers; keep them distinct:
+
+- **Context bot — workspace retrieval.** Drives the context plane via the OpenAI
+  Responses API `mcp` tool type (the only API that currently supports it;
+  OpenRouter and DeepSeek cannot). It reads Slack with the invoking user's token
+  and returns a bounded evidence pack. Always needs an OpenAI key.
+- **Planning / authoring bot — the main agent.** Selected by
+  `SLACK_SEQUENCES_PROVIDER`; the live Railway deployment uses OpenRouter
+  (DeepSeek). Today it emits a typed Sequences `Plan`; the target is for it to
+  author HyperFrames directly. This is the agent the recipes and the revised
+  laws below govern.
+
+General, editable system prompts for both bots live in `apps/slack/prompts/`
+(plain `.md`, loaded at runtime). Advanced per-run prompt material — skill/RAG
+retrieval and deterministic project-specific context such as color, typography,
+and the skills chosen for a run — is composed in code, not stored there.
+
 Long MCP operations return a durable job ID quickly. Progress and previews arrive
 through Slack while `get_video` provides a read-only status path; no tool call
 should remain open for the duration of an MP4 render.

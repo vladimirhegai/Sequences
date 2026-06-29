@@ -1,56 +1,37 @@
 # CLAUDE.md — workspace pointer
 
-## Current focus: the Slack hackathon bot (`apps/slack`)
+## Active work lives in `apps/slack`
 
 The active work in this repo is **Sequences for Slack** — a Slack agent for the
-**Slack Agent Builder Challenge** (~16-day hackathon). All hackathon work lives
-in **[apps/slack/](apps/slack/)**.
+**Slack Agent Builder Challenge** (deadline Jul 13 2026). It has its own,
+authoritative agent guide:
 
-> **Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md) before doing any work.**
-> The hackathon spec is [apps/slack/SLACK_PLAN.md](apps/slack/SLACK_PLAN.md).
-> Sandbox-first setup, deployment, operations, and test commands live in
-> [SETUP.md](apps/slack/SETUP.md), [DEPLOYMENT.md](apps/slack/DEPLOYMENT.md),
-> [RAILWAY_RUNBOOK.md](apps/slack/RAILWAY_RUNBOOK.md), and
-> [TESTING.md](apps/slack/TESTING.md).
+> ## 👉 Read **[apps/slack/CLAUDE.md](apps/slack/CLAUDE.md)** before doing any work.
+>
+> It covers the two bots, isolation rule, MCP path, prompts convention, current
+> state, and verification. From there: [ARCHITECTURE.md](apps/slack/ARCHITECTURE.md)
+> (target design), [SLACK_PLAN.md](apps/slack/SLACK_PLAN.md) (current state),
+> [OPERATIONS.md](apps/slack/OPERATIONS.md) (setup + deploy),
+> [TESTING.md](apps/slack/TESTING.md), [HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
+
+`apps/slack` is **self-contained**: it may depend on shared packages
+(`@sequences/core`, `@sequences/platform`, pinned `@hyperframes/*@0.6.86`) but
+must **never import from `apps/forge` or `apps/sequences`** — copy what it needs
+in instead. The Railway sandbox app is the only live Slack process; never copy its
+tokens locally or start a second Socket Mode process.
 
 ## Forge and Sequences are PAUSED ⏸
 
-Forge (`apps/forge`) and Sequences (`apps/sequences`) — and the shared engine
-packages they sit on (`packages/core`, `packages/platform`) — are **frozen for
-the duration of the hackathon.** Do not change them as part of Slack work.
+Forge (`apps/forge`), Sequences (`apps/sequences`), and the shared engine packages
+they sit on (`packages/core`, `packages/platform`) are **frozen for the
+hackathon.** Do not change them as part of Slack work. Their docs are preserved in
+**[docs/paused/](docs/paused/)**:
 
-Their documentation is preserved (not deleted) in **[docs/paused/](docs/paused/)**:
-
-- [docs/paused/WORKSPACE.md](docs/paused/WORKSPACE.md) — the full workspace guide
-  that used to be this file (the **9 laws**, engine layout, working rules). Read
-  this if you resume engine work.
+- [docs/paused/WORKSPACE.md](docs/paused/WORKSPACE.md) — full workspace guide (the
+  original **9 laws**, engine layout, working rules). Read if you resume engine work.
 - [docs/paused/FORGE.md](docs/paused/FORGE.md) · [docs/paused/SEQUENCES.md](docs/paused/SEQUENCES.md)
   · [docs/paused/PLAN.md](docs/paused/PLAN.md) — the paused products.
 - [docs/paused/LINEAR_DESIGN.md](docs/paused/LINEAR_DESIGN.md) ·
   [docs/paused/MOTION_RESEARCH.md](docs/paused/MOTION_RESEARCH.md) ·
   [docs/paused/MOTION_CATEGORIES.md](docs/paused/MOTION_CATEGORIES.md) — design/research.
-
-To resume Forge/Sequences after the hackathon, see
-[docs/paused/README.md](docs/paused/README.md).
-
-## How the hackathon app relates to the engine
-
-`apps/slack` is **self-contained**. It may depend on the **shared packages**
-(`@sequences/core`, `@sequences/platform`, pinned `@hyperframes/*@0.6.86`), but
-it must **never import from `apps/forge` or `apps/sequences`** — copy what it
-needs in instead. Full rule in [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md).
-
-## Commands
-
-```powershell
-npm run typecheck --workspace @sequences/slack # Slack app typecheck
-npm run test --workspace @sequences/slack      # Slack app tests
-npm run mcp:demo --workspace @sequences/slack  # local MCP smoke
-npm test                                       # full suite if shared code changes
-npm run typecheck                              # monorepo typecheck
-```
-
-The Railway sandbox app is the only live Slack process. Never copy its
-`xoxb-...`/`xapp-...` values into a local environment or start a second Socket
-Mode process. Use local commands for source/Docker checks and the Slack developer
-sandbox for all live behavior.
+- To resume: [docs/paused/README.md](docs/paused/README.md).

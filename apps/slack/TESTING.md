@@ -91,8 +91,8 @@ Confirm:
 - no `.env`, tokens, keys, generated `.data`, renders, or temporary projects;
 - commands, variable names, and doc links match the implementation.
 
-Commit and push, then follow [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md). Do not
-claim live behavior is verified until the new deployment is healthy.
+Commit and push, then follow [OPERATIONS.md §3](OPERATIONS.md#3-routine-deploys-the-runbook).
+Do not claim live behavior is verified until the new deployment is healthy.
 
 ### 5. Sandbox smoke
 

@@ -1,8 +1,9 @@
 # Sequences for Slack — current state and direction
 
 > Slack Agent Builder Challenge · deadline July 13, 2026 at 8pm EDT.
-> Rules: [HACKATHON_RULES.md](HACKATHON_RULES.md). Setup:
-> [SETUP.md](SETUP.md). Agent/runtime boundaries: [CLAUDE.md](CLAUDE.md).
+> Rules: [HACKATHON_RULES.md](HACKATHON_RULES.md). Setup/deploy:
+> [OPERATIONS.md](OPERATIONS.md). Agent/runtime boundaries: [CLAUDE.md](CLAUDE.md).
+> Target design: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Product
 
@@ -154,18 +155,24 @@ Chrome/Edge and FFmpeg and verifies the asynchronous MP4 stage.
 
 ## Next priorities
 
-1. Reinstall from the updated manifest and prove create → conversational revise
-   → HD → share in the Slack sandbox.
-2. Move from “Sequences plan enriched by HyperFrames skills” toward direct
-   HyperFrames composition authoring with validation around it.
-3. Expose better deterministic tools: inspect composition, lint, render frame,
-   compare frames, and repair invalid timing/media wiring.
-4. Add component tools inspired by Forge Stage, including reusable components
-   that can morph across scenes.
-5. Curate SaaS-specific skills and retrieve only the context a scene needs.
-6. Later, add bounded sub-agents for component/frame construction.
+The foundation (Slack workflow, two-tier delivery, both MCP planes, OAuth) is
+solid. The next phase is **core-first**: make the planning bot author real,
+high-quality HyperFrames instead of compiling a constrained Sequences `Plan`. See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the target.
 
-Not built yet: screenshot asset ingestion, direct HyperFrames authoring,
-assistant-status API integration, or component sub-agents. Motion-system and
-creative-output changes are intentionally deferred; this pass only changes
-Slack workflow, observability, encoding quality, and reliability.
+1. **Direct HyperFrames authoring.** Move from “Sequences plan enriched by
+   HyperFrames skills” to the planning bot composing HyperFrames directly, with
+   deterministic validation around the result. Rewrite the old nine laws
+   (ARCHITECTURE.md “Revised architecture laws”) — they over-constrained
+   creativity in Sequences/Forge and produced sub-par output.
+2. **Seed real SaaS-motion examples** for retrieval/inspiration (provenance
+   tracked).
+3. Expose deterministic tools: inspect composition, lint, render frame, compare
+   frames, repair invalid timing/media wiring.
+4. Screenshot asset ingestion → media-slot archetypes use real product UI.
+5. Component tools inspired by Forge Stage (reusable, morph across scenes); later,
+   bounded sub-agents for component/frame construction.
+
+Not built yet: direct HyperFrames authoring, screenshot ingestion, component
+sub-agents. The current code only covers Slack workflow, observability, encoding
+quality, and reliability — motion-system/creative output is the next frontier.
