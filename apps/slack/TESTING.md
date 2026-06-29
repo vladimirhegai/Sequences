@@ -166,6 +166,9 @@ The Forge failures seen during setup were unrelated to the Slack deployment:
   action runtime.
 
 Those are now corrected. Actions use their Node 24-based v6 releases.
+CI runs on pull requests, pushes to `main`, and manual dispatch. It does not also
+run a redundant branch-push check when an open pull request already covers the
+same feature-branch commit.
 
 ### Railway
 
