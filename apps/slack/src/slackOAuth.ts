@@ -27,13 +27,35 @@ interface StatePayload {
   teamId?: string;
 }
 
-interface SlackTokenResponse {
+export interface SlackTokenResponse {
   ok?: boolean;
   error?: string;
   access_token?: string;
   scope?: string;
-  authed_user?: { id?: string; scope?: string };
+  token_type?: string;
+  user_id?: string;
+  team_id?: string;
+  authed_user?: {
+    id?: string;
+    scope?: string;
+    access_token?: string;
+    team_id?: string;
+  };
   team?: { id?: string };
+}
+
+interface SlackAuthTestResponse {
+  ok?: boolean;
+  error?: string;
+  user_id?: string;
+  team_id?: string;
+}
+
+export interface SlackUserGrant {
+  token?: string;
+  userId?: string;
+  teamId?: string;
+  scopes: string[];
 }
 
 function config(): OAuthConfig {
@@ -132,6 +154,47 @@ async function exchangeCode(code: string, oauth: OAuthConfig): Promise<SlackToke
   return response.json() as Promise<SlackTokenResponse>;
 }
 
+export function extractSlackUserGrant(
+  response: SlackTokenResponse,
+  stateTeamId?: string,
+): SlackUserGrant {
+  return {
+    // oauth.v2.user.access documents a top-level token. Accepting the nested
+    // oauth.v2.access shape as well makes the callback resilient to Slack grant
+    // variants without ever accepting a bot token.
+    token: response.access_token ?? response.authed_user?.access_token,
+    userId: response.authed_user?.id ?? response.user_id,
+    teamId: response.team?.id
+      ?? response.team_id
+      ?? response.authed_user?.team_id
+      ?? stateTeamId,
+    scopes: (response.authed_user?.scope ?? response.scope ?? "")
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean),
+  };
+}
+
+async function identifyGrant(
+  grant: SlackUserGrant,
+): Promise<SlackUserGrant> {
+  if (!grant.token || (grant.userId && grant.teamId)) return grant;
+  const response = await fetch("https://slack.com/api/auth.test", {
+    headers: { authorization: `Bearer ${grant.token}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`Slack identity check failed (${response.status})`);
+  const identity = await response.json() as SlackAuthTestResponse;
+  if (!identity.ok) {
+    throw new Error(`Slack identity check failed (${identity.error ?? "unknown error"})`);
+  }
+  return {
+    ...grant,
+    userId: grant.userId ?? identity.user_id,
+    teamId: grant.teamId ?? identity.team_id,
+  };
+}
+
 /** Handles only the two per-user OAuth routes needed by Slack's hosted MCP server. */
 export async function handleSlackOAuthRequest(
   request: IncomingMessage,
@@ -185,17 +248,27 @@ export async function handleSlackOAuthRequest(
 
   try {
     const verified = verifyState(state, parseCookies(request)[STATE_COOKIE], oauth.stateSecret);
-    const token = await exchangeCode(code, oauth);
-    const userId = token.authed_user?.id;
-    const teamId = token.team?.id ?? verified.teamId;
-    if (!token.ok || !token.access_token || !userId || !teamId) {
-      throw new Error(`Slack rejected authorization (${token.error ?? "incomplete response"})`);
+    const tokenResponse = await exchangeCode(code, oauth);
+    if (!tokenResponse.ok) {
+      throw new Error(
+        `Slack rejected authorization (${tokenResponse.error ?? "unknown error"})`,
+      );
     }
-    const scopes = (token.authed_user?.scope ?? token.scope ?? "")
-      .split(",")
-      .map((scope) => scope.trim())
-      .filter(Boolean);
-    storeSlackUserToken({ teamId, userId, token: token.access_token, scopes });
+    const grant = await identifyGrant(extractSlackUserGrant(tokenResponse, verified.teamId));
+    const missing = [
+      !grant.token && "user token",
+      !grant.userId && "user ID",
+      !grant.teamId && "workspace ID",
+    ].filter(Boolean);
+    if (!grant.token || !grant.userId || !grant.teamId) {
+      throw new Error(`Slack authorization response was missing ${missing.join(", ")}`);
+    }
+    storeSlackUserToken({
+      teamId: grant.teamId,
+      userId: grant.userId,
+      token: grant.token,
+      scopes: grant.scopes,
+    });
     response.setHeader(
       "set-cookie",
       `${STATE_COOKIE}=; Path=/slack; HttpOnly; Secure; SameSite=Lax; Max-Age=0`,

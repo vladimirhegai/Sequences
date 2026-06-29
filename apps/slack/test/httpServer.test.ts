@@ -3,6 +3,7 @@ import {
   startAppHttpServer,
   type AppHttpServer,
 } from "../src/httpServer.ts";
+import { extractSlackUserGrant } from "../src/slackOAuth.ts";
 
 let activeServer: AppHttpServer | undefined;
 
@@ -65,5 +66,39 @@ describe("deployment HTTP server", () => {
     );
     expect(location.searchParams.get("state")).toBeTruthy();
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+  });
+});
+
+describe("Slack user OAuth response parsing", () => {
+  it("accepts Slack's documented user-only token response", () => {
+    expect(extractSlackUserGrant({
+      ok: true,
+      access_token: "xoxp-test",
+      scope: "search:read.public,files:read",
+      authed_user: { id: "U123" },
+      team: { id: "T123" },
+    })).toEqual({
+      token: "xoxp-test",
+      userId: "U123",
+      teamId: "T123",
+      scopes: ["search:read.public", "files:read"],
+    });
+  });
+
+  it("also accepts the nested user-token response shape", () => {
+    expect(extractSlackUserGrant({
+      ok: true,
+      authed_user: {
+        id: "U123",
+        team_id: "T123",
+        access_token: "xoxp-test",
+        scope: "search:read.private",
+      },
+    })).toEqual({
+      token: "xoxp-test",
+      userId: "U123",
+      teamId: "T123",
+      scopes: ["search:read.private"],
+    });
   });
 });
