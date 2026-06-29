@@ -185,10 +185,10 @@ testing-instructions channel. Invite `slackhack@salesforce.com` and
 
 ## 7. Deploy and verify
 
-Railway services connected to GitHub normally deploy whenever you push to the
-configured branch. Confirm the service watches
-`slack/workflow-undo-approve-thread`; do not infer the branch merely from the
-repository name. Watch for:
+This project uses a clean committed-tree CLI upload because Railway's GitHub
+source repeatedly selected the repository's default `main` branch instead of
+the Slack feature branch. Push the commit for GitHub/CI, then deploy from the
+repository root using [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md). Watch for:
 
 ```text
 HTTP server listening
@@ -221,11 +221,10 @@ railway deployment list --limit 5
 railway logs
 ```
 
-Pushing the configured branch is preferred when GitHub autodeploy works. If a
-push does not create a deployment, use the
-`railway redeploy --from-source` fallback in
+Use the clean-tree `railway up` sequence in
 [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md). Plain `railway redeploy` only reruns
-previously deployed source.
+previously deployed source. Do not use `redeploy --from-source` while the
+repository default branch differs from the sandbox branch.
 
 ## Docker check before the first deployment
 

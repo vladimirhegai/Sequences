@@ -4,8 +4,8 @@ The project uses one Slack developer sandbox and one Railway deployment for all
 live Slack development. There is no separate normal-workspace app.
 
 - Edit and run source tests locally.
-- Commit and push the configured sandbox branch.
-- Deploy that commit to Railway.
+- Commit and push the sandbox branch.
+- Upload that clean committed tree to Railway.
 - Exercise Slack commands only in the developer sandbox.
 
 This avoids two Socket Mode processes, duplicate Slack apps, drifting manifests,
@@ -114,9 +114,9 @@ https://sequences-slack-production.up.railway.app/slack/install
 - Never use workplace-confidential data in sandbox tests.
 - Never assume a successful Railway build means GitHub Actions passed, or vice
   versa; they are separate systems.
-- Never use plain `railway redeploy` to publish new source. It restarts the
-  previous source. Use GitHub autodeploy or `railway redeploy --from-source`;
-  reserve `railway up` for a documented last-resort local upload.
+- Never use `railway redeploy` to publish new source. Plain redeploy restarts
+  old source, and `--from-source` currently selects the wrong default branch.
+  Use the clean-tree `railway up` sequence in the Railway runbook.
 
 ## Related guides
 

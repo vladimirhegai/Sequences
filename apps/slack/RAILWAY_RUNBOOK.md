@@ -15,7 +15,8 @@ use this file for every later deployment.
 | Service | `sequences-slack` |
 | Service ID | `ce64ff82-0f2a-4193-b138-c62cc8784d8a` |
 | GitHub repository | `vladimirhegai/Sequences` |
-| Deployment branch | `slack/workflow-undo-approve-thread` |
+| Git branch | `slack/workflow-undo-approve-thread` |
+| Railway source mode | Manual CLI upload; GitHub autodeploy intentionally disconnected |
 | Public domain | `https://sequences-slack-production.up.railway.app` |
 | Persistent mount | `/data`, one volume, one replica |
 
@@ -58,19 +59,17 @@ railway link
 railway status
 ```
 
-Choose the project, `production`, and `sequences-slack`. If the GitHub source
-points at the wrong branch:
+Choose the project, `production`, and `sequences-slack`. This service
+intentionally has no GitHub autodeploy source:
 
 ```powershell
-railway service source connect `
-  --repo vladimirhegai/Sequences `
-  --branch slack/workflow-undo-approve-thread `
-  --service sequences-slack `
-  --json
+railway service source disconnect --service sequences-slack
 ```
 
-If this cannot see or watch the repository, authorize the Railway GitHub App for
-`vladimirhegai/Sequences` in GitHub, then reconnect the source.
+During setup, `redeploy --from-source` repeatedly selected the repository's
+default `main` branch even after Railway reported the Slack feature branch.
+Only reconnect GitHub after proving a test push deploys the intended branch and
+commit, then update this runbook.
 
 ## Safe deployment sequence
 
@@ -92,7 +91,7 @@ npm test
 npm run test:perf
 ```
 
-Then commit and push:
+Then commit and push for history, review, and CI:
 
 ```powershell
 git add <intentional-files>
@@ -100,35 +99,7 @@ git commit -m "type(scope): concise change"
 git push origin HEAD
 ```
 
-### Path A: GitHub autodeploy
-
-After pushing, look for a new deployment with the expected commit:
-
-```powershell
-railway deployment list --limit 5
-```
-
-If the expected deployment appears, let it finish. Do not start a second
-deployment.
-
-### Path B: explicit deploy from the configured GitHub source
-
-If no GitHub deployment appears, deploy the newest pushed commit from the
-configured branch:
-
-```powershell
-railway redeploy --from-source --yes --json `
-  --service sequences-slack `
-  --environment production
-```
-
-Confirm the resulting deployment's commit matches `git rev-parse HEAD`.
-`--from-source` matters: plain `railway redeploy` reruns the previously deployed
-source and does not fetch the new commit.
-
-### Path C: last-resort local upload
-
-Use this only when the GitHub source integration is unavailable:
+Deploy the committed local tree from the repository root:
 
 ```powershell
 railway up --detach --json `
@@ -137,16 +108,17 @@ railway up --detach --json `
   --message "Deploy committed local tree"
 ```
 
-`railway up` uploads the local tree rather than pulling a GitHub commit.
-Therefore:
+`railway up` uploads the local tree. Therefore:
 
 - run it only from the repository root;
 - commit first;
+- push first so GitHub/CI and Railway correspond to the same source;
 - ensure `git status --short` contains no unintended files;
 - never use `--path-as-root` for this monorepo service.
 
 Plain `railway redeploy` is appropriate after a variable change or for
-restarting the same source.
+restarting the same source. Do not use `redeploy --from-source` while the
+repository's default branch differs from the sandbox branch.
 
 ## Verify every deployment
 
@@ -203,14 +175,13 @@ by ID, source/commit, builder, and status.
 
 ## Common recovery
 
-Wrong branch or old code:
+Wrong or old code:
 
 ```powershell
 railway status
-railway service source connect `
-  --repo vladimirhegai/Sequences `
-  --branch slack/workflow-undo-approve-thread `
-  --service sequences-slack
+git status --short
+git rev-parse HEAD
+railway up --detach --json --service sequences-slack --environment production
 ```
 
 Wrong builder:
