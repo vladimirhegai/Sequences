@@ -32,7 +32,7 @@ import {
   type VideoResult,
 } from "./orchestrator.ts";
 import { DEMO_BRIEF, buildDemoPlan } from "./demo.ts";
-import { createJob, findJobByThread, getJob, updateJob } from "./jobStore.ts";
+import { createJob, findJobByThread, getJob, listJobs, updateJob } from "./jobStore.ts";
 import { EventDeduper, parseThreadReply, type ThreadReply } from "./messageEvents.ts";
 import {
   postMessageWithAutoJoin,
@@ -108,6 +108,42 @@ function runJobInBackground(
   }
   activeJobs.add(jobId);
   runInBackground(label, task().finally(() => activeJobs.delete(jobId)));
+}
+
+/**
+ * Until the first real progress step lands, the planning/authoring model call
+ * produces no Slack updates — the "Building" message would otherwise sit frozen
+ * on "Drafting a launch reel…" for the whole (often multi-minute) model turn,
+ * which reads as "stuck". This ticks that message with a phase hint + elapsed
+ * seconds so the user can see it is alive. Returns a stop() that the progress
+ * reporter calls the instant a real step arrives; stop() is idempotent.
+ */
+function startBuildingHeartbeat(
+  client: WebClient,
+  channel: string,
+  messageTs: string,
+  title: string,
+  phases: string[],
+): () => void {
+  const startedAt = Date.now();
+  let stopped = false;
+  const tick = async (): Promise<void> => {
+    if (stopped) return;
+    const elapsed = Math.round((Date.now() - startedAt) / 1000);
+    const phase = phases[Math.min(Math.floor(elapsed / 20), phases.length - 1)];
+    if (stopped) return;
+    await safeUpdate(client, {
+      channel,
+      ts: messageTs,
+      blocks: buildingBlocks(title, `${phase} · ${elapsed}s`),
+      text: `Building “${title}”…`,
+    });
+  };
+  const timer = setInterval(() => void tick(), 15_000);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
 async function safeUpdate(
@@ -347,7 +383,18 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
     return;
   }
   const messageTs = posted.ts as string;
-  const onProgress = makeProgressReporter(client, args.channel, messageTs, args.product);
+  const reportProgress = makeProgressReporter(client, args.channel, messageTs, args.product);
+  const stopHeartbeat = startBuildingHeartbeat(client, args.channel, messageTs, args.product, [
+    "Reading the thread…",
+    "Designing the frame…",
+    "Authoring the composition…",
+  ]);
+  // The first real step ends the silent window — drop the heartbeat so it can't
+  // overwrite the live Thinking-Steps trace.
+  const onProgress: ProgressCallback = async (progress) => {
+    stopHeartbeat();
+    await reportProgress(progress);
+  };
 
   createJob({
     id: jobId,
@@ -378,6 +425,7 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
       ].filter(Boolean).join("\n\n");
       slackMcpTools = workspace.toolsCalled;
     } catch (error) {
+      stopHeartbeat();
       updateJob(jobId, { status: "error" });
       await safeUpdate(client, {
         channel: args.channel,
@@ -408,6 +456,7 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
     });
     result.slackMcpTools = slackMcpTools;
   } catch (error) {
+    stopHeartbeat();
     updateJob(jobId, { status: "error" });
     await safeUpdate(client, {
       channel: args.channel,
@@ -417,6 +466,9 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
     });
     return;
   }
+  // Authoring finished (success). If a step somehow never fired, end the silent
+  // window now so the storyboard update replaces the heartbeat cleanly.
+  stopHeartbeat();
 
   updateJob(jobId, { status: "building", projectDir: result.projectDir });
   await safeUpdate(client, {
@@ -466,7 +518,15 @@ async function runRevise(client: WebClient, jobId: string, instruction: string):
 
   const messageTs = posted.ts as string;
   const threadTs = job.threadTs ?? job.messageTs;
-  const onProgress = makeProgressReporter(client, job.channel, messageTs, job.title);
+  const reportProgress = makeProgressReporter(client, job.channel, messageTs, job.title);
+  const stopHeartbeat = startBuildingHeartbeat(client, job.channel, messageTs, job.title, [
+    "Interpreting the revision…",
+    "Re-authoring the composition…",
+  ]);
+  const onProgress: ProgressCallback = async (progress) => {
+    stopHeartbeat();
+    await reportProgress(progress);
+  };
   updateJob(jobId, { status: "building" });
 
   // Tier 1: apply the tweak + re-thumbnail (zero-token where the matcher is sure).
@@ -479,6 +539,7 @@ async function runRevise(client: WebClient, jobId: string, instruction: string):
       onProgress,
     });
   } catch (error) {
+    stopHeartbeat();
     updateJob(jobId, { status: "ready" });
     await safeUpdate(client, {
       channel: job.channel,
@@ -488,6 +549,7 @@ async function runRevise(client: WebClient, jobId: string, instruction: string):
     });
     return;
   }
+  stopHeartbeat();
 
   updateJob(jobId, { status: "building" });
   await safeUpdate(client, {
@@ -918,7 +980,42 @@ app.event("app_mention", async ({ event, client, say }) => {
   await say("Sequences is online. Run `/sequences` to turn a launch into a video.");
 });
 
+/**
+ * A container swap (deploy), crash, or OOM kills any in-flight background job:
+ * its promise dies with the process, but `jobs.json` still says "building" and
+ * its Slack message is frozen on "Drafting a launch reel…" forever, because the
+ * new container never looks at it. On boot, every job still marked "building" is
+ * by definition orphaned — replace the freeze with a clear, retryable error.
+ */
+async function recoverInterruptedJobs(client: WebClient): Promise<void> {
+  const orphaned = listJobs().filter((job) => job.status === "building");
+  for (const job of orphaned) {
+    updateJob(job.id, { status: "error" });
+    if (!job.messageTs) continue;
+    await safeUpdate(client, {
+      channel: job.channel,
+      ts: job.messageTs,
+      blocks: errorBlocks(
+        job.title,
+        "This job stopped because the bot restarted (a deploy or crash) while it was building. " +
+          "Nothing was lost on your end — just run the command again.",
+      ),
+      text: `“${job.title}” was interrupted by a restart — please re-run`,
+    });
+  }
+  if (orphaned.length > 0) {
+    console.log(`Recovered ${orphaned.length} job(s) interrupted by a restart.`);
+  }
+}
+
+// Never let a stray async rejection or thrown error take the process down: a
+// crash here means Railway restarts the container, which orphans every in-flight
+// job. Log and stay up; recoverInterruptedJobs cleans up anything truly lost.
+process.on("unhandledRejection", (reason) => logBackgroundError("unhandledRejection", reason));
+process.on("uncaughtException", (error) => logBackgroundError("uncaughtException", error));
+
 const auth = await app.client.auth.test();
 botUserId = typeof auth.user_id === "string" ? auth.user_id : undefined;
 await app.start();
 console.log("⚡ Sequences for Slack is running (Socket Mode). Try /sequences");
+await recoverInterruptedJobs(app.client as WebClient);
