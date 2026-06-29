@@ -25,6 +25,12 @@ if [ ! -d "$STAGE/.git" ]; then
 fi
 git -C "$STAGE" remote set-url origin "$REMOTE"
 
+# Always work on `main` so the commit we make is the ref we push. (A previous
+# run could leave the staging checkout on a stray branch; committing there and
+# blindly `push origin main` would push a STALE main ref and roll the public
+# repo — and the Railway deploy — backwards.)
+git -C "$STAGE" checkout -B main >/dev/null 2>&1 || true
+
 # Wipe tracked content (preserve .git and any cached node_modules).
 find "$STAGE" -mindepth 1 -maxdepth 1 ! -name .git ! -name node_modules -exec rm -rf {} +
 
