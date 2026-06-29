@@ -53,8 +53,9 @@ export function diagnosticsBlocks(report: DiagnosticsReport): KnownBlock[] {
     .map((check) => `${STATUS_ICON[check.status]} *${escapeMrkdwn(check.label)}* — ${escapeMrkdwn(check.detail)}`)
     .join("\n");
   return [
-    { type: "header", text: plain("Sequences self-check") },
+    { type: "header", text: plain("🩺 Sequences self-check") },
     { type: "section", text: { type: "mrkdwn", text: headline } },
+    { type: "divider" },
     { type: "section", text: { type: "mrkdwn", text: lines } },
     {
       type: "context",
@@ -78,6 +79,16 @@ export function buildCreateModal(ctx: ModalContext): View {
     submit: plain("Create"),
     close: plain("Cancel"),
     blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text:
+            ":clapper: *Turn your launch into a short, on-brand video.*\n" +
+            "Give me the essentials — I'll draft a storyboard, render a draft MP4, and you can revise it right in the thread.",
+        },
+      },
+      { type: "divider" },
       {
         type: "input",
         block_id: "product",
@@ -115,6 +126,7 @@ export function buildCreateModal(ctx: ModalContext): View {
           placeholder: plain("backend engineers evaluating observability tools"),
         },
       },
+      { type: "divider" },
       {
         type: "input",
         block_id: "tone",
@@ -174,6 +186,15 @@ export function buildReviseModal(jobId: string): View {
     close: plain("Cancel"),
     blocks: [
       {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: ":pencil2: Describe the change in plain language — I'll re-plan only what's needed and re-render.",
+          },
+        ],
+      },
+      {
         type: "input",
         block_id: "instruction",
         label: plain("What should change?"),
@@ -194,8 +215,12 @@ export function buildingBlocks(title: string, note = "Drafting a launch reel…"
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `:clapper: *Building “${escapeMrkdwn(title)}”* — ${escapeMrkdwn(note)}`,
+        text: `:clapper: *Building “${escapeMrkdwn(title)}”*`,
       },
+    },
+    {
+      type: "context",
+      elements: [{ type: "mrkdwn", text: `:hourglass_flowing_sand: ${escapeMrkdwn(note)}` }],
     },
   ];
 }
@@ -297,7 +322,8 @@ export function resultBlocks(view: ResultView): KnownBlock[] {
   const slackReceipt = (view.slackMcpTools ?? []).map((name) => `\`${name}\``).join(" · ");
   return [
     { type: "section", text: { type: "mrkdwn", text: headline } },
-    { type: "section", text: { type: "mrkdwn", text: codeBlock(view.outline) } },
+    { type: "section", text: { type: "mrkdwn", text: `:clipboard: *Storyboard*\n${codeBlock(view.outline)}` } },
+    { type: "divider" },
     {
       type: "context",
       elements: [
@@ -331,6 +357,7 @@ export function resultBlocks(view: ResultView): KnownBlock[] {
         },
       ],
     },
+    { type: "divider" },
     {
       type: "actions",
       elements: [
@@ -413,6 +440,15 @@ export function buildShareModal(jobId: string): View {
     close: plain("Cancel"),
     blocks: [
       {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: ":rocket: Posts the finished reel as a new message in the channel you choose.",
+          },
+        ],
+      },
+      {
         type: "input",
         block_id: "channel",
         label: plain("Post the launch reel to"),
@@ -435,6 +471,15 @@ export function errorBlocks(title: string, message: string): KnownBlock[] {
         type: "mrkdwn",
         text: `:warning: *Couldn’t build “${escapeMrkdwn(title)}”*\n${codeBlock(message)}`,
       },
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: ":arrows_counterclockwise: Nothing was changed. Fix the issue above and run `/sequences` again, or `/sequences mcp-test` to check services.",
+        },
+      ],
     },
   ];
 }
