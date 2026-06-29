@@ -24,6 +24,12 @@ if [ ! -d "$STAGE/.git" ]; then
   git -C "$STAGE" remote add origin "$REMOTE"
 fi
 git -C "$STAGE" remote set-url origin "$REMOTE"
+# The publisher often runs through WSL/Git Bash while the host Git identity is
+# configured only in Windows. Keep identity local to the staging checkout so a
+# fresh machine can publish without mutating global Git config.
+git -C "$STAGE" config user.name "${SLACK_PUBLISH_GIT_NAME:-vladimirhegai}"
+git -C "$STAGE" config user.email \
+  "${SLACK_PUBLISH_GIT_EMAIL:-vladimirhegai@users.noreply.github.com}"
 
 # Always work on `main` so the commit we make is the ref we push. (A previous
 # run could leave the staging checkout on a stray branch; committing there and
