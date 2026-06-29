@@ -8,6 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { PROVIDERS } from "@sequences/platform/providers";
 import type { WebClient } from "@slack/web-api";
 import { McpClient } from "./engine/mcpClient.ts";
 import { mcpEnabled, resolveProvider } from "./orchestrator.ts";
@@ -123,17 +124,30 @@ function checkRenderHost(): DiagnosticCheck {
   };
 }
 
-function checkPlanningBrain(): DiagnosticCheck {
-  const provider = resolveProvider();
-  if (provider === "anthropic-api") {
-    return process.env.ANTHROPIC_API_KEY
-      ? { label: "Planning brain", status: "ok", detail: "anthropic-api (ANTHROPIC_API_KEY set)", core: false }
-      : { label: "Planning brain", status: "fail", detail: "anthropic-api selected but ANTHROPIC_API_KEY is missing", core: false };
+export function checkPlanningBrain(): DiagnosticCheck {
+  const providerId = resolveProvider();
+  const provider = PROVIDERS[providerId];
+  if (provider.kind === "api") {
+    const keyName = provider.apiKeyEnv;
+    const configured = Boolean(keyName && process.env[keyName]);
+    return configured
+      ? {
+          label: "Planning brain",
+          status: "ok",
+          detail: `${providerId} (${keyName} set)`,
+          core: false,
+        }
+      : {
+          label: "Planning brain",
+          status: "fail",
+          detail: `${providerId} selected but ${keyName ?? "its API key"} is missing`,
+          core: false,
+        };
   }
   return {
     label: "Planning brain",
     status: "warn",
-    detail: "claude-code-cli (key-free; ensure the CLI is logged in — not available in a container)",
+    detail: `${providerId} (key-free; ensure the CLI is installed and logged in)`,
     core: false,
   };
 }

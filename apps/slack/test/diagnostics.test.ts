@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { runDiagnostics, type CheckStatus } from "../src/diagnostics.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  checkPlanningBrain,
+  runDiagnostics,
+  type CheckStatus,
+} from "../src/diagnostics.ts";
 
 const STATUSES: CheckStatus[] = ["ok", "warn", "fail"];
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("runDiagnostics", () => {
   it("returns a contained report covering every service, without a Slack client", async () => {
@@ -25,4 +33,14 @@ describe("runDiagnostics", () => {
     const anyCoreFailed = report.checks.some((check) => check.core && check.status === "fail");
     expect(report.healthy).toBe(!anyCoreFailed);
   }, 20_000);
+
+  it("reports the configured OpenAI planning provider", () => {
+    vi.stubEnv("SLACK_SEQUENCES_PROVIDER", "openai-api");
+    vi.stubEnv("OPENAI_API_KEY", "test-key");
+
+    expect(checkPlanningBrain()).toMatchObject({
+      status: "ok",
+      detail: "openai-api (OPENAI_API_KEY set)",
+    });
+  });
 });
