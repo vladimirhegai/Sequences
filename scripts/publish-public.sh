@@ -35,16 +35,32 @@ git -C "$STAGE" config user.email \
 # run could leave the staging checkout on a stray branch; committing there and
 # blindly `push origin main` would push a STALE main ref and roll the public
 # repo — and the Railway deploy — backwards.)
-git -C "$STAGE" checkout -B main >/dev/null 2>&1 || true
+git -C "$STAGE" fetch origin main -q || true
+if git -C "$STAGE" rev-parse --verify origin/main >/dev/null 2>&1; then
+  git -C "$STAGE" checkout -B main origin/main >/dev/null 2>&1
+else
+  git -C "$STAGE" checkout -B main >/dev/null 2>&1 || true
+fi
 
 # Wipe tracked content (preserve .git and any cached node_modules).
 find "$STAGE" -mindepth 1 -maxdepth 1 ! -name .git ! -name node_modules -exec rm -rf {} +
 
-# --- copy the subset ------------------------------------------------------
-mkdir -p "$STAGE/packages" "$STAGE/apps"
-cp -r "$ROOT/packages/core"     "$STAGE/packages/core"
-cp -r "$ROOT/packages/platform" "$STAGE/packages/platform"
-cp -r "$ROOT/apps/slack"        "$STAGE/apps/slack"
+# --- copy committed source blobs (preserves canonical LF line endings) ----
+# `cp -r` through WSL/Git Bash rewrites checked-out CRLF files and produces a
+# giant no-op public diff. Archive from Git so publication is reproducible and
+# cannot accidentally include untracked .env/.data/research files.
+git -C "$ROOT" archive HEAD \
+  packages/core \
+  packages/platform \
+  apps/slack \
+  evals \
+  examples/forge/extensions \
+  tsconfig.base.json \
+  .gitignore \
+  Dockerfile \
+  railway.json \
+  .dockerignore \
+  | tar -xf - -C "$STAGE"
 
 # Strip secrets / local research / heavy / generated dirs from the copies.
 find "$STAGE/apps/slack" -maxdepth 1 -type f -name '.env*' \
@@ -55,21 +71,6 @@ rm -rf "$STAGE/apps/slack/node_modules" \
        "$STAGE/packages/core/node_modules" \
        "$STAGE/packages/platform/node_modules" \
        "$STAGE"/apps/slack/build "$STAGE"/apps/slack/renders
-
-# Shared root config copied verbatim.
-cp "$ROOT/tsconfig.base.json" "$STAGE/tsconfig.base.json"
-cp "$ROOT/.gitignore"         "$STAGE/.gitignore"
-
-# Data-only fixtures used by the shared package tests. The paused applications
-# are never copied.
-cp -r "$ROOT/evals" "$STAGE/evals"
-mkdir -p "$STAGE/examples/forge"
-cp -r "$ROOT/examples/forge/extensions" "$STAGE/examples/forge/extensions"
-
-# Deployment files (Railway builds the public repo from these).
-cp "$ROOT/Dockerfile"     "$STAGE/Dockerfile"
-cp "$ROOT/railway.json"   "$STAGE/railway.json"
-cp "$ROOT/.dockerignore"  "$STAGE/.dockerignore"
 
 # --- tailored standalone-repo root files generated from this workspace ----
 cat > "$STAGE/package.json" <<'EOF'
