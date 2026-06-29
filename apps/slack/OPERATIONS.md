@@ -79,13 +79,14 @@ owns that Socket Mode connection. A second process = duplicate Slack replies.
 npm run typecheck --workspace @sequences/slack
 npm run test --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
+npm run direct:demo --workspace @sequences/slack
 ```
 
 For engine/render/Docker/Chromium/FFmpeg/HyperFrames/media changes:
 
 ```powershell
 $env:VERIFY_RENDER = "1"
-try { npm run demo --workspace @sequences/slack }
+try { npm run direct:demo --workspace @sequences/slack }
 finally { Remove-Item Env:VERIFY_RENDER -ErrorAction SilentlyContinue }
 
 docker build -t sequences-slack .
