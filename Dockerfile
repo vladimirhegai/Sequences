@@ -41,13 +41,13 @@ ENV NODE_ENV=production \
     PRODUCER_LOW_MEMORY_MODE=true \
     SLACK_SEQUENCES_DATA_DIR=/data
 
-# Persistent volume for projects, renders, encrypted user tokens, and the job map.
+# Prepare Railway's `/data` mount point for projects, renders, encrypted user
+# tokens, and the job map. The service-level Railway volume supplies persistence.
 # Run as root (the image default — note no USER directive): Railway mounts the
 # volume root-owned, so a non-root user can't write /data
 # (docs.railway.com/volumes/reference), and headless Chromium also needs root to
 # start under the producer. RAILWAY_RUN_UID=0 is the alternative if a USER is set.
 RUN mkdir -p /data
-VOLUME ["/data"]
 
 # Railway injects PORT; the HTTP server (health + OAuth) binds it on 0.0.0.0.
 CMD ["npm", "run", "start", "-w", "@sequences/slack"]

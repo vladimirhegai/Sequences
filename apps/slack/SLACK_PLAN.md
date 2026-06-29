@@ -103,6 +103,10 @@ Slack displays the selected skill names as an **Agent context** receipt.
 ```mermaid
 flowchart TD
   S[Slack command / shortcut / thread reply / revise] --> B[Bolt app]
+  B -->|invoking user OAuth token| OC[OpenAI Responses MCP client]
+  OC --> SM[Slack-hosted MCP server]
+  SM --> WC[Permission-scoped workspace context]
+  WC --> P
   B --> O[orchestrator]
   K[Local HyperFrames skill retrieval] --> P[Planning brain]
   P -->|typed Plan or Commands| O
@@ -116,7 +120,10 @@ flowchart TD
 ```
 
 Important honesty: model planning happens before `submit_plan`; it is not itself
-an MCP tool call. Project mutations, previews, and renders are MCP calls.
+an internal Sequences MCP tool call. Slack workspace retrieval is a remote call
+to Slack's hosted MCP server; project mutations, previews, and renders are calls
+to the internal stdio Sequences MCP process. Railway does not expose a public
+`/mcp` endpoint for Slackbot.
 
 ## Files that define the system
 

@@ -5,6 +5,13 @@
 > abstractions. We should change or delete anything that fails visual-quality,
 > user-value, or hackathon-demo testing.
 
+> **Submission warning:** this is a target architecture, not the hackathon
+> submission diagram. Use the "Current architecture" section of
+> [SLACK_PLAN.md](SLACK_PLAN.md) to document what is implemented. Railway
+> currently hosts the Bolt app, OAuth callback, renderer, and internal stdio
+> Sequences MCP process. Slack hosts the workspace-context MCP server; there is
+> no public Railway `/mcp` endpoint for Slackbot.
+
 ## Product thesis
 
 Sequences turns the context already surrounding a launch in Slack—messages,

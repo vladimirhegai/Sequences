@@ -1,113 +1,252 @@
-# Deploying Sequences for Slack
+# Sandbox deployment — Sequences for Slack
 
-The hackathon deployment path: the Bolt app runs in **Socket Mode**, uses Slack's
-**hosted MCP server** for workspace context, and uses the internal **Sequences MCP
-server** for video execution. It is packaged as a single Docker image (Chromium +
-FFmpeg + Node) and deployed to **Railway**.
+Use this guide once to install the hackathon sandbox app on Railway. Day-to-day
+development stays local in the normal workspace; the sandbox is the stable,
+judge-accessible environment tested at the end of each day.
 
-> **Authoritative variable names live here and in
-> [`.env.railway.example`](.env.railway.example).** They must match the code
-> exactly — `SLACK_STATE_SECRET`, `SLACK_TOKEN_ENCRYPTION_KEY`,
-> `SLACK_SEQUENCES_DATA_DIR`. There is **no** `SLACK_SIGNING_SECRET` (Socket Mode
-> doesn't use one) and you never set `PORT` (Railway injects it).
+For the recurring test routine, use [TESTING.md](TESTING.md).
 
-## Two workspaces, one codebase
+## What Railway is hosting
 
-We run the same code in two places with **different tokens** — never two copies
-with the same `xoxb`/`xapp`:
+Railway hosts:
 
-| Where | Slack workspace | How it runs | Tokens |
-| --- | --- | --- | --- |
-| **Local (VS Code)** | your normal Sequences **workspace** | `npm run dev` | `apps/slack/.env` (gitignored) |
-| **Railway** | the Sequences **sandbox** | this Docker image | Railway dashboard variables |
+- the Bolt app and its outbound Socket Mode connection;
+- `/healthz`, `/slack/install`, and `/slack/oauth_redirect`;
+- the internal stdio Sequences MCP process;
+- Chromium and FFmpeg rendering;
+- the persistent `/data` volume.
 
-Local `.env` only needs `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN` to iterate with
-`/sequences demo`. The full `/sequences` create flow needs a public OAuth callback,
-so it effectively runs on Railway (or behind a tunnel). Copy
-[`.env.example`](.env.example) → `apps/slack/.env` for local;
-[`.env.railway.example`](.env.railway.example) is the paste-ready Railway set.
+Slack—not Railway—hosts `https://mcp.slack.com/mcp`. The app calls that hosted
+server through the OpenAI Responses API using the invoking user's Slack OAuth
+token.
 
-## Railway
+This deployment does **not** publish a `/mcp` HTTP endpoint for Slackbot. Do not
+configure **Features → MCP Servers** or add `mcp:connect`; that is the opposite
+integration direction.
 
-`railway.json` already pins the builder (Dockerfile), `/healthz` health check,
-single replica, and restart policy — so those aren't manual steps. You still do:
+## Before starting
 
-1. **New Project → Deploy from GitHub repo →** the Sequences repo. Keep the root
-   directory `/`. Railway auto-detects the root `Dockerfile`; add no custom build
-   or start command.
-2. **Settings → Networking → Generate Domain.** Copy it (e.g.
-   `https://sequences-slack-production.up.railway.app`). This is your
-   `PUBLIC_BASE_URL`.
-3. **Variables → Raw Editor →** paste [`.env.railway.example`](.env.railway.example)
-   and fill every value (use the domain from step 2 in `PUBLIC_BASE_URL` and
-   `SLACK_REDIRECT_URI`).
-4. **Settings → Volumes → Add Volume**, mount path `/data`. The encrypted user
-   tokens, job map, projects, and renders live here and must survive redeploys.
-   (Keep one replica — these stores are file-backed; `railway.json` sets this.)
-5. **Deploy.** Watch the logs for `HTTP server listening`, then `⚡️ Sequences …
-   running` once the Socket Mode connection is up.
+Prepare:
 
-Give it **≥2 GB RAM** (4 GB is safer for 1080p Chromium rendering).
+- A Slack developer sandbox and a new Slack app for this hackathon project.
+- A Railway **Hobby or higher** account. Free and Trial do not provide enough
+  memory for Chromium rendering.
+- A dedicated OpenAI project key for Slack hosted-MCP retrieval.
+- A planning provider: either reuse the dedicated OpenAI project temporarily,
+  or provide a dedicated Anthropic workspace key.
+- The repository pushed to GitHub.
 
-### Generate the two secrets
+Use dedicated hackathon API projects/workspaces, low spend/rate limits, and
+usage alerts. The keys stay on the server, but every request made by a Slack user
+is billed to your accounts.
+
+## 1. Create the sandbox Slack app
+
+1. Open <https://api.slack.com/apps>.
+2. Select **Create New App → From a manifest**.
+3. Select the Slack developer sandbox.
+4. Paste [`manifest.json`](manifest.json) and create the app.
+5. Under **Agents & AI Apps**, enable **Slack Model Context Protocol (MCP)
+   Server**.
+6. Under **Basic Information → App-Level Tokens**, create a token with
+   `connections:write`. Save the `xapp-...` value as `SLACK_APP_TOKEN`.
+7. Under **OAuth & Permissions**, select **Install to Workspace**. Save the
+   `xoxb-...` bot token as `SLACK_BOT_TOKEN`.
+8. On **Basic Information**, save the app's Client ID and Client Secret as
+   `SLACK_CLIENT_ID` and `SLACK_CLIENT_SECRET`.
+
+Do not reuse the local development app's tokens.
+
+## 2. Create the Railway service
+
+1. In Railway, select **New Project → Deploy from GitHub repo** and choose this
+   repository.
+2. Keep the service root directory `/`.
+3. Do not add build or start commands. Root [`railway.json`](../../railway.json)
+   selects the Dockerfile, `/healthz`, one replica, and the restart policy.
+4. Generate a public domain under **Settings → Networking**. Save the full HTTPS
+   URL without a trailing slash as `PUBLIC_BASE_URL`.
+
+The first deployment may fail before credentials are present. That is harmless;
+finish the configuration and redeploy.
+
+## 3. Add the persistent volume and resource limits
+
+1. Add a Railway volume mounted exactly at `/data`.
+2. Keep exactly one replica. Jobs, tokens, and the job map are file-backed.
+3. Under **Deploy → Replica Limits**, start with a 4 GB memory cap. A 2 GB cap
+   can work for draft rendering, but 4 GB is safer for 1080p Chromium.
+4. Set a Railway compute usage alert and a hard limit you are comfortable with.
+5. Leave Serverless/App Sleeping disabled for predictable judging and Socket
+   Mode availability.
+
+The volume stores encrypted Slack user tokens, projects, thumbnails, and MP4s.
+It is not self-cleaning; monitor its usage during the hackathon.
+The Dockerfile only creates the `/data` mount point; do not add a Docker
+`VOLUME` instruction because Railway volumes are configured on the service.
+
+## 4. Add Railway variables
+
+Generate two different 32-byte values:
 
 ```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # SLACK_STATE_SECRET
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # SLACK_TOKEN_ENCRYPTION_KEY
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
-### Which variables are required
+The first can be `SLACK_STATE_SECRET`; the second must be
+`SLACK_TOKEN_ENCRYPTION_KEY`.
 
-- **Always:** `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, `SLACK_CLIENT_ID`,
-  `SLACK_CLIENT_SECRET`, `PUBLIC_BASE_URL`, `SLACK_REDIRECT_URI`,
-  `SLACK_STATE_SECRET`, `SLACK_TOKEN_ENCRYPTION_KEY`.
-- **For the real create flow:** `OPENAI_API_KEY` (Slack hosted-MCP retrieval) **and**
-  a planning provider — `SLACK_SEQUENCES_PROVIDER=anthropic-api` + `ANTHROPIC_API_KEY`
-  (the key-free `claude-code-cli` provider can't log in inside a container).
-- **Baked into the image:** `NODE_ENV`, `HOST`, `SLACK_SEQUENCES_DATA_DIR=/data`,
-  `PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`, `PRODUCER_LOW_MEMORY_MODE=true`.
+Open **Variables → Raw Editor**, paste
+[`.env.railway.example`](.env.railway.example), and fill every uncommented
+value:
 
-## Slack app settings (sandbox app)
+```dotenv
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+SLACK_CLIENT_ID=...
+SLACK_CLIENT_SECRET=...
+PUBLIC_BASE_URL=https://YOUR-SERVICE.up.railway.app
+SLACK_REDIRECT_URI=https://YOUR-SERVICE.up.railway.app/slack/oauth_redirect
+SLACK_STATE_SECRET=...
+SLACK_TOKEN_ENCRYPTION_KEY=...
+OPENAI_API_KEY=sk-...
+```
 
-1. **App Manifest →** paste [`manifest.json`](manifest.json) → Save. (Editing the
-   file locally does not sync to Slack.)
-2. **Agents & AI Apps →** enable **Slack Model Context Protocol (MCP) Server**.
-3. **OAuth & Permissions → Redirect URLs →** add the exact `SLACK_REDIRECT_URI`
-   value, then **Save URLs**.
-4. **Reinstall to Workspace**, approve, then re-copy the **Bot User OAuth Token**
-   into Railway as `SLACK_BOT_TOKEN` (new scopes only fully apply after reinstall).
-5. Do **not** configure **Features → MCP Servers** — that is the opposite
-   direction (Slackbot calling a public MCP server we'd publish), not this flow.
-6. **Per-user MCP install:** open `https://YOUR-SERVICE.up.railway.app/slack/install`
-   once as each demo user and approve. The app receives the user token at
-   `/slack/oauth_redirect` and stores it encrypted — you never copy it by hand.
+Choose one planning-provider configuration:
 
-## Verify
+```dotenv
+# OpenAI planning — works immediately with the same project key
+SLACK_SEQUENCES_PROVIDER=openai-api
+SEQUENCES_OPENAI_MODEL=gpt-5-mini
+```
 
-- `https://YOUR-SERVICE.up.railway.app/healthz` returns `ready` (it returns
-  `starting` with HTTP 503 until the Slack socket connects).
-- In a **public** channel (or after `/invite @Sequences` in a private one):
-  - `/sequences mcp-test` runs a self-check and posts a pass/warn/fail board for
-    every service (Slack API, Sequences MCP engine, render host, planning brain,
-    hosted MCP, token encryption, data dir) — the fastest "is it healthy?" signal.
-  - `/sequences demo` renders without any user OAuth (deterministic fallback).
-  - `/sequences` after `/slack/install` creates a real video; the result shows a
-    **Slack context (hosted MCP)** receipt and a Sequences MCP build trace.
+or:
 
-> The image runs as **root** by design (no `USER` directive): Railway mounts the
-> `/data` volume root-owned, and headless Chromium needs root + `--no-sandbox`
-> (injected via a wrapper at `/usr/local/bin/chromium-no-sandbox`). Nothing to
-> configure — it's baked into the `Dockerfile`.
+```dotenv
+# Anthropic planning
+SLACK_SEQUENCES_PROVIDER=anthropic-api
+ANTHROPIC_API_KEY=sk-ant-...
+```
 
-## Test the image locally (optional, before pushing)
+The current Railway deployment can start with OpenAI planning and switch to
+Anthropic later by replacing those provider variables.
+
+Do not add:
+
+- `PORT` — Railway injects it.
+- `SLACK_SIGNING_SECRET` — current Slack traffic uses Socket Mode.
+- `NODE_ENV`, `HOST`, `SLACK_SEQUENCES_DATA_DIR`,
+  `PUPPETEER_EXECUTABLE_PATH`, or `PRODUCER_LOW_MEMORY_MODE` — the Dockerfile
+  supplies them.
+
+`RAILWAY_DOCKERFILE_PATH=Dockerfile` may be set explicitly as a harmless
+fallback if Railway does not pick up the checked-in `railway.json`.
+
+After the deployment works, seal the Slack tokens, client secret, state secret,
+token-encryption key, and model API keys in Railway. Sealed variables cannot be
+read back, so keep recovery copies in your password manager.
+
+## 5. Finish Slack OAuth configuration
+
+1. In the sandbox Slack app, open **OAuth & Permissions → Redirect URLs**.
+2. Add the exact `SLACK_REDIRECT_URI` from Railway and select **Save URLs**.
+3. Open **App Manifest**, paste the current [`manifest.json`](manifest.json),
+   and save.
+4. Select **Reinstall to Workspace** and approve the requested bot and user
+   scopes.
+5. Copy the current `xoxb-...` token into Railway again.
+6. Redeploy the Railway service.
+
+Editing a local manifest file never changes the Slack app automatically. Repeat
+the manifest-save, reinstall, token-copy, and redeploy sequence whenever scopes
+or Slack features change.
+
+## 6. Connect each sandbox user to Slack hosted MCP
+
+Every person who runs the real `/sequences` flow must authorize their own Slack
+user token:
+
+```text
+https://YOUR-SERVICE.up.railway.app/slack/install
+```
+
+Open that URL while signed into the sandbox and approve it once. The callback
+stores the user token encrypted on `/data`; do not copy user tokens manually.
+
+`/sequences demo` does not need this authorization. `/sequences` and the real
+message-shortcut flow do.
+
+When judges are invited later, give them the same install link in a clear
+testing-instructions channel. Invite `slackhack@salesforce.com` and
+`testing@devpost.com` as sandbox **Members**, not restricted guests.
+
+## 7. Deploy and verify
+
+Railway services connected to GitHub normally deploy whenever you push to the
+configured branch. Watch for:
+
+```text
+HTTP server listening
+⚡ Sequences for Slack is running (Socket Mode)
+```
+
+Check readiness from PowerShell:
+
+```powershell
+$baseUrl = "https://YOUR-SERVICE.up.railway.app"
+Invoke-WebRequest "$baseUrl/healthz" | Select-Object StatusCode, Content
+```
+
+Expected result: HTTP `200` and `ready`. HTTP `503` with `starting` means the
+HTTP process is alive but the Slack socket has not connected—usually an invalid
+or mismatched sandbox token.
+
+Then follow the sandbox checklist in [TESTING.md](TESTING.md).
+
+## Optional Railway CLI
+
+The dashboard is sufficient. If you prefer the CLI:
+
+```powershell
+npm install --global @railway/cli
+railway login
+railway link
+railway status
+railway deployment list --limit 5
+railway logs
+```
+
+Do not use `railway up` for the normal daily flow when GitHub autodeploy is
+enabled; pushing the configured branch is the source-of-truth deployment.
+
+## Docker check before the first deployment
 
 With Docker Desktop running:
 
 ```powershell
 docker build -t sequences-slack .
 docker run --rm -p 3000:3000 --env-file apps/slack/.env sequences-slack
-# then: curl http://localhost:3000/healthz
 ```
 
-Use `apps/slack/.env` (or a filled copy of `.env.railway.example`) as the
-`--env-file`. This is the same image Railway builds.
+In another terminal:
+
+```powershell
+Invoke-WebRequest http://localhost:3000/healthz |
+  Select-Object StatusCode, Content
+```
+
+The image uses `/usr/local/bin/chromium-no-sandbox`, which wraps the system
+Chromium with the flags required inside this root-run container.
+
+## Official references
+
+- [Slack hosted MCP overview](https://docs.slack.dev/ai/slack-mcp-server/)
+- [Slack hosted MCP sample-app setup](https://docs.slack.dev/ai/slack-mcp-server/developing/)
+- [Slack Bolt Socket Mode](https://docs.slack.dev/tools/bolt-js/concepts/socket-mode/)
+- [Railway Dockerfiles](https://docs.railway.com/builds/dockerfiles)
+- [Railway volumes](https://docs.railway.com/volumes)
+- [Railway health checks](https://docs.railway.com/deployments/healthchecks)
+- [Railway variables and sealed secrets](https://docs.railway.com/variables)
+- [Railway plans and resource limits](https://docs.railway.com/pricing/plans)
+- [Railway cost controls](https://docs.railway.com/pricing/cost-control)

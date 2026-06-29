@@ -1,98 +1,157 @@
-# Setup — Sequences for Slack
+# Local development setup — Sequences for Slack
 
-Get the bot running in a Slack **sandbox/workspace** in ~5 minutes. The app uses
-**Socket Mode**, so there's no public URL, tunnel, or request-URL to configure.
+Use this guide for day-to-day development against your normal Slack workspace.
+Use [DEPLOYMENT.md](DEPLOYMENT.md) once to install the separate sandbox app on
+Railway, then use [TESTING.md](TESTING.md) for the repeatable test commands.
 
-> Prereqs: Node ≥ 22.18, and (for previews) Chrome or Edge installed. MP4 export
-> additionally needs FFmpeg — without it the bot degrades to thumbnails-only.
+## The two-environment rule
 
-## 1. Install
+Use two Slack apps created from the same [`manifest.json`](manifest.json):
 
-```bash
-# from the repo root
+| Environment | Slack app lives in | Process runs on | Credentials live in |
+| --- | --- | --- | --- |
+| Local development | normal development workspace | your computer | `apps/slack/.env` |
+| Hackathon sandbox | Slack developer sandbox | Railway | Railway Variables |
+
+Never run the local and Railway processes with the same `xoxb-...` and
+`xapp-...` values. Two Socket Mode clients using one app make debugging
+unnecessarily confusing.
+
+## Prerequisites
+
+- Node.js 22.18 or newer.
+- Chrome or Edge for thumbnails.
+- FFmpeg for MP4 output. Without it, the app intentionally degrades to
+  thumbnails-only.
+- A normal Slack workspace where you can create and install an internal app.
+- Optional: Claude Code signed in locally for model-planned create/revise.
+- Optional: ngrok or another HTTPS tunnel for testing per-user Slack MCP OAuth
+  locally.
+
+From the repository root:
+
+```powershell
 npm install
+Copy-Item apps/slack/.env.example apps/slack/.env
 ```
 
-## 2. Create the Slack app from the manifest
+`apps/slack/.env` is gitignored. Never put real credentials in an example file,
+commit, issue, screenshot, or Slack message.
 
-1. Go to <https://api.slack.com/apps> → **Create New App** → **From a manifest**.
-2. Pick your **sandbox** (or test) workspace.
-3. Paste the contents of [manifest.json](manifest.json) and create the app.
+## Create the local development Slack app
 
-The manifest declares everything the bot needs: the `/sequences` slash command,
-the **🎬 Make a launch video** message shortcut, the bot scopes (`commands`,
-`chat:write`, `channels:join`, `files:write`, `app_mentions:read`, `channels:history`,
-`groups:history`), Socket Mode, and the `app_mention`, `message.channels`, and
-`message.groups` events.
+1. Open <https://api.slack.com/apps>.
+2. Select **Create New App → From a manifest**.
+3. Select your normal development workspace.
+4. Paste [`manifest.json`](manifest.json), review it, and create the app.
+5. Under **Agents & AI Apps**, enable **Slack Model Context Protocol (MCP)
+   Server**. This allows this app to consume Slack's hosted MCP server.
+6. Under **Basic Information → App-Level Tokens**, create a token with
+   `connections:write`. Copy its `xapp-...` value.
+7. Under **OAuth & Permissions**, select **Install to Workspace**. Copy the
+   **Bot User OAuth Token** (`xoxb-...`).
+8. Put those two values in `apps/slack/.env` as `SLACK_APP_TOKEN` and
+   `SLACK_BOT_TOKEN`.
 
-Already created the app? Open **App Manifest**, replace it with
-[manifest.json](manifest.json), save, then **reinstall the app to the workspace**.
-Slack does not add new OAuth scopes to an existing bot token until you reinstall.
-Event-subscription changes also require the updated manifest. If this app
-predates conversational revise, updating and reinstalling is mandatory.
+The manifest enables Socket Mode, so do not configure an Events API request URL
+or an interactivity request URL.
 
-## 3. Get the two tokens
+Whenever [`manifest.json`](manifest.json) changes, paste it into **App
+Manifest**, save, reinstall the app, copy the current `xoxb-...` token back into
+`.env`, and restart the local process.
 
-- **App-level token** (Socket Mode): app settings → **Basic Information** →
-  **App-Level Tokens** → generate a token with the **`connections:write`** scope.
-  This is `SLACK_APP_TOKEN` (`xapp-…`).
-- **Bot token**: **OAuth & Permissions** → **Install to Workspace** → copy the
-  **Bot User OAuth Token**. This is `SLACK_BOT_TOKEN` (`xoxb-…`).
+## Fast local loop: no tunnel and no model bill
 
-## 4. Configure `.env`
+Only `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are required for the deterministic
+demo:
 
-```bash
-cp apps/slack/.env.example apps/slack/.env
-# then fill in SLACK_BOT_TOKEN and SLACK_APP_TOKEN
-```
-
-`.env` is gitignored — never commit real tokens.
-
-## 5. Run
-
-```bash
+```powershell
 npm run dev --workspace @sequences/slack
-# → "⚡ Sequences for Slack is running (Socket Mode). Try /sequences"
 ```
 
-In Slack, invite the bot to a channel (`/invite @Sequences`), then:
+In Slack:
 
-- **`/sequences demo`** — builds the curated *Relay v2* reel end-to-end (no modal,
-  no model, no API key). The fastest way to confirm the whole pipeline works.
-- **`/sequences`** — opens the modal to make a video from your own brief.
-- **🎬 Make a launch video** (message → ⋯ → shortcuts) — drafts from a message.
-- **Reply in the reel thread** — revises that reel in place. “Make it shorter,”
-  “warmer,” “punchier,” and several other common tweaks use deterministic
-  commands and do not need a model.
-- **Render HD** — re-encodes the approved composition at high quality. Future
-  shares use the HD artifact; it does not alter scenes, timing, or motion design.
+1. Invite the bot to a test channel with `/invite @Sequences`.
+2. Run `/sequences mcp-test`. Hosted MCP and the planning provider may show
+   warnings when only the two Slack tokens are configured; the local engine and
+   render-host checks should pass.
+3. Run `/sequences demo`.
 
-The bot auto-joins public channels when `/sequences` is invoked. Private channels
-still require `/invite @Sequences`. If Slack reports `not_in_channel` or
-`missing_scope`, update from the manifest, reinstall the app, copy the refreshed
-`xoxb-…` token into `.env`, and restart the process.
+This is the recommended inner loop. It exercises Socket Mode, Block Kit,
+Sequences MCP tools, thumbnails, MP4 rendering, uploads, and result controls
+without calling OpenAI or Anthropic.
 
-Create/revise, thumbnails, and MP4 rendering use the local Sequences MCP server
-by default. Slack shows live Thinking Steps while each operation runs and a
-compact build trace on the result. For diagnosis only,
-set `SLACK_SEQUENCES_USE_MCP=0` to force the equivalent in-process path.
+## Full local flow: hosted Slack MCP and model planning
 
-## 6. Verify without Slack (optional)
+The real `/sequences` modal uses a per-user Slack OAuth token. OAuth requires a
+public HTTPS callback even though Slack events still arrive through Socket Mode.
+If you do not need this during the day, test it on Railway in the sandbox
+instead.
 
-```bash
-npm run demo  --workspace @sequences/slack   # model-free: applies the demo plan, writes real thumbnails
-npm run mcp:demo --workspace @sequences/slack # lists/calls the same MCP tools used by Slack
-npm run smoke --workspace @sequences/slack -- "Relay v2: sub-100ms traces"   # full pipeline incl. a planning brain
-npm run typecheck --workspace @sequences/slack
-npm run test --workspace @sequences/slack
-```
+To test it locally:
 
-## Planning brain (only needed for non-demo paths)
+1. Start a tunnel to the app's local HTTP port:
 
-`/sequences demo` needs no model. The modal/shortcut paths plan with a brain:
-`claude-code-cli` (uses a Claude Code login, no key) by default, or set
-`ANTHROPIC_API_KEY` to use `anthropic-api`. See [.env.example](.env.example).
+   ```powershell
+   ngrok http 3000
+   ```
 
-Before a non-demo model call, the planner retrieves bounded context from the
-vendored HyperFrames skills in [`skills/`](skills). No separate skill install is
-needed.
+2. Copy the HTTPS forwarding URL, for example
+   `https://example.ngrok-free.app`.
+3. In the local Slack app, open **OAuth & Permissions → Redirect URLs** and add:
+
+   ```text
+   https://example.ngrok-free.app/slack/oauth_redirect
+   ```
+
+4. Complete these values in `apps/slack/.env`:
+
+   ```dotenv
+   SLACK_CLIENT_ID=...
+   SLACK_CLIENT_SECRET=...
+   PUBLIC_BASE_URL=https://example.ngrok-free.app
+   SLACK_REDIRECT_URI=https://example.ngrok-free.app/slack/oauth_redirect
+   SLACK_STATE_SECRET=...
+   SLACK_TOKEN_ENCRYPTION_KEY=...
+   OPENAI_API_KEY=...
+   ```
+
+   Generate the two independent secrets in PowerShell:
+
+   ```powershell
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   ```
+
+5. For planning, use one of these local options:
+
+   - Leave `SLACK_SEQUENCES_PROVIDER` unset and sign in to Claude Code locally.
+     Launch `claude` once if authentication is not already established.
+   - Or set `SLACK_SEQUENCES_PROVIDER=anthropic-api` and
+     `ANTHROPIC_API_KEY=...`.
+
+6. Restart `npm run dev --workspace @sequences/slack`.
+7. Open `https://example.ngrok-free.app/slack/install` in your browser and
+   approve access for your Slack user.
+8. Run `/sequences` and submit the modal.
+
+Free ngrok domains normally change when restarted. If the URL changes, update
+`PUBLIC_BASE_URL`, `SLACK_REDIRECT_URI`, and the Slack Redirect URL before
+retrying OAuth.
+
+## What to try in Slack
+
+- `/sequences demo` — curated, model-free end-to-end reel.
+- `/sequences` — hosted-MCP context retrieval plus model-planned reel.
+- `/sequences mcp-test` — configuration and dependency diagnostics.
+- Message menu **🎬 Make a launch video** — build from a release thread.
+- Reply in a reel thread — conversational revision.
+- **Undo**, **Render HD**, and **Approve & share** — completed result flows.
+
+The bot auto-joins public channels when possible. Private channels always need
+`/invite @Sequences`.
+
+## Next
+
+- Exact test commands and expected results: [TESTING.md](TESTING.md)
+- One-time sandbox and Railway installation: [DEPLOYMENT.md](DEPLOYMENT.md)
