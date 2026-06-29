@@ -19,21 +19,21 @@ commands only in the sandbox. Verification ladder: [TESTING.md](TESTING.md).
 | Project ID | `89e9d2b7-5b63-4b09-8799-ccae5b2c707e` |
 | Environment / ID | `production` / `48c3d11b-1807-42d0-85a3-1e6c67ab9c3c` |
 | Service / ID | `sequences-slack` / `ce64ff82-0f2a-4193-b138-c62cc8784d8a` |
-| Source of truth | `vladimirhegai/Sequences` (private monorepo) — you edit here |
-| Railway deploy source | `vladimirhegai/Slack_Sequences` (public subset repo), branch `main` |
-| Deploy mechanism | **`scripts/publish-public.sh`** mirrors the subset to the public repo; Railway autodeploys |
+| Source of truth + deploy origin | `vladimirhegai/Sequences` (private monorepo) — you edit AND deploy from here |
+| Deploy mechanism | **`railway up` — CLI upload of the committed monorepo tree.** GitHub autodeploy is intentionally OFF |
+| Public mirror | `vladimirhegai/Slack_Sequences` (lean subset for the hackathon submission), published via `scripts/publish-public.sh` — **NOT a deploy path** |
 | Public domain | `https://sequences-slack-production.up.railway.app` |
 | Persistent mount | `/data`, one volume, one replica |
 
 IDs are not credentials, but confirm with `railway status` before changing
 infrastructure. Never print Railway variables or tokens into chat/logs.
 
-**Two repos, on purpose.** You work in the private monorepo. Railway builds the
-**public** `Slack_Sequences` repo, which is a lean published subset (apps/slack +
-packages/core + packages/platform + Dockerfile/railway.json), produced by
-`scripts/publish-public.sh` into a gitignored `.publish/` mirror. The paused
-`apps/forge` / `apps/sequences` are never published. So "deploy" = publish the
-subset, then Railway autodeploys from the public repo.
+**Deploy via Railway CLI, not GitHub.** Railway has the `Slack_Sequences` repo
+linked as a source-of-record, but **autodeploy-on-push is deliberately disabled**
+(it kept picking the wrong branch). The live bot is deployed by `railway up`,
+which uploads the committed **monorepo** tree and builds it with the root
+Dockerfile. The public mirror repo is only for the hackathon submission / open
+source — pushing to it does **not** deploy anything.
 
 ## What Railway hosts
 
@@ -116,9 +116,9 @@ Do not reuse the local development app's tokens.
 
 ### 2.2 Create the Railway service
 
-1. **New Project → Deploy from GitHub repo** → the **public** `Slack_Sequences`
-   repo (produced by `scripts/publish-public.sh`), branch `main`. Railway builds
-   that repo, not the private monorepo.
+1. **New Project → Empty Service** (or deploy-from-repo then disconnect the GitHub
+   source — autodeploy is intentionally off). The live bot is shipped with
+   `railway up` from the monorepo root, not a GitHub push.
 2. Keep service root `/`. Do not add build/start commands — root
    [`railway.json`](../../railway.json) selects the Dockerfile, `/healthz`, one
    replica, restart-on-failure.
@@ -238,11 +238,10 @@ builder: DOCKERFILE   dockerfile: Dockerfile
 health check: /healthz   replicas: 1   volume mount: /data
 ```
 
-Railway is connected to the **public** `Slack_Sequences` repo and autodeploys
-when its `main` branch advances. You never push to the public repo by hand — the
-publish script does it. (`railway up` from the monorepo is wrong here: it would
-upload the full private tree, diverging from the public-repo source Railway
-builds.)
+**Deploy with `railway up` from the monorepo root.** It uploads the committed
+local tree; Railway builds it with the root Dockerfile. Do **not** rely on a
+GitHub push to deploy (autodeploy is off). `link` the CLI once
+(`railway link` → `Sequences Slack Hackathon` / `production` / `sequences-slack`).
 
 ### Deploy sequence
 
@@ -266,18 +265,23 @@ git commit -m "type(scope): concise change"
 git push origin HEAD
 ```
 
-3. **Publish the subset → triggers the Railway autodeploy** (Git Bash):
+3. **Deploy the committed tree to Railway** (from the repo root):
 
-```bash
-bash scripts/publish-public.sh "type(scope): concise change"
+```powershell
+railway up --detach --service sequences-slack --environment production `
+  --message "Deploy committed local tree"
 ```
 
-The script copies apps/slack + packages/core + packages/platform +
-Dockerfile/railway.json into the gitignored `.publish/` mirror, strips secrets,
-and `--force-with-lease` pushes to `Slack_Sequences` `main`. Railway picks up the
-new commit and rebuilds the Docker image. If autodeploy does not start, trigger
-the latest public-repo commit with
-`railway redeploy --service sequences-slack --environment production`.
+`railway up` uploads the **local tree**, so: run only from the repo root; commit
+first (and ensure `git status --short` has no unintended files); never
+`--path-as-root` for this monorepo. Railway keeps the current deployment serving
+until the new build is healthy, so a broken build never takes the bot down. Plain
+`railway redeploy` just restarts the same source (use it after a variables-only
+change).
+
+> Separately, to refresh the public hackathon mirror, run
+> `bash scripts/publish-public.sh "msg"`. That publishes the lean subset to
+> `Slack_Sequences` for submission/open-source — it does **not** deploy.
 
 ### Verify every deployment
 
@@ -323,9 +327,9 @@ can coexist — and vice versa.
 
 ### Recovery
 
-Wrong/old code: confirm the public repo has your commit, then re-run
-`bash scripts/publish-public.sh` (or `railway redeploy` to rebuild the latest
-public-repo commit). Wrong builder: keep service root `/`, set config path
+Wrong/old code: `railway status` → confirm `git rev-parse HEAD` is the intended
+commit and `git status --short` is clean → re-run `railway up`. Wrong builder:
+keep service root `/`, set config path
 `/railway.json` + Dockerfile path `Dockerfile`, trigger a fresh deploy (don't
 trust a Railpack success — it may omit Chromium/FFmpeg). Variable-only change:
 `railway redeploy --service sequences-slack --environment production`. Exposed

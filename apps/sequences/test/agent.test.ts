@@ -29,6 +29,7 @@ describe("agent provider layer", () => {
       "antigravity-cli",
       "deepseek-api",
       "openmodel-api",
+      "openrouter-api",
       "anthropic-api",
       "openai-api",
     ]);
@@ -43,7 +44,7 @@ describe("agent provider layer", () => {
 
   it("detectProviders reports availability without throwing on a bare machine", async () => {
     const infos = await detectProviders(true);
-    expect(infos).toHaveLength(7);
+    expect(infos).toHaveLength(8);
     for (const info of infos) {
       expect(typeof info.available).toBe("boolean");
       expect(info.detail.length).toBeGreaterThan(0);
