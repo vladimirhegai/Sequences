@@ -181,7 +181,11 @@ async function readBinaryBody(req: http.IncomingMessage): Promise<Buffer> {
 
 function safeChildPath(root: string, rel: string): string | null {
   const rootPath = path.resolve(root);
-  const file = path.resolve(rootPath, path.normalize(rel));
+  // URL paths use forward slashes, but reject encoded Windows separators on
+  // every host as well. Otherwise `..\file` is traversal on Windows and merely
+  // a strange filename on Linux, producing inconsistent security behavior.
+  const portableRel = rel.replaceAll("\\", "/");
+  const file = path.resolve(rootPath, path.normalize(portableRel));
   if (file !== rootPath && !file.startsWith(rootPath + path.sep)) return null;
   return file;
 }

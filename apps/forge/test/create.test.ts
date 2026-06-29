@@ -69,7 +69,9 @@ describe("Create knowledge retrieval", () => {
       maxHits: 5,
     });
     expect(retrieved.hits.length).toBeGreaterThan(0);
-    expect(retrieved.hits.some((hit) => hit.file.endsWith("MOTION_CATEGORIES.md"))).toBe(true);
+    expect(
+      retrieved.hits.some((hit) => hit.file.endsWith("hf-motion-techniques.md")),
+    ).toBe(true);
   });
 
   it("surfaces the vendored HyperFrames authoring contract for composition/timeline asks", () => {

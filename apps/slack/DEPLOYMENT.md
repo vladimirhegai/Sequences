@@ -1,10 +1,11 @@
 # Sandbox deployment — Sequences for Slack
 
-Use this guide once to install the hackathon sandbox app on Railway. Day-to-day
-development stays local in the normal workspace; the sandbox is the stable,
-judge-accessible environment tested at the end of each day.
+Use this guide once to install the hackathon sandbox app on Railway. The project
+uses the developer sandbox for all live Slack development and judging; there is
+no separate normal-workspace app. Source checks still run locally.
 
-For the recurring test routine, use [TESTING.md](TESTING.md).
+For routine updates, use [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md). For the
+verification ladder, use [TESTING.md](TESTING.md).
 
 ## What Railway is hosting
 
@@ -67,8 +68,9 @@ Do not reuse the local development app's tokens.
 4. Generate a public domain under **Settings → Networking**. Save the full HTTPS
    URL without a trailing slash as `PUBLIC_BASE_URL`.
 
-The first deployment may fail before credentials are present. That is harmless;
-finish the configuration and redeploy.
+The first deployment may fail before credentials are present. Finish the
+configuration and deploy again. Failed attempts remain in Railway history; judge
+the service by the newest intended deployment, not the historical failure count.
 
 ## 3. Add the persistent volume and resource limits
 
@@ -184,7 +186,9 @@ testing-instructions channel. Invite `slackhack@salesforce.com` and
 ## 7. Deploy and verify
 
 Railway services connected to GitHub normally deploy whenever you push to the
-configured branch. Watch for:
+configured branch. Confirm the service watches
+`slack/workflow-undo-approve-thread`; do not infer the branch merely from the
+repository name. Watch for:
 
 ```text
 HTTP server listening
@@ -204,7 +208,7 @@ or mismatched sandbox token.
 
 Then follow the sandbox checklist in [TESTING.md](TESTING.md).
 
-## Optional Railway CLI
+## Railway CLI
 
 The dashboard is sufficient. If you prefer the CLI:
 
@@ -217,8 +221,11 @@ railway deployment list --limit 5
 railway logs
 ```
 
-Do not use `railway up` for the normal daily flow when GitHub autodeploy is
-enabled; pushing the configured branch is the source-of-truth deployment.
+Pushing the configured branch is preferred when GitHub autodeploy works. If a
+push does not create a deployment, use the
+`railway redeploy --from-source` fallback in
+[RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md). Plain `railway redeploy` only reruns
+previously deployed source.
 
 ## Docker check before the first deployment
 
@@ -226,18 +233,13 @@ With Docker Desktop running:
 
 ```powershell
 docker build -t sequences-slack .
-docker run --rm -p 3000:3000 --env-file apps/slack/.env sequences-slack
+docker run --rm sequences-slack `
+  npm run mcp:demo -w @sequences/slack
 ```
 
-In another terminal:
-
-```powershell
-Invoke-WebRequest http://localhost:3000/healthz |
-  Select-Object StatusCode, Content
-```
-
-The image uses `/usr/local/bin/chromium-no-sandbox`, which wraps the system
-Chromium with the flags required inside this root-run container.
+This checks the production image without copying sandbox secrets locally. The
+image uses `/usr/local/bin/chromium-no-sandbox`, which wraps system Chromium
+with the flags required inside this root-run container.
 
 ## Official references
 

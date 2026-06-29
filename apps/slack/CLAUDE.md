@@ -6,7 +6,8 @@ This is the active Slack hackathon app. Before changing it, read:
 2. [HACKATHON_RULES.md](HACKATHON_RULES.md) for challenge constraints;
 3. [SETUP.md](SETUP.md) for the local development environment;
 4. [DEPLOYMENT.md](DEPLOYMENT.md) for the Railway sandbox environment;
-5. [TESTING.md](TESTING.md) before choosing or reporting verification.
+5. [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md) before updating the live service;
+6. [TESTING.md](TESTING.md) before choosing or reporting verification.
 
 Keep these documents synchronized when commands, variables, Slack scopes,
 deployment behavior, or completed features change.
@@ -28,13 +29,10 @@ tools.
 
 ## Environment contract
 
-There are two Slack apps created from the same manifest:
-
-- the normal-workspace app runs locally and reads `apps/slack/.env`;
-- the sandbox app runs on Railway and reads Railway Variables.
-
-They use different `xoxb-...` and `xapp-...` tokens. Never start a local process
-with sandbox credentials and never run two processes for one Slack app.
+There is one live Slack app: the developer-sandbox app running on Railway.
+Local work is limited to source, deterministic MCP/demo, render, and Docker
+checks. Never copy Railway credentials into `apps/slack/.env`, start a local
+Socket Mode process with sandbox credentials, or run two processes for this app.
 
 Socket Mode carries Slack events. The public HTTP server exists only for
 `/healthz`, `/slack/install`, and `/slack/oauth_redirect`. Do not add Events API
@@ -152,9 +150,13 @@ try {
 
 Do not run the slow gate after every small change. It is required after
 rendering, Docker, Chromium, FFmpeg, HyperFrames, or media changes. Slack UI and
-delivery changes require an actual normal-workspace smoke test. Before an
-end-of-day sandbox test, pass the source gate, push the configured branch, wait
-for Railway `/healthz` to return `ready`, and follow the sandbox checklist.
+delivery changes require an actual sandbox smoke test. Before any live test,
+pass the source gate, deploy the intended commit using the Railway runbook, wait
+for `/healthz` to return `ready`, and follow the sandbox checklist.
+
+GitHub Actions and Railway are independent. CI runs the monorepo checks; Railway
+builds and runs the Slack Docker image. Diagnose the system that is red and do
+not redeploy repeatedly to fix a GitHub unit-test assertion.
 
 Never report live Slack, OAuth, model-provider, Docker, or Railway behavior as
 verified from unit tests alone. State exactly which layer was exercised.

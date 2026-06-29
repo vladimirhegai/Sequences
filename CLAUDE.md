@@ -8,8 +8,9 @@ in **[apps/slack/](apps/slack/)**.
 
 > **Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md) before doing any work.**
 > The hackathon spec is [apps/slack/SLACK_PLAN.md](apps/slack/SLACK_PLAN.md).
-> Local setup, sandbox deployment, and test commands live in
-> [SETUP.md](apps/slack/SETUP.md), [DEPLOYMENT.md](apps/slack/DEPLOYMENT.md), and
+> Sandbox-first setup, deployment, operations, and test commands live in
+> [SETUP.md](apps/slack/SETUP.md), [DEPLOYMENT.md](apps/slack/DEPLOYMENT.md),
+> [RAILWAY_RUNBOOK.md](apps/slack/RAILWAY_RUNBOOK.md), and
 > [TESTING.md](apps/slack/TESTING.md).
 
 ## Forge and Sequences are PAUSED ⏸
@@ -42,7 +43,6 @@ needs in instead. Full rule in [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md).
 ## Commands
 
 ```powershell
-npm run dev --workspace @sequences/slack       # local normal-workspace bot
 npm run typecheck --workspace @sequences/slack # Slack app typecheck
 npm run test --workspace @sequences/slack      # Slack app tests
 npm run mcp:demo --workspace @sequences/slack  # local MCP smoke
@@ -50,5 +50,7 @@ npm test                                       # full suite if shared code chang
 npm run typecheck                              # monorepo typecheck
 ```
 
-The local normal-workspace app and Railway sandbox app use separate Slack
-tokens. Never run both with the same `xoxb-...`/`xapp-...` pair.
+The Railway sandbox app is the only live Slack process. Never copy its
+`xoxb-...`/`xapp-...` values into a local environment or start a second Socket
+Mode process. Use local commands for source/Docker checks and the Slack developer
+sandbox for all live behavior.

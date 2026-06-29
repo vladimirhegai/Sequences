@@ -1,157 +1,125 @@
-# Local development setup — Sequences for Slack
+# Sandbox-first setup — Sequences for Slack
 
-Use this guide for day-to-day development against your normal Slack workspace.
-Use [DEPLOYMENT.md](DEPLOYMENT.md) once to install the separate sandbox app on
-Railway, then use [TESTING.md](TESTING.md) for the repeatable test commands.
+The project uses one Slack developer sandbox and one Railway deployment for all
+live Slack development. There is no separate normal-workspace app.
 
-## The two-environment rule
+- Edit and run source tests locally.
+- Commit and push the configured sandbox branch.
+- Deploy that commit to Railway.
+- Exercise Slack commands only in the developer sandbox.
 
-Use two Slack apps created from the same [`manifest.json`](manifest.json):
+This avoids two Socket Mode processes, duplicate Slack apps, drifting manifests,
+and testing against workplace data.
 
-| Environment | Slack app lives in | Process runs on | Credentials live in |
-| --- | --- | --- | --- |
-| Local development | normal development workspace | your computer | `apps/slack/.env` |
-| Hackathon sandbox | Slack developer sandbox | Railway | Railway Variables |
-
-Never run the local and Railway processes with the same `xoxb-...` and
-`xapp-...` values. Two Socket Mode clients using one app make debugging
-unnecessarily confusing.
-
-## Prerequisites
+## Local prerequisites
 
 - Node.js 22.18 or newer.
-- Chrome or Edge for thumbnails.
-- FFmpeg for MP4 output. Without it, the app intentionally degrades to
-  thumbnails-only.
-- A normal Slack workspace where you can create and install an internal app.
-- Optional: Claude Code signed in locally for model-planned create/revise.
-- Optional: ngrok or another HTTPS tunnel for testing per-user Slack MCP OAuth
-  locally.
+- npm and the committed `package-lock.json`.
+- Docker Desktop for production-image checks.
+- Railway CLI 5.x, logged into the account that owns the project.
+- Chrome/Edge and FFmpeg only if running local render checks.
 
 From the repository root:
 
 ```powershell
-npm install
-Copy-Item apps/slack/.env.example apps/slack/.env
+npm ci
+npm install --global @railway/cli
+railway login
+railway link
+railway status
 ```
 
-`apps/slack/.env` is gitignored. Never put real credentials in an example file,
-commit, issue, screenshot, or Slack message.
+Select the existing **Sequences Slack Hackathon** project, `production`
+environment, and `sequences-slack` service when linking.
 
-## Create the local development Slack app
+Do not copy sandbox Slack or model credentials into `apps/slack/.env`. The live
+credentials belong only in Railway Variables. Do not run
+`npm run dev --workspace @sequences/slack` with the sandbox `xoxb-...` and
+`xapp-...` tokens: Railway already owns that Socket Mode connection.
 
-1. Open <https://api.slack.com/apps>.
-2. Select **Create New App → From a manifest**.
-3. Select your normal development workspace.
-4. Paste [`manifest.json`](manifest.json), review it, and create the app.
-5. Under **Agents & AI Apps**, enable **Slack Model Context Protocol (MCP)
-   Server**. This allows this app to consume Slack's hosted MCP server.
-6. Under **Basic Information → App-Level Tokens**, create a token with
-   `connections:write`. Copy its `xapp-...` value.
-7. Under **OAuth & Permissions**, select **Install to Workspace**. Copy the
-   **Bot User OAuth Token** (`xoxb-...`).
-8. Put those two values in `apps/slack/.env` as `SLACK_APP_TOKEN` and
-   `SLACK_BOT_TOKEN`.
+## Local source loop
 
-The manifest enables Socket Mode, so do not configure an Events API request URL
-or an interactivity request URL.
-
-Whenever [`manifest.json`](manifest.json) changes, paste it into **App
-Manifest**, save, reinstall the app, copy the current `xoxb-...` token back into
-`.env`, and restart the local process.
-
-## Fast local loop: no tunnel and no model bill
-
-Only `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN` are required for the deterministic
-demo:
+Use this gate while editing:
 
 ```powershell
-npm run dev --workspace @sequences/slack
+npm run typecheck --workspace @sequences/slack
+npm run test --workspace @sequences/slack
+npm run mcp:demo --workspace @sequences/slack
 ```
 
-In Slack:
+For engine, rendering, Docker, Chromium, FFmpeg, or media changes:
 
-1. Invite the bot to a test channel with `/invite @Sequences`.
-2. Run `/sequences mcp-test`. Hosted MCP and the planning provider may show
-   warnings when only the two Slack tokens are configured; the local engine and
-   render-host checks should pass.
-3. Run `/sequences demo`.
+```powershell
+$env:VERIFY_RENDER = "1"
+try {
+  npm run demo --workspace @sequences/slack
+} finally {
+  Remove-Item Env:VERIFY_RENDER -ErrorAction SilentlyContinue
+}
 
-This is the recommended inner loop. It exercises Socket Mode, Block Kit,
-Sequences MCP tools, thumbnails, MP4 rendering, uploads, and result controls
-without calling OpenAI or Anthropic.
+docker build -t sequences-slack .
+```
 
-## Full local flow: hosted Slack MCP and model planning
+The deterministic demo and MCP smoke do not call a paid model. See
+[TESTING.md](TESTING.md) for the full pre-push and sandbox gates.
 
-The real `/sequences` modal uses a per-user Slack OAuth token. OAuth requires a
-public HTTPS callback even though Slack events still arrive through Socket Mode.
-If you do not need this during the day, test it on Railway in the sandbox
-instead.
+## Live sandbox loop
 
-To test it locally:
+After the local gate:
 
-1. Start a tunnel to the app's local HTTP port:
+1. Review `git status --short`; do not commit credentials or generated `.data`.
+2. Commit the intended files and push the configured Railway branch.
+3. Follow [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md) to confirm or trigger the
+   deployment.
+4. Wait for `/healthz` to return HTTP `200` with `ready`.
+5. In the sandbox, run `/sequences mcp-test`.
+6. Exercise the change-specific Slack flow.
+7. Inspect Railway logs and usage.
 
-   ```powershell
-   ngrok http 3000
-   ```
+The current domain is:
 
-2. Copy the HTTPS forwarding URL, for example
-   `https://example.ngrok-free.app`.
-3. In the local Slack app, open **OAuth & Permissions → Redirect URLs** and add:
+```text
+https://sequences-slack-production.up.railway.app
+```
 
-   ```text
-   https://example.ngrok-free.app/slack/oauth_redirect
-   ```
+## When Slack configuration changes
 
-4. Complete these values in `apps/slack/.env`:
+Editing [`manifest.json`](manifest.json) does not update the installed app.
+When scopes, events, shortcuts, commands, or app features change:
 
-   ```dotenv
-   SLACK_CLIENT_ID=...
-   SLACK_CLIENT_SECRET=...
-   PUBLIC_BASE_URL=https://example.ngrok-free.app
-   SLACK_REDIRECT_URI=https://example.ngrok-free.app/slack/oauth_redirect
-   SLACK_STATE_SECRET=...
-   SLACK_TOKEN_ENCRYPTION_KEY=...
-   OPENAI_API_KEY=...
-   ```
+1. Open the sandbox app at <https://api.slack.com/apps>.
+2. Paste the current manifest into **App Manifest** and save.
+3. Reinstall the app to the sandbox.
+4. If Slack issued a new bot token, update `SLACK_BOT_TOKEN` in Railway.
+5. Redeploy the current code.
+6. Run `/sequences mcp-test`, `/sequences demo`, and the affected flow.
 
-   Generate the two independent secrets in PowerShell:
+The OAuth redirect must remain:
 
-   ```powershell
-   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-   ```
+```text
+https://sequences-slack-production.up.railway.app/slack/oauth_redirect
+```
 
-5. For planning, use one of these local options:
+Each human testing hosted Slack MCP authorizes once at:
 
-   - Leave `SLACK_SEQUENCES_PROVIDER` unset and sign in to Claude Code locally.
-     Launch `claude` once if authentication is not already established.
-   - Or set `SLACK_SEQUENCES_PROVIDER=anthropic-api` and
-     `ANTHROPIC_API_KEY=...`.
+```text
+https://sequences-slack-production.up.railway.app/slack/install
+```
 
-6. Restart `npm run dev --workspace @sequences/slack`.
-7. Open `https://example.ngrok-free.app/slack/install` in your browser and
-   approve access for your Slack user.
-8. Run `/sequences` and submit the modal.
+## Never do these
 
-Free ngrok domains normally change when restarted. If the URL changes, update
-`PUBLIC_BASE_URL`, `SLACK_REDIRECT_URI`, and the Slack Redirect URL before
-retrying OAuth.
+- Never put live secrets in source, example env files, logs, screenshots, issues,
+  or agent prompts.
+- Never start a second process with the Railway Slack tokens.
+- Never use workplace-confidential data in sandbox tests.
+- Never assume a successful Railway build means GitHub Actions passed, or vice
+  versa; they are separate systems.
+- Never use plain `railway redeploy` to publish new source. It restarts the
+  previous source. Use GitHub autodeploy or `railway redeploy --from-source`;
+  reserve `railway up` for a documented last-resort local upload.
 
-## What to try in Slack
+## Related guides
 
-- `/sequences demo` — curated, model-free end-to-end reel.
-- `/sequences` — hosted-MCP context retrieval plus model-planned reel.
-- `/sequences mcp-test` — configuration and dependency diagnostics.
-- Message menu **🎬 Make a launch video** — build from a release thread.
-- Reply in a reel thread — conversational revision.
-- **Undo**, **Render HD**, and **Approve & share** — completed result flows.
-
-The bot auto-joins public channels when possible. Private channels always need
-`/invite @Sequences`.
-
-## Next
-
-- Exact test commands and expected results: [TESTING.md](TESTING.md)
-- One-time sandbox and Railway installation: [DEPLOYMENT.md](DEPLOYMENT.md)
+- One-time infrastructure and Slack installation: [DEPLOYMENT.md](DEPLOYMENT.md)
+- Daily Railway operations: [RAILWAY_RUNBOOK.md](RAILWAY_RUNBOOK.md)
+- Verification ladder: [TESTING.md](TESTING.md)
