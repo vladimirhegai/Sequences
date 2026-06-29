@@ -13,7 +13,7 @@ import type { WebClient } from "@slack/web-api";
 import { McpClient } from "./engine/mcpClient.ts";
 import { mcpEnabled, resolveProvider } from "./orchestrator.ts";
 import { findBrowserExecutable, findFfmpeg } from "./engine/render.ts";
-import { dataDir } from "./engine/projectTemplates.ts";
+import { dataDir, initializeProject } from "./engine/projectTemplates.ts";
 import { getSlackUserToken } from "./slackTokenStore.ts";
 
 export type CheckStatus = "ok" | "warn" | "fail";
@@ -79,6 +79,11 @@ async function checkSequencesMcp(): Promise<DiagnosticCheck> {
     fs.mkdirSync(dataDir(), { recursive: true });
     probeDir = fs.mkdtempSync(path.join(dataDir(), "diag-"));
     const dir = probeDir;
+    initializeProject(dir, {
+      name: "Diagnostics Probe",
+      brandName: "Sequences",
+      seedScreenshot: false,
+    });
     return await withTimeout(
       (async (): Promise<DiagnosticCheck> => {
         const mcp = await McpClient.connect(dir);

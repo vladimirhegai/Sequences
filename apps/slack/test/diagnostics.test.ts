@@ -29,6 +29,9 @@ describe("runDiagnostics", () => {
     const dataDir = report.checks.find((check) => check.label === "Data directory");
     expect(dataDir?.status).toBe("ok");
 
+    const mcp = report.checks.find((check) => check.label === "Sequences MCP (video engine)");
+    expect(mcp?.status).toBe("ok");
+
     // healthy is derived only from core checks failing.
     const anyCoreFailed = report.checks.some((check) => check.core && check.status === "fail");
     expect(report.healthy).toBe(!anyCoreFailed);
