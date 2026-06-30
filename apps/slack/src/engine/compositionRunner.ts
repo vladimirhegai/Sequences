@@ -86,6 +86,57 @@ function tagged(raw: string, name: string): string {
   return match[1].trim().replace(/^```(?:html|json)?\s*/i, "").replace(/\s*```$/, "");
 }
 
+/** First balanced top-level JSON array in free text (ignores brackets in strings). */
+function firstJsonArray(text: string): string | undefined {
+  const start = text.indexOf("[");
+  if (start < 0) return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (escaped) {
+      escaped = false;
+    } else if (inString) {
+      if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "[") {
+      depth += 1;
+    } else if (ch === "]") {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Extract the storyboard array source from a planner response. The contract asks
+ * for a <storyboard_json> wrapper, but cheaper "Flash"-tier models routinely
+ * ignore it and emit a bare or ```json-fenced array. Recover that array rather
+ * than failing the whole build — while still reporting an opened-but-unclosed
+ * tag as a genuine truncation (the array really is incomplete). Only used where
+ * the response is storyboard-only; the combined create/revise response keeps the
+ * strict tag boundary so a bare scan can't grab an array out of the HTML.
+ */
+function extractStoryboardSource(raw: string): string {
+  const match = raw.match(/<storyboard_json>\s*([\s\S]*?)\s*<\/storyboard_json>/i);
+  if (match?.[1]) {
+    return match[1].trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  }
+  if (/<storyboard_json>/i.test(raw) && !/<\/storyboard_json>/i.test(raw)) {
+    throw new Error(
+      "author response truncated: <storyboard_json> opened but never closed — the model likely hit " +
+        "its output token limit. The next attempt must emit a complete, more compact storyboard.",
+    );
+  }
+  const bare = firstJsonArray(raw);
+  if (bare) return bare;
+  throw new Error("author response is missing <storyboard_json>");
+}
+
 function isOutputTruncation(error: unknown): boolean {
   return error instanceof ProviderOutputTruncatedError ||
     (error instanceof Error && /truncat|output-token limit|finish_reason.?length/i.test(error.message));
@@ -209,7 +260,7 @@ export function validateStoryboardPlan(storyboard: DirectScene[]): string[] {
 }
 
 export function parseStoryboardResponse(raw: string): DirectScene[] {
-  const storyboard = parseStoryboard(tagged(raw, "storyboard_json"));
+  const storyboard = parseStoryboard(extractStoryboardSource(raw));
   const errors = validateStoryboardPlan(storyboard);
   if (errors.length) throw new Error(`invalid storyboard plan: ${errors.join("; ")}`);
   return storyboard;

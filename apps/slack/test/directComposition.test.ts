@@ -212,6 +212,28 @@ describe("direct HyperFrames composition", () => {
     )).toThrow(/3-5 distinct shots/);
   });
 
+  it("recovers a bare or fenced storyboard array when the model omits the wrapper", () => {
+    const plan = storyboard();
+    // Flash-tier planners routinely ignore the <storyboard_json> wrapper.
+    expect(parseStoryboardResponse(JSON.stringify(plan))).toEqual(plan);
+    expect(
+      parseStoryboardResponse("Here is the plan:\n```json\n" + JSON.stringify(plan) + "\n```"),
+    ).toEqual(plan);
+  });
+
+  it("reports an unclosed storyboard tag as truncation, not a missing wrapper", () => {
+    const plan = storyboard();
+    expect(() => parseStoryboardResponse(`<storyboard_json>${JSON.stringify(plan)}`)).toThrow(
+      /truncated/i,
+    );
+  });
+
+  it("still reports a genuinely absent storyboard as missing", () => {
+    expect(() => parseStoryboardResponse("no array anywhere in this prose")).toThrow(
+      /missing <storyboard_json>/,
+    );
+  });
+
   it("uses Flash thinking for the bounded storyboard pass", async () => {
     const dir = projectDir();
     const complete = vi.fn().mockResolvedValue(
