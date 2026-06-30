@@ -43,6 +43,7 @@ import { getSlackUserToken } from "./slackTokenStore.ts";
 import { slackInstallUrl } from "./slackOAuth.ts";
 import { retrieveSlackMcpContext } from "./slackMcpContext.ts";
 import { runDiagnostics } from "./diagnostics.ts";
+import { loadJobFrame, publicFrameMd } from "./engine/frameDesign.ts";
 
 const botToken = process.env.SLACK_BOT_TOKEN;
 const appToken = process.env.SLACK_APP_TOKEN;
@@ -130,7 +131,7 @@ function startBuildingHeartbeat(
   const tick = async (): Promise<void> => {
     if (stopped) return;
     const elapsed = Math.round((Date.now() - startedAt) / 1000);
-    const phase = phases[Math.min(Math.floor(elapsed / 20), phases.length - 1)];
+    const phase = phases[Math.min(Math.floor(elapsed / 15), phases.length - 1)];
     if (stopped) return;
     await safeUpdate(client, {
       channel,
@@ -139,7 +140,7 @@ function startBuildingHeartbeat(
       text: `Building “${title}”…`,
     });
   };
-  const timer = setInterval(() => void tick(), 15_000);
+  const timer = setInterval(() => void tick(), 5_000);
   return () => {
     stopped = true;
     clearInterval(timer);
@@ -233,7 +234,11 @@ function stageBlocks(
   });
 }
 
-/** Attach the job's frame.md design system so the user can read/keep it. */
+/**
+ * Attach the job's frame.md design system so the user can read/keep it.
+ * Internal selection metadata stays in the canonical file for later model
+ * turns; Slack receives a clean, reader-facing copy.
+ */
 async function uploadFrame(
   client: WebClient,
   channel: string,
@@ -241,9 +246,11 @@ async function uploadFrame(
   result: VideoResult,
 ): Promise<void> {
   if (!result.frame || !fs.existsSync(result.frame.path)) return;
+  const frameMd = loadJobFrame(result.projectDir);
+  if (!frameMd) return;
   await client.files.uploadV2({
     ...dest(channel, threadTs),
-    file: result.frame.path,
+    content: publicFrameMd(frameMd),
     filename: "frame.md",
     initial_comment: `:art: Design system for this video — *${result.frame.label}* (${result.frame.basis}${result.frame.brandMatched ? ", brand-matched" : ""})`,
   });
@@ -385,9 +392,11 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
   const messageTs = posted.ts as string;
   const reportProgress = makeProgressReporter(client, args.channel, messageTs, args.product);
   const stopHeartbeat = startBuildingHeartbeat(client, args.channel, messageTs, args.product, [
-    "Reading the thread…",
-    "Designing the frame…",
-    "Authoring the composition…",
+    "Gathering the launch details…",
+    "Choosing a visual direction…",
+    "Shaping the story beats…",
+    "Building the HyperFrames composition…",
+    "Polishing the first composition draft…",
   ]);
   // The first real step ends the silent window — drop the heartbeat so it can't
   // overwrite the live Thinking-Steps trace.
@@ -520,8 +529,10 @@ async function runRevise(client: WebClient, jobId: string, instruction: string):
   const threadTs = job.threadTs ?? job.messageTs;
   const reportProgress = makeProgressReporter(client, job.channel, messageTs, job.title);
   const stopHeartbeat = startBuildingHeartbeat(client, job.channel, messageTs, job.title, [
-    "Interpreting the revision…",
-    "Re-authoring the composition…",
+    "Reading the revision notes…",
+    "Finding the scenes that need to change…",
+    "Reworking the HyperFrames composition…",
+    "Polishing the updated composition…",
   ]);
   const onProgress: ProgressCallback = async (progress) => {
     stopHeartbeat();
