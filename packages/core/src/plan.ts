@@ -25,8 +25,6 @@ import type { Command } from "./commands.ts";
 import { scaleFrames30 } from "./tokens.ts";
 
 export interface PlanningContextOptions {
-  /** Optional deterministic storyboard serialization supplied by the host app/MCP server. */
-  storyboardText?: string;
   /** Override the project's enabled extension set. Mostly useful for tests. */
   enabledExtensionIds?: Iterable<string> | null;
 }
@@ -71,11 +69,6 @@ export const SEQUENCES_AGENT_SYSTEM_PROMPT = [
   "- Write short, scannable copy. Product videos read at a glance; avoid paragraphs and generic filler.",
   "- Choose the enabled profile whose summary best matches the brand and brief.",
   "- Use the enabled opener and CTA archetypes when available. If they are disabled, build the closest coherent arc from enabled scene types.",
-  "",
-  "### Storyboard contract",
-  "- If storyboard text is provided, treat frames as sequential beats and comments/motion paths as the highest-priority intent.",
-  "- Treat sketch geometry as composition guidance, not pixel truth. Map it to the closest catalog archetype, layout, asset, and slot content.",
-  "- Do not copy raw storyboard coordinates into the plan.",
 ].join("\n");
 
 export const PlanSceneSchema = z.object({
@@ -254,7 +247,6 @@ export function planningContext(project: Project, options: PlanningContextOption
             return `- ${asset.id} (${asset.kind}): ${asset.path}${metadata.length ? ` [${metadata.join("; ")}]` : ""}`;
           })
           .join("\n");
-  const storyboardText = options.storyboardText?.trim();
   const lines = [
     "# Sequences planning context",
     "",
@@ -272,9 +264,6 @@ export function planningContext(project: Project, options: PlanningContextOption
     "## Available assets (the ONLY valid assetId values)",
     assets,
   ];
-  if (storyboardText) {
-    lines.push("", "## Storyboard context", storyboardText);
-  }
   return lines.join("\n");
 }
 

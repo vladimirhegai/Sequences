@@ -2,15 +2,18 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+  workflow_dispatch:
 
 jobs:
   phase1:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -21,4 +24,4 @@ jobs:
       - name: Golden render determinism
         run: npm run test:golden
       - name: Primitive probe thumbnails
-        run: node apps/studio/src/cli.ts thumbs projects/Starter --primitives
+        run: node apps/sequences/src/cli.ts thumbs fixtures/sequences/starter --primitives
