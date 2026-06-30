@@ -11,6 +11,7 @@ import {
   type CompleteOptions,
 } from "@sequences/platform/providers";
 import type { RetrievedSkillContext } from "../agent/skillContext.ts";
+import { loadCapabilityIndex } from "../agent/capabilityIndex.ts";
 import {
   validateDirectComposition,
   type DirectCompositionDraft,
@@ -34,6 +35,7 @@ const COMPOSITION_SOURCE_BUDGET_CHARS = 32_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
 const REPAIR_MAX_TOKENS = 4_096;
 const MAX_REPAIR_PATCHES = 16;
+const STORYBOARD_MAX_TOKENS = 3_072;
 
 /**
  * Output-token budget for the authoring call. A full composition (storyboard +
@@ -60,6 +62,12 @@ function repairModel(provider: AgentProvider, attempt: number): string | undefin
   return provider.id === "openrouter-api" && attempt >= 3
     ? "deepseek/deepseek-v4-flash"
     : undefined;
+}
+
+function storyboardModel(provider: AgentProvider): string | undefined {
+  const configured = process.env.SLACK_SEQUENCES_STORYBOARD_MODEL?.trim();
+  if (configured) return configured;
+  return provider.id === "openrouter-api" ? "deepseek/deepseek-v4-flash" : undefined;
 }
 
 function tagged(raw: string, name: string): string {
@@ -113,15 +121,98 @@ function parseStoryboard(raw: string): DirectScene[] {
       id,
       title,
       purpose,
+      ...(typeof scene.incomingIdea === "string"
+        ? { incomingIdea: scene.incomingIdea.trim() }
+        : {}),
+      ...(typeof scene.foreground === "string"
+        ? { foreground: scene.foreground.trim() }
+        : {}),
+      ...(typeof scene.background === "string"
+        ? { background: scene.background.trim() }
+        : {}),
+      ...(typeof scene.cameraIntent === "string"
+        ? { cameraIntent: scene.cameraIntent.trim() }
+        : {}),
+      ...(typeof scene.continuityAnchor === "string"
+        ? { continuityAnchor: scene.continuityAnchor.trim() }
+        : {}),
       startSec,
       durationSec,
       ...(typeof scene.blueprint === "string" ? { blueprint: scene.blueprint } : {}),
       ...(Array.isArray(scene.rules)
         ? { rules: scene.rules.filter((rule): rule is string => typeof rule === "string") }
         : {}),
+      ...(Array.isArray(scene.capabilityIds)
+        ? {
+            capabilityIds: scene.capabilityIds
+              .filter((capability): capability is string => typeof capability === "string")
+              .map((capability) => capability.trim())
+              .filter(Boolean),
+          }
+        : {}),
       ...(typeof scene.outgoingCut === "string" ? { outgoingCut: scene.outgoingCut } : {}),
     };
   });
+}
+
+export function validateStoryboardPlan(storyboard: DirectScene[]): string[] {
+  const errors: string[] = [];
+  if (storyboard.length < 3 || storyboard.length > 5) {
+    errors.push("storyboard must contain 3-5 distinct shots");
+  }
+  const knownCapabilities = new Set(
+    loadCapabilityIndex().capabilities.map((capability) => capability.id),
+  );
+  const ids = new Set<string>();
+  let expectedStart = 0;
+  for (const [index, scene] of storyboard.entries()) {
+    if (!/^[a-z][a-z0-9-]*$/.test(scene.id)) {
+      errors.push(`shot ${index + 1} id must be stable kebab-case`);
+    }
+    if (ids.has(scene.id)) errors.push(`shot id "${scene.id}" is duplicated`);
+    ids.add(scene.id);
+    if (Math.abs(scene.startSec - expectedStart) > 0.05) {
+      errors.push(`shot "${scene.id}" must start at ${expectedStart.toFixed(2)}s`);
+    }
+    if (scene.durationSec < 1.5 || scene.durationSec > 15) {
+      errors.push(`shot "${scene.id}" duration must be 1.5-15 seconds`);
+    }
+    for (const field of [
+      "incomingIdea",
+      "foreground",
+      "background",
+      "cameraIntent",
+      "continuityAnchor",
+      "outgoingCut",
+    ] as const) {
+      if (!scene[field]?.trim()) errors.push(`shot "${scene.id}" is missing ${field}`);
+    }
+    for (const capability of scene.capabilityIds ?? []) {
+      if (!knownCapabilities.has(capability)) {
+        errors.push(`shot "${scene.id}" cites unknown capability "${capability}"`);
+      }
+    }
+    expectedStart = scene.startSec + scene.durationSec;
+  }
+  if (expectedStart < 6 || expectedStart > 60) {
+    errors.push("storyboard total duration must be 6-60 seconds");
+  }
+  const foregrounds = new Set(storyboard.map((scene) => scene.foreground?.toLowerCase()));
+  const cameras = new Set(storyboard.map((scene) => scene.cameraIntent?.toLowerCase()));
+  if (foregrounds.size < Math.min(3, storyboard.length)) {
+    errors.push("storyboard repeats the same foreground composition across shots");
+  }
+  if (cameras.size < 2) {
+    errors.push("storyboard needs at least two distinct camera/framing intentions");
+  }
+  return [...new Set(errors)];
+}
+
+export function parseStoryboardResponse(raw: string): DirectScene[] {
+  const storyboard = parseStoryboard(tagged(raw, "storyboard_json"));
+  const errors = validateStoryboardPlan(storyboard);
+  if (errors.length) throw new Error(`invalid storyboard plan: ${errors.join("; ")}`);
+  return storyboard;
 }
 
 export function parseCompositionResponse(raw: string): DirectCompositionDraft {
@@ -129,6 +220,74 @@ export function parseCompositionResponse(raw: string): DirectCompositionDraft {
     storyboard: parseStoryboard(tagged(raw, "storyboard_json")),
     html: tagged(raw, "index_html"),
   };
+}
+
+function storyboardReference(text: string): string {
+  const capability = text.match(
+    /## Synced HyperFrames capability index[\s\S]*?(?=\n## Available scene blueprints)/,
+  )?.[0] ?? "";
+  const blueprints = text.match(
+    /## Available scene blueprints[\s\S]*?(?=\n## Available motion rules)/,
+  )?.[0] ?? "";
+  return [capability, blueprints].filter(Boolean).join("\n\n").slice(0, 14_000);
+}
+
+export async function requestStoryboardPlan(
+  provider: AgentProvider,
+  args: {
+    brief: string;
+    projectDir: string;
+    skills: RetrievedSkillContext;
+    frameMd?: string;
+    options?: CompleteOptions;
+  },
+): Promise<DirectScene[]> {
+  const prompt = [
+    "SYSTEM: You are the cut-first editor for a short SaaS launch film.",
+    "Design the storyboard before any HTML is written. Make 3-5 distinct shots",
+    "that form one visual argument, not a centered headline/stat/CTA parade.",
+    "Each shot needs a different foreground composition and a purposeful camera",
+    "or framing intention. Carry the eye across every cut through one explicit",
+    "anchor: component, position, direction, color field, shape, or semantic idea.",
+    "Registry capabilities are a reuse-first vocabulary, not a mandatory quota.",
+    "Use only capability ids that appear in the supplied synced index.",
+    "",
+    "## Brief and trusted evidence",
+    args.brief,
+    "",
+    args.frameMd
+      ? `## Job frame.md\nUse its visual thesis, palette/type constraints, and spatial character without constraining motion.\n<frame_md>\n${args.frameMd}\n</frame_md>`
+      : "",
+    "",
+    "## Available project-local assets",
+    availableAssets(args.projectDir),
+    "",
+    storyboardReference(args.skills.text),
+    "",
+    "## Response contract",
+    "Return only <storyboard_json> containing a JSON array. No Markdown or prose.",
+    "Shots must be contiguous, start at 0, total 6-60 seconds, and last 1.5-15 seconds each.",
+    "Use this exact shape for every shot:",
+    '{"id":"kebab-case","title":"human title","purpose":"viewer change",',
+    '"incomingIdea":"idea entering this shot","foreground":"specific hero composition",',
+    '"background":"specific atmospheric/set layer","cameraIntent":"framing or camera move",',
+    '"startSec":0,"durationSec":4,"blueprint":"known blueprint or compose",',
+    '"rules":["known rule"],"capabilityIds":["zero or more exact index ids"],',
+    '"continuityAnchor":"what the eye tracks across this boundary",',
+    '"outgoingCut":"cut mechanism and destination"}.',
+  ].filter(Boolean).join("\n");
+  const raw = await provider.complete(prompt, {
+    ...args.options,
+    timeoutMs: 120_000,
+    maxTokens: STORYBOARD_MAX_TOKENS,
+    // A small Flash thinking pass makes the edit/cut graph before Pro spends
+    // its larger budget on source. Code emission and repairs remain reasoning-off.
+    thinkingMode: provider.id === "openrouter-api" || provider.id === "deepseek-api"
+      ? "medium"
+      : "none",
+    ...(storyboardModel(provider) ? { model: storyboardModel(provider) } : {}),
+  });
+  return parseStoryboardResponse(raw);
 }
 
 interface CompositionPatch {
@@ -190,6 +349,7 @@ function creationPrompt(args: {
   revisionInstruction?: string;
   validationFeedback?: string[];
   scratch?: DirectCompositionDraft;
+  lockedStoryboard?: DirectScene[];
   compact?: boolean;
 }): string {
   if (args.scratch) {
@@ -244,6 +404,24 @@ function creationPrompt(args: {
         ...args.validationFeedback.map((issue) => `- ${issue}`),
       ].join("\n")
     : "";
+  const lockedStoryboard = args.lockedStoryboard
+    ? [
+        "## Locked storyboard and cut graph",
+        "This plan was created and deterministically validated in a prior pass.",
+        "Author every shot as a distinct scene. Match its ids and timings exactly;",
+        "do not merge shots or redesign the cut graph while writing source.",
+        "<locked_storyboard_json>",
+        JSON.stringify(args.lockedStoryboard, null, 2),
+        "</locked_storyboard_json>",
+      ].join("\n")
+    : "";
+  const lockedResponse = args.lockedStoryboard
+    ? [
+        "## Builder response override",
+        "The storyboard already exists. Return exactly one <index_html> tag with",
+        "the complete document and nothing else. Do not repeat storyboard_json.",
+      ].join("\n")
+    : "";
   const frame = args.frameMd
     ? [
         "## Frame design system (art direction + deterministic constraints)",
@@ -277,9 +455,11 @@ function creationPrompt(args: {
       ? "This is a compact recovery pass: finish the complete document well before the limit."
       : "",
     args.compact ? compactSkillText(args.skills.text) : args.skills.text,
+    lockedStoryboard,
     current,
     revision,
     feedback,
+    lockedResponse,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -291,6 +471,7 @@ export async function requestDirectComposition(
     skills: RetrievedSkillContext;
     frameMd?: string;
     current?: DirectCompositionDraft;
+    lockedStoryboard?: DirectScene[];
     revisionInstruction?: string;
     options?: CompleteOptions;
   },
@@ -323,7 +504,12 @@ export async function requestDirectComposition(
       process.stderr.write(`[author] attempt ${attempt}/3 response ${raw.length} chars\n`);
       const draft = patchMode
         ? applyCompositionRepair(raw, scratch!)
-        : parseCompositionResponse(raw);
+        : args.lockedStoryboard
+          ? {
+              storyboard: args.lockedStoryboard,
+              html: tagged(raw, "index_html"),
+            }
+          : parseCompositionResponse(raw);
       const validation = await validateDirectComposition(args.projectDir, draft);
       if (!validation.ok) {
         const previousFeedback = validationFeedback ?? [];
@@ -338,6 +524,13 @@ export async function requestDirectComposition(
         // valid scratch; a malformed initial document becomes the scratch
         // because there is no earlier authored candidate to preserve.
         if (!patchMode) scratch = draft;
+        compact = true;
+        lastError = new Error(validationFeedback.join("; "));
+        continue;
+      }
+      if (validation.frameWarnings.length && attempt < 3) {
+        validationFeedback = validation.frameWarnings.slice(0, 12);
+        scratch = draft;
         compact = true;
         lastError = new Error(validationFeedback.join("; "));
         continue;
