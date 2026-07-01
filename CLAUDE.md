@@ -10,7 +10,9 @@ This `Sequences` monorepo is the local development workspace, not the GitHub
 delivery destination for Slack work. Never treat a push to
 `vladimirhegai/Sequences` as publishing the Slack app. After committing local
 source, run `bash scripts/publish-public.sh "<message>"`; it creates and pushes
-the standalone Slack repository on `Slack_Sequences/main`.
+the standalone Slack repository on `Slack_Sequences/main`. **Deploying the live
+bot is separate:** `railway up` from the monorepo root (GitHub autodeploy is off,
+so publishing does not deploy) — see [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
 
 ## Active work lives in `apps/slack`
 
@@ -22,9 +24,9 @@ authoritative agent guide:
 >
 > It covers the two bots, isolation rule, MCP path, prompts convention, current
 > state, and verification. From there: [ARCHITECTURE.md](apps/slack/ARCHITECTURE.md)
-> (target design), [SLACK_PLAN.md](apps/slack/SLACK_PLAN.md) (current state),
-> [OPERATIONS.md](apps/slack/OPERATIONS.md) (setup + deploy),
-> [TESTING.md](apps/slack/TESTING.md), [HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
+> (target design), [ROADMAP.md](apps/slack/ROADMAP.md) (current state, feature map,
+> TODOs), [OPERATIONS.md](apps/slack/OPERATIONS.md) (setup + deploy),
+> [HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
 
 `apps/slack` is **self-contained**: it may depend on shared packages
 (`@sequences/core`, `@sequences/platform`, pinned `@hyperframes/*@0.6.86`) but

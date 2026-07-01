@@ -194,7 +194,7 @@ This repo is the **published subset** of a larger workspace:
   by the shared engine tests; the Forge application itself is not published.
 
 Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md),
-[apps/slack/SLACK_PLAN.md](apps/slack/SLACK_PLAN.md), and
+[apps/slack/ROADMAP.md](apps/slack/ROADMAP.md), and
 [apps/slack/HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
 
 ## What works today
@@ -260,7 +260,7 @@ private dev monorepo. When the bot needs host glue (render, project IO, plan
 runner), we **copy it into `apps/slack/src/engine/`** and adapt it. The bot must
 never depend on code outside this repo.
 
-Hackathon plan: [apps/slack/SLACK_PLAN.md](apps/slack/SLACK_PLAN.md).
+Hackathon roadmap: [apps/slack/ROADMAP.md](apps/slack/ROADMAP.md).
 Hackathon rules: [apps/slack/HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
 
 ## Commands
