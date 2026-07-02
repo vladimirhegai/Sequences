@@ -348,17 +348,17 @@ Legend: `[x]` done · `[~]` partial · `[ ]` not started
 
 ## Build Order (Hackathon-Pragmatic)
 
-**Current Fable queue (2026-07-02):**
+**Current Fable queue (2026-07-02, after `cf0094b`):**
 
-1. **Continuous spatial world / camera rig** - one bounded 2.5D SaaS film where
-   shots live on a shared plane and typed cuts become camera moves, while
-   preserving cut-runtime ownership rules.
-2. **Capability materialization + in-Slack audition** - instantiate known-good
+1. **Capability materialization + in-Slack audition** - instantiate known-good
    blocks/components instead of citing metadata and rebuilding them, then let
    the user audition candidates in Slack.
-3. **Live temporal evidence + bounded visual critic** - put compact strips/cut
+2. **Live temporal evidence + bounded visual critic** - put compact strips/cut
    sheets/change curves behind an opt-in live flag, then let a critic request
    one shot-specific repair for rendered dead zones or weak focal hierarchy.
+3. **Component contracts + morph continuity** - extend the proven
+   `data-part`/object-match/camera foundation into reusable state and morph
+   contracts before broader component materialization gets more ambitious.
 
 Historical backlog order:
 
