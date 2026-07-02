@@ -186,6 +186,7 @@ flowchart TD
 | [`src/engine/layoutInspector.ts`](src/engine/layoutInspector.ts) | spatial/layout placement audit (safe-area, anchor, align, gap, optical) |
 | [`src/engine/interactionContract.ts`](src/engine/interactionContract.ts) | cursor interaction contract + hotspot/target/ripple QA |
 | [`src/engine/cutContract.ts`](src/engine/cutContract.ts) | typed cut normalization, resolution, source validation, runtime staging |
+| [`src/engine/cameraContract.ts`](src/engine/cameraContract.ts) | continuous-spatial-world camera rig: typed camera paths, drift auto-fill, source validation |
 | [`src/engine/motionDensity.ts`](src/engine/motionDensity.ts) | static liveness budget: quiet gaps, staged beats, dense bursts |
 | [`src/engine/temporalInspector.ts`](src/engine/temporalInspector.ts) | developer-facing motion strips, cut evidence, change/quiet-window report |
 | [`src/engine/cinemaKit.ts`](src/engine/cinemaKit.ts) | host-owned cinematography kit: inline injection of `sequences-cinema.v1.css` |
@@ -263,11 +264,34 @@ Legend: `[x]` done · `[~]` partial · `[ ]` not started
       front-loaded entrance, feeds those warnings into the bounded author repair
       loop, and records the summary in `motion-plan.json`. Rendered temporal
       evidence remains separate and developer-facing.
+- [x] **Continuous Spatial World / Camera Rig (2026-07-02):** the video frame is
+      a fixed viewport; a scene's `data-camera-world` is a larger finite plane
+      with named `data-region` stations the viewer never sees all at once. The
+      storyboard declares a typed per-scene `camera` path (`hold`, `drift`,
+      `pan`, `whip`, `push-in`, `pull-back`, `track-to-anchor`,
+      `parallax-pass`, `orbit-lite`); `engine/cameraContract.ts` resolves it
+      into a contiguous segment chain (gaps auto-filled with connective drift
+      so the camera never silently freezes) and
+      `templates/sequences-camera.v1.js` compiles seek-safe world transforms
+      from live region/part measurement, plus `data-parallax` depth layers.
+      The runtime also registers the curated Sequences ease library
+      (`seqSwoosh`, `seqWhip`, `seqImpulse`, `seqSettle`, `seqGlide`,
+      `seqDrift`, `seqAnticipate`, `seqMicrobounce`) for authored beats and is
+      injected into every composition. The island/script/compile call are
+      injected deterministically from the locked storyboard;
+      `validateCameraContract` gates publication (world/region/part existence,
+      island equality) and warns on world-plane double ownership. Storyboards
+      now scale with duration (3-10 shots) under a framing-density floor
+      (shots + camera moves ≈ every 3.5s); `motionDensity.ts` classifies
+      camera moves as beats and flags empty typed holds; layout QA suppresses
+      heuristics during camera transits and for off-frame world stations. The
+      model-free fallback ships a camera world (hold → drift → pan) as the
+      deterministic proof path.
 - [~] **Execution passes:**
     - [ ] Lock story, shots, and cut graph.
     - [ ] Reuse/build components.
     - [ ] Compose shot assets/copy.
-    - [ ] Add shot camera transform.
+    - [x] Add shot camera transform (typed camera rig above).
     - [x] Resolve cut and continuity anchors (deterministic cut runtime above).
     - [~] Add micro-motion and validate (static liveness guard exists; rendered
           live evidence/critic still open).
