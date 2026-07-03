@@ -464,11 +464,12 @@ long quiet gaps, front-loaded shots, under-beaten longer scenes, and over-dense
 bursts. Liveness and unbound-moment findings block publication; over-density
 remains advisory.
 
-Normal `/sequences` jobs never convert exhausted storyboard/source authoring
-into a plausible-looking generic film. They fail visibly and preserve the named
-stage reason. `fallbackComposition.ts` remains an emergency, explicitly enabled
-proof path (`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1`) and is not the
-normal creative failure policy.
+Exhausted storyboard/source authoring never masquerades as creative output:
+the `fallbackComposition.ts` proof film ships by default but is explicitly
+labeled (`VideoResult.fallback = { stage, reason }`, the Slack fallback banner,
+and the `/sequences debug on` receipt trail), so an audience sees a working
+film while the operator sees the truth. Opt out with
+`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0` to fail visibly instead.
 
 The planner retrieves only the selected blueprint, cited motion rules, component
 contracts, and relevant slice of `frame.md`. It never receives the entire

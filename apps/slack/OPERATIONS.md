@@ -217,10 +217,14 @@ OPENROUTER_API_KEY=sk-or-v1-...
 #   Set a creative scope to "primary" to keep it on the production model.
 # SLACK_SEQUENCES_LIGHT_MODEL=deepseek/deepseek-v4-flash # bounded helper only
 # SLACK_SEQUENCES_REPAIR_MODEL=... # optional; unset keeps structural repair on Pro
+# SLACK_SEQUENCES_STORYBOARD_THINKING=medium # reasoning-effort override (storyboard)
+# SLACK_SEQUENCES_AUTHOR_THINKING=none # reasoning-effort override (source author)
+#   auto|none|minimal|low|medium|high|xhigh|max; unset keeps built-in defaults.
 # SLACK_SEQUENCES_INTERACTION_QA=enforce
-# Normal creates fail visibly on exhausted storyboard/source authoring.
-# Emergency-only labeled generic proof film:
-# SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1
+# When storyboard/source authoring is exhausted, the labeled model-free proof
+# film ships by DEFAULT (VideoResult.fallback + the Slack fallback banner +
+# `/sequences debug on` receipts keep it honest). Opt out to fail visibly:
+# SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0
 
 # B — reuse OpenAI temporarily
 # SLACK_SEQUENCES_PROVIDER=openai-api

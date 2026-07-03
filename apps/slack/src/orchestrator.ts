@@ -646,10 +646,12 @@ export interface CreateVideoOptions extends BriefFields {
   /** Pulse for the model-authoring stages; drives the Slack ETA countdown. */
   onStageProgress?: StageProgressCallback;
   /**
-   * Emergency-only model-free proof film. Normal `/sequences` requests fail
-   * visibly when creative authoring is unavailable; publishing a generic film
-   * is worse than publishing no film. Operators may opt in per call or with
-   * SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1.
+   * Model-free proof film when creative authoring is exhausted. ON by default:
+   * the result is explicitly labeled (`VideoResult.fallback` + the Slack
+   * fallback banner and debug receipts keep it honest), and a labeled proof
+   * film beats a raw error in front of a demo audience. Operators who prefer
+   * visible failures opt out per call or with
+   * SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0.
    */
   allowDeterministicFallback?: boolean;
   /**
@@ -723,6 +725,13 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     };
     const stageReason = (error: unknown): string =>
       (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    // Attempt counters are out-params the retry loops write into; the debug
+    // receipt trail renders them so an operator can see silent retries.
+    const setStageAttempts = (stage: AuthoringStage, count: number): void => {
+      if (count <= 0) return;
+      const receipt = [...stages].reverse().find((entry) => entry.stage === stage);
+      if (receipt) receipt.attempts = count;
+    };
 
     // Per-job frame.md: bounded art direction + deterministic design tools.
     // Hard brand/contrast/font constraints, tunable recommendations, safe
@@ -745,6 +754,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     const frame = framed.value;
     let authoredDraft: DirectCompositionDraft | undefined;
     let fallbackInfo: VideoResult["fallback"];
+    const storyboardAttempts = { count: 0 };
     const planned = await runStage("storyboard-plan", () =>
       requestStoryboardPlan(provider, {
         brief,
@@ -752,9 +762,12 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
         skills,
         frameMd: frame.frameMd,
         targetDurationSec: options.lengthSec,
+        attempts: storyboardAttempts,
       }));
+    setStageAttempts("storyboard-plan", storyboardAttempts.count);
     let authoredError: unknown;
     if (planned.value) {
+      const authorAttempts = { count: 0 };
       const authored = await runStage("source-author", () =>
         requestDirectComposition(provider, {
           brief,
@@ -762,7 +775,9 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
           skills,
           frameMd: frame.frameMd,
           lockedStoryboard: planned.value,
+          attempts: authorAttempts,
         }));
+      setStageAttempts("source-author", authorAttempts.count);
       if (authored.value) {
         authoredDraft = authored.value.draft;
       }
@@ -773,7 +788,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       const reason = stageReason(planned.error ?? authoredError);
       const allowFallback =
         options.allowDeterministicFallback ??
-        process.env.SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK === "1";
+        process.env.SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK !== "0";
       if (!allowFallback) {
         throw new Error(
           `Creative authoring failed during ${failedStage}. No generic video was published. ` +

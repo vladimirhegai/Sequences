@@ -9,6 +9,7 @@ import {
 import {
   applyCompositionRepair,
   inferStoryboardPlanRequirements,
+  normalizeWorldLayout,
   parseCompositionResponse,
   parseStoryboardResponse,
   quarantineFailedInteractions,
@@ -53,6 +54,30 @@ const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
+});
+
+describe("world-layout station map normalization", () => {
+  it("keeps valid stations and drops junk entry-by-entry", () => {
+    expect(normalizeWorldLayout([
+      { region: "hero-claim", cell: [0, 0] },
+      { region: "metric-wall", cell: [1, 0] },
+      { region: "Bad Region", cell: [0, 1] }, // not kebab-case
+      { region: "too-far", cell: [3, 0] }, // out of range
+      { region: "fractional", cell: [0.5, 0] }, // not an integer
+      { region: "metric-wall", cell: [0, -1] }, // duplicate region
+      { region: "same-cell", cell: [1, 0] }, // duplicate cell
+      "junk",
+    ], true)).toEqual([
+      { region: "hero-claim", cell: [0, 0] },
+      { region: "metric-wall", cell: [1, 0] },
+    ]);
+  });
+
+  it("drops the map entirely without a camera path or when malformed", () => {
+    expect(normalizeWorldLayout([{ region: "hero", cell: [0, 0] }], false)).toEqual([]);
+    expect(normalizeWorldLayout({ region: "hero" }, true)).toEqual([]);
+    expect(normalizeWorldLayout(undefined, true)).toEqual([]);
+  });
 });
 
 describe("deterministic interaction target reconciliation", () => {

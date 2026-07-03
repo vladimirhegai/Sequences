@@ -17,6 +17,7 @@ import {
   validateDirectComposition,
   type DirectCompositionDraft,
   type DirectScene,
+  type WorldLayoutCellV1,
 } from "./directComposition.ts";
 import {
   inspectDirectComposition,
@@ -39,6 +40,7 @@ import {
   CAMERA_MOVES,
   CAMERA_RUNTIME_FILE,
   SEQUENCES_EASES,
+  auditCameraEnergy,
   injectCameraRuntimeTag,
   normalizeStoryboardCameraIntent,
   resolveCameraPlan,
@@ -599,6 +601,16 @@ function extractIndexHtmlSource(raw: string): string {
 function isOutputTruncation(error: unknown): boolean {
   return error instanceof ProviderOutputTruncatedError ||
     (error instanceof Error && /truncat|output-token limit|finish_reason.?length/i.test(error.message));
+}
+
+/**
+ * Some OpenRouter endpoints (Kimi K2.7, GPT-5 tiers) reject `reasoning: none`
+ * with an HTTP 400. The retry loops downgrade reasoning on recovery passes to
+ * protect the completion budget, so this must be detected reactively — the
+ * next attempt keeps a minimal reasoning floor instead of failing the stage.
+ */
+function isReasoningMandatoryError(error: unknown): boolean {
+  return error instanceof Error && /reasoning is mandatory/i.test(error.message);
 }
 
 function appendContinuation(prefix: string, continuation: string): string {
@@ -1705,6 +1717,46 @@ function compactSkillText(text: string): string {
     .slice(0, COMPACT_SKILL_BUDGET_CHARS);
 }
 
+/**
+ * Normalize a scene's optional world-layout station map. Kept only when the
+ * scene declares a camera path (a station map without a camera is dead
+ * weight); junk regions, non-integer or out-of-range cells, and duplicate
+ * regions/cells are dropped entry-by-entry — layout guidance degrades to
+ * free placement rather than failing the storyboard.
+ */
+export function normalizeWorldLayout(
+  value: unknown,
+  hasCameraPath: boolean,
+): WorldLayoutCellV1[] {
+  if (!hasCameraPath || !Array.isArray(value)) return [];
+  const seenRegions = new Set<string>();
+  const seenCells = new Set<string>();
+  const entries: WorldLayoutCellV1[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    const region = typeof item.region === "string" &&
+        /^[a-z][a-z0-9-]{0,63}$/.test(item.region.trim())
+      ? item.region.trim()
+      : "";
+    const cell = Array.isArray(item.cell) && item.cell.length === 2 ? item.cell : undefined;
+    const cx = Number(cell?.[0]);
+    const cy = Number(cell?.[1]);
+    if (
+      !region || seenRegions.has(region) ||
+      !Number.isInteger(cx) || !Number.isInteger(cy) ||
+      Math.abs(cx) > 2 || Math.abs(cy) > 2 ||
+      seenCells.has(`${cx},${cy}`)
+    ) {
+      continue;
+    }
+    seenRegions.add(region);
+    seenCells.add(`${cx},${cy}`);
+    entries.push({ region, cell: [cx, cy] });
+  }
+  return entries;
+}
+
 function parseStoryboard(raw: string): DirectScene[] {
   let value: unknown;
   try {
@@ -1727,6 +1779,7 @@ function parseStoryboard(raw: string): DirectScene[] {
     const spatialIntent = normalizeStoryboardSpatialIntent(scene.spatialIntent);
     const cut = normalizeStoryboardCutIntent(scene.cut);
     const camera = normalizeStoryboardCameraIntent(scene.camera, { startSec, durationSec });
+    const worldLayout = normalizeWorldLayout(scene.worldLayout, Boolean(camera?.path.length));
     const components = normalizeStoryboardComponents(scene.components);
     const beats = normalizeStoryboardComponentBeats(
       scene.beats,
@@ -1779,6 +1832,7 @@ function parseStoryboard(raw: string): DirectScene[] {
       ...(typeof scene.outgoingCut === "string" ? { outgoingCut: scene.outgoingCut } : {}),
       ...(cut ? { cut } : {}),
       ...(camera ? { camera } : {}),
+      ...(worldLayout.length ? { worldLayout } : {}),
       ...(components.length ? { components } : {}),
       ...(beats.length ? { beats } : {}),
       ...(spatialIntent ? { spatialIntent } : {}),
@@ -1992,6 +2046,9 @@ export function validateStoryboardPlan(
   // entrances, repeat visual states, or leave dead intervals — before any
   // source budget is spent.
   errors.push(...validatePlannedMoments(storyboard, expectedStart));
+  // Camera-energy audit: every 12s+ film needs at least one high-energy
+  // element, and four-plus full moves may not share one verb.
+  errors.push(...auditCameraEnergy(storyboard));
   return [...new Set(errors)];
 }
 
@@ -2240,6 +2297,8 @@ export async function requestStoryboardPlan(
     frameMd?: string;
     targetDurationSec?: number;
     options?: CompleteOptions;
+    /** Out-param: written each attempt so stage receipts can report retries. */
+    attempts?: { count: number };
   },
 ): Promise<DirectScene[]> {
   const structuredOutput = supportsStructuredOutputs(provider);
@@ -2312,11 +2371,23 @@ export async function requestStoryboardPlan(
     "context), track-to-anchor (land tight on one data-part), parallax-pass",
     "(lateral travel that separates data-parallax depth layers), orbit-lite",
     "(subtle 2.5D arc). Times are absolute seconds inside the shot window.",
+    "CAMERA ENERGY — camera verbs must track the film's energy curve, never",
+    "distribute one verb evenly. Peak scenes get a whip, a hard push-in",
+    '("zoom":1.35+), or a zoom-through/inverse-zoom cut INTO them; valleys get',
+    "a short hold or slow drift so the claim can breathe. A 12s+ film with no",
+    "whip, no 1.3+ push-in, and no energetic cut is rejected deterministically.",
     "Rhythm pattern that works: whip to a region, drift while its content",
     "reveals, then whip onward — alternate loud and quiet camera energy.",
     "Give a camera path to any shot longer than ~4 seconds; name 2-4 regions",
     "per world using stable kebab-case (hero-claim, metric-wall, ui-demo,",
     "cta-station). track-to-anchor requires a toPart the author will create.",
+    "WORLD LAYOUT — for any shot whose camera visits 2+ stations, also declare",
+    '"worldLayout": pin each region to a distinct viewport-sized grid cell of',
+    "the world plane. [0,0] is the entry framing; [1,0] is one full screen",
+    "right, [0,-1] one up (cells range -2..2). Make cell adjacency match the",
+    "camera journey (a pan right should land on the cell to the right). The",
+    "author receives exact pixel rects per station, so stations never clip",
+    "each other or sit half out of frame.",
     "For a 10s+ film, plan visible development inside shots: a 4.5s+ shot must",
     "have at least two non-wrapper component/camera beats, with one in the back",
     "half. Three long scenes without internal events reads as a slide deck.",
@@ -2432,6 +2503,8 @@ export async function requestStoryboardPlan(
     "The first path entry establishes the entry framing: start with a short",
     "hold or drift on the region the cut lands on, or give the first full move",
     "a fromRegion. The host fills every timing gap with drift automatically.",
+    '"worldLayout":[{"region":"metric-wall","cell":[1,0]}] — required for shots',
+    "whose camera visits 2+ regions; one distinct cell per region, integers -2..2.",
     '"components":[{"version":1,"id":"kebab-case-part-name","kind":"one of the component kit kinds",',
     '"region":"optional camera region it lives at","role":"hero|support"}],',
     '"beats":[{"version":1,"id":"kebab-case","component":"declared component id","kind":"type|open|close|select|press|set-state|count|progress|chart|rows|stream|highlight|morph|swap",',
@@ -2471,7 +2544,9 @@ export async function requestStoryboardPlan(
   // creative miss, and never replay the concept pass.
   let lastValidationError: Error | undefined;
   let recoveringFromTruncation = false;
+  let reasoningFloor: CompleteOptions["thinkingMode"] | undefined;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (args.attempts) args.attempts.count = attempt;
     const prompt = attempt === 1 || !lastValidationError
       ? basePrompt
       : [
@@ -2489,10 +2564,12 @@ export async function requestStoryboardPlan(
     let raw: string;
     try {
       const recoveryPass = Boolean(recoveringFromTruncation || lastValidationError);
-      const attemptThinkingMode =
+      const downgraded: CompleteOptions["thinkingMode"] =
         recoveryPass && thinkingMode !== "none"
           ? "none"
           : thinkingMode;
+      const attemptThinkingMode =
+        reasoningFloor && downgraded === "none" ? reasoningFloor : downgraded;
       const attemptMaxTokens = recoveryPass && thinkingMode !== "none"
         ? Math.min(maxTokens, 8_192)
         : maxTokens;
@@ -2519,6 +2596,14 @@ export async function requestStoryboardPlan(
         process.stderr.write(
           `[storyboard] attempt ${attempt}/3 exhausted its completion budget; ` +
             `retrying the bounded artifact with lower reasoning effort\n`,
+        );
+        continue;
+      }
+      if (attempt < 3 && isReasoningMandatoryError(error)) {
+        reasoningFloor = "minimal";
+        process.stderr.write(
+          `[storyboard] attempt ${attempt}/3: this endpoint mandates reasoning; ` +
+            `retrying with a minimal reasoning floor\n`,
         );
         continue;
       }
@@ -2874,6 +2959,82 @@ function componentReferenceFor(scenes: DirectScene[] | undefined): string {
   return kinds.size ? componentAuthoringReference(kinds) : "";
 }
 
+/**
+ * Deterministic placement text for scenes whose storyboard pinned camera
+ * stations to world grid cells. Free placement is the main source of
+ * clipping and off-camera stations; exact rects remove the guesswork
+ * without any schema change on the author's side.
+ */
+function worldLayoutGuidance(scenes: DirectScene[]): string {
+  const blocks = scenes
+    .filter((scene) => scene.worldLayout?.length)
+    .map((scene) => {
+      const cells = scene.worldLayout!;
+      const xs = cells.map((entry) => entry.cell[0]);
+      const ys = cells.map((entry) => entry.cell[1]);
+      // Cell [0,0] is the entry framing and always part of the plane.
+      const minX = Math.min(...xs, 0);
+      const minY = Math.min(...ys, 0);
+      const planeW = (Math.max(...xs, 0) - minX + 1) * 1920;
+      const planeH = (Math.max(...ys, 0) - minY + 1) * 1080;
+      const rows = cells.map(({ region, cell }) => {
+        const left = (cell[0] - minX) * 1920 + 260;
+        const top = (cell[1] - minY) * 1080 + 140;
+        return `  - data-region="${region}": position:absolute; left:${left}px; top:${top}px; ` +
+          `width:1400px; height:800px — keep its content inside with at least an 8% inner margin`;
+      });
+      return [
+        `- scene "${scene.id}": size its data-camera-world plane exactly ` +
+          `${planeW}x${planeH}px and place each station at these rects:`,
+        ...rows,
+      ].join("\n");
+    });
+  if (!blocks.length) return "";
+  return [
+    "## World-layout station map (deterministic placement)",
+    "The locked storyboard pinned each camera station to a viewport-sized grid",
+    "cell. Use these exact plane sizes and station rects verbatim — they",
+    "guarantee stations never clip each other or drift half out of frame:",
+    ...blocks,
+  ].join("\n");
+}
+
+/**
+ * Small always-on layout reminders derived from the locked storyboard —
+ * the cheap deterministic guardrails that otherwise cost a repair round.
+ */
+function lockedLayoutGuidance(scenes: DirectScene[]): string {
+  const lines = [
+    "## Layout guidance (derived from the locked storyboard)",
+    "- Keep primary content inside the 5% safe area of its framing. Content at",
+    "  a camera station must fit that station's box; never let two stations'",
+    "  content overlap on the plane.",
+  ];
+  const morphPairs = scenes.flatMap((scene) =>
+    (scene.beats ?? [])
+      .filter((beat) => beat.kind === "morph" && beat.morphTo)
+      .map((beat) => `${beat.component}→${beat.morphTo}`)
+  );
+  if (morphPairs.length) {
+    lines.push(
+      `- Morph twins (${[...new Set(morphPairs)].join(", ")}) need comparable box`,
+      "  shapes, corner radii, and visual weight so the FLIP reads as one object",
+      "  transforming rather than a jump.",
+    );
+  }
+  const hasSimultaneousBeats = scenes.some((scene) => {
+    const times = (scene.beats ?? []).map((beat) => beat.atSec).sort((a, b) => a - b);
+    return times.some((time, index) => index >= 2 && time - times[index - 2]! <= 0.1);
+  });
+  if (hasSimultaneousBeats) {
+    lines.push(
+      "- Three or more component beats land together: lay their components on a",
+      "  shared grid with one consistent gap, so the cascade settles as a set.",
+    );
+  }
+  return lines.join("\n");
+}
+
 function creationPrompt(args: {
   brief: string;
   projectDir: string;
@@ -2971,6 +3132,8 @@ function creationPrompt(args: {
         "<locked_storyboard_json>",
         JSON.stringify(args.lockedStoryboard, null, 2),
         "</locked_storyboard_json>",
+        ...[worldLayoutGuidance(args.lockedStoryboard)].filter(Boolean),
+        lockedLayoutGuidance(args.lockedStoryboard),
       ].join("\n")
     : "";
   const lockedResponse = args.lockedStoryboard
@@ -3045,6 +3208,8 @@ interface DirectCompositionArgs {
   lockedStoryboard?: DirectScene[];
   revisionInstruction?: string;
   options?: CompleteOptions;
+  /** Out-param: written each attempt so stage receipts can report retries. */
+  attempts?: { count: number };
 }
 
 async function authorComposition(
@@ -3066,14 +3231,19 @@ async function authorComposition(
   }> = [];
   const structuredPatches = supportsStructuredOutputs(provider);
   const productionTier = productionModel(provider);
+  let reasoningFloor: CompleteOptions["thinkingMode"] | undefined;
   // One initial authoring pass plus at most two bounded repairs.
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (args.attempts) args.attempts.count = attempt;
     const patchMode = Boolean(scratch);
     // Never downgrade a full-document recovery because of its attempt number.
     // A separately configured repair model is eligible only when a valid
     // scratch document exists and the task is a bounded exact patch.
     const repairTier = patchMode ? repairModel(provider) : undefined;
     const selectedTier = repairTier ?? productionTier;
+    const baseThinking = patchMode ? repairThinkingMode(repairTier) : authorThinkingMode();
+    const attemptThinking =
+      reasoningFloor && baseThinking === "none" ? reasoningFloor : baseThinking;
     const prompt = creationPrompt({
       ...args,
       validationFeedback,
@@ -3085,14 +3255,14 @@ async function authorComposition(
       `[author] attempt ${attempt}/3 · prompt ${prompt.length} chars · ` +
       `${compact ? "compact repair" : "full context"} · ` +
       `${repairTier ? "explicit repair tier" : selectedTier ?? "provider primary tier"} · ` +
-      `reasoning ${patchMode ? repairThinkingMode(repairTier) : authorThinkingMode()}\n`,
+      `reasoning ${attemptThinking}\n`,
     );
     try {
       const completeOptions: CompleteOptions = {
         ...args.options,
         timeoutMs: 360_000,
         maxTokens: patchMode ? REPAIR_MAX_TOKENS : authorMaxTokens(),
-        thinkingMode: patchMode ? repairThinkingMode(repairTier) : authorThinkingMode(),
+        thinkingMode: attemptThinking,
         ...(patchMode && structuredPatches ? { responseFormat: PATCH_RESPONSE_FORMAT } : {}),
         ...(selectedTier ? { model: selectedTier } : {}),
       };
@@ -3214,14 +3384,32 @@ async function authorComposition(
       lastError = new Error(validationFeedback.join("; "));
     } catch (error) {
       const truncated = isOutputTruncation(error);
-      process.stderr.write(
-        `[author] attempt ${attempt}/3 failed: ` +
-          `${error instanceof Error ? error.message : String(error)}\n`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[author] attempt ${attempt}/3 failed: ${message}\n`);
+      if (isReasoningMandatoryError(error)) {
+        // Endpoint rejects reasoning:none outright — retry the same work with
+        // a minimal floor instead of burning attempts on identical 400s.
+        reasoningFloor = "minimal";
+        lastError = error;
+        continue;
+      }
+      // A parse failure (bad wrapper/JSON, not a validation finding) gets one
+      // structural reminder — Flash-tier authors drift on the envelope more
+      // often than on the content.
+      const parseFailure = !truncated &&
+        /missing <index_html>|patches_json (?:is not valid JSON|must contain)|storyboard_json is not valid/i
+          .test(message);
       validationFeedback = [
         truncated
           ? `The previous response exhausted its output budget. Return a complete document under ${COMPOSITION_SOURCE_BUDGET_CHARS.toLocaleString("en-US")} characters; simplify source, not the visual thesis.`
-          : error instanceof Error ? error.message : String(error),
+          : message,
+        ...(parseFailure
+          ? [
+              patchMode
+                ? "Structural reminder: emit exactly one JSON array of patch edits (patches_json) and nothing else — no prose, Markdown fences, or commentary."
+                : "Structural reminder: emit exactly one <index_html>…</index_html> block containing the complete document and nothing else — no prose, Markdown fences, or commentary.",
+            ]
+          : []),
       ];
       if (truncated) {
         // A truncated full composition cannot be repaired because it never
