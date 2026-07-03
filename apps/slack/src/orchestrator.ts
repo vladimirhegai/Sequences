@@ -104,9 +104,20 @@ export function assembleBrief(fields: BriefFields): string {
   if (fields.tone) {
     lines.push(`Preferred motion profile: ${fields.tone} — a ${TONE_HINT[fields.tone]} feel.`);
   }
-  if (fields.lengthSec) lines.push(`Target length: about ${fields.lengthSec} seconds.`);
+  if (fields.lengthSec) {
+    const lower = Math.max(6, Math.floor(fields.lengthSec * 0.8));
+    const upper = Math.min(60, Math.ceil(fields.lengthSec * 1.2));
+    lines.push(
+      `Target runtime: around ${fields.lengthSec} seconds. This is a pacing center, not an ` +
+        `exact duration; ${lower}-${upper} seconds is acceptable when the edit plays better.`,
+    );
+  }
   if (fields.context) lines.push(`Extra context: ${fields.context}`);
   lines.push(
+    "Treat product facts, quoted UI copy, and requested product beats as coverage constraints. " +
+      "Treat shot lists and motion notes as creative intent, not a literal edit: synthesize them " +
+      "into one authored visual argument, atomize long prose into short screen copy, and never " +
+      "paste the launch paragraph onto a card.",
     "Build a launch reel: a hook, the product/feature in action, the metric that matters, optional proof, and a CTA close.",
   );
   return lines.join("\n");
@@ -620,6 +631,13 @@ export interface CreateVideoOptions extends BriefFields {
   preferMcp?: boolean;
   onProgress?: ProgressCallback;
   /**
+   * Emergency-only model-free proof film. Normal `/sequences` requests fail
+   * visibly when creative authoring is unavailable; publishing a generic film
+   * is worse than publishing no film. Operators may opt in per call or with
+   * SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1.
+   */
+  allowDeterministicFallback?: boolean;
+  /**
    * Skip the planning brain and apply this plan directly. A function receives the
    * freshly-initialized project so it can reference seeded asset ids. This is the
    * deterministic `/sequences demo` path — instant, key-free, and known-good.
@@ -686,14 +704,22 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     // Per-job frame.md: bounded art direction + deterministic design tools.
     // Hard brand/contrast/font constraints, tunable recommendations, safe
     // fallback — buildJobFrame degrades internally, so a throw here is real.
-    const frame = await buildJobFrame({
-      provider,
-      projectDir: dir,
-      brief,
-      tone: options.tone,
-      evidence: options.context,
-      brandName: options.brandName ?? options.product,
-    });
+    const framed = await runStage("frame-design", () =>
+      buildJobFrame({
+        provider,
+        projectDir: dir,
+        brief,
+        tone: options.tone,
+        evidence: options.context,
+        brandName: options.brandName ?? options.product,
+      }));
+    if (!framed.value) {
+      throw new Error(
+        `Creative authoring failed during frame-design. No generic video was published. ` +
+          `${stageReason(framed.error)}`,
+      );
+    }
+    const frame = framed.value;
     let authoredDraft: DirectCompositionDraft | undefined;
     let fallbackInfo: VideoResult["fallback"];
     const planned = await runStage("storyboard-plan", () =>
@@ -702,6 +728,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
         projectDir: dir,
         skills,
         frameMd: frame.frameMd,
+        targetDurationSec: options.lengthSec,
       }));
     let authoredError: unknown;
     if (planned.value) {
@@ -721,9 +748,18 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     if (!authoredDraft) {
       const failedStage: AuthoringStage = planned.value ? "source-author" : "storyboard-plan";
       const reason = stageReason(planned.error ?? authoredError);
+      const allowFallback =
+        options.allowDeterministicFallback ??
+        process.env.SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK === "1";
+      if (!allowFallback) {
+        throw new Error(
+          `Creative authoring failed during ${failedStage}. No generic video was published. ` +
+            `${reason}`,
+        );
+      }
       process.stderr.write(
         `[orchestrator] model authoring unavailable at stage "${failedStage}"; ` +
-          `publishing the deterministic safe fallback\n`,
+          `publishing the explicitly enabled deterministic safe fallback\n`,
       );
       fallbackInfo = { stage: failedStage, reason };
       authoredDraft = buildFallbackComposition({

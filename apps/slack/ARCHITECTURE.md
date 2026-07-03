@@ -176,8 +176,8 @@ Two different LLMs run, on two different providers; keep them distinct:
   and returns a bounded evidence pack. Always needs an OpenAI key.
 - **Planning / authoring bot — the main agent.** Selected by
   `SLACK_SEQUENCES_PROVIDER`; the live Railway deployment uses OpenRouter
-  (DeepSeek) and authors HyperFrames directly. This is the agent the recipes and
-  the revised laws below govern.
+  (GLM for direction/storyboard, DeepSeek for source) and authors HyperFrames
+  directly. This is the agent the recipes and the revised laws below govern.
 
 The OpenRouter author uses a deliberate three-role policy:
 
@@ -202,6 +202,24 @@ one ambiguous sibling cannot discard the safe work. Provider
 assistant prefill, allowing one logical document to span multiple bounded
 completions without spending a repair attempt. Compact regeneration remains the
 fallback for providers that cannot return a partial completion.
+
+GLM's reasoning and structured JSON share one completion budget. The storyboard
+pass therefore uses 30,720 tokens under OpenRouter's 32,768-token GLM 5.2
+ceiling, allows a six-minute provider turn, and retries a truncated artifact once
+at lower reasoning effort. The cached concept uses high effort for taste;
+beat-expansion and continuity review use medium effort so the large strict JSON
+artifact keeps the time/token budget it needs. Reasoning-heavy storyboard and
+critic calls use the provider's streaming transport so reasoning deltas keep
+OpenRouter's upstream route active without being logged or persisted. This is
+separate from DeepSeek source continuation.
+Briefs that explicitly request component kinds, a spatial UI world, or
+object-match cuts become deterministic storyboard coverage requirements; prose
+mention alone cannot satisfy them.
+
+Camera intent accepts absolute composition seconds as canonical input and also
+recovers unambiguous scene-relative offsets for later shots. The offset is
+shifted as a whole before clamping; start/end arithmetic must never mix the two
+time domains, because that collapses valid moves to zero duration.
 
 Flash also routes revisions that touch only an existing interaction's timing,
 path, approach, normalized aim, or press scale. The result is locally validated
@@ -437,10 +455,19 @@ validation warns on probable wrapper double ownership.
 Static liveness validation now sits beside that ownership rule. `motionDensity.ts`
 does not look at pixels; it classifies scene starts/cuts as major activity,
 authored GSAP/component/camera beats as medium activity, and cursor interactions
-as medium activity. On 10s+, 3+ shot films it asks the bounded repair loop to fix
+as medium activity. Camera drift and decorative glows, rules, dividers,
+underlines, grain, and similar polish are small activity and cannot prove a
+storyboard moment or close a quiet interval. On 10s+, 3+ shot films it asks the
+bounded repair loop to fix
 long quiet gaps, front-loaded shots, under-beaten longer scenes, and over-dense
-bursts. These warnings can improve a live draft, but they are heuristic and do
-not override the browser-valid publication fallback.
+bursts. Liveness and unbound-moment findings block publication; over-density
+remains advisory.
+
+Normal `/sequences` jobs never convert exhausted storyboard/source authoring
+into a plausible-looking generic film. They fail visibly and preserve the named
+stage reason. `fallbackComposition.ts` remains an emergency, explicitly enabled
+proof path (`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1`) and is not the
+normal creative failure policy.
 
 The planner retrieves only the selected blueprint, cited motion rules, component
 contracts, and relevant slice of `frame.md`. It never receives the entire

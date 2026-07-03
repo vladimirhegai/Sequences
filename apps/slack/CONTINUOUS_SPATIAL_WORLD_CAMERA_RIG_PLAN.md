@@ -57,6 +57,10 @@ Status: shipped, verified, and committed in `cf0094b` (`feat(slack): continuous 
   new framing event (cut or camera move) every 3.5 seconds.
 - Camera bindings are injected deterministically from the locked storyboard, so
   the source author cannot silently omit a planned move.
+- Later-shot paths canonically use absolute composition seconds, but the
+  normalizer also recovers unambiguous scene-relative offsets by shifting the
+  whole interval before clamping. This prevents valid model-authored moves from
+  collapsing to zero duration at a non-zero scene start.
 - `motionDensity.ts` classifies full camera moves as medium beats, drift as a
   minor beat, and flags any 1.6s+ typed hold with no internal action.
 - `layoutInspector.ts` suppresses static-layout heuristics during camera

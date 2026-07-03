@@ -4,15 +4,18 @@
 > evidence binding live in `src/engine/storyboardMoments.ts`; liveness and the
 > moment floor are blocking publication errors; GLM runs as three bounded jobs
 > (concept → beat expansion → continuity critic); `directOutline()` and the
-> thumbnail strip are moment-led; `createVideo` names failed stages and labels
-> the deterministic fallback explicitly (the fallback itself now carries 13
-> evidence-bound moments). One deliberate deviation: the strict ≤2.6s moment
+> thumbnail strip are moment-led; `createVideo` names failed stages. Normal
+> creates now fail visibly instead of publishing the deterministic fallback;
+> its emergency opt-in version carries 11 evidence-bound information moments
+> after decorative underline/divider moments were removed. One deliberate
+> deviation: the strict ≤2.6s moment
 > interval applies to *declared* plans — synthesized (legacy) storyboards are
 > governed by the blocking 3s activity-level quiet-gap check instead, because
 > static tween extraction collapses loop-staggered beats to their first
-> position. Verified via tests, `film:demo`, and `sequence:check` (including
-> the exact 15s RADAR fallback path: 13 timestamped rows, `fallbackStage:
-> "storyboard-plan"`). See ROADMAP.md for the feature map.
+> position. Verified via tests, `film:demo`, and `sequence:check`, including the
+> exact 18s Relay reproduction whose `storyboard-plan` exhausted the former
+> 16,384-token application budget. See ROADMAP.md for the incident record and
+> feature map.
 
 ## Outcome
 
@@ -118,9 +121,10 @@ Split the broad fallback boundary into named stages and record the provider,
 attempt, finish reason, parse/validation errors, and cache usage. Retry only the
 failed bounded artifact. If recovery is exhausted:
 
-- label the Slack result clearly as a deterministic safe fallback;
-- include the failed stage in the build trace;
-- make the fallback obey the same 7-moment contract and show its internal beats;
+- fail the normal Slack create visibly and include the failed stage;
+- never substitute a generic proof film for model-authored creative output;
+- keep the deterministic fallback behind an explicit emergency opt-in and make
+  it obey the same moment/liveness contract;
 - never cache a fallback under the key for a successful model artifact.
 
 ## Acceptance

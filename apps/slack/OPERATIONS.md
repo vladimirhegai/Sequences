@@ -128,6 +128,22 @@ Add `--temporal` when Chrome is available and you want pixel evidence, or
 not call Slack hosted MCP and does not post to Slack; use the sandbox flow for
 OAuth, hosted-MCP, Socket Mode, and Slack upload verification.
 
+The regression fixture for the July 2 Relay incident preserves the exact modal
+brief and its component/camera direction:
+
+```powershell
+npm run sequence:check --workspace @sequences/slack -- `
+  --input ../../evals/relay-launch-film.json `
+  --provider openrouter-api `
+  --no-mcp `
+  --format both
+```
+
+Pass criteria: `authoringMode: hyperframes-direct`, no fallback stage, runtime
+reported for review (the target is guidance, not a publication gate), at least six requested component kinds/eight typed
+component beats, at least two full camera moves with one multi-station world,
+an object-match cut, and no motion/moment publication error.
+
 ---
 
 ## 2. First-time creation (Slack app + Railway)
@@ -217,6 +233,9 @@ OPENROUTER_API_KEY=sk-or-v1-...
 # SLACK_SEQUENCES_LIGHT_MODEL=deepseek/deepseek-v4-flash # bounded helper only
 # SLACK_SEQUENCES_REPAIR_MODEL=... # optional; unset keeps structural repair on Pro
 # SLACK_SEQUENCES_INTERACTION_QA=enforce
+# Normal creates fail visibly on exhausted storyboard/source authoring.
+# Emergency-only labeled generic proof film:
+# SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1
 
 # B — reuse OpenAI temporarily
 # SLACK_SEQUENCES_PROVIDER=openai-api
@@ -381,6 +400,15 @@ can coexist — and vice versa.
 - `missing_scope`: update manifest, reinstall, refresh bot token, redeploy.
 - Connect prompt: complete `/slack/install` for that user.
 - Planning fails: confirm `SLACK_SEQUENCES_PROVIDER` + its API key.
+- `HTTP 403 key limit exceeded`: raise/reset the OpenRouter key's total limit;
+  the request did not reach GLM or DeepSeek.
+- A result whose scene ids are `fallback-hook`, `fallback-proof`, and
+  `fallback-close` is the model-free proof, not model-authored creative output.
+  Normal creates no longer publish it; check whether the emergency fallback
+  variable was enabled.
+- `storyboard-plan` truncation: verify the current code logs a 30,720-token GLM
+  budget and a lower-reasoning second attempt. A 16,384-token line means the
+  deployment is stale.
 - Hosted MCP fails: confirm app MCP enablement, user scopes, redirect URL,
   `OPENAI_API_KEY`, per-user OAuth.
 - Thumbnails work but MP4 fails: inspect Chromium, FFmpeg, Railway memory.

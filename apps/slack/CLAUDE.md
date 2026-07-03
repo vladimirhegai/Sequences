@@ -216,22 +216,23 @@ per moment, primaries first, cap 10), `STORYBOARD.md`, and `motion-plan.json`.
 **concept pass** (thesis, narrative pressure, energy curve, motif, color arc,
 one risk — `requestConceptDirection`, kill-switch
 `SLACK_SEQUENCES_CONCEPT_PASS=0`), the **beat-expansion storyboard pass**
-(consumes the concept artifact; one bounded retry with deterministic findings
-on a rejected plan), DeepSeek source authoring against the locked storyboard,
+(consumes the concept artifact; up to two bounded retries with deterministic
+findings on a rejected/truncated plan), DeepSeek source authoring against the locked storyboard,
 then a **continuity critic** pass (GLM reviews the implemented film's moment
 evidence + motion-density contact sheet and returns ≤5 bounded repair
 directives; DeepSeek applies them as patches; deterministic QA accepts or
 rejects — kill-switch `SLACK_SEQUENCES_CREATIVE_CRITIC=0`; any critic failure
 keeps the pre-critique draft). Each artifact is cached independently.
 
-**Explicit fallback stages.** `createVideo` attributes failures to named stages
-(`storyboard-plan`, `source-author`); `VideoResult.stages` carries argument-free
-receipts and `VideoResult.fallback = { stage, reason }` marks a published
-deterministic fallback. Slack results label the fallback explicitly (stage name
-only, never model output); `sequence:check` reports
-`authoringMode/fallbackStage/moments/unboundMoments`. The fallback composition
-itself obeys the full moment contract (13 declared, evidence-bound moments over
-a camera-world pan; duration clamped to 20s) and a fallback is never cached
+**Honest authoring failures.** `createVideo` attributes failures to named stages
+(`frame-design`, `storyboard-plan`, `source-author`); `VideoResult.stages`
+carries argument-free receipts. Normal creates fail visibly and publish no
+generic film when storyboard/source recovery is exhausted. The deterministic
+fallback is emergency-only
+(`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1`); when enabled,
+`VideoResult.fallback = { stage, reason }` marks it and Slack labels it. The
+fallback obeys the full contract (11 declared, evidence-bound information
+moments over a camera-world pan; duration clamped to 20s) and is never cached
 under a model-artifact key.
 
 Agent-facing local checks use `npm run sequence:check --workspace

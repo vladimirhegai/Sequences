@@ -199,8 +199,21 @@ export function normalizeStoryboardCameraIntent(
     const move = typeof item.move === "string" ? item.move.trim() as CameraMoveStyle : "";
     if (!move || !CAMERA_MOVES.has(move)) return [];
     if (!finite(item.startSec) || !finite(item.durationSec)) return [];
-    const startSec = clamp(item.startSec, scene.startSec, sceneEnd);
-    const endSec = clamp(item.startSec + item.durationSec, startSec, sceneEnd);
+    // Planner schemas ask for absolute composition time, but models commonly
+    // emit a perfectly usable scene-relative offset for later shots. The old
+    // clamp combined an absolute start with the unshifted relative end, which
+    // collapsed every such move to zero duration and silently erased the whole
+    // camera path. Recover unambiguous offsets inside the scene window.
+    const rawStart = item.startSec;
+    const candidateStart =
+      scene.startSec > 0 &&
+      rawStart >= 0 &&
+      rawStart < scene.startSec &&
+      rawStart <= scene.durationSec
+        ? scene.startSec + rawStart
+        : rawStart;
+    const startSec = clamp(candidateStart, scene.startSec, sceneEnd);
+    const endSec = clamp(candidateStart + item.durationSec, startSec, sceneEnd);
     if (endSec - startSec < 0.15) return [];
     const toRegion = stableName(item.toRegion);
     const toPart = stableName(item.toPart);
@@ -439,10 +452,22 @@ function sceneScopes(html: string): Array<{ id: string; scope: string }> {
   const tags = [...html.matchAll(
     /<[a-z][\w:-]*\b[^>]*\bdata-scene\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi,
   )];
-  return tags.map((tag, index) => ({
-    id: (tag[1] ?? tag[2] ?? tag[3] ?? "").trim(),
-    scope: html.slice(tag.index, tags[index + 1]?.index ?? html.length),
-  }));
+  return tags.map((tag, index) => {
+    const tagName = tag[0].match(/^<([a-z][\w:-]*)\b/i)?.[1];
+    const nextScene = tags[index + 1]?.index ?? html.length;
+    let end = nextScene;
+    if (tagName) {
+      const close = new RegExp(`</${tagName}\\s*>`, "i")
+        .exec(html.slice(tag.index + tag[0].length, nextScene));
+      if (close?.index !== undefined) {
+        end = tag.index + tag[0].length + close.index + close[0].length;
+      }
+    }
+    return {
+      id: (tag[1] ?? tag[2] ?? tag[3] ?? "").trim(),
+      scope: html.slice(tag.index, end),
+    };
+  });
 }
 
 function attributePattern(attribute: string, value: string): RegExp {
@@ -515,8 +540,8 @@ export function validateCameraContract(
     // the same element is the classic two-owners bug; surface it rather than
     // letting the timelines fight.
     if (
-      /\.(?:to|from|fromTo)\(\s*(["'])[^"']*\[data-camera-world\][^"']*\1/.test(scope) ||
-      /\.(?:to|from|fromTo)\(\s*(["'])[^"']*data-camera-world[^"']*\1/.test(scope)
+      /\.(?:to|from|fromTo)\(\s*(["'])[^"']*\[data-camera-world\][^"']*\1/.test(html) ||
+      /\.(?:to|from|fromTo)\(\s*(["'])[^"']*data-camera-world[^"']*\1/.test(html)
     ) {
       warnings.push(
         `scene "${scenePlan.sceneId}" has an authored tween on its data-camera-world plane while a ` +

@@ -79,6 +79,20 @@ describe("normalizeStoryboardCameraIntent", () => {
       path: [{ version: 1, move: "pan", toRegion: "Hero Station!", startSec: 0, durationSec: 2 }],
     }, window)).toBeUndefined();
   });
+
+  it("recovers scene-relative camera times in later shots", () => {
+    const camera = normalizeStoryboardCameraIntent({
+      version: 1,
+      path: [
+        { version: 1, move: "pan", toRegion: "trace", startSec: 0.4, durationSec: 0.8 },
+        { version: 1, move: "push-in", toRegion: "risk", startSec: 2.1, durationSec: 0.7 },
+      ],
+    }, { startSec: 8, durationSec: 5 });
+    expect(camera?.path).toMatchObject([
+      { move: "pan", toRegion: "trace", startSec: 8.4, durationSec: 0.8 },
+      { move: "push-in", toRegion: "risk", startSec: 10.1, durationSec: 0.7 },
+    ]);
+  });
 });
 
 describe("resolveCameraPlan", () => {
@@ -226,6 +240,17 @@ describe("validateCameraContract", () => {
       .some((error) => error.includes(CAMERA_RUNTIME_FILE))).toBe(true);
     expect(validateCameraContract(html({ compileCall: false }), [cameraScene]).errors
       .some((error) => error.includes("SequencesCamera.compile"))).toBe(true);
+  });
+
+  it("ignores data-region strings in trailing scripts after a closed scene", () => {
+    const result = validateCameraContract(
+      html({
+        regions: ["hero"],
+        extraScript: 'const template = `<div data-region="metrics"></div>`;',
+      }),
+      [cameraScene],
+    );
+    expect(result.errors.some((error) => error.includes('region "metrics"'))).toBe(true);
   });
 
   it("warns when an authored tween targets the world plane", () => {

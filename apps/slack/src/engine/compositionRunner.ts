@@ -97,10 +97,11 @@ const MAX_REPAIR_PATCHES = 16;
 // Camera-era storyboards carry typed camera paths and more shots, so the
 // compact JSON artifact needs more room than the pre-rig 4K ceiling.
 const STORYBOARD_MAX_TOKENS = 6_144;
-// GLM spends its budget on reasoning before the compact JSON artifact; its
-// provider ceiling is ~33K output tokens, so give the reasoning storyboard
-// enough room that a long think cannot truncate the artifact.
-const REASONING_STORYBOARD_MAX_TOKENS = 16_384;
+// GLM spends this shared budget on reasoning before the JSON artifact.
+// OpenRouter currently exposes a 32,768-token completion ceiling for GLM 5.2;
+// reserving almost all of it prevents a good long think from truncating the
+// actual storyboard at the old 16K application cap.
+const REASONING_STORYBOARD_MAX_TOKENS = 30_720;
 const MAX_AUTHOR_SEGMENTS = 3;
 
 function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat"]> {
@@ -456,7 +457,11 @@ function storyboardThinkingMode(
   provider: AgentProvider,
   model: string | undefined,
 ): CompleteOptions["thinkingMode"] {
-  return creativeThinkingMode(provider, model);
+  const creative = creativeThinkingMode(provider, model);
+  // The cached concept pass already spends high effort on taste. Storyboard
+  // expansion is a large strict artifact; medium preserves deliberation while
+  // reserving budget/time for the JSON that the source author needs.
+  return creative === "high" ? "medium" : creative;
 }
 
 function tagged(raw: string, name: string): string {
@@ -880,7 +885,12 @@ async function completeSourceWithContinuation(
   let lastTruncation: ProviderOutputTruncatedError | undefined;
   for (let segment = 1; segment <= MAX_AUTHOR_SEGMENTS; segment += 1) {
     try {
-      const output = await completeWithRetry(provider, prompt, {
+      // Long HTML generations can be actively producing tokens while an
+      // OpenRouter route's non-streaming proxy reports an upstream idle
+      // timeout. Consume the stream when the provider exposes it; the helper
+      // still returns only the final accumulated text and preserves
+      // ProviderOutputTruncatedError partials for continuation below.
+      const output = await completeReasoningWithRetry(provider, prompt, {
         ...options,
         ...(accumulated ? { assistantPrefill: accumulated } : {}),
       }, "author source");
@@ -908,12 +918,269 @@ async function completeSourceWithContinuation(
   );
 }
 
+function inferVisibilityOpacity(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim().replace(/^["']|["']$/g, "").toLowerCase();
+  if (
+    normalized === "none" ||
+    normalized === "hidden" ||
+    normalized === "collapse" ||
+    normalized === "0" ||
+    normalized === "false"
+  ) {
+    return 0;
+  }
+  if (
+    normalized === "block" ||
+    normalized === "flex" ||
+    normalized === "grid" ||
+    normalized === "inline" ||
+    normalized === "inline-block" ||
+    normalized === "visible" ||
+    normalized === "1" ||
+    normalized === "true"
+  ) {
+    return 1;
+  }
+  return undefined;
+}
+
+function cleanGsapVarsObject(source: string): { source: string; changed: boolean } {
+  const forbidden =
+    /(["']?)(display|visibility)\1\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$.-]*|-?\d+(?:\.\d+)?|true|false|null)\s*,?/gi;
+  const values = [...source.matchAll(forbidden)].map((match) => match[3]);
+  if (!values.length) return { source, changed: false };
+
+  let body = source.slice(1, -1);
+  body = body.replace(
+    /,\s*(["']?)(display|visibility)\1\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$.-]*|-?\d+(?:\.\d+)?|true|false|null)\s*/gi,
+    "",
+  );
+  body = body.replace(
+    /^\s*(["']?)(display|visibility)\1\s*:\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z_$][\w$.-]*|-?\d+(?:\.\d+)?|true|false|null)\s*,?\s*/i,
+    "",
+  );
+  body = body.replace(/,\s*}/g, "}").replace(/^\s*,\s*/, "");
+
+  const cleaned = `{${body}}`;
+  if (/\b(?:opacity|autoAlpha)\s*:/.test(cleaned)) {
+    return { source: cleaned, changed: cleaned !== source };
+  }
+  const inferred = values
+    .map(inferVisibilityOpacity)
+    .find((opacity): opacity is number => opacity !== undefined);
+  if (inferred === undefined) return { source: cleaned, changed: cleaned !== source };
+
+  const trimmedBody = body.trim();
+  const addition = `opacity: ${inferred}`;
+  return {
+    source: trimmedBody ? `{ ${addition}, ${trimmedBody} }` : `{ ${addition} }`,
+    changed: true,
+  };
+}
+
+function rewriteGsapCallVars(call: string): { call: string; repairs: number } {
+  let output = "";
+  let cursor = 0;
+  let repairs = 0;
+  for (let index = 0; index < call.length; index += 1) {
+    if (call[index] !== "{") continue;
+    let depth = 1;
+    let quote: string | undefined;
+    let escaped = false;
+    let end = -1;
+    for (let scan = index + 1; scan < call.length; scan += 1) {
+      const next = call[scan]!;
+      if (quote) {
+        if (escaped) {
+          escaped = false;
+        } else if (next === "\\") {
+          escaped = true;
+        } else if (next === quote) {
+          quote = undefined;
+        }
+        continue;
+      }
+      if (next === "\"" || next === "'" || next === "`") {
+        quote = next;
+      } else if (next === "{") {
+        depth += 1;
+      } else if (next === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = scan;
+          break;
+        }
+      }
+    }
+    if (end < 0) break;
+    const objectSource = call.slice(index, end + 1);
+    const cleaned = cleanGsapVarsObject(objectSource);
+    if (cleaned.changed) {
+      output += call.slice(cursor, index) + cleaned.source;
+      cursor = end + 1;
+      repairs += 1;
+    }
+    index = end;
+  }
+  if (!repairs) return { call, repairs };
+  return { call: output + call.slice(cursor), repairs };
+}
+
+function normalizeGsapDisplayVisibilityTweens(source: string): { html: string; repairs: number } {
+  const callStart = /\b(?:gsap|[A-Za-z_$][\w$]*)\s*\.\s*(?:to|from|fromTo|set)\s*\(/g;
+  let html = "";
+  let cursor = 0;
+  let repairs = 0;
+  for (const match of source.matchAll(callStart)) {
+    const start = match.index ?? 0;
+    const open = source.indexOf("(", start);
+    if (open < 0) continue;
+    let depth = 1;
+    let quote: string | undefined;
+    let escaped = false;
+    let close = -1;
+    for (let index = open + 1; index < source.length; index += 1) {
+      const char = source[index]!;
+      if (quote) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === quote) {
+          quote = undefined;
+        }
+        continue;
+      }
+      if (char === "\"" || char === "'" || char === "`") {
+        quote = char;
+      } else if (char === "(") {
+        depth += 1;
+      } else if (char === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          close = index;
+          break;
+        }
+      }
+    }
+    if (close < 0) continue;
+    const call = source.slice(start, close + 1);
+    const rewritten = rewriteGsapCallVars(call);
+    if (rewritten.repairs) {
+      html += source.slice(cursor, start) + rewritten.call;
+      cursor = close + 1;
+      repairs += rewritten.repairs;
+    }
+  }
+  if (!repairs) return { html: source, repairs };
+  return { html: html + source.slice(cursor), repairs };
+}
+
+function normalizeJsonIsland(
+  source: string,
+  id: string,
+  payload: string,
+): { html: string; repairs: number; found: boolean } {
+  const pattern = new RegExp(
+    `(<script\\b[^>]*\\bid\\s*=\\s*(["'])${regexpEscape(id)}\\2[^>]*>)([\\s\\S]*?)(<\\/script>)`,
+    "gi",
+  );
+  let found = false;
+  let repairs = 0;
+  const html = source.replace(pattern, (match, open: string, _quote: string, body: string, close: string) => {
+    if (!found) {
+      found = true;
+      if (body === payload) return match;
+      repairs += 1;
+      return `${open}${payload}${close}`;
+    }
+    repairs += 1;
+    return "";
+  });
+  return { html, repairs, found };
+}
+
+function ensureTagAttr(tag: string, name: string, value: string): string {
+  const escaped = regexpEscape(name);
+  const pattern = new RegExp(`\\b${escaped}\\s*=\\s*(["'])(.*?)\\1`, "i");
+  if (pattern.test(tag)) {
+    return tag.replace(pattern, `${name}="${value}"`);
+  }
+  return tag.replace(/>$/, ` ${name}="${value}">`);
+}
+
+function reconcileComponentBindings(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repairs: number } {
+  let html = source;
+  let repairs = 0;
+  for (const scene of scenes) {
+    if (!scene.components?.length) continue;
+    const sceneTags = [...html.matchAll(
+      /<[a-z][\w:-]*\b[^>]*\bdata-scene\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/gi,
+    )];
+    const sceneIndex = sceneTags.findIndex((match) =>
+      htmlAttr(match[0], "data-scene") === scene.id
+    );
+    if (sceneIndex < 0) continue;
+    const scopeStart = sceneTags[sceneIndex]!.index;
+    const scopeEnd = sceneTags[sceneIndex + 1]?.index ?? html.length;
+    let scope = html.slice(scopeStart, scopeEnd);
+    for (const component of scene.components) {
+      const tags = [...scope.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)]
+        .map((match) => match[0])
+        .filter((tag) => htmlAttr(tag, "data-part") === component.id);
+      if (!tags.length) continue;
+      const canonicalOccurrence = Math.max(
+        0,
+        tags.findIndex((tag) => htmlAttr(tag, "data-component") === component.kind),
+      );
+      const needsRegion = Boolean(
+        component.region &&
+        !new RegExp(
+          `\\bdata-region\\s*=\\s*(["'])${regexpEscape(component.region)}\\1`,
+          "i",
+        ).test(scope),
+      );
+      let occurrence = 0;
+      let duplicate = 0;
+      scope = scope.replace(/<[a-z][\w:-]*\b[^>]*>/gi, (tag) => {
+        if (htmlAttr(tag, "data-part") !== component.id) return tag;
+        const isCanonical = occurrence === canonicalOccurrence;
+        occurrence += 1;
+        if (isCanonical) {
+          let next = ensureTagAttr(tag, "data-component", component.kind);
+          if (component.region && needsRegion) {
+            next = ensureTagAttr(next, "data-region", component.region);
+          }
+          if (next !== tag) repairs += 1;
+          return next;
+        }
+        duplicate += 1;
+        repairs += 1;
+        return ensureTagAttr(tag, "data-part", `${component.id}-aux-${duplicate}`);
+      });
+    }
+    html = html.slice(0, scopeStart) + scope + html.slice(scopeEnd);
+  }
+  return { html, repairs };
+}
+
 function applyDeterministicSourceRepairs(
   draft: DirectCompositionDraft,
   projectDir: string,
   lockedStoryboard?: DirectScene[],
 ): DirectCompositionDraft {
   let html = draft.html;
+  const visibilityTweens = normalizeGsapDisplayVisibilityTweens(html);
+  if (visibilityTweens.repairs) {
+    html = visibilityTweens.html;
+    process.stderr.write(
+      `[author] normalized ${visibilityTweens.repairs} GSAP display/visibility tween(s)\n`,
+    );
+  }
   if (lockedStoryboard?.length) {
     const authoredScenes = [...html.matchAll(
       /<([a-z][\w:-]*)\b[^>]*\bdata-scene(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?[^>]*>/gis,
@@ -1024,14 +1291,10 @@ function applyDeterministicSourceRepairs(
       repairedBindings += 1;
     }
     const payload = JSON.stringify({ version: 1, interactions });
-    const islandPattern =
-      /(<script\b[^>]*\bid\s*=\s*(["'])sequences-interactions\2[^>]*>)([\s\S]*?)(<\/script>)/i;
-    if (islandPattern.test(html)) {
-      const updated = html.replace(islandPattern, `$1${payload}$4`);
-      if (updated !== html) {
-        html = updated;
-        repairedBindings += 1;
-      }
+    const normalizedIsland = normalizeJsonIsland(html, "sequences-interactions", payload);
+    if (normalizedIsland.found) {
+      html = normalizedIsland.html;
+      repairedBindings += normalizedIsland.repairs;
     } else {
       const timelineScript = /<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?gsap\.timeline\s*\(/i.exec(html);
       if (timelineScript?.index !== undefined) {
@@ -1041,6 +1304,8 @@ function applyDeterministicSourceRepairs(
         repairedBindings += 1;
       }
     }
+    const islandPattern =
+      /(<script\b[^>]*\bid\s*=\s*(["'])sequences-interactions\2[^>]*>)([\s\S]*?)(<\/script>)/i;
     const timelineName = html.match(
       /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*gsap\.timeline\s*\(/,
     )?.[1];
@@ -1226,6 +1491,18 @@ function applyDeterministicSourceRepairs(
   // so their bindings are injected deterministically from the locked
   // storyboard: the author never spends output budget on state mechanics and
   // can never silently drop a planned beat.
+  {
+    const componentBindings = reconcileComponentBindings(
+      html,
+      lockedStoryboard ?? draft.storyboard,
+    );
+    if (componentBindings.repairs) {
+      html = componentBindings.html;
+      process.stderr.write(
+        `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
+      );
+    }
+  }
   const componentPlan = resolveComponentPlan(lockedStoryboard ?? draft.storyboard);
   if (componentPlan.scenes.length) {
     let repairedComponents = 0;
@@ -1333,7 +1610,7 @@ function isTransientProviderError(error: unknown): boolean {
   return (
     name === "TimeoutError" ||
     name === "AbortError" ||
-    /aborted due to timeout|operation was aborted|the operation timed out|idle timeout|upstream.*timeout|fetch failed|network|terminated|socket hang ?up|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|503|502|429/i.test(
+    /returned an empty completion|aborted due to timeout|operation was aborted|the operation timed out|idle timeout|upstream.*timeout|fetch failed|network|terminated|socket hang ?up|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|503|502|429/i.test(
       message,
     )
   );
@@ -1365,6 +1642,43 @@ async function completeWithRetry(
       process.stderr.write(
         `[${label}] attempt ${attempt}/${attempts} transient provider fault: ` +
           `${error instanceof Error ? error.message : String(error)} — retrying\n`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1_500 * attempt));
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Reasoning-heavy OpenRouter calls should use the streaming transport when it
+ * exists. GLM can spend minutes thinking before a non-streaming response is
+ * returned, which leaves the upstream route idle long enough to be killed even
+ * though generation is healthy. Streaming reasoning deltas keeps the route
+ * active; the callbacks intentionally discard private reasoning and collect
+ * only the provider's final text.
+ */
+async function completeReasoningWithRetry(
+  provider: AgentProvider,
+  prompt: string,
+  options: CompleteOptions,
+  label: string,
+  attempts = 3,
+): Promise<string> {
+  if (!provider.streamComplete) {
+    return completeWithRetry(provider, prompt, options, label, attempts);
+  }
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await provider.streamComplete(prompt, options, () => {}, () => {});
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || isOutputTruncation(error) || !isTransientProviderError(error)) {
+        throw error;
+      }
+      process.stderr.write(
+        `[${label}] attempt ${attempt}/${attempts} transient streaming fault: ` +
+          `${error instanceof Error ? error.message : String(error)} â€” retrying\n`,
       );
       await new Promise((resolve) => setTimeout(resolve, 1_500 * attempt));
     }
@@ -1480,7 +1794,20 @@ function parseStoryboard(raw: string): DirectScene[] {
   }));
 }
 
-export function validateStoryboardPlan(storyboard: DirectScene[]): string[] {
+export interface StoryboardPlanRequirements {
+  targetDurationSec?: number;
+  requestedComponentKinds?: ComponentKind[];
+  minRequestedComponentKinds?: number;
+  minComponentBeats?: number;
+  minCameraMoves?: number;
+  requireMultiStationWorld?: boolean;
+  requireObjectMatch?: boolean;
+}
+
+export function validateStoryboardPlan(
+  storyboard: DirectScene[],
+  requirements: StoryboardPlanRequirements = {},
+): string[] {
   const errors: string[] = [];
   if (storyboard.length < 3 || storyboard.length > 10) {
     errors.push("storyboard must contain 3-10 distinct shots");
@@ -1589,6 +1916,57 @@ export function validateStoryboardPlan(storyboard: DirectScene[]): string[] {
         `camera paths over a larger data-camera-world`,
     );
   }
+  if (requirements.minCameraMoves && cameraMoves < requirements.minCameraMoves) {
+    errors.push(
+      `the brief explicitly requests spatial camera choreography; plan at least ` +
+        `${requirements.minCameraMoves} typed camera moves, not ${cameraMoves}`,
+    );
+  }
+  if (
+    requirements.requireMultiStationWorld &&
+    !storyboard.some((scene) =>
+      (scene.camera?.path.filter((move) => CAMERA_FULL_MOVES.has(move.move)).length ?? 0) >= 2
+    )
+  ) {
+    errors.push(
+      "the brief requests one large spatial UI world; at least one shot must travel through " +
+        "multiple stations with two or more typed camera moves",
+    );
+  }
+  if (
+    requirements.requireObjectMatch &&
+    !storyboard.some((scene) => scene.cut?.style === "object-match")
+  ) {
+    errors.push("the brief explicitly requests an object-match cut, but none is planned");
+  }
+  const presentComponentKinds = new Set(
+    storyboard.flatMap((scene) => (scene.components ?? []).map((component) => component.kind)),
+  );
+  const requestedComponentKinds = requirements.requestedComponentKinds ?? [];
+  const coveredRequestedKinds = requestedComponentKinds.filter((kind) =>
+    presentComponentKinds.has(kind)
+  );
+  if (
+    requirements.minRequestedComponentKinds &&
+    coveredRequestedKinds.length < requirements.minRequestedComponentKinds
+  ) {
+    const missing = requestedComponentKinds.filter((kind) => !presentComponentKinds.has(kind));
+    errors.push(
+      `the brief explicitly requests motion-native product components; plan at least ` +
+        `${requirements.minRequestedComponentKinds} requested kinds, but only ` +
+        `${coveredRequestedKinds.length} are present (missing: ${missing.join(", ")})`,
+    );
+  }
+  const componentBeats = storyboard.reduce(
+    (count, scene) => count + (scene.beats?.length ?? 0),
+    0,
+  );
+  if (requirements.minComponentBeats && componentBeats < requirements.minComponentBeats) {
+    errors.push(
+      `the brief explicitly requests component choreography; plan at least ` +
+        `${requirements.minComponentBeats} typed component beats, not ${componentBeats}`,
+    );
+  }
   const foregrounds = new Set(storyboard.map((scene) => scene.foreground?.toLowerCase()));
   const cameras = new Set(storyboard.map((scene) => scene.cameraIntent?.toLowerCase()));
   if (foregrounds.size < Math.min(3, storyboard.length)) {
@@ -1605,7 +1983,10 @@ export function validateStoryboardPlan(storyboard: DirectScene[]): string[] {
   return [...new Set(errors)];
 }
 
-export function parseStoryboardResponse(raw: string): DirectScene[] {
+export function parseStoryboardResponse(
+  raw: string,
+  requirements: StoryboardPlanRequirements = {},
+): DirectScene[] {
   const knownCapabilities = new Set(
     loadCapabilityIndex().capabilities.map((capability) => capability.id),
   );
@@ -1615,7 +1996,7 @@ export function parseStoryboardResponse(raw: string): DirectScene[] {
       ? { capabilityIds: scene.capabilityIds.filter((id) => knownCapabilities.has(id)) }
       : {}),
   }));
-  const errors = validateStoryboardPlan(storyboard);
+  const errors = validateStoryboardPlan(storyboard, requirements);
   if (errors.length) throw new Error(`invalid storyboard plan: ${errors.join("; ")}`);
   return storyboard;
 }
@@ -1702,7 +2083,7 @@ export async function requestConceptDirection(
   // deployments (or deterministic tests) run the storyboard pass directly.
   if (process.env.SLACK_SEQUENCES_CONCEPT_PASS === "0") return undefined;
   const model = storyboardModel(provider);
-  const thinkingMode = storyboardThinkingMode(provider, model);
+  const thinkingMode = creativeThinkingMode(provider, model);
   const cacheKey = createHash("sha256").update(JSON.stringify({
     contract: 1,
     provider: provider.id,
@@ -1796,6 +2177,48 @@ function storyboardReference(text: string): string {
   return [capability, blueprints].filter(Boolean).join("\n\n").slice(0, 14_000);
 }
 
+export function inferStoryboardPlanRequirements(
+  brief: string,
+  targetDurationSec?: number,
+): StoryboardPlanRequirements {
+  const componentSignals: Array<[RegExp, ComponentKind]> = [
+    [/\bsearch\b/i, "search"],
+    [/\bcommand[\s-]?palette\b/i, "command-palette"],
+    [/\btable\b/i, "table"],
+    [/\bstat[\s-]?card\b|\brisk score\b/i, "stat-card"],
+    [/\bterminal\b/i, "terminal"],
+    [/\btoast\b/i, "toast"],
+    [/\bprogress\b/i, "progress"],
+    [/\bchart\b/i, "chart-line"],
+  ];
+  const requestedComponentKinds = componentSignals.flatMap(([pattern, kind]) =>
+    pattern.test(brief) ? [kind] : []
+  );
+  const explicitComponents =
+    /\bcomponent beats?\b|\bcomponents?\s+for\b|\bmotion-native components?\b/i.test(brief);
+  const explicitCamera =
+    /\blarge spatial\b|\bspatial ui world\b|\bcamera (?:push|pan|whip|move|travel)/i.test(brief);
+  return {
+    ...(targetDurationSec ? { targetDurationSec } : {}),
+    ...(requestedComponentKinds.length ? { requestedComponentKinds } : {}),
+    ...(explicitComponents && requestedComponentKinds.length
+      ? {
+          minRequestedComponentKinds: Math.max(
+            4,
+            Math.ceil(requestedComponentKinds.length * 0.75),
+          ),
+          minComponentBeats: Math.max(6, requestedComponentKinds.length),
+        }
+      : {}),
+    ...(explicitCamera
+      ? { minCameraMoves: 2, requireMultiStationWorld: true }
+      : {}),
+    ...(/\bobject[\s-]?match cuts?\b/i.test(brief)
+      ? { requireObjectMatch: true }
+      : {}),
+  };
+}
+
 export async function requestStoryboardPlan(
   provider: AgentProvider,
   args: {
@@ -1803,6 +2226,7 @@ export async function requestStoryboardPlan(
     projectDir: string;
     skills: RetrievedSkillContext;
     frameMd?: string;
+    targetDurationSec?: number;
     options?: CompleteOptions;
   },
 ): Promise<DirectScene[]> {
@@ -1811,6 +2235,10 @@ export async function requestStoryboardPlan(
   const thinkingMode = storyboardThinkingMode(provider, model);
   const maxTokens =
     thinkingMode === "none" ? STORYBOARD_MAX_TOKENS : REASONING_STORYBOARD_MAX_TOKENS;
+  const requirements = inferStoryboardPlanRequirements(
+    args.brief,
+    args.targetDurationSec,
+  );
   // GLM job #1: the concept pass. Its artifact is cached independently, so a
   // storyboard retry never re-spends the concept call.
   const concept = await requestConceptDirection(provider, {
@@ -1821,13 +2249,14 @@ export async function requestStoryboardPlan(
   });
   const cacheKey = createHash("sha256").update(JSON.stringify({
     // Bump when the storyboard contract changes shape (v2: StoryboardMomentV1,
-    // v3: typed components + beats).
-    contract: 3,
+    // v3: typed components + beats; v4: brief-derived coverage requirements.
+    contract: 4,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
     frameMd: args.frameMd ?? null,
     concept: concept ?? null,
+    requirements,
     registryVersion: args.skills.registryVersion,
     blueprints: args.skills.blueprintIds,
   })).digest("hex");
@@ -1841,7 +2270,7 @@ export async function requestStoryboardPlan(
         storyboard?: DirectScene[];
       };
       if (cached.version === 1 && cached.key === cacheKey && cached.storyboard) {
-        const errors = validateStoryboardPlan(cached.storyboard);
+        const errors = validateStoryboardPlan(cached.storyboard, requirements);
         if (!errors.length) return cached.storyboard;
       }
     } catch {
@@ -1905,6 +2334,31 @@ export async function requestStoryboardPlan(
     "semantic zones within that scaffold, not as guessed canvas coordinates.",
     "Registry capabilities are a reuse-first vocabulary, not a mandatory quota.",
     "Use only capability ids that appear in the supplied synced index.",
+    ...(requirements.minRequestedComponentKinds
+      ? [
+          "",
+          "BRIEF-SPECIFIC COMPONENT COVERAGE â€” this brief explicitly asks for",
+          `motion-native ${requirements.requestedComponentKinds?.join(", ")} components.`,
+          `Plan at least ${requirements.minRequestedComponentKinds} of those distinct kinds and at least`,
+          `${requirements.minComponentBeats} typed component beats. Product beats must become`,
+          "visible UI state changes; mentioning them only in foreground prose does not count.",
+        ]
+      : []),
+    ...(requirements.minCameraMoves
+      ? [
+          "",
+          "BRIEF-SPECIFIC CAMERA COVERAGE â€” this brief explicitly asks for a",
+          `spatial camera world. Plan at least ${requirements.minCameraMoves} full typed camera`,
+          "moves, with one shot traveling through multiple named stations. A set of",
+          "static shots or a single minor pan does not satisfy the request.",
+        ]
+      : []),
+    ...(requirements.requireObjectMatch
+      ? [
+          "The brief explicitly asks for object-match cuts; plan at least one typed",
+          "object-match boundary with both focal part names.",
+        ]
+      : []),
     "",
     "STORYBOARD MOMENTS — the real review contract. A moment is one reviewable",
     "CHANGED STATE the viewer can point at: a typed word replacing another, a",
@@ -2000,11 +2454,12 @@ export async function requestStoryboardPlan(
     "cursor actor, hotspot, endpoint, press, visibility lifecycle, and ripple.",
   ].filter(Boolean).join("\n");
   // The storyboard is a bounded artifact: when the model returns a plan that
-  // deterministic validation rejects, retry only this stage once with the
+  // deterministic validation rejects, retry only this stage with the
   // exact findings — never fall through to the safe fallback on a first
   // creative miss, and never replay the concept pass.
   let lastValidationError: Error | undefined;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  let recoveringFromTruncation = false;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     const prompt = attempt === 1 || !lastValidationError
       ? basePrompt
       : [
@@ -2021,24 +2476,40 @@ export async function requestStoryboardPlan(
         ].join("\n");
     let raw: string;
     try {
+      const recoveryPass = Boolean(recoveringFromTruncation || lastValidationError);
+      const attemptThinkingMode =
+        recoveryPass && thinkingMode !== "none"
+          ? "none"
+          : thinkingMode;
+      const attemptMaxTokens = recoveryPass && thinkingMode !== "none"
+        ? Math.min(maxTokens, 8_192)
+        : maxTokens;
       process.stderr.write(
-        `[storyboard] attempt ${attempt}/2 · ${model ? `model ${model}` : "provider primary model"} · ` +
-          `reasoning ${thinkingMode} · max ${maxTokens} tokens\n`,
+        `[storyboard] attempt ${attempt}/3 · ${model ? `model ${model}` : "provider primary model"} · ` +
+          `reasoning ${attemptThinkingMode} · max ${attemptMaxTokens} tokens\n`,
       );
-      raw = await completeWithRetry(provider, prompt, {
+      raw = await completeReasoningWithRetry(provider, prompt, {
         ...args.options,
         // A reasoning storyboard pass on a loaded provider can run long; give it more
         // wall-clock headroom than a plain chat call, and let completeWithRetry absorb
         // a transient stall instead of failing the whole build on the first abort.
-        timeoutMs: 180_000,
-        maxTokens,
-        // GLM's budget includes reasoning plus the compact JSON artifact; give it
-        // twice the non-reasoning budget while keeping the one-shot task bounded.
-        thinkingMode,
+        timeoutMs: recoveryPass ? 120_000 : 360_000,
+        maxTokens: attemptMaxTokens,
+        // GLM's budget includes reasoning plus the compact JSON artifact; use
+        // nearly the full route ceiling while keeping the artifact bounded.
+        thinkingMode: attemptThinkingMode,
         ...(structuredOutput ? { responseFormat: storyboardResponseFormat() } : {}),
         ...(model ? { model } : {}),
       }, "storyboard");
     } catch (error) {
+      if (attempt < 3 && isOutputTruncation(error)) {
+        recoveringFromTruncation = true;
+        process.stderr.write(
+          `[storyboard] attempt ${attempt}/3 exhausted its completion budget; ` +
+            `retrying the bounded artifact with lower reasoning effort\n`,
+        );
+        continue;
+      }
       if (isTransientProviderError(error)) {
         throw new Error(
           "the planning model kept timing out while drafting the storyboard — this is usually a " +
@@ -2049,11 +2520,11 @@ export async function requestStoryboardPlan(
     }
     let storyboard: DirectScene[];
     try {
-      storyboard = parseStoryboardResponse(raw);
+      storyboard = parseStoryboardResponse(raw, requirements);
     } catch (error) {
-      if (attempt < 2 && error instanceof Error && !isOutputTruncation(error)) {
+      if (attempt < 3 && error instanceof Error && !isOutputTruncation(error)) {
         process.stderr.write(
-          `[storyboard] attempt ${attempt}/2 rejected: ${error.message.slice(0, 600)} — retrying with findings\n`,
+          `[storyboard] attempt ${attempt}/3 rejected: ${error.message.slice(0, 600)} — retrying with findings\n`,
         );
         lastValidationError = error;
         continue;
@@ -2220,14 +2691,13 @@ export function quarantineFailedInteractions(
   });
   const interactions = storyboard.flatMap((scene) => scene.interactions ?? []);
   const payload = JSON.stringify({ version: 1, interactions });
-  const islandPattern =
-    /(<script\b[^>]*\bid\s*=\s*(["'])sequences-interactions\2[^>]*>)([\s\S]*?)(<\/script>)/i;
-  if (!islandPattern.test(draft.html)) {
+  const island = normalizeJsonIsland(draft.html, "sequences-interactions", payload);
+  if (!island.found) {
     // Static validation will reject the unchanged mismatch; do not pretend the
     // enhancement was isolated when its canonical island was absent.
     return { draft, removedIds: [] };
   }
-  let html = draft.html.replace(islandPattern, `$1${payload}$4`);
+  let html = island.html;
   const liveCursorIds = new Set(interactions.map((interaction) => interaction.cursorId));
   const orphanCursorIds = draft.storyboard
     .flatMap((scene) => scene.interactions ?? [])
@@ -2246,6 +2716,40 @@ export function quarantineFailedInteractions(
     );
   }
   return { draft: { storyboard, html }, removedIds };
+}
+
+function browserInteractionIssues(
+  draft: DirectCompositionDraft,
+  browserQa: DirectBrowserQaResult,
+): DirectLayoutIssue[] {
+  const issues = [...browserQa.issues];
+  if (
+    !browserQa.errors.some((error) =>
+      /unsupported sequences interaction plan|could not bind interaction|cursor "[^"]+" must be inside data-camera-overlay/i
+        .test(error)
+    )
+  ) {
+    return issues;
+  }
+  const alreadyScoped = new Set(
+    issues
+      .filter((issue) => issue.code.startsWith("interaction_") && issue.interactionId)
+      .map((issue) => issue.interactionId!),
+  );
+  for (const interaction of draft.storyboard.flatMap((scene) => scene.interactions ?? [])) {
+    if (alreadyScoped.has(interaction.id)) continue;
+    issues.push({
+      code: "interaction_runtime_plan",
+      severity: "error",
+      time: interaction.startSec,
+      interactionId: interaction.id,
+      selector: `[interaction="${interaction.id}"]`,
+      message: "Optional interaction plan failed browser runtime compilation.",
+      fixHint: "Publish the film without this optional cursor choreography.",
+      source: "sequences",
+    });
+  }
+  return issues;
 }
 
 function quarantineStaticInteractionErrors(
@@ -2299,7 +2803,7 @@ async function recoverByQuarantiningInteractions(
 > {
   const quarantined = quarantineFailedInteractions(
     candidate.draft,
-    candidate.browserQa.issues,
+    browserInteractionIssues(candidate.draft, candidate.browserQa),
   );
   if (!quarantined.removedIds.length) return undefined;
   process.stderr.write(
@@ -2499,6 +3003,14 @@ function creationPrompt(args: {
     "otherwise default to 4-6 scenes and lean on camera worlds for density.",
     "Scenes sharing one data-camera-world with several data-region stations are",
     "cheaper than extra full scenes — reuse CSS classes and shared primitives.",
+    "Do not paste brief paragraphs into the frame. Product facts are evidence;",
+    "turn them into terse labels, values, UI states, and short claims. A product",
+    "beat requested in the brief must become visible component behavior, not a",
+    "sentence describing that behavior.",
+    "Spend the motion budget on information change: component state, camera",
+    "arrival, object continuity, chart/trace resolution, cursor action, and",
+    "kinetic type. Underlines, dividers, fades, glows, and ambient drift are",
+    "supporting polish and never the main event of a storyboard moment.",
     "No comments, duplicated per-scene styles, embedded data URLs, verbose SVG",
     "paths, or explanatory text. Completeness outranks ornamental source volume.",
     args.compact
@@ -2644,7 +3156,7 @@ async function authorComposition(
       }
       if (
         !browserQa.ok &&
-        browserQa.issues.some((issue) =>
+        browserInteractionIssues(draft, browserQa).some((issue) =>
           issue.severity === "error" &&
           issue.code.startsWith("interaction_") &&
           Boolean(issue.interactionId)
@@ -2861,7 +3373,7 @@ async function requestContinuityCritique(
     "## Response contract",
     'Return only a JSON object: {"verdict":"ship"|"repair","directives":["..."]}.',
   ].join("\n");
-  const raw = await completeWithRetry(provider, prompt, {
+  const raw = await completeReasoningWithRetry(provider, prompt, {
     ...args.options,
     timeoutMs: 120_000,
     maxTokens: thinkingMode === "none" ? 1_024 : 8_192,
