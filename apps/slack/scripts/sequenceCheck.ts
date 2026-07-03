@@ -379,7 +379,9 @@ async function main(): Promise<void> {
     environment: {
       providerEnv: process.env.SLACK_SEQUENCES_PROVIDER ?? null,
       storyboardModel: process.env.SLACK_SEQUENCES_STORYBOARD_MODEL ?? null,
-      productionModel: process.env.SLACK_SEQUENCES_PRODUCTION_MODEL ?? null,
+      storyboardThinking: process.env.SLACK_SEQUENCES_STORYBOARD_THINKING ?? null,
+      productionModel: process.env.SEQUENCES_OPENROUTER_MODEL ?? null,
+      authorThinking: process.env.SLACK_SEQUENCES_AUTHOR_THINKING ?? null,
       repairModel: process.env.SLACK_SEQUENCES_REPAIR_MODEL ?? null,
       hasOpenRouterKey: Boolean(process.env.OPENROUTER_API_KEY),
       hasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),

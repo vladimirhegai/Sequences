@@ -86,8 +86,9 @@ layer. Two caveats shape how we *consume* these:
    not vendored. `hyperframes.json` points `registry` at GitHub-raw; `media-use`
    needs the `heygen` CLI + key. Our product is Railway/Docker, provenance-clean,
    and does no network fetch at render time — so a **sync / vendor / allowlist
-   step** must front both before the planner may select from them. This is the
-   single largest real gap (see §9).
+   step** must front both before the planner may select from them. The offline
+   sync + capability-aware retrieval are built; source approval/materialization
+   is the remaining gap (see §9).
 2. **Studio's live keyframe / arc / gesture editing is a human, in-browser tool.**
    It is excellent but neither headless nor reachable from Slack. Our editing
    surface is the Slack audition → revise → critic loop, not the Studio timeline.
@@ -664,9 +665,14 @@ orchestrator submits a minimal flow-first direct composition from the brief and
 
 ## 9. Capability index, registry sync, and in-Slack audition
 
-The planner cannot reuse what it cannot see. Today the bot retrieves blueprints
-and rules but is **blind to the 50+ registry catalog** — exactly the
-duplicate-building risk this product must avoid.
+The planner cannot reuse what it cannot see.
+
+> **Implemented: sync + retrieval.** `scripts/syncCapabilityIndex.ts` emits the
+> normalized offline `capabilities/capability-index.json`, and
+> `src/agent/capabilityIndex.ts` gives the planner capability-aware retrieval
+> over it (see ROADMAP §9 checklist for exact state). **Still open:** source
+> approval/materialization (instantiating known-good blocks instead of citing
+> their metadata) and the in-Slack audition below.
 
 **Registry sync (deterministic).** A build step pulls the registry manifest plus
 each `registry-item.json`, vendors the approved subset locally with provenance,

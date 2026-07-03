@@ -31,6 +31,24 @@ export function creativeThinkingMode(
     : "none";
 }
 
+const THINKING_MODES: ReadonlySet<string> = new Set([
+  "auto", "none", "enabled", "minimal", "low", "medium", "high", "xhigh", "max",
+]);
+
+/**
+ * Operator override for a stage's reasoning effort (model-experimentation and
+ * production tuning knob). Unset or unrecognized values keep the stage's
+ * built-in default, so the knob can never break a deploy.
+ */
+export function thinkingOverride(
+  envName: string,
+): CompleteOptions["thinkingMode"] | undefined {
+  const raw = process.env[envName]?.trim().toLowerCase();
+  return raw && THINKING_MODES.has(raw)
+    ? (raw as CompleteOptions["thinkingMode"])
+    : undefined;
+}
+
 /** Full source and structural repairs stay on the configured production brain. */
 export function productionModel(provider: AgentProvider): string | undefined {
   if (provider.id !== "openrouter-api") return undefined;

@@ -78,25 +78,10 @@ owns that Socket Mode connection. A second process = duplicate Slack replies.
 
 ### Source loop (while editing)
 
-```powershell
-npm run typecheck --workspace @sequences/slack
-npm run test --workspace @sequences/slack
-npm run mcp:demo --workspace @sequences/slack
-npm run direct:demo --workspace @sequences/slack
-npm run sequence:check --workspace @sequences/slack -- --demo --no-mcp --format both
-npm run film:demo --workspace @sequences/slack
-```
-
-For engine/render/Docker/Chromium/FFmpeg/HyperFrames/media changes:
-
-```powershell
-$env:VERIFY_RENDER = "1"
-try { npm run film:demo --workspace @sequences/slack }
-finally { Remove-Item Env:VERIFY_RENDER -ErrorAction SilentlyContinue }
-
-docker build -t sequences-slack .
-docker run --rm -e VERIFY_RENDER=1 sequences-slack npm run film:demo -w @sequences/slack
-```
+The canonical command sequences live in **[CLAUDE.md → Verification & Testing
+Ladder](CLAUDE.md#verification--testing-ladder)** — §1 is the routine source
+gate, §2 the render/Docker gate for engine/render/Chromium/FFmpeg/HyperFrames
+changes. Run those; they are not repeated here.
 
 The deterministic demos and MCP smoke do not call a paid model. `film:demo`
 exercises typed cuts and writes compact temporal evidence under the ignored
@@ -307,18 +292,10 @@ GitHub push to deploy (autodeploy is off). `link` the CLI once
 
 ### Deploy sequence
 
-1. **Source gate** (and, before an important deploy, the monorepo CI gate —
-   GitHub Actions tests the whole repo):
-
-```powershell
-git status --short
-npm run typecheck --workspace @sequences/slack
-npm run test --workspace @sequences/slack
-npm run mcp:demo --workspace @sequences/slack
-npm run film:demo --workspace @sequences/slack
-# before an important deploy:
-npm run typecheck; npm test; npm run test:perf
-```
+1. **Source gate** — run the ladder in
+   [CLAUDE.md → Verification & Testing Ladder](CLAUDE.md#verification--testing-ladder)
+   §1 (plus §3, the monorepo CI gate, before an important deploy). Check
+   `git status --short` first so nothing unintended ships.
 
 2. **Commit locally, then publish to the correct Slack GitHub repository:**
 

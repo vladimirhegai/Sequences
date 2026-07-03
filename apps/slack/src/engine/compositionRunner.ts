@@ -76,6 +76,7 @@ import {
   creativeModel,
   creativeThinkingMode,
   productionModel,
+  thinkingOverride,
 } from "./modelPolicy.ts";
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -457,11 +458,22 @@ function storyboardThinkingMode(
   provider: AgentProvider,
   model: string | undefined,
 ): CompleteOptions["thinkingMode"] {
+  const override = thinkingOverride("SLACK_SEQUENCES_STORYBOARD_THINKING");
+  if (override) return override;
   const creative = creativeThinkingMode(provider, model);
   // The cached concept pass already spends high effort on taste. Storyboard
   // expansion is a large strict artifact; medium preserves deliberation while
   // reserving budget/time for the JSON that the source author needs.
   return creative === "high" ? "medium" : creative;
+}
+
+/**
+ * Full-document source emission defaults to reasoning off — DeepSeek-style
+ * models spend the whole budget on source, not deliberation. The override
+ * exists so operators can measure whether a reasoning pass earns its latency.
+ */
+function authorThinkingMode(): CompleteOptions["thinkingMode"] {
+  return thinkingOverride("SLACK_SEQUENCES_AUTHOR_THINKING") ?? "none";
 }
 
 function tagged(raw: string, name: string): string {
@@ -3073,16 +3085,14 @@ async function authorComposition(
       `[author] attempt ${attempt}/3 · prompt ${prompt.length} chars · ` +
       `${compact ? "compact repair" : "full context"} · ` +
       `${repairTier ? "explicit repair tier" : selectedTier ?? "provider primary tier"} · ` +
-      `reasoning ${patchMode ? repairThinkingMode(repairTier) : "off"}\n`,
+      `reasoning ${patchMode ? repairThinkingMode(repairTier) : authorThinkingMode()}\n`,
     );
     try {
       const completeOptions: CompleteOptions = {
         ...args.options,
         timeoutMs: 360_000,
-        // Code emission does not benefit from DeepSeek's expensive high/xhigh
-        // reasoning pass. Keeping it off reserves the whole budget for source.
         maxTokens: patchMode ? REPAIR_MAX_TOKENS : authorMaxTokens(),
-        thinkingMode: patchMode ? repairThinkingMode(repairTier) : "none",
+        thinkingMode: patchMode ? repairThinkingMode(repairTier) : authorThinkingMode(),
         ...(patchMode && structuredPatches ? { responseFormat: PATCH_RESPONSE_FORMAT } : {}),
         ...(selectedTier ? { model: selectedTier } : {}),
       };

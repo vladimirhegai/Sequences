@@ -167,6 +167,8 @@ export interface StageReceipt {
   stage: AuthoringStage;
   status: "succeeded" | "failed";
   durationMs: number;
+  /** How many model attempts the stage consumed (1 = clean first pass). */
+  attempts?: number;
 }
 
 export interface FrameInfo {
@@ -203,6 +205,17 @@ export interface OrchestratorProgress {
 }
 
 export type ProgressCallback = (progress: OrchestratorProgress) => void | Promise<void>;
+
+/**
+ * Live pulse for the named model-authoring stages (frame-design, storyboard,
+ * source-author) — the long silent window before any MCP tool runs. Feeds the
+ * ETA countdown in Slack; never gates work.
+ */
+export type StageProgressCallback = (
+  stage: AuthoringStage,
+  phase: "started" | "completed",
+  durationMs?: number,
+) => void;
 
 async function reportProgress(
   callback: ProgressCallback | undefined,
@@ -630,6 +643,8 @@ export interface CreateVideoOptions extends BriefFields {
   render?: boolean;
   preferMcp?: boolean;
   onProgress?: ProgressCallback;
+  /** Pulse for the model-authoring stages; drives the Slack ETA countdown. */
+  onStageProgress?: StageProgressCallback;
   /**
    * Emergency-only model-free proof film. Normal `/sequences` requests fail
    * visibly when creative authoring is unavailable; publishing a generic film
@@ -671,25 +686,33 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     // deterministic fallback is an explicitly labeled outcome — never
     // disguised as creative output.
     const stages: StageReceipt[] = [];
+    const pulseStage = (
+      stage: AuthoringStage,
+      phase: "started" | "completed",
+      durationMs?: number,
+    ): void => {
+      try {
+        options.onStageProgress?.(stage, phase, durationMs);
+      } catch {
+        // Progress display must never disturb the build.
+      }
+    };
     const runStage = async <T>(
       stage: AuthoringStage,
       run: () => Promise<T>,
     ): Promise<{ value?: T; error?: unknown }> => {
       const started = performance.now();
+      pulseStage(stage, "started");
       try {
         const value = await run();
-        stages.push({
-          stage,
-          status: "succeeded",
-          durationMs: Math.round(performance.now() - started),
-        });
+        const durationMs = Math.round(performance.now() - started);
+        stages.push({ stage, status: "succeeded", durationMs });
+        pulseStage(stage, "completed", durationMs);
         return { value };
       } catch (error) {
-        stages.push({
-          stage,
-          status: "failed",
-          durationMs: Math.round(performance.now() - started),
-        });
+        const durationMs = Math.round(performance.now() - started);
+        stages.push({ stage, status: "failed", durationMs });
+        pulseStage(stage, "completed", durationMs);
         process.stderr.write(
           `[orchestrator] stage "${stage}" failed: ${
             error instanceof Error ? error.message : String(error)
