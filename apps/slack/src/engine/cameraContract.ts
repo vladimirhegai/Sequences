@@ -477,7 +477,13 @@ export function parseCameraPlan(html: string): { plan?: CameraPlanV1; errors: st
     : { plan: { version: 1, scenes: sceneEntries }, errors: [] };
 }
 
-function sceneScopes(html: string): Array<{ id: string; scope: string }> {
+/**
+ * Slice the document into per-scene scopes (data-scene tag through its close).
+ * Shared by the camera and cut contracts: bindings that the runtimes resolve
+ * scene-scoped must be validated scene-scoped, or a part that exists in the
+ * WRONG scene passes static validation and detonates in browser QA.
+ */
+export function sceneScopes(html: string): Array<{ id: string; scope: string }> {
   const tags = [...html.matchAll(
     /<[a-z][\w:-]*\b[^>]*\bdata-scene\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>/gi,
   )];
