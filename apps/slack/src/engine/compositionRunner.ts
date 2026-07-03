@@ -2272,9 +2272,11 @@ export function inferStoryboardPlanRequirements(
     ...(requestedComponentKinds.length ? { requestedComponentKinds } : {}),
     ...(explicitComponents && requestedComponentKinds.length
       ? {
-          minRequestedComponentKinds: Math.max(
-            4,
-            Math.ceil(requestedComponentKinds.length * 0.75),
+          // Never demand more kinds than the brief actually names — a brief
+          // with 2-3 explicit kinds must stay satisfiable.
+          minRequestedComponentKinds: Math.min(
+            requestedComponentKinds.length,
+            Math.max(4, Math.ceil(requestedComponentKinds.length * 0.75)),
           ),
           minComponentBeats: Math.max(6, requestedComponentKinds.length),
         }
@@ -2401,7 +2403,10 @@ export async function requestStoryboardPlan(
     "state change on the same frame is the signature move. Morph beats are the",
     "film's showpiece transitions: search→command-palette, card→modal,",
     "table→list. Use 1-2 morphs per film where the story earns them, never",
-    "decoratively. Beats are host-compiled, so declaring them costs the source",
+    "decoratively. A morph beat's morphTo must name a component DECLARED in",
+    "the same shot's components array — always declare BOTH twins (e.g. the",
+    "search AND the command-palette) or the plan is rejected.",
+    "Beats are host-compiled, so declaring them costs the source",
     "budget nothing — prefer typed beats over prose asks for UI motion.",
     "Every shot's boundary is a typed, machine-executed cut. Choose cut.style from:",
     "hard (intentional register break), cut-left/right/up/down (velocity-matched",
@@ -2563,7 +2568,12 @@ export async function requestStoryboardPlan(
         ].join("\n");
     let raw: string;
     try {
-      const recoveryPass = Boolean(recoveringFromTruncation || lastValidationError);
+      // Only TRUNCATION recovery strips reasoning to protect the completion
+      // budget. Validation-rejection retries keep the configured reasoning:
+      // the 2026-07-03 experiment matrix showed reasoning-stripped GLM retries
+      // failing the moment grid in 3 of 4 runs, while every passing storyboard
+      // landed on a full-reasoning attempt.
+      const recoveryPass = recoveringFromTruncation;
       const downgraded: CompleteOptions["thinkingMode"] =
         recoveryPass && thinkingMode !== "none"
           ? "none"

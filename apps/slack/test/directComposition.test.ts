@@ -483,6 +483,17 @@ describe("direct HyperFrames composition", () => {
     ).toThrow(/spatial camera choreography/);
   });
 
+  it("never demands more component kinds than the brief names", () => {
+    const requirements = inferStoryboardPlanRequirements(
+      "Show motion-native components: the search bar morphs into a command " +
+        "palette, plus a stat card with the key metric.",
+      16,
+    );
+    expect(requirements.requestedComponentKinds).toHaveLength(3);
+    // The floor is capped at the requested count so the brief stays satisfiable.
+    expect(requirements.minRequestedComponentKinds).toBe(3);
+  });
+
   it("keeps typed boundary cuts and degrades unusable ones before source authoring", () => {
     const plan = storyboard();
     plan[0]!.cut = { version: 1, style: "cut-left", travelPx: 9999 };

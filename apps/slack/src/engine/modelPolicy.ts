@@ -3,6 +3,33 @@ import type {
   CompleteOptions,
 } from "@sequences/platform/providers";
 
+/*
+ * Model-experiment findings (2026-07-03, 9-config matrix, one fixed 18s
+ * "Ledgerline" brief, live OpenRouter runs; quality > price/speed per policy):
+ *
+ * Storyboard axis (author fixed at DeepSeek v4 Pro):
+ * - GLM 5.2 medium (default):   PASS 613s — but 3 component beats, missed a
+ *   requested kind, and high variance: identical configs failed in 3 later
+ *   runs, always dying in the reasoning-stripped retry chain. Both retry-chain
+ *   causes were fixed in response (morph-twin prompt rule; validation retries
+ *   now keep configured reasoning).
+ * - tencent/hy3-preview medium: PASS 512s — 16/16 moments bound, 7 component
+ *   beats, covered ALL requested kinds, at ~1/10 GLM price; weaker spatial
+ *   worlds (0 multi-station) and slightly noisier QA. The benched storyboard
+ *   alternative: promote only after it repeats across several briefs.
+ * - GLM high:                    FAIL (quality, 3 rejections).
+ * - minimax/minimax-m3 high:     storyboard ok after retries; downstream
+ *   repair rewrote the locked scene graph → FAIL.
+ * - deepseek-v4-pro high:        planned camera regions/components its own
+ *   author could not bind → FAIL.
+ * - moonshotai/kimi-k2.7-code:   endpoint 400s on reasoning:none (now handled
+ *   by the minimal-reasoning floor) — quality unknown.
+ *
+ * Author axis (storyboard fixed at GLM medium): kimi-k2.7 truncated at the
+ * output ceiling twice and took 2x wall-clock → FAIL; dsv4pro-max-reasoning
+ * and flash-high runs got no signal (their storyboard stage failed first).
+ * DeepSeek v4 Pro with reasoning off remains the author default.
+ */
 export const OPENROUTER_CREATIVE_MODEL = "z-ai/glm-5.2";
 export const OPENROUTER_PRODUCTION_MODEL = "deepseek/deepseek-v4-pro";
 export const OPENROUTER_LIGHT_MODEL = "deepseek/deepseek-v4-flash";
