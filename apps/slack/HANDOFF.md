@@ -1,13 +1,40 @@
-# HANDOFF — next session (updated 2026-07-04, reliability + judge + depth pass)
+# HANDOFF — next session (updated 2026-07-04, fallback-elimination pass)
 
-Both remaining HANDOFF goals (rendered temporal judge, camera depth level 2)
-and all three source-author reliability levers from the motion-quality
-diagnosis are **BUILT and verified**; `PLAN_camera_depth_level2.md` is retired
-(the shipped design lives in ROADMAP "Source-author reliability + rendered
-temporal judge + camera depth level 2 (2026-07-04, later)" and CLAUDE.md).
-No plan docs survive — ROADMAP + CLAUDE.md are the inventory.
+Newest first: the `palette-input` production fallback (17:49 UTC) is closed —
+`PLAN_source_author_fallback_reliability.md` is retired; the shipped design
+lives in ROADMAP "Source-author fallback elimination (2026-07-04, latest)"
+and CLAUDE.md. Earlier the same day, both remaining HANDOFF goals (rendered
+temporal judge, camera depth level 2) and all three source-author reliability
+levers from the motion-quality diagnosis were **BUILT and verified**;
+`PLAN_camera_depth_level2.md` is retired. No plan docs survive — ROADMAP +
+CLAUDE.md are the inventory.
 
-## What shipped this session (2026-07-04, latest)
+## What shipped this session (2026-07-04, fallback elimination)
+
+1. **Contract-binding reconciliation** — bridged-cut focal parts and camera
+   stations/parts reconcile deterministically (exact id / unique semantic /
+   exact-name station, scene-scoped, ambiguity stays blocking) in
+   `applyDeterministicSourceRepairs`, before any paid repair is spent.
+2. **Volunteered-cut degradation** — a brief-unrequested shape-match/
+   object-match whose endpoint signature survives a model repair degrades to
+   zoom-through atomically (`degradeVolunteeredBridgedCuts`); brief-required
+   styles never degrade. The mutated storyboard persists + flows downstream.
+3. **Non-convergence strategy switch** — `findingSignature` collapses regex
+   + kit-audit wordings of one defect to one signature; a survivor of the
+   patch asked to fix it switches the final attempt to full-context
+   re-authoring (`repairStrategyAfterStaticRejection`); `near_blank_film:`
+   browser findings escalate the same way (a blank scene is a missing
+   visual world — probe-cutfix-2's stall class).
+4. **Repair-prompt bindings discipline** — bridged-cut endpoint checklist
+   (both sides, present/MISSING) + never-delete-other-bindings warning.
+5. **Run diagnostics** — `planning/author-run.json` per run: attempt modes,
+   normalized finding signatures, strategy changes, terminal signatures.
+
+Proof: `test/authorReliability.test.ts` (16 cases incl. the minimized
+incident replay both ways). Live: `probe-cutfix-1` (incident-shaped RADAR
+brief) published `hyperframes-direct`, no fallback. Details in ROADMAP.
+
+## What shipped earlier this day (2026-07-04, reliability + judge + depth)
 
 1. **Author scratch persistence** — every rejected author attempt writes
    document + findings to `planning/attempts/author-<n>-<outcome>.*`
@@ -83,8 +110,9 @@ attempts persisted under `planning/attempts/`. Details in ROADMAP.
 6. **Paid live probe recipe**: `$env:OPENROUTER_API_KEY`, then
    `npm run sequence:check --workspace @sequences/slack -- --product …
    --what "…" --provider openrouter-api --job-id <id> --format both`; inspect
-   `.data/projects/<id>/planning/` (now including `attempts/`) and the
-   report's `authoringMode`/`fallbackStage`.
+   `.data/projects/<id>/planning/` (now including `attempts/` and the
+   per-run `author-run.json` signature summary) and the report's
+   `authoringMode`/`fallbackStage`.
 7. **Test styling via classes, not `data-part` attribute selectors** — bridge
    clones strip `data-part`.
 8. Finish = commit → `bash scripts/publish-public.sh "<msg>"` → `railway up`

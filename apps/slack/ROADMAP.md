@@ -769,6 +769,95 @@ published, exactly the designed boundary. The bind-exception escalation path
 did not fire this run (statics caught everything first — the intended
 ordering); its behavior is proven by `test/layoutInspector.test.ts`.
 
+### Source-author fallback elimination — binding reconciliation, volunteered-cut degradation, repair strategy (2026-07-04, latest)
+
+**The incident:** the 17:49 UTC production run reached the deterministic safe
+fallback at `source-author`. Attempt 1 omitted one shape-match incoming part
+(`palette-input` in `trace-resolve`), two camera stations, and one moment's
+evidence; both compact repairs fixed everything else but the same cut
+signature survived all three static rejections (one patch also broke a
+component root while "fixing" it). Every one of those findings was binding
+paperwork over a film that otherwise existed. Four mechanisms in
+`compositionRunner.ts` now close that class:
+
+1. **Contract-binding reconciliation** (`reconcileContractBindings`, runs in
+   `applyDeterministicSourceRepairs` before every validation): bridged-cut
+   focal parts and camera `data-part` targets get the same conservative
+   scene-scoped ladder as interaction targets (exact element id → unique
+   ≥0.8 semantic candidate → duplicate cleanup), and missing `data-region`
+   stations are annotated onto the one element already carrying the station's
+   name as its id or data-part (exact-name only — regions place the camera,
+   so no semantic scoring). Ambiguity always stays blocking; nothing visible
+   is ever fabricated.
+2. **Volunteered-cut degradation** (`degradeVolunteeredBridgedCuts`): a
+   shape-match/object-match boundary the brief never explicitly requested
+   (`inferStoryboardPlanRequirements` provenance) whose endpoint signature
+   persists across two consecutive static rejections — i.e. it survived a
+   model repair that was told to fix it — degrades to `zoom-through` (typed,
+   energetic, keeps the boundary beat and cut-landing moment evidence). The
+   mutated storyboard is re-injected, revalidated atomically (only a fully
+   valid degraded draft is accepted), persisted via
+   `persistUpgradedStoryboard`, and flows to everything downstream — the
+   inverse of cut discovery's upgrade path. Attempt 1 never degrades, and a
+   brief-required style never degrades: it stays blocking and falls back
+   honestly.
+3. **Non-convergence strategy switch** (`repairStrategyAfterStaticRejection`
+   + `findingSignature`): equivalent findings from the regex gates and the
+   kit-markup DOM audit collapse to one normalized signature; when a
+   signature survives the very patch asked to fix it (and is not resolvable
+   by degradation), the loop abandons the scratch and spends the final
+   attempt as a full-context re-author instead of a third identical compact
+   patch. Runtime bind exceptions keep their existing immediate escalation,
+   and `near_blank_film:` browser findings join it: a scene rendering blank
+   means the visual world is missing, and creating one is full-document work
+   a compact patch provably cannot do (probe-cutfix-2 left the identical
+   blank-scene signature after two patches in a row).
+4. **Repair-prompt bindings discipline**: compact repairs now carry a
+   bridged-cut endpoint checklist (both endpoints with live present/MISSING
+   status — the stalled patches only ever saw the failing side) and an
+   explicit warning never to remove other `data-part`/`data-region`/
+   `data-component` attributes while repairing one finding (the attempt-2
+   regression class).
+
+**Diagnostics:** every authoring run persists `planning/author-run.json` —
+per-attempt mode + outcome + normalized finding signatures, strategy changes,
+and terminal signatures — so failed runs group into classes offline without
+scraping logs. Signatures only; never brief content or model output.
+
+**Proof:** `test/authorReliability.test.ts` (16 cases): signature collapse
+across validators, the minimized `palette-input` replay in both variants
+(uniquely identifiable endpoint reconciled without a model call; ambiguous
+endpoint untouched and still blocking), station reconciliation + cross-scene
+borrowing bans, persistent volunteered cut degraded with a consistent
+re-injected island, required cut never degraded, persistence window enforced,
+and all four strategy boundaries.
+
+**Verification:** slack typecheck; slack suite green except four
+browser-launch tests that time out identically on the *unmodified* tree
+(local Chrome contention, pre-existing); `mcp:demo`, `direct:demo`,
+`film:demo`, `sequence:check --demo --no-mcp` all green.
+
+**Live evidence (paid probes, 2026-07-04):** `probe-cutfix-1` — an
+incident-shaped RADAR brief (command palette, risk ring, rollback) published
+**`hyperframes-direct`, no fallback**: storyboard passed attempt 1, the
+author's single static rejection was component markup (named by the kit
+audit, repaired by patch), 13/13 moments bound, `author-run.json` recorded
+both rejected attempts' signatures. `probe-cutfix-2` — the same brief with
+an explicitly *required* shape-match — fell back honestly on genuine visual
+defects (a blank 4s hook scene, a clipped camera landing, focal silhouettes
+8.7× apart in aspect): binding paperwork never appeared as a finding, the
+required shape-match was correctly never silently degraded by the host, and
+`author-run.json` exposed the new stall shape (identical browser signatures
+across both patches) that motivated the blank-scene escalation above.
+`probe-cutfix-3` — the same required-shape-match brief rerun — published
+**`hyperframes-direct`, no fallback**, with the strategy switch firing live:
+attempt 2's patch left the same `kit_markup_incomplete` signature it was
+asked to fix, the loop abandoned the scratch and re-authored full-context,
+and attempt 3 passed static + browser QA (13/13 moments bound; the critic's
+own patch caused a runtime bind exception and was correctly rejected,
+keeping the pre-critique draft). Contract-binding reconciliation also fired
+(`reconciled 1 component binding(s)`).
+
 ---
 
 ## Current Architecture

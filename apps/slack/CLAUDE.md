@@ -224,6 +224,27 @@ bind queries statically (linkedom parse — what a spec parser sees is what
 the browser will see) so missing chart bars/rows/fills, absent morph twins,
 lost scenes, and missing camera stations surface as named
 `kit_markup_incomplete`/`dom_markup_broken` findings before the browser.
+**Fallback elimination (2026-07-04, latest — the `palette-input` incident):**
+cut focal parts and camera stations/parts now get the same conservative
+deterministic reconciliation as interaction targets (exact id / unique
+semantic candidate / exact-name station, scene-scoped, ambiguity stays
+blocking) inside `applyDeterministicSourceRepairs`, so a mechanically
+recoverable locked-storyboard binding never consumes a paid repair; a
+**volunteered** bridged cut (shape-match/object-match the brief never asked
+for) whose endpoint binding survives a model repair degrades to zoom-through
+deterministically instead of sinking the film (brief-required styles never
+degrade — they stay blocking and fall back honestly); a structural finding
+signature that survives the very patch asked to fix it switches the final
+attempt to a full-context re-author instead of a third identical compact
+patch (`near_blank_film:` browser findings escalate the same way — a blank
+scene is a missing visual world, full-document work a compact patch cannot
+do); compact repair prompts carry a bridged-cut endpoint checklist
+(both sides, present/missing) plus a never-delete-other-bindings warning;
+and every run persists `planning/author-run.json` (per-attempt normalized
+finding signatures + strategy changes) for offline failure grouping.
+Proof: `test/authorReliability.test.ts` (the minimized incident replay:
+recoverable endpoint reconciled, ambiguous endpoint stays blocking,
+persistent volunteered cut degrades, required cut never does).
 Browser QA also runs the **rendered temporal judge**
 (`SLACK_SEQUENCES_TEMPORAL_JUDGE=0` to disable): before/mid/after frame
 triples around every evidence-bound moment, pixel-diffed in-page; an
