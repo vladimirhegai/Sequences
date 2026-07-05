@@ -1,5 +1,10 @@
 # HANDOFF — next session (updated 2026-07-04, fallback-elimination pass)
 
+> **Next session's mandate:** [IMPROVEMENT_PLAN.md](IMPROVEMENT_PLAN.md) — a
+> perfect-what-exists motion-quality pass (readability, eye trace, holds,
+> exits, visible morph cuts) grounded in the `probe-cutfix-3` diagnostics.
+> Read it first; it supersedes the "candidate next goals" below for now.
+
 Newest first: the `palette-input` production fallback (17:49 UTC) is closed —
 `PLAN_source_author_fallback_reliability.md` is retired; the shipped design
 lives in ROADMAP "Source-author fallback elimination (2026-07-04, latest)"
@@ -92,6 +97,25 @@ attempts persisted under `planning/attempts/`. Details in ROADMAP.
    of sustained preserve-3d layers.
 4. **Audio** — any soundtrack must be remapped through the same warp knots
    (`sequences-time.v1.js` header note). Do not add audio without it.
+
+### Something next (large — deliberately deferred by IMPROVEMENT_PLAN.md)
+
+These came out of the 2026-07-04 motion-quality diagnosis but are too big for
+the perfect-what-exists pass; park them here, do not start them ad hoc:
+
+5. **Host-owned exit contract (a sixth typed contract)** — typed `exits` the
+   way cuts/camera/components/interactions/timeRamp are typed: the planner
+   declares when a surface retires, the host compiles the directional exit.
+   IMPROVEMENT_PLAN WS4 ships the cheap version (plan-gate + stale-asset QA +
+   prompt doctrine); build the full contract only if that proves insufficient.
+6. **Content-aware station auto-fit** — when browser QA measures a framed
+   station whose content bbox is clipped or sparse, deterministically adjust
+   the station rect / fit zoom from the measured bounds instead of asking the
+   author to move markup. Powerful, but it makes the camera plan a function of
+   measured pixels — cache/determinism implications need real design.
+7. **Saliency-based eye-trace v2** — IMPROVEMENT_PLAN WS2's focal-part proxy,
+   upgraded to actual visual-saliency estimation over rendered frames (pairs
+   naturally with the vision half of the temporal judge, #2 above).
 
 ## Gotchas that will save you hours (inherited + new)
 

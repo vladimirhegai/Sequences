@@ -3,10 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  auditShapeMatchHints,
+  degradeMismatchedShapeHintCuts,
   degradeVolunteeredBridgedCuts,
   findingSignature,
   reconcileContractBindings,
   repairStrategyAfterStaticRejection,
+  rewriteDegradedCutStoryboard,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
 import { resolveCutPlan, validateCutContract } from "../src/engine/cutContract.ts";
@@ -100,6 +103,21 @@ describe("findingSignature", () => {
       "but the parsed DOM has no such element in that scene — the camera bind would abort the compile";
     expect(findingSignature(staticFinding)).toBe("camera_region_missing:risk-score:risk-ring");
     expect(findingSignature(kitFinding)).toBe(findingSignature(staticFinding));
+  });
+
+  it("collapses both encodings of a degraded boundary to one signature", () => {
+    const rawWarning =
+      "cut_degraded: shape-match palette-invoke->trace-resolve compiled as zoom-through: " +
+      "focal silhouettes differ 7.9x in aspect ratio (cap 2.5x)";
+    const polishFinding =
+      'cut_degraded [data-part="palette-input-pill"] (t=8.50s): The storyboard declares a ' +
+      "shape-match cut palette-invoke->trace-resolve, but the runtime degraded it to " +
+      "zoom-through at bind time: focal silhouettes differ 7.9x in aspect ratio (cap 2.5x). " +
+      'Measured at the boundary: outgoing "palette-input-pill" 720x56px…';
+    expect(findingSignature(rawWarning)).toBe(
+      "cut_degraded:palette-invoke->trace-resolve",
+    );
+    expect(findingSignature(polishFinding)).toBe(findingSignature(rawWarning));
   });
 
   it("names moment and unknown findings stably", () => {
@@ -261,6 +279,105 @@ describe("volunteered bridged-cut degradation", () => {
       new Set(["search-typing->trace-resolve"]),
     );
     expect(volunteeredCutBoundaries(storyboard, { requireShapeMatch: true })).toEqual(new Set());
+  });
+});
+
+describe("plan-time silhouette-hint sanity (WS1)", () => {
+  function hintedStoryboard(shapeOut: "pill" | "bar" | "card" | "circle" | "window", shapeIn: typeof shapeOut): DirectScene[] {
+    return [
+      scene("open", 0, {
+        cut: {
+          version: 1,
+          style: "shape-match",
+          focalPartOut: "query-pill",
+          focalPartIn: "trace-card",
+          shapeOut,
+          shapeIn,
+        },
+      }),
+      scene("land", 4),
+    ];
+  }
+
+  it("flags cross-family hint pairs and passes rhyming ones", () => {
+    expect(auditShapeMatchHints(hintedStoryboard("pill", "card"))).toHaveLength(1);
+    expect(auditShapeMatchHints(hintedStoryboard("pill", "card"))[0]).toContain(
+      "shape-match open->land",
+    );
+    expect(auditShapeMatchHints(hintedStoryboard("circle", "bar"))).toHaveLength(1);
+    expect(auditShapeMatchHints(hintedStoryboard("pill", "bar"))).toEqual([]);
+    expect(auditShapeMatchHints(hintedStoryboard("window", "card"))).toEqual([]);
+    expect(auditShapeMatchHints(hintedStoryboard("circle", "card"))).toEqual([]);
+  });
+
+  it("stays silent when hints are absent (they are an optional self-check)", () => {
+    const storyboard = incidentStoryboard();
+    expect(auditShapeMatchHints(storyboard)).toEqual([]);
+  });
+
+  it("degrades a hopeless pair to zoom-through with honest prose", () => {
+    const { scenes, degraded } = degradeMismatchedShapeHintCuts(
+      hintedStoryboard("pill", "card"),
+    );
+    expect(degraded).toEqual(["open->land (pill->card)"]);
+    expect(scenes[0]!.cut).toEqual({ version: 1, style: "zoom-through" });
+    expect(scenes[0]!.outgoingCut).toContain("degraded at plan time");
+    expect(auditShapeMatchHints(scenes)).toEqual([]);
+  });
+
+  it("leaves rhyming declarations untouched", () => {
+    const storyboard = hintedStoryboard("pill", "bar");
+    const { scenes, degraded } = degradeMismatchedShapeHintCuts(storyboard);
+    expect(degraded).toEqual([]);
+    expect(scenes).toEqual(storyboard);
+  });
+});
+
+describe("degraded-cut paperwork reconciliation (WS1 honest artifacts)", () => {
+  const degradedWarning =
+    "cut_degraded: shape-match search-typing->trace-resolve compiled as zoom-through: " +
+    "focal silhouettes differ 7.9x in aspect ratio (cap 2.5x)";
+
+  it("rewrites the shipped cut and its advertising prose from the QA result", () => {
+    const shipped = incidentStoryboard();
+    shipped[0]!.outgoingCut = "The pill shape-matches into the trace card boundary.";
+    const { storyboard, rewritten } = rewriteDegradedCutStoryboard(shipped, [degradedWarning]);
+    expect(rewritten).toEqual(["search-typing->trace-resolve (shape-match)"]);
+    expect(storyboard[0]!.cut).toEqual({ version: 1, style: "zoom-through" });
+    expect(storyboard[0]!.outgoingCut).toContain("Zoom-through");
+    expect(storyboard[0]!.outgoingCut).toContain("degraded at bind time");
+    expect(storyboard[0]!.outgoingCut).toContain("7.9x");
+    expect(storyboard[0]!.outgoingCut).not.toContain("shape-matches into");
+  });
+
+  it("keeps authored boundary timing so the executed window stays put", () => {
+    const shipped = incidentStoryboard();
+    shipped[0]!.cut = { ...shipped[0]!.cut!, exitSec: 0.3, entrySec: 0.6 };
+    const { storyboard } = rewriteDegradedCutStoryboard(shipped, [degradedWarning]);
+    expect(storyboard[0]!.cut).toEqual({
+      version: 1,
+      style: "zoom-through",
+      exitSec: 0.3,
+      entrySec: 0.6,
+    });
+  });
+
+  it("ignores warnings for boundaries without a declared bridged cut", () => {
+    const shipped = incidentStoryboard();
+    const { storyboard, rewritten } = rewriteDegradedCutStoryboard(shipped, [
+      "cut_degraded: shape-match trace-resolve->risk-score compiled as zoom-through: reason",
+    ]);
+    expect(rewritten).toEqual([]);
+    expect(storyboard).toEqual(shipped);
+  });
+
+  it("is a no-op without degradation warnings", () => {
+    const shipped = incidentStoryboard();
+    const { storyboard, rewritten } = rewriteDegradedCutStoryboard(shipped, [
+      "browser_warning: something unrelated",
+    ]);
+    expect(rewritten).toEqual([]);
+    expect(storyboard).toBe(shipped);
   });
 });
 

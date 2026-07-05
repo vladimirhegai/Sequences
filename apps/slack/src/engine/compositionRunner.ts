@@ -35,6 +35,7 @@ import {
   CUT_STYLES,
   normalizeStoryboardCutIntent,
   resolveCutPlan,
+  shapeHintsRhyme,
 } from "./cutContract.ts";
 import {
   CAMERA_FULL_MOVES,
@@ -86,6 +87,7 @@ import {
   validatePlannedMoments,
 } from "./storyboardMoments.ts";
 import { analyzeMotionDensity } from "./motionDensity.ts";
+import { auditPacing } from "./pacingAudit.ts";
 import { readFrameMeta } from "./frameDesign.ts";
 import {
   creativeModel,
@@ -2565,6 +2567,11 @@ export function validateStoryboardPlan(
   // entrances, repeat visual states, or leave dead intervals — before any
   // source budget is spent.
   errors.push(...validatePlannedMoments(storyboard, expectedStart));
+  // Plan-time silhouette sanity: a shape-match declared with cross-family
+  // hints is known-hopeless (the runtime would degrade it at bind time), so
+  // it gets fixed in a cheap storyboard findings-retry instead of burning
+  // author attempts on a cut that can never compile.
+  errors.push(...auditShapeMatchHints(storyboard));
   // Camera-energy audit: every 12s+ film needs at least one high-energy
   // element, and four-plus full moves may not share one verb.
   errors.push(...auditCameraEnergy(storyboard));
@@ -2572,7 +2579,67 @@ export function validateStoryboardPlan(
   // surfaces for the duration) fails HERE, where a retry costs one storyboard
   // call, not downstream where it burns every author attempt.
   errors.push(...auditComponentComplexity(storyboard));
+  // Hold-what-matters pacing (WS3): introduced surfaces need development
+  // time, typed copy needs reading time, payoffs need outcome holds, and
+  // camera density has a ceiling as well as a floor.
+  errors.push(...auditPacing(storyboard));
   return [...new Set(errors)];
+}
+
+/**
+ * Plan-time silhouette sanity for declared shape-match cuts (WS1). The
+ * storyboard's shapeOut/shapeIn hints carry no runtime geometry, but a
+ * cross-family pair (pill→card, circle→bar) provably cannot survive the
+ * runtime's 2.5× aspect audit — the declared morph would silently ship as
+ * zoom-through while every artifact still advertises it. Surface the
+ * mismatch as a validation finding so a cheap storyboard retry fixes the
+ * pair while the plan is still paper.
+ */
+export function auditShapeMatchHints(storyboard: DirectScene[]): string[] {
+  const findings: string[] = [];
+  for (const [index, scene] of storyboard.entries()) {
+    const next = storyboard[index + 1];
+    const cut = scene.cut;
+    if (!next || cut?.style !== "shape-match" || !cut.shapeOut || !cut.shapeIn) continue;
+    if (shapeHintsRhyme(cut.shapeOut, cut.shapeIn)) continue;
+    findings.push(
+      `shape-match ${scene.id}->${next.id} declares silhouette hints ` +
+        `${cut.shapeOut}->${cut.shapeIn}, which cannot rhyme (a ${cut.shapeOut} and a ` +
+        `${cut.shapeIn} differ beyond the runtime's 2.5x aspect cap at any plausible size, ` +
+        `so the cut would degrade to zoom-through at bind time) — re-point the cut at ` +
+        `endpoints whose silhouettes match (pill<->bar, or card<->window<->circle), fix the ` +
+        `hints if the real parts do rhyme, or declare zoom-through instead`,
+    );
+  }
+  return findings;
+}
+
+/**
+ * Degrade-never-veto rung for the hint audit above: on the final storyboard
+ * attempt a still-mismatched volunteered shape-match downgrades to
+ * zoom-through with honest prose instead of blocking the film. Brief-required
+ * shape-match never lands here — its finding stays blocking so the retry
+ * loop (and the rescue rung) remain the delivery mechanism.
+ */
+export function degradeMismatchedShapeHintCuts(
+  storyboard: DirectScene[],
+): { scenes: DirectScene[]; degraded: string[] } {
+  const degraded: string[] = [];
+  const scenes = storyboard.map((scene, index) => {
+    const next = storyboard[index + 1];
+    const cut = scene.cut;
+    if (!next || cut?.style !== "shape-match" || !cut.shapeOut || !cut.shapeIn) return scene;
+    if (shapeHintsRhyme(cut.shapeOut, cut.shapeIn)) return scene;
+    degraded.push(`${scene.id}->${next.id} (${cut.shapeOut}->${cut.shapeIn})`);
+    return {
+      ...scene,
+      cut: { version: 1 as const, style: "zoom-through" as const },
+      outgoingCut:
+        `Zoom-through into the next shot (a declared shape-match with non-rhyming ` +
+        `silhouette hints ${cut.shapeOut}->${cut.shapeIn} was degraded at plan time).`,
+    };
+  });
+  return { scenes, degraded };
 }
 
 /**
@@ -2625,6 +2692,7 @@ export function dropUnusableVolunteeredTimeRamps(storyboard: DirectScene[]): Dir
 export function parseStoryboardResponse(
   raw: string,
   requirements: StoryboardPlanRequirements = {},
+  options: { degradeShapeHintMismatches?: boolean } = {},
 ): DirectScene[] {
   const knownCapabilities = new Set(
     loadCapabilityIndex().capabilities.map((capability) => capability.id),
@@ -2639,6 +2707,21 @@ export function parseStoryboardResponse(
   // vetoing the plan. Brief-demanded ramps keep their blocking findings.
   if (!requirements.requireTimeRamp) {
     storyboard = dropUnusableVolunteeredTimeRamps(storyboard);
+  }
+  // Early attempts keep the hint-mismatch finding blocking so a cheap
+  // findings-retry fixes the pair; the FINAL attempt degrades a volunteered
+  // hopeless shape-match to zoom-through instead of blocking the film
+  // (degrade-never-veto). Brief-required shape-match never degrades here.
+  if (options.degradeShapeHintMismatches && !requirements.requireShapeMatch) {
+    const degradation = degradeMismatchedShapeHintCuts(storyboard);
+    if (degradation.degraded.length) {
+      storyboard = degradation.scenes;
+      for (const line of degradation.degraded) {
+        process.stderr.write(
+          `[storyboard] degraded hint-mismatched shape-match to zoom-through: ${line}\n`,
+        );
+      }
+    }
   }
   // Double-triggered motion (repeated pulses, overlapping same-channel beats,
   // press beats under a cursor press) degrades to single triggers before
@@ -2852,17 +2935,17 @@ export interface StoryboardShape {
 export const STORYBOARD_SHAPES: readonly StoryboardShape[] = [
   {
     id: "problem-turn-product-cta",
-    label: "problem (short) → turn (short) → product proof (long) → CTA resolve (short)",
+    label: "problem (short) → turn (short) → product proof (long, held & developed) → CTA resolve (short)",
     best: "pain-led briefs where the product resolves a named workflow problem",
   },
   {
     id: "hook-demo-payoff",
-    label: "cold hook (short) → guided product demo (long) → payoff metric + CTA (medium)",
+    label: "cold hook (short) → guided product demo (long, held & developed) → payoff metric + CTA (medium)",
     best: "feature launches whose UI walkthrough is the star",
   },
   {
     id: "stat-proof-tour",
-    label: "hero stat (medium) → proof tour across product surfaces (long) → brand resolve (short)",
+    label: "hero stat (medium) → proof tour across product surfaces (long, one held framing per surface) → brand resolve (short)",
     best: "metric- or performance-led stories",
   },
   {
@@ -3108,8 +3191,10 @@ export async function requestStoryboardPlan(
     // Bump when the storyboard contract changes shape (v2: StoryboardMomentV1,
     // v3: typed components + beats; v4: brief-derived coverage requirements;
     // v5: shape-match cuts + orbit/rack-focus camera vocabulary; v6: timeRamp
-    // speed-ramping dips; v7: depth3d level-2 camera depth).
-    contract: 7,
+    // speed-ramping dips; v7: depth3d level-2 camera depth; v8:
+    // hold-what-matters pacing audits — reading floors, outcome holds,
+    // introduction development, camera budget).
+    contract: 8,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
@@ -3148,6 +3233,18 @@ export async function requestStoryboardPlan(
     "shot boundary OR a typed camera move. Plan density accordingly: a 15s film",
     "needs 4+ framings, a 24s film 7+, a 40s+ film 12. Short punchy shots",
     "(1.5-3s) are welcome; so are longer shots whose camera keeps traveling.",
+    "PACING CEILING — density has a ceiling as well as a floor, enforced",
+    "deterministically. Per shot, at most 1 + floor(shotSec/3.5) full camera",
+    "moves; at most 2 whips per film. After introducing a dense surface, HOLD",
+    "and develop it: the last new surface in a shot must land by ~65% of the",
+    "shot window, leaving ~0.9s per introduced surface to read. Hold on",
+    "outcomes longer than actions: after a press, set-state, or toast payoff,",
+    "leave >=0.8s before the next framing change. Typed copy needs ~0.3s per",
+    "word of reading time before the frame cuts or whips away. A hold is not",
+    "a freeze — develop the held surface with count/progress/highlight beats.",
+    "ONE focal element at a time: secondary detail may coexist, but only one",
+    "thing commands motion at any moment; two beats that yank the eye across",
+    "the frame within ~1.2s read as noise, not richness.",
     "CAMERA RIG — the continuous spatial world. Each scene may declare a typed",
     '"camera" path over a data-camera-world plane larger than the 1920x1080',
     "viewport. The author scatters that scene's content across named",
@@ -3240,7 +3337,10 @@ export async function requestStoryboardPlan(
     'shapeOut/shapeIn hints from pill|bar|card|circle|window as your own',
     "silhouette self-check. Declare shape-match only when the two silhouettes",
     "genuinely rhyme; a >2.5x aspect mismatch degrades to zoom-through at bind",
-    "time). The host compiles the cut deterministically;",
+    "time. Silhouette families: pill and bar rhyme with each other; card,",
+    "window, and circle rhyme with each other; a cross-family pair like",
+    "pill->card is rejected deterministically at plan time).",
+    "The host compiles the cut deterministically;",
     "the prose outgoingCut must describe the same editorial idea as cut.style.",
     "SPEED RAMP — time itself may bend for emphasis. A shot may declare ONE",
     '"timeRamp": the film decelerates to slowTo (0.2-0.6) for holdSec seconds',
@@ -3532,7 +3632,9 @@ export async function requestStoryboardPlan(
       }
       let storyboard: DirectScene[];
       try {
-        storyboard = parseStoryboardResponse(raw, requirements);
+        storyboard = parseStoryboardResponse(raw, requirements, {
+          degradeShapeHintMismatches: attempt === rung.maxAttempts,
+        });
       } catch (error) {
         if (error instanceof Error && isOutputTruncation(error)) {
           // A truncated artifact detected at parse time (opened-but-unclosed
@@ -4097,6 +4199,23 @@ function creationPrompt(args: {
       "For camera_framed_clipped findings, the named element hangs outside the station",
       "rect the camera frames: move it fully inside its data-region box (keep an ~8%",
       "inner margin) or shrink it — never move the region itself or edit the camera plan.",
+      "For camera_framed_sparse findings, the framed content is a small subject adrift",
+      "in an empty frame: enlarge the station's content, tighten its data-region rect so",
+      "the fit zoom lands closer, or move more of that scene's content into the framed",
+      "station — the viewer should never study a mostly-empty frame.",
+      "For cut_degraded findings, a declared shape-match/object-match compiled as",
+      "zoom-through because the endpoint silhouettes do not rhyme. Use the measured",
+      "numbers in the finding: restyle one endpoint, or move its data-part attribute",
+      "onto a sub-element whose box does rhyme (e.g. a condensed header band matching",
+      "the outgoing pill), so both parts sit within a 2.5x aspect ratio, under 60 nodes,",
+      "and on frame at the boundary. Never rename the parts or edit the cut plan JSON.",
+      "For eye_trace_jump findings, the viewer's gaze is on the outgoing focal element",
+      "when the cut lands but the incoming subject appears across the frame: move the",
+      "incoming scene's opening subject (or its station rect) so it appears near the",
+      "measured outgoing position — the finding carries both viewport coordinates.",
+      "Never retime the cut, change scene timing, or edit the cut plan JSON for it.",
+      "For eye_trace_pingpong findings, consecutive beats yank the eye across the frame:",
+      "bring the two beat targets closer together in the layout — never delete beats.",
       "For motion/liveness findings, add seek-safe GSAP beats on child elements,",
       "semantic component parts, or data-camera-world wrappers at explicit",
       "composition times. Do not animate scene wrappers to fake activity.",
@@ -4362,6 +4481,14 @@ export function findingSignature(finding: string): string {
     ? text.match(/moment "([^"]+)"/)
     : undefined;
   if (moment) return `moment_unbound:${moment[1]}`;
+  // Both encodings of one degraded boundary — the raw runtime warning
+  // ("cut_degraded: shape-match a->b compiled …") and the measured polish
+  // finding ("cut_degraded [data-part=…] (t=…): The storyboard declares a
+  // shape-match cut a->b …") — collapse to one signature per boundary.
+  if (text.startsWith("cut_degraded")) {
+    const boundary = text.match(/\b([\w-]+->[\w-]+)\b/);
+    return `cut_degraded:${boundary?.[1] ?? "unknown"}`;
+  }
   if (text.startsWith("dom_markup_broken:")) return "dom_markup_broken";
   if (text.startsWith("runtime_bind_exception")) return "runtime_bind_exception";
   if (text.startsWith("kit_markup_incomplete:")) {
@@ -5203,7 +5330,18 @@ async function applyShapeMatchUpgrade(
   });
   if (!cut) return undefined;
   const storyboard = shipped.map((scene) =>
-    scene.id === upgrade.fromScene ? { ...scene, cut } : scene
+    scene.id === upgrade.fromScene
+      ? {
+          ...scene,
+          cut,
+          // The artifacts (STORYBOARD.md, Slack outline, manifest) advertise
+          // outgoingCut prose — rewrite it so paperwork matches the executed
+          // boundary instead of describing the pre-upgrade cut.
+          outgoingCut:
+            `Shape-match: "${upgrade.focalPartOut}" carries into ` +
+            `"${upgrade.focalPartIn}" (measured silhouette rhyme, discovered at QA).`,
+        }
+      : scene
   );
   process.stderr.write(
     `[cut-discovery] upgrading ${upgrade.fromScene}->${upgrade.toScene} to shape-match ` +
@@ -5248,6 +5386,105 @@ async function applyShapeMatchUpgrade(
   }
 }
 
+/** The raw runtime-degradation warning emitted by browser QA. */
+const RAW_DEGRADED_CUT_WARNING =
+  /^cut_degraded: \S+ ([\w-]+)->([\w-]+) compiled as zoom-through: (.*)$/;
+
+/**
+ * Pure half of the paperwork reconciler: rewrite every runtime-degraded
+ * declared bridged cut in the SHIPPED storyboard as the zoom-through that
+ * actually executed, with honest advertising prose. Exported for tests.
+ */
+export function rewriteDegradedCutStoryboard(
+  shipped: DirectScene[],
+  qaWarnings: string[],
+): { storyboard: DirectScene[]; rewritten: string[] } {
+  const degradedReasons = new Map<string, string>();
+  for (const warning of qaWarnings) {
+    const match = warning.match(RAW_DEGRADED_CUT_WARNING);
+    if (match) degradedReasons.set(`${match[1]}->${match[2]}`, match[3] ?? "");
+  }
+  const rewritten: string[] = [];
+  if (!degradedReasons.size) return { storyboard: shipped, rewritten };
+  const storyboard = shipped.map((scene, index) => {
+    const next = shipped[index + 1];
+    const cut = scene.cut;
+    if (!next || !cut) return scene;
+    if (cut.style !== "shape-match" && cut.style !== "object-match") return scene;
+    const reason = degradedReasons.get(`${scene.id}->${next.id}`);
+    if (reason === undefined) return scene;
+    rewritten.push(`${scene.id}->${next.id} (${cut.style})`);
+    return {
+      ...scene,
+      cut: {
+        version: 1 as const,
+        style: "zoom-through" as const,
+        // Keep any authored boundary timing so the executed window stays put.
+        ...(cut.travelPx !== undefined ? { travelPx: cut.travelPx } : {}),
+        ...(cut.exitSec !== undefined ? { exitSec: cut.exitSec } : {}),
+        ...(cut.entrySec !== undefined ? { entrySec: cut.entrySec } : {}),
+      },
+      outgoingCut:
+        `Zoom-through into "${next.title}" (a declared ${cut.style} was degraded at ` +
+        `bind time: ${reason}).`,
+    };
+  });
+  return { storyboard, rewritten };
+}
+
+/**
+ * Honest paperwork for boundaries the runtime degraded (WS1). When a declared
+ * bridged cut survived every repair opportunity and still compiled as
+ * zoom-through, the shipped artifacts — STORYBOARD.md, the Slack outline,
+ * manifest.json, the cut island — must record the cut that actually executed,
+ * never the morph that did not. Rewrite the shipped storyboard from the QA
+ * result, re-inject deterministically, and accept the rewrite only when full
+ * validation stays healthy; the executed motion is already a zoom-through, so
+ * this changes records, not the film. Any regression keeps the pre-reconcile
+ * draft (enhancement-never-veto).
+ */
+async function reconcileDegradedCutPaperwork(
+  args: DirectCompositionArgs,
+  result: CompositionRunResult,
+): Promise<CompositionRunResult> {
+  // Rewrite from the storyboard that actually SHIPPED (gotcha #10).
+  const { storyboard, rewritten } = rewriteDegradedCutStoryboard(
+    result.draft.storyboard,
+    result.browserQa?.warnings ?? [],
+  );
+  if (!rewritten.length) return result;
+  try {
+    const draft = applyDeterministicSourceRepairs(
+      { storyboard, html: result.draft.html },
+      args.projectDir,
+      storyboard,
+    );
+    const validation = await validateDirectComposition(args.projectDir, draft);
+    if (!validation.ok) {
+      throw new Error(`static validation rejected the rewrite: ${validation.errors[0] ?? ""}`);
+    }
+    const browserQa = await inspectDirectComposition(args.projectDir, draft, {
+      captureGuide: false,
+    });
+    if (!browserQa.ok && !browserQa.infraError) {
+      throw new Error(`browser QA rejected the rewrite: ${browserQa.errors[0] ?? ""}`);
+    }
+    persistUpgradedStoryboard(args.projectDir, storyboard);
+    process.stderr.write(
+      `[cut-honesty] rewrote ${rewritten.length} runtime-degraded boundary/ies as executed ` +
+        `zoom-through in the shipped storyboard: ${rewritten.join(", ")}\n`,
+    );
+    return { ...result, draft, browserQa };
+  } catch (error) {
+    process.stderr.write(
+      `[cut-honesty] paperwork reconcile rejected (${
+        error instanceof Error ? error.message : String(error)
+      }); keeping the shipped draft as-is\n`,
+    );
+    return result;
+  }
+}
+
 export async function requestDirectComposition(
   provider: AgentProvider,
   args: DirectCompositionArgs,
@@ -5262,5 +5499,7 @@ export async function requestDirectComposition(
     result = upgraded.result;
     critiqueArgs = { ...args, lockedStoryboard: upgraded.storyboard };
   }
-  return applyContinuityCritique(provider, critiqueArgs, result);
+  const critiqued = await applyContinuityCritique(provider, critiqueArgs, result);
+  // LAST: whatever ships, its paperwork tells the truth about every boundary.
+  return reconcileDegradedCutPaperwork(args, critiqued);
 }
