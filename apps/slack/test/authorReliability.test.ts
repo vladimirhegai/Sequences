@@ -3,13 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  applyDeterministicSourceRepairs,
   auditShapeMatchHints,
   dedupeFeedbackBySignature,
   degradeMismatchedShapeHintCuts,
   degradeVolunteeredBridgedCuts,
   ensureRuntimeScriptOrdering,
   findingSignature,
+  reconcileCameraWorldPlanes,
   reconcileComponentBindings,
+  reconcileComponentInternalPartAliases,
   reconcileContractBindings,
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
@@ -17,6 +20,8 @@ import {
   topUpRowsMarkup,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
+import { validateCameraContract } from "../src/engine/cameraContract.ts";
+import { validateComponentContract } from "../src/engine/componentContract.ts";
 import { resolveCutPlan, validateCutContract } from "../src/engine/cutContract.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 
@@ -660,6 +665,110 @@ describe("reconcileComponentBindings — missing data-part recovery", () => {
     expect(repairs).toBeGreaterThanOrEqual(1);
     expect(out).toContain('data-component="search"');
     expect(out).not.toContain('data-component="command-palette"');
+  });
+
+  it("claims a lone kind-marked palette root even when it carried a cut alias", () => {
+    const html = wrap(
+      '<div class="cmp cmp-palette" data-component="command-palette" data-part="palette-input">' +
+        '<div class="cmp-input"></div></div>',
+    );
+    const { html: out, repairs } = reconcileComponentBindings(html, [
+      scene("dashboard-overload", 0, {
+        components: [component("cmd-palette", "command-palette")],
+      }),
+    ]);
+    expect(repairs).toBe(1);
+    expect(out).toContain('data-component="command-palette" data-part="cmd-palette"');
+  });
+});
+
+describe("deterministic source repair ordering: camera world + component aliases", () => {
+  const storyboard = (): DirectScene[] => [
+    scene("dashboard-overwhelm", 0, {
+      cut: {
+        version: 1,
+        style: "shape-match",
+        focalPartOut: "palette-input",
+        focalPartIn: "palette-input",
+      },
+    }),
+    scene("palette-ship", 4, {
+      components: [{ version: 1, id: "cmd-palette", kind: "command-palette" }],
+      beats: [{
+        version: 1,
+        id: "filtered-rows",
+        sceneId: "palette-ship",
+        component: "cmd-palette",
+        kind: "rows",
+        atSec: 5,
+      }],
+    }),
+    scene("stat-resolve", 8, {
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          toRegion: "stat-card",
+          startSec: 9,
+          durationSec: 1,
+        }],
+      },
+    }),
+  ];
+
+  function sourceHtml(): string {
+    return `<!doctype html><html><head><script src="gsap.min.js"></script></head><body>
+<main data-composition-id="c" data-width="1920" data-height="1080" data-duration="12">
+  <section id="dashboard-overwhelm" data-scene="dashboard-overwhelm" data-start="0" data-duration="4">
+    <div data-part="palette-input"></div>
+  </section>
+  <section id="palette-ship" data-scene="palette-ship" data-start="4" data-duration="4">
+    <div class="cmp cmp-palette material" data-component="command-palette">
+      <div class="cmp-input inset-well"><span class="cmp-text">deploy</span></div>
+    </div>
+  </section>
+  <section id="stat-resolve" data-scene="stat-resolve" data-start="8" data-duration="4">
+    <div data-region="stat-card"><div class="metric">98%</div></div>
+  </section>
+</main>
+<script>const tl = gsap.timeline({ paused: true }); window.__timelines["c"] = tl;</script>
+</body></html>`;
+  }
+
+  it("wraps a camera scene that omitted only the data-camera-world plane", () => {
+    const { html, repairs } = reconcileCameraWorldPlanes(sourceHtml(), storyboard());
+    expect(repairs).toBe(1);
+    expect(html).toContain('data-camera-world style="position:absolute;inset:0;transform-origin:0 0"');
+    expect(validateCameraContract(
+      applyDeterministicSourceRepairs({ html, storyboard: storyboard() }, tempDir(), storyboard()).html,
+      storyboard(),
+    ).errors).toEqual([]);
+  });
+
+  it("materializes a command-palette input alias without stealing the component root", () => {
+    const scenes = storyboard();
+    const html = reconcileComponentBindings(sourceHtml(), scenes).html;
+    const { html: withAlias, repairs } = reconcileComponentInternalPartAliases(html, scenes);
+    expect(repairs).toBe(1);
+    expect(withAlias).toContain('data-part="cmd-palette"');
+    expect(withAlias).toContain('class="cmp-input inset-well" data-part="palette-input"');
+  });
+
+  it("recovers the combined latest source-author failure before static validation", () => {
+    const scenes = storyboard();
+    const repaired = applyDeterministicSourceRepairs(
+      { html: sourceHtml(), storyboard: scenes },
+      tempDir(),
+      scenes,
+    );
+    expect(repaired.html).toContain("data-camera-world");
+    expect(repaired.html).toContain('data-part="cmd-palette"');
+    expect(repaired.html).toContain('data-part="palette-input"');
+    expect(repaired.html.match(/class="cmp-item"/g)).toHaveLength(3);
+    expect(validateCutContract(repaired.html, scenes).errors).toEqual([]);
+    expect(validateCameraContract(repaired.html, scenes).errors).toEqual([]);
+    expect(validateComponentContract(repaired.html, scenes).errors).toEqual([]);
   });
 });
 

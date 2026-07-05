@@ -738,6 +738,68 @@ interface ScenePartBinding {
   part: string;
 }
 
+interface SceneScopeLocation {
+  id: string;
+  openStart: number;
+  openEnd: number;
+  closeStart: number;
+  closeEnd: number;
+}
+
+function matchingCloseTag(
+  source: string,
+  openStart: number,
+  openTag: string,
+  limit = source.length,
+): { contentStart: number; closeStart: number; closeEnd: number } | undefined {
+  const tagName = openTag.match(/^<([a-z][\w:-]*)\b/i)?.[1]?.toLowerCase();
+  if (!tagName || /\/\s*>$/.test(openTag)) return undefined;
+  const contentStart = openStart + openTag.length;
+  const walker = new RegExp(
+    `<${regexpEscape(tagName)}\\b[^>]*>|</${regexpEscape(tagName)}\\s*>`,
+    "gi",
+  );
+  walker.lastIndex = contentStart;
+  let depth = 1;
+  for (let step = walker.exec(source); step && step.index < limit; step = walker.exec(source)) {
+    if (step[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          contentStart,
+          closeStart: step.index,
+          closeEnd: step.index + step[0].length,
+        };
+      }
+    } else if (!/\/\s*>$/.test(step[0])) {
+      depth += 1;
+    }
+  }
+  return undefined;
+}
+
+function sceneScopeLocations(source: string): SceneScopeLocation[] {
+  const tags = [...source.matchAll(
+    /<[a-z][\w:-]*\b[^>]*\bdata-scene\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/gi,
+  )];
+  return tags.flatMap((match, index): SceneScopeLocation[] => {
+    const tag = match[0];
+    const openStart = match.index ?? 0;
+    const tagName = tag.match(/^<([a-z][\w:-]*)\b/i)?.[1]?.toLowerCase();
+    const id = htmlAttr(tag, "data-scene") ?? "";
+    if (!tagName || !id) return [];
+    const close = matchingCloseTag(source, openStart, tag, tags[index + 1]?.index ?? source.length);
+    if (!close) return [];
+    return [{
+      id,
+      openStart,
+      openEnd: close.contentStart,
+      closeStart: close.closeStart,
+      closeEnd: close.closeEnd,
+    }];
+  });
+}
+
 /**
  * Reconcile only scene-scoped part bindings whose intended element is
  * mechanically unambiguous. Exact element ids win; a semantic-name fallback is
@@ -906,6 +968,48 @@ function reconcileCameraRegionStations(
     if (replacement === candidate.tag) continue;
     html = html.slice(0, candidate.index) + replacement +
       html.slice(candidate.index + candidate.tag.length);
+    repairs += 1;
+  }
+  return { html, repairs };
+}
+
+function cameraWorldStyle(scene: DirectScene | undefined): string {
+  const cells = scene?.worldLayout ?? [];
+  if (!cells.length) {
+    return "position:absolute;inset:0;transform-origin:0 0";
+  }
+  const xs = cells.map((entry) => entry.cell[0]);
+  const ys = cells.map((entry) => entry.cell[1]);
+  const minX = Math.min(...xs, 0);
+  const minY = Math.min(...ys, 0);
+  const width = (Math.max(...xs, 0) - minX + 1) * 1920;
+  const height = (Math.max(...ys, 0) - minY + 1) * 1080;
+  return `position:absolute;left:0;top:0;width:${width}px;height:${height}px;transform-origin:0 0`;
+}
+
+/**
+ * A locked camera path means the scene must expose one transformable world
+ * plane. When the author built the stations directly in the scene and omitted
+ * only the wrapper, wrap that scene content in the canonical host plane.
+ */
+export function reconcileCameraWorldPlanes(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repairs: number } {
+  const cameraSceneIds = new Set(resolveCameraPlan(scenes).scenes.map((scene) => scene.sceneId));
+  if (!cameraSceneIds.size) return { html: source, repairs: 0 };
+  const byId = new Map(scenes.map((scene) => [scene.id, scene]));
+  let html = source;
+  let repairs = 0;
+  for (const scope of [...sceneScopeLocations(html)].reverse()) {
+    if (!cameraSceneIds.has(scope.id)) continue;
+    const content = html.slice(scope.openEnd, scope.closeStart);
+    if (/\bdata-camera-world\b/i.test(content)) continue;
+    const wrapped =
+      `\n<div data-camera-world style="${cameraWorldStyle(byId.get(scope.id))}">` +
+      `${content}` +
+      `\n</div>\n`;
+    html = html.slice(0, scope.openEnd) + wrapped + html.slice(scope.closeStart);
     repairs += 1;
   }
   return { html, repairs };
@@ -1400,10 +1504,10 @@ function ensureTagAttr(tag: string, name: string, value: string): string {
  * unique semantic-name match. This mirrors the cut/camera/interaction target
  * reconciler (exact / unique-candidate, ambiguity stays blocking): a dense
  * component brief where the model built the surface but forgot or mis-named its
- * `data-part` no longer sinks the whole run at `source-author`. Only elements
- * that carry no `data-part` yet are eligible, so a correctly-bound sibling is
- * never hijacked; absent any safe candidate the component stays unbound and the
- * author re-authors honestly.
+ * `data-part` no longer sinks the whole run at `source-author`. A lone
+ * kind-marked element whose `data-part` is a non-component alias can be claimed;
+ * correctly-bound sibling components are never hijacked. Absent any safe
+ * candidate the component stays unbound and the author re-authors honestly.
  */
 function bindMissingComponentElement(
   scope: string,
@@ -1424,9 +1528,9 @@ function bindMissingComponentElement(
     .filter((entry) =>
       !entry.tag.includes("data-sequences-runtime-") &&
       !htmlAttr(entry.tag, "data-scene") &&
-      // Only ever claim an element that has no data-part of its own — never
-      // rename a sibling component's correctly-labeled element.
-      !entry.part &&
+      // A non-component alias can move inside this root; another declared
+      // component's part/id cannot.
+      !(entry.part && claimed.has(entry.part)) &&
       !(entry.id && claimed.has(entry.id))
     );
   const pickUnique = <T,>(list: T[]): T | undefined => (list.length === 1 ? list[0] : undefined);
@@ -1452,7 +1556,7 @@ function bindMissingComponentElement(
     }
   }
   if (!candidate) return { html: scope, repairs: 0 };
-  let replacement = candidate.tag.replace(/>$/, ` data-part="${component.id}">`);
+  let replacement = ensureTagAttr(candidate.tag, "data-part", component.id);
   replacement = ensureTagAttr(replacement, "data-component", component.kind);
   if (
     component.region &&
@@ -1529,6 +1633,128 @@ export function reconcileComponentBindings(
       });
     }
     html = html.slice(0, scopeStart) + scope + html.slice(scopeEnd);
+  }
+  return { html, repairs };
+}
+
+type InternalPartAlias = {
+  className: string;
+  markup: (part: string, component: string) => string;
+};
+
+function internalPartAliasFor(
+  kind: ComponentKind,
+  part: string,
+): InternalPartAlias | undefined {
+  const tokens = new Set(semanticPartTokens(part));
+  const namesInput = tokens.has("input") || tokens.has("query") || tokens.has("search");
+  if (kind === "command-palette" && namesInput) {
+    return {
+      className: "cmp-input",
+      markup: (alias, component) =>
+        `<div class="cmp-input inset-well" data-part="${alias}" ` +
+        `data-sequences-part-alias="${component}"><span class="cmp-text"></span></div>`,
+    };
+  }
+  if (kind === "search" && (namesInput || tokens.has("pill"))) {
+    return {
+      className: "cmp-text",
+      markup: (alias, component) =>
+        `<span class="cmp-text" data-cmp-text data-part="${alias}" ` +
+        `data-sequences-part-alias="${component}"></span>`,
+    };
+  }
+  return undefined;
+}
+
+function scenePartBindingsFromContracts(scenes: DirectScene[]): ScenePartBinding[] {
+  const bindings: ScenePartBinding[] = [];
+  for (const cut of resolveCutPlan(scenes).cuts) {
+    if (cut.focalPartOut) bindings.push({ sceneId: cut.fromScene, part: cut.focalPartOut });
+    if (cut.focalPartIn) bindings.push({ sceneId: cut.toScene, part: cut.focalPartIn });
+  }
+  for (const scenePlan of resolveCameraPlan(scenes).scenes) {
+    for (const segment of scenePlan.segments) {
+      for (const part of [segment.fromPart, segment.toPart, segment.focus?.part]) {
+        if (part) bindings.push({ sceneId: scenePlan.sceneId, part });
+      }
+    }
+  }
+  return [...new Map(bindings.map((entry) => [`${entry.sceneId}\u0000${entry.part}`, entry])).values()];
+}
+
+/**
+ * Component roots and bridged cuts sometimes name different layers of the same
+ * surface: e.g. `cmd-palette` is the command-palette root for component beats,
+ * while `palette-input` is the shape-match focal element inside it. Once the
+ * root is bound, materialize a known kit subpart for missing cut/camera aliases
+ * instead of renaming the root back and breaking component beats.
+ */
+export function reconcileComponentInternalPartAliases(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repairs: number } {
+  let html = source;
+  let repairs = 0;
+  const bindingsByScene = new Map<string, Set<string>>();
+  for (const binding of scenePartBindingsFromContracts(scenes)) {
+    const set = bindingsByScene.get(binding.sceneId) ?? new Set<string>();
+    set.add(binding.part);
+    bindingsByScene.set(binding.sceneId, set);
+  }
+  if (!bindingsByScene.size) return { html, repairs };
+
+  for (const scene of scenes) {
+    const desired = bindingsByScene.get(scene.id);
+    if (!desired?.size || !scene.components?.length) continue;
+    const scopeMeta = sceneScopeLocations(html).find((entry) => entry.id === scene.id);
+    if (!scopeMeta) continue;
+    let scope = html.slice(scopeMeta.openStart, scopeMeta.closeEnd);
+    for (const part of desired) {
+      if (new RegExp(`\\bdata-part\\s*=\\s*(["'])${regexpEscape(part)}\\1`, "i").test(scope)) {
+        continue;
+      }
+      const candidates = scene.components.flatMap((component) => {
+        if (component.id === part) return [];
+        const alias = internalPartAliasFor(component.kind, part);
+        if (!alias) return [];
+        const rootPattern = new RegExp(
+          `<([a-z][\\w:-]*)\\b[^>]*\\bdata-part\\s*=\\s*(["'])${
+            regexpEscape(component.id)
+          }\\2[^>]*>`,
+          "gi",
+        );
+        const roots = [...scope.matchAll(rootPattern)];
+        return roots.length === 1 ? [{ component, alias, root: roots[0]! }] : [];
+      });
+      if (candidates.length !== 1) continue;
+      const { component, alias, root } = candidates[0]!;
+      const rootOpen = root.index ?? 0;
+      const close = matchingCloseTag(scope, rootOpen, root[0]);
+      if (!close) continue;
+      const body = scope.slice(close.contentStart, close.closeStart);
+      const childPattern = new RegExp(
+        `<[a-z][\\w:-]*\\b(?=[^>]*\\bclass\\s*=\\s*(["'])[^"']*\\b${
+          regexpEscape(alias.className)
+        }\\b[^"']*\\1)[^>]*>`,
+        "i",
+      );
+      const child = childPattern.exec(body);
+      if (child && !htmlAttr(child[0], "data-part")) {
+        const childStart = close.contentStart + child.index;
+        let replacement = ensureTagAttr(child[0], "data-part", part);
+        replacement = ensureTagAttr(replacement, "data-sequences-part-alias", component.id);
+        scope = scope.slice(0, childStart) + replacement +
+          scope.slice(childStart + child[0].length);
+        repairs += 1;
+      } else {
+        scope = scope.slice(0, close.contentStart) +
+          `\n${alias.markup(part, component.id)}` +
+          scope.slice(close.contentStart);
+        repairs += 1;
+      }
+    }
+    html = html.slice(0, scopeMeta.openStart) + scope + html.slice(scopeMeta.closeEnd);
   }
   return { html, repairs };
 }
@@ -1884,6 +2110,39 @@ export function applyDeterministicSourceRepairs(
       html = contractBindings.html;
       process.stderr.write(
         `[author] reconciled ${contractBindings.repairs} cut/camera contract binding(s)\n`,
+      );
+    }
+  }
+  {
+    const cameraWorlds = reconcileCameraWorldPlanes(html, lockedStoryboard ?? draft.storyboard);
+    if (cameraWorlds.repairs) {
+      html = cameraWorlds.html;
+      process.stderr.write(
+        `[author] wrapped ${cameraWorlds.repairs} scene(s) in deterministic camera world plane(s)\n`,
+      );
+    }
+  }
+  {
+    const componentBindings = reconcileComponentBindings(
+      html,
+      lockedStoryboard ?? draft.storyboard,
+    );
+    if (componentBindings.repairs) {
+      html = componentBindings.html;
+      process.stderr.write(
+        `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
+      );
+    }
+  }
+  {
+    const componentAliases = reconcileComponentInternalPartAliases(
+      html,
+      lockedStoryboard ?? draft.storyboard,
+    );
+    if (componentAliases.repairs) {
+      html = componentAliases.html;
+      process.stderr.write(
+        `[author] materialized ${componentAliases.repairs} component-internal cut/camera alias part(s)\n`,
       );
     }
   }
