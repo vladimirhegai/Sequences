@@ -1488,6 +1488,51 @@ function normalizeJsonIsland(
   return { html, repairs, found };
 }
 
+function removeJsonIsland(source: string, id: string): { html: string; removed: number } {
+  let removed = 0;
+  const pattern = new RegExp(
+    `\\n?[ \\t]*<script\\b[^>]*\\bid\\s*=\\s*(["'])${regexpEscape(id)}\\1[^>]*>[\\s\\S]*?<\\/script>`,
+    "gi",
+  );
+  const html = source.replace(pattern, () => {
+    removed += 1;
+    return "";
+  });
+  return { html, removed };
+}
+
+/**
+ * Host-owned JSON islands are executable contracts, not author notes. When the
+ * locked storyboard has no resolved plan for one of those runtimes, any island
+ * the model wrote is stale or hallucinated and can only hurt: static validation
+ * parses it, and browser compile would try to bind it. Remove it instead of
+ * spending a repair attempt on making an unused plan syntactically valid.
+ */
+export function stripUnusedHostPlanIslands(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; removed: string[] } {
+  let html = source;
+  const removed: string[] = [];
+  const interactions = scenes.flatMap((scene) => scene.interactions ?? []);
+  if (interactions.length === 0) {
+    const result = removeJsonIsland(html, "sequences-interactions");
+    html = result.html;
+    for (let index = 0; index < result.removed; index += 1) removed.push("sequences-interactions");
+  }
+  if (resolveCameraPlan(scenes).scenes.length === 0) {
+    const result = removeJsonIsland(html, "sequences-camera");
+    html = result.html;
+    for (let index = 0; index < result.removed; index += 1) removed.push("sequences-camera");
+  }
+  if (resolveComponentPlan(scenes).scenes.length === 0) {
+    const result = removeJsonIsland(html, "sequences-components");
+    html = result.html;
+    for (let index = 0; index < result.removed; index += 1) removed.push("sequences-components");
+  }
+  return { html, removed };
+}
+
 function ensureTagAttr(tag: string, name: string, value: string): string {
   const escaped = regexpEscape(name);
   const pattern = new RegExp(`\\b${escaped}\\s*=\\s*(["'])(.*?)\\1`, "i");
@@ -1759,6 +1804,141 @@ export function reconcileComponentInternalPartAliases(
   return { html, repairs };
 }
 
+function rootDurationSec(source: string): number | undefined {
+  const tag = source.match(/<[^>]+\bdata-composition-id\s*=\s*(["']).*?\1[^>]*>/is)?.[0];
+  if (!tag) return undefined;
+  const parsed = Number(htmlAttr(tag, "data-duration"));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function cssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function decorativeLivenessName(value: string): boolean {
+  return /(?:^|[#.\s_\[\]-])(?:accent-?)?(?:underline|rule|divider|hairline|bloom|glow|grain|vignette|keylight|atmosphere|ambient|decor(?:ation|ative)?|particle|spark|noise)(?:$|[#.\s_\[\]-])/i
+    .test(value);
+}
+
+function livenessBeatCandidate(scope: string): { tag: string; index: number } | undefined {
+  const blockedTag = /^(?:script|style|link|meta|main|section)$/i;
+  const candidates = [...scope.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)]
+    .map((match) => {
+      const tag = match[0];
+      const tagName = tag.match(/^<([a-z][\w:-]*)\b/i)?.[1] ?? "";
+      const id = htmlAttr(tag, "id") ?? "";
+      const part = htmlAttr(tag, "data-part") ?? "";
+      const className = htmlAttr(tag, "class") ?? "";
+      let score = 0;
+      if (part) score += 40;
+      if (id) score += 24;
+      if (/\bdata-layout-important\b/i.test(tag)) score += 18;
+      if (/^(?:h1|h2|h3|p|button|li|article|aside)$/i.test(tagName)) score += 12;
+      if (/\b(?:cmp|card|panel|metric|stat|row|item|title|headline|copy)\b/i.test(className)) {
+        score += 8;
+      }
+      if (decorativeLivenessName(`${id} ${part} ${className}`)) score -= 100;
+      return { tag, index: match.index ?? 0, score, tagName };
+    })
+    .filter((entry) =>
+      entry.score > 0 &&
+      !blockedTag.test(entry.tagName) &&
+      !/\/\s*>$/.test(entry.tag) &&
+      !/\b(?:data-scene|data-camera-world|data-camera-overlay|data-sequences-runtime-|aria-hidden\s*=\s*(["'])true\1)\b/i
+        .test(entry.tag)
+    )
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  return candidates[0] ? { tag: candidates[0].tag, index: candidates[0].index } : undefined;
+}
+
+function livenessBeatTimes(scene: DirectScene, count: number): number[] {
+  if (count <= 0) return [];
+  const fractions = count === 1
+    ? [0.58]
+    : Array.from({ length: count }, (_value, index) =>
+      0.32 + (0.42 * index) / Math.max(1, count - 1)
+    );
+  return fractions.map((fraction) => {
+    const min = scene.startSec + 0.12;
+    const max = scene.startSec + Math.max(0.14, scene.durationSec - 0.12);
+    return Math.round(Math.min(max, Math.max(min, scene.startSec + scene.durationSec * fraction)) * 1000) /
+      1000;
+  });
+}
+
+/**
+ * Keep the liveness gate strict while recovering its most mechanical failure:
+ * a short scene with visible authored content but no timed child beat. We mark
+ * one real content element and add a tiny seek-safe transform/opacity beat at
+ * an explicit timeline time; `validateMotionDensity` then re-runs unchanged.
+ */
+export function injectMissingLivenessBeats(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repaired: string[] } {
+  const durationSec = rootDurationSec(source);
+  if (durationSec === undefined) return { html: source, repaired: [] };
+  const report = analyzeMotionDensity(source, scenes, durationSec);
+  const needs = new Map<string, number>();
+  for (const error of report.errors) {
+    const match = error.match(
+      /^motion\/liveness: scene "([^"]+)" has (\d+) authored component\/camera beat\(s\).*use at least (\d+) non-wrapper beat/,
+    );
+    if (!match) continue;
+    const sceneId = match[1]!;
+    const current = Number(match[2]);
+    const minimum = Number(match[3]);
+    if (Number.isFinite(current) && Number.isFinite(minimum) && minimum > current) {
+      needs.set(sceneId, Math.max(needs.get(sceneId) ?? 0, minimum - current));
+    }
+  }
+  if (!needs.size) return { html: source, repaired: [] };
+
+  const timelineName = source.match(
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*gsap\.timeline\s*\(/,
+  )?.[1];
+  if (!timelineName) return { html: source, repaired: [] };
+  const registration = timelineRegistrationAnchor(timelineName);
+  if (!registration.exec(source)) return { html: source, repaired: [] };
+
+  let html = source;
+  const tweens: string[] = [];
+  const repaired: string[] = [];
+  for (const scene of scenes) {
+    const count = needs.get(scene.id) ?? 0;
+    if (!count) continue;
+    const scopeMeta = sceneScopeLocations(html).find((entry) => entry.id === scene.id);
+    if (!scopeMeta) continue;
+    let scope = html.slice(scopeMeta.openStart, scopeMeta.closeEnd);
+    const selector = `[data-sequences-liveness-beat="${cssString(scene.id)}"]`;
+    const selectorLiteral = JSON.stringify(selector);
+    if (!new RegExp(`\\bdata-sequences-liveness-beat\\s*=\\s*(["'])${regexpEscape(scene.id)}\\1`, "i")
+      .test(scope)) {
+      const candidate = livenessBeatCandidate(scope);
+      if (!candidate) continue;
+      const replacement = ensureTagAttr(candidate.tag, "data-sequences-liveness-beat", scene.id);
+      scope = scope.slice(0, candidate.index) + replacement +
+        scope.slice(candidate.index + candidate.tag.length);
+      html = html.slice(0, scopeMeta.openStart) + scope + html.slice(scopeMeta.closeEnd);
+    }
+    for (const atSec of livenessBeatTimes(scene, count)) {
+      tweens.push(
+        `${timelineName}.fromTo(${selectorLiteral}, { y: 16, opacity: 0.72, scale: 0.985 }, ` +
+          `{ y: 0, opacity: 1, scale: 1, duration: 0.42, ease: "power3.out", ` +
+          `immediateRender: false }, ${atSec});`,
+      );
+    }
+    repaired.push(scene.id);
+  }
+  if (!tweens.length) return { html, repaired: [] };
+  const updatedRegistration = registration.exec(html);
+  if (!updatedRegistration) return { html, repaired: [] };
+  html = html.slice(0, updatedRegistration.index) +
+    tweens.join("\n") + "\n" +
+    html.slice(updatedRegistration.index);
+  return { html, repaired };
+}
+
 /**
  * The `window.__timelines[...] = <timeline>;` line every compile-call
  * injection anchors on. When the film ramps, the time-wrap step (the LAST
@@ -2008,6 +2188,17 @@ export function applyDeterministicSourceRepairs(
       html = normalized;
       process.stderr.write(
         "[author] normalized computed timeline registration to the canonical composition id\n",
+      );
+    }
+  }
+  {
+    const strippedPlans = stripUnusedHostPlanIslands(html, lockedStoryboard ?? draft.storyboard);
+    if (strippedPlans.removed.length) {
+      html = strippedPlans.html;
+      process.stderr.write(
+        `[author] stripped unused host plan island(s): ${
+          [...new Set(strippedPlans.removed)].join(", ")
+        }\n`,
       );
     }
   }
@@ -2342,6 +2533,16 @@ export function applyDeterministicSourceRepairs(
       process.stderr.write(
         `[author] injected ${repairedComponents} deterministic component binding(s) for ` +
           `${componentPlan.scenes.reduce((count, scene) => count + scene.beats.length, 0)} typed beat(s)\n`,
+      );
+    }
+  }
+  {
+    const liveness = injectMissingLivenessBeats(html, lockedStoryboard ?? draft.storyboard);
+    if (liveness.repaired.length) {
+      html = liveness.html;
+      process.stderr.write(
+        `[author] injected deterministic liveness beat(s) for slide-like scene(s): ` +
+          `${liveness.repaired.join(", ")}\n`,
       );
     }
   }

@@ -10,6 +10,7 @@ import {
   degradeVolunteeredBridgedCuts,
   ensureRuntimeScriptOrdering,
   findingSignature,
+  injectMissingLivenessBeats,
   reconcileCameraWorldPlanes,
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
@@ -17,6 +18,7 @@ import {
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
   stripHostKitAssetReferences,
+  stripUnusedHostPlanIslands,
   topUpRowsMarkup,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
@@ -24,6 +26,8 @@ import { validateCameraContract } from "../src/engine/cameraContract.ts";
 import { validateComponentContract } from "../src/engine/componentContract.ts";
 import { resolveCutPlan, validateCutContract } from "../src/engine/cutContract.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
+import { validateInteractionContract } from "../src/engine/interactionContract.ts";
+import { analyzeMotionDensity } from "../src/engine/motionDensity.ts";
 
 const roots: string[] = [];
 
@@ -769,6 +773,83 @@ describe("deterministic source repair ordering: camera world + component aliases
     expect(validateCutContract(repaired.html, scenes).errors).toEqual([]);
     expect(validateCameraContract(repaired.html, scenes).errors).toEqual([]);
     expect(validateComponentContract(repaired.html, scenes).errors).toEqual([]);
+  });
+});
+
+describe("unused host islands and liveness recovery", () => {
+  const quietScenes = (): DirectScene[] => [
+    scene("dashboard-noise", 0, { durationSec: 2.5 }),
+    scene("proof", 2.5, { durationSec: 4 }),
+    scene("close", 6.5, { durationSec: 4 }),
+  ];
+
+  function quietHtml(extraHead = ""): string {
+    return `<!doctype html><html><head><script src="gsap.min.js"></script>${extraHead}</head><body>
+<main data-composition-id="c" data-width="1920" data-height="1080" data-duration="10.5">
+  <section id="dashboard-noise" data-scene="dashboard-noise" data-start="0" data-duration="2.5">
+    <div id="dashboard-card" class="panel metric-card">Noisy dashboard</div>
+  </section>
+  <section id="proof" data-scene="proof" data-start="2.5" data-duration="4">
+    <h2 id="proof-title">Signal resolves</h2>
+  </section>
+  <section id="close" data-scene="close" data-start="6.5" data-duration="4">
+    <h2 id="close-title">Ship the answer</h2>
+  </section>
+</main>
+<script>const tl = gsap.timeline({ paused: true });
+tl.fromTo("#proof-title", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .45 }, 4.6);
+tl.fromTo("#close-title", { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .45 }, 8.8);
+window.__timelines["c"] = tl;</script>
+</body></html>`;
+  }
+
+  it("strips hallucinated interaction/camera/component islands when the locked storyboard has no plan", () => {
+    const scenes = quietScenes();
+    const html = quietHtml(
+      '<script type="application/json" id="sequences-interactions">[]</script>' +
+        '<script type="application/json" id="sequences-camera">{"version":1,"scenes":[{}]}</script>' +
+        '<script type="application/json" id="sequences-components">[]</script>',
+    );
+    const { html: out, removed } = stripUnusedHostPlanIslands(html, scenes);
+    expect(removed).toEqual([
+      "sequences-interactions",
+      "sequences-camera",
+      "sequences-components",
+    ]);
+    expect(out).not.toContain("sequences-interactions");
+    expect(out).not.toContain("sequences-camera");
+    expect(out).not.toContain("sequences-components");
+    expect(validateInteractionContract(out, scenes, 10.5).errors).toEqual([]);
+    expect(validateCameraContract(out, scenes).errors).toEqual([]);
+    expect(validateComponentContract(out, scenes).errors).toEqual([]);
+  });
+
+  it("injects a minimal seek-safe child beat for a short slide-like scene", () => {
+    const scenes = quietScenes();
+    const before = analyzeMotionDensity(quietHtml(), scenes, 10.5);
+    expect(before.errors.join("\n")).toContain('scene "dashboard-noise" has 0 authored');
+    const { html, repaired } = injectMissingLivenessBeats(quietHtml(), scenes);
+    expect(repaired).toEqual(["dashboard-noise"]);
+    expect(html).toContain('data-sequences-liveness-beat="dashboard-noise"');
+    expect(html).toContain('tl.fromTo("[data-sequences-liveness-beat=\\"dashboard-noise\\"]"');
+    const after = analyzeMotionDensity(html, scenes, 10.5);
+    expect(after.errors.join("\n")).not.toContain('scene "dashboard-noise"');
+  });
+
+  it("recovers the latest unused-island plus dashboard-noise liveness failure end to end", () => {
+    const scenes = quietScenes();
+    const html = quietHtml(
+      '<script type="application/json" id="sequences-interactions">{}</script>' +
+        '<script type="application/json" id="sequences-camera">{"version":1,"scenes":[{}]}</script>',
+    );
+    const repaired = applyDeterministicSourceRepairs({ html, storyboard: scenes }, tempDir(), scenes);
+    expect(repaired.html).not.toContain('id="sequences-interactions"');
+    expect(repaired.html).not.toContain('id="sequences-camera"');
+    expect(repaired.html).toContain('data-sequences-liveness-beat="dashboard-noise"');
+    expect(validateInteractionContract(repaired.html, scenes, 10.5).errors).toEqual([]);
+    expect(validateCameraContract(repaired.html, scenes).errors).toEqual([]);
+    expect(analyzeMotionDensity(repaired.html, scenes, 10.5).errors.join("\n"))
+      .not.toContain('scene "dashboard-noise"');
   });
 });
 
