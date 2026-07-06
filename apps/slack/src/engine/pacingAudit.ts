@@ -32,11 +32,20 @@
  * the content seconds it covers, so spans convert through `warpInverseOf`
  * before comparison, like the temporal judge and motion-density passes.
  */
-import { CAMERA_FULL_MOVES } from "./cameraContract.ts";
+import {
+  CAMERA_FULL_MOVES,
+  HIGH_ENERGY_PUSH_ZOOM,
+  cameraMoveZoom,
+  type CameraMoveIntentV1,
+} from "./cameraContract.ts";
 import { resolveComponentPlan, type ResolvedComponentBeatV1 } from "./componentContract.ts";
 import { FINAL_RESOLVE_ALLOWANCE_SEC } from "./storyboardMoments.ts";
 import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
 import type { DirectScene } from "./directComposition.ts";
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
 
 /** Seconds of post-introduction development each introduced surface needs. */
 export const DEVELOPMENT_SEC_PER_INTRODUCTION = 0.9;
@@ -60,6 +69,16 @@ export const MAX_WHIPS_PER_FILM = 2;
  * meaningful violation blocks.
  */
 export const PACING_TOLERANCE_SEC = 0.35;
+/**
+ * Largest reading/outcome-hold shortfall that gets closed by stretching the
+ * scene's own cut boundary (and cascade-shifting every later scene) instead
+ * of being reported to the model as a findings-retry. A miss this size is
+ * mechanical arithmetic (extend a cut by under a second); a larger one is a
+ * genuine creative deficit and stays blocking, per Sentinel's decision rule
+ * (SENTINEL_PLAN.md §3 Phase 3.1: normalize what deletes/degrades/retimes,
+ * send content deficits back to the model).
+ */
+export const MAX_PACING_STRETCH_SEC = 1.0;
 
 /** Beat kinds that put a NEW surface (or new content) in front of the viewer. */
 const ENTRANCE_BEAT_KINDS = new Set(["open", "rows", "swap"]);
@@ -285,4 +304,226 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
     );
   }
   return findings;
+}
+
+/**
+ * Energy rank for a full camera move — higher survives a per-scene budget
+ * clamp. Mirrors `auditCameraEnergy`'s own high-energy test (whip/orbit, or a
+ * push/pull that commits to `HIGH_ENERGY_PUSH_ZOOM`+) so a clamp never
+ * sacrifices the film's one required peak to satisfy a budget.
+ */
+function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
+  if (move.move === "whip" || move.move === "orbit") return 2;
+  if (cameraMoveZoom(move) >= HIGH_ENERGY_PUSH_ZOOM) return 2;
+  if (move.move === "push-in" || move.move === "pull-back") return 1;
+  return 0;
+}
+
+/**
+ * Sentinel Phase 3 normalize-before-retry: mechanically clamp camera-move
+ * counts to `auditPacing`'s own ceilings instead of sending an over-dense
+ * storyboard back to the model for a findings-retry. This deletes/degrades
+ * only — it never invents a move, a target, or a timing the model didn't
+ * already declare, so it is a normalization (L2), not a creative rewrite.
+ *
+ * 1. Per-scene full-move budget: drop the lowest-energy extra move(s) down to
+ *    `1 + floor(durationSec / CAMERA_BUDGET_WINDOW_SEC)` (auditPacing's own
+ *    cap). A dropped move leaves a gap the downstream camera resolver already
+ *    auto-fills with a drift/creep segment (see cameraContract.ts) — exactly
+ *    the finding's own suggested fix ("a drift or hold develops the current
+ *    framing without spending a new one").
+ * 2. Film-wide whip budget: keep the earliest `MAX_WHIPS_PER_FILM` whips
+ *    chronologically, drop the rest — "drop the 3rd+ whip" per the plan.
+ *
+ * A scene's `camera` is dropped entirely (never left with an empty `path`)
+ * if a clamp would otherwise empty it — camera is an enhancement, never a
+ * veto, matching the rest of this contract's degrade philosophy.
+ */
+export function normalizeCameraBudget(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  let scenes = storyboard.map((scene) => ({ ...scene }));
+
+  scenes = scenes.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path || !path.length) return scene;
+    const moveCap = 1 + Math.floor(scene.durationSec / CAMERA_BUDGET_WINDOW_SEC);
+    const fullMoveEntries = path
+      .map((move, index) => ({ move, index }))
+      .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move));
+    if (fullMoveEntries.length <= moveCap) return scene;
+    const toDrop = fullMoveEntries.length - moveCap;
+    const dropIndexes = new Set(
+      [...fullMoveEntries]
+        .sort((a, b) => cameraMoveEnergyRank(a.move) - cameraMoveEnergyRank(b.move) || a.index - b.index)
+        .slice(0, toDrop)
+        .map((entry) => entry.index),
+    );
+    const newPath = path.filter((_, index) => !dropIndexes.has(index));
+    normalized.push(
+      `scene "${scene.id}": dropped ${toDrop} lowest-energy camera move(s) to fit the ` +
+        `${moveCap}-move budget for a ${scene.durationSec.toFixed(1)}s window`,
+    );
+    if (!newPath.length) {
+      const { camera: _camera, ...rest } = scene;
+      return rest;
+    }
+    return { ...scene, camera: { ...scene.camera!, path: newPath } };
+  });
+
+  // move.startSec is already absolute (per CameraMoveIntentV1) — no
+  // scene.startSec offset to add.
+  const whipRefs: Array<{ sceneIndex: number; moveIndex: number; startSec: number }> = [];
+  scenes.forEach((scene, sceneIndex) => {
+    (scene.camera?.path ?? []).forEach((move, moveIndex) => {
+      if (move.move === "whip") whipRefs.push({ sceneIndex, moveIndex, startSec: move.startSec });
+    });
+  });
+  if (whipRefs.length > MAX_WHIPS_PER_FILM) {
+    const dropRefs = [...whipRefs].sort((a, b) => a.startSec - b.startSec).slice(MAX_WHIPS_PER_FILM);
+    const dropBySceneIndex = new Map<number, Set<number>>();
+    for (const ref of dropRefs) {
+      if (!dropBySceneIndex.has(ref.sceneIndex)) dropBySceneIndex.set(ref.sceneIndex, new Set());
+      dropBySceneIndex.get(ref.sceneIndex)!.add(ref.moveIndex);
+    }
+    scenes = scenes.map((scene, sceneIndex) => {
+      const drop = dropBySceneIndex.get(sceneIndex);
+      if (!drop || !scene.camera) return scene;
+      const newPath = scene.camera.path.filter((_, moveIndex) => !drop.has(moveIndex));
+      if (!newPath.length) {
+        const { camera: _camera, ...rest } = scene;
+        return rest;
+      }
+      return { ...scene, camera: { ...scene.camera, path: newPath } };
+    });
+    normalized.push(
+      `film: dropped ${dropRefs.length} whip(s) beyond the ${MAX_WHIPS_PER_FILM}-per-film budget, ` +
+        `keeping the earliest ${MAX_WHIPS_PER_FILM}`,
+    );
+  }
+
+  return { storyboard: scenes, normalized };
+}
+
+/** Shift a scene's own start and every nested absolute time by `delta` seconds. */
+function withShiftedSceneTimes(scene: DirectScene, delta: number): DirectScene {
+  if (Math.abs(delta) < 1e-6) return scene;
+  const shift = (value: number): number => round(value + delta);
+  return {
+    ...scene,
+    startSec: shift(scene.startSec),
+    ...(scene.timeRamp ? { timeRamp: { ...scene.timeRamp, atSec: shift(scene.timeRamp.atSec) } } : {}),
+    ...(scene.camera
+      ? {
+          camera: {
+            ...scene.camera,
+            path: scene.camera.path.map((move) => ({ ...move, startSec: shift(move.startSec) })),
+          },
+        }
+      : {}),
+    ...(scene.beats ? { beats: scene.beats.map((beat) => ({ ...beat, atSec: shift(beat.atSec) })) } : {}),
+    ...(scene.interactions
+      ? {
+          interactions: scene.interactions.map((interaction) => ({
+            ...interaction,
+            startSec: shift(interaction.startSec),
+            arriveSec: shift(interaction.arriveSec),
+            ...(interaction.pressSec !== undefined ? { pressSec: shift(interaction.pressSec) } : {}),
+            ...(interaction.releaseSec !== undefined ? { releaseSec: shift(interaction.releaseSec) } : {}),
+            ...(interaction.holdUntilSec !== undefined ? { holdUntilSec: shift(interaction.holdUntilSec) } : {}),
+          })),
+        }
+      : {}),
+    ...(scene.moments ? { moments: scene.moments.map((moment) => ({ ...moment, atSec: shift(moment.atSec) })) } : {}),
+  };
+}
+
+/**
+ * Sentinel Phase 3 normalize-before-retry: close a MARGINAL `pacing/reading`
+ * or `pacing/outcome` shortfall (≤ `MAX_PACING_STRETCH_SEC`) by stretching
+ * the scene's own cut boundary — extending its duration by the shortfall and
+ * cascade-shifting every later scene's absolute times by the same delta —
+ * instead of sending the plan back to the model. Only shortfalls where the
+ * constraining "next framing change" is the scene's OWN end (not an internal
+ * camera move already in flight) are stretched: an internal-move conflict is
+ * a genuine creative layout call the model should make, not host arithmetic.
+ * Scenes inside a declared timeRamp hold are skipped — the ramp already
+ * warps content seconds non-linearly, so stretching raw content time there
+ * would not deliver the viewer-time hold the finding asks for.
+ */
+export function stretchMarginalPacingMisses(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const rampSceneIds = new Set(resolveTimeRampPlan(storyboard).ramps.map((ramp) => ramp.sceneId));
+  const resolvedBeatsByScene = new Map<string, ResolvedComponentBeatV1[]>(
+    resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
+  );
+  const out: DirectScene[] = [];
+  let cumulativeShift = 0;
+
+  // Detection runs in each scene's ORIGINAL frame (where the resolved beats
+  // live); a uniform later shift preserves every within-scene distance, so the
+  // shortfall is shift-invariant and the cumulative shift is applied only when
+  // emitting the output scene.
+  for (const original of storyboard) {
+    let applied = 0;
+    if (!rampSceneIds.has(original.id)) {
+      const sceneEnd = original.startSec + original.durationSec;
+      const fullMoves = (original.camera?.path ?? []).filter((move) => CAMERA_FULL_MOVES.has(move.move));
+      const nextFramingChange = (afterSec: number): number => {
+        let next = sceneEnd;
+        for (const move of fullMoves) {
+          if (move.startSec + move.durationSec <= afterSec - 0.05) continue;
+          next = Math.min(next, Math.max(afterSec, move.startSec));
+        }
+        return Math.min(sceneEnd, next);
+      };
+      const componentKinds = new Map(
+        (original.components ?? []).map((component) => [component.id, component.kind]),
+      );
+      const beats = resolvedBeatsByScene.get(original.id) ?? [];
+      let shortfall = 0;
+      for (const beat of beats) {
+        // Only a shortfall constrained by the scene's OWN end (not an internal
+        // camera move already in flight) is host-stretchable: extending the
+        // cut buys the reading/hold time. An internal-move conflict is a
+        // creative layout call left to the model.
+        if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
+          const wordCount = words(beat.text);
+          const needed = Math.min(READING_MAX_SEC, Math.max(READING_MIN_SEC, READING_SEC_PER_WORD * wordCount));
+          if (nextFramingChange(beat.endSec) >= sceneEnd - 1e-6) {
+            const available = sceneEnd - beat.endSec;
+            if (available + PACING_TOLERANCE_SEC < needed) shortfall = Math.max(shortfall, needed - available);
+          }
+        }
+        const isToastOpen = beat.kind === "open" && componentKinds.get(beat.component) === "toast";
+        if (PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen) {
+          if (nextFramingChange(beat.endSec) >= sceneEnd - 1e-6) {
+            const available = sceneEnd - beat.endSec;
+            if (available + PACING_TOLERANCE_SEC < OUTCOME_HOLD_SEC) {
+              shortfall = Math.max(shortfall, OUTCOME_HOLD_SEC - available);
+            }
+          }
+        }
+      }
+      if (shortfall > 0 && shortfall <= MAX_PACING_STRETCH_SEC) {
+        applied = Math.min(shortfall, 15 - original.durationSec);
+        if (applied <= 0.01) applied = 0;
+      }
+    }
+    const shifted = withShiftedSceneTimes(original, cumulativeShift);
+    if (applied > 0) {
+      out.push({ ...shifted, durationSec: round(shifted.durationSec + applied) });
+      cumulativeShift = round(cumulativeShift + applied);
+      normalized.push(
+        `scene "${original.id}": stretched ${applied.toFixed(2)}s to close a marginal pacing-floor ` +
+          `shortfall at its own cut boundary`,
+      );
+    } else {
+      out.push(shifted);
+    }
+  }
+  return { storyboard: out, normalized };
 }

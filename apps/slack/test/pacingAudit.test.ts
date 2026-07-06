@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   auditPacing,
   sceneIntroductionTimes,
+  normalizeCameraBudget,
+  stretchMarginalPacingMisses,
   LAST_INTRODUCTION_MAX_FRACTION,
   PACING_TOLERANCE_SEC,
+  MAX_PACING_STRETCH_SEC,
 } from "../src/engine/pacingAudit.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 import { resolveTimeRampPlan, warpInverseOf } from "../src/engine/timeRamp.ts";
@@ -572,5 +575,167 @@ describe("auditPacing on the deterministic proof films", () => {
       lengthSec: 18,
     });
     expect(auditPacing(fallback.storyboard)).toEqual([]);
+  });
+});
+
+describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", () => {
+  it("drops the lowest-energy extra move to fit the per-scene budget, keeping the peak", () => {
+    // 3s scene → moveCap = 1 + floor(3/3.5) = 1. A quiet pan/track-to-anchor
+    // pair plus one whip: the whip (high energy) must survive; both quiet
+    // moves are cut.
+    const churn = scene({
+      id: "busy",
+      startSec: 0,
+      durationSec: 3,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 0.2, durationSec: 0.6 }),
+          move({ move: "track-to-anchor", toPart: "chip", startSec: 1.2, durationSec: 0.6 }),
+          move({ move: "whip", startSec: 2.4, durationSec: 0.4 }),
+        ],
+      },
+    });
+    const result = normalizeCameraBudget([churn]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain('"busy"');
+    const survivingMoves = result.storyboard[0]!.camera!.path;
+    expect(survivingMoves).toHaveLength(1);
+    expect(survivingMoves[0]!.move).toBe("whip");
+    // The clamped storyboard no longer trips the camera-budget finding.
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/camera-budget:"))).toBe(false);
+  });
+
+  it("is a no-op when a scene is already inside its budget", () => {
+    const calm = scene({
+      id: "calm",
+      startSec: 0,
+      durationSec: 4,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 0.4, durationSec: 0.8 }),
+          move({ move: "push-in", startSec: 2.4, durationSec: 0.9 }),
+        ],
+      },
+    });
+    const result = normalizeCameraBudget([calm]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard[0]!.camera!.path).toHaveLength(2);
+  });
+
+  it("drops camera entirely rather than leaving an empty path", () => {
+    // moveCap for a 2s scene is 1; a single whip over budget-of-zero-extra
+    // never happens here (cap>=1 always), so exercise the whip-cap path
+    // instead: three whips total, the 3rd (in the 2s scene, alone) is cut,
+    // leaving that scene's camera undefined rather than { path: [] }.
+    const whipOnly = scene({
+      id: "whip-only",
+      startSec: 20,
+      durationSec: 2,
+      camera: { version: 1, path: [move({ move: "whip", startSec: 20.5, durationSec: 0.4 })] },
+    });
+    const a = scene({
+      id: "a",
+      startSec: 0,
+      durationSec: 5,
+      camera: { version: 1, path: [move({ move: "whip", startSec: 1, durationSec: 0.4 })] },
+    });
+    const b = scene({
+      id: "b",
+      startSec: 5,
+      durationSec: 5,
+      camera: { version: 1, path: [move({ move: "whip", startSec: 6, durationSec: 0.4 })] },
+    });
+    const result = normalizeCameraBudget([a, b, whipOnly]);
+    const droppedScene = result.storyboard.find((s) => s.id === "whip-only")!;
+    expect(droppedScene.camera).toBeUndefined();
+  });
+
+  it("caps whips at 2 per film, keeping the earliest chronologically", () => {
+    const whipScene = (id: string, startSec: number): DirectScene => scene({
+      id,
+      startSec,
+      durationSec: 5,
+      camera: { version: 1, path: [move({ move: "whip", startSec: startSec + 1, durationSec: 0.5 })] },
+    });
+    const result = normalizeCameraBudget([whipScene("a", 0), whipScene("b", 5), whipScene("c", 10)]);
+    expect(result.normalized.some((line) => line.includes("dropped 1 whip"))).toBe(true);
+    expect(result.storyboard.find((s) => s.id === "a")!.camera).toBeDefined();
+    expect(result.storyboard.find((s) => s.id === "b")!.camera).toBeDefined();
+    expect(result.storyboard.find((s) => s.id === "c")!.camera).toBeUndefined();
+    expect(auditPacing(result.storyboard).some((f) => f.includes("whips"))).toBe(false);
+  });
+});
+
+describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-retry)", () => {
+  it("stretches a scene-boundary reading-floor miss and cascade-shifts later scenes", () => {
+    // 8 words need ~2.4s; the beat ends at 2.0s and the scene (and the whole
+    // film) ends at 2.5s — a 1.9s shortfall's worth of gap is too large, so
+    // pick numbers that land WITHIN the stretch cap: beat ends at 2.0s in a
+    // 2.5s scene, needing 1.2s min but only having 0.5s — 0.7s shortfall.
+    const early = scene({
+      id: "opener",
+      startSec: 0,
+      durationSec: 2.5,
+      components: [{ version: 1 as const, id: "query", kind: "search" as const }],
+      beats: [beat("opener", { id: "b1", component: "query", kind: "type", atSec: 1.5, text: "ship it" })],
+    });
+    const later = scene({ id: "closer", startSec: 2.5, durationSec: 3 });
+    const before = auditPacing([early, later]);
+    expect(before.some((f) => f.startsWith("pacing/reading:"))).toBe(true);
+
+    const result = stretchMarginalPacingMisses([early, later]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain('"opener"');
+    const [stretchedOpener, shiftedCloser] = result.storyboard;
+    expect(stretchedOpener!.durationSec).toBeGreaterThan(2.5);
+    // The cascade shift keeps the film contiguous: closer starts exactly
+    // where opener now ends.
+    expect(shiftedCloser!.startSec).toBeCloseTo(stretchedOpener!.startSec + stretchedOpener!.durationSec, 5);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/reading:"))).toBe(false);
+  });
+
+  it("never stretches by more than MAX_PACING_STRETCH_SEC — a larger deficit stays a real finding", () => {
+    // The typed line needs ~2.4s (8 words) but the scene gives it none at
+    // all (beat ends exactly at the cut) — shortfall exceeds the cap, so the
+    // pass leaves it alone for the model to actually fix.
+    const early = scene({
+      id: "opener",
+      startSec: 0,
+      durationSec: 1,
+      components: [{ version: 1 as const, id: "query", kind: "search" as const }],
+      beats: [beat("opener", {
+        id: "b1",
+        component: "query",
+        kind: "type",
+        atSec: 0,
+        text: "one two three four five six seven eight",
+      })],
+    });
+    const result = stretchMarginalPacingMisses([early]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard[0]!.durationSec).toBe(1);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/reading:"))).toBe(true);
+  });
+
+  it("never touches a scene inside a declared (resolvable) timeRamp hold", () => {
+    // A ramp only resolves when it is not scene 1 and fits its window — mirror
+    // the known-good resolvable ramp shape. The late type beat WOULD be a
+    // marginal miss the stretch pass closes, but the ramp guard skips it.
+    const opener = scene({ id: "opener", startSec: 0, durationSec: 5 });
+    const ramped = scene({
+      id: "ramped",
+      startSec: 5,
+      durationSec: 8,
+      timeRamp: { version: 1, atSec: 9.4, slowTo: 0.2, holdSec: 0.9, recoverSec: 1.2 },
+      components: [{ version: 1 as const, id: "query", kind: "search" as const }],
+      beats: [beat("ramped", { id: "b1", component: "query", kind: "type", atSec: 12.4, text: "ship it now" })],
+    });
+    // Precondition: the ramp actually resolves (else this proves nothing).
+    expect(resolveTimeRampPlan([opener, ramped]).ramps.some((r) => r.sceneId === "ramped")).toBe(true);
+    const result = stretchMarginalPacingMisses([opener, ramped]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard.find((s) => s.id === "ramped")!.durationSec).toBe(8);
   });
 });

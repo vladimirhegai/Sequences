@@ -91,7 +91,7 @@ import {
   validatePlannedMoments,
 } from "./storyboardMoments.ts";
 import { analyzeMotionDensity } from "./motionDensity.ts";
-import { auditPacing } from "./pacingAudit.ts";
+import { auditPacing, normalizeCameraBudget, stretchMarginalPacingMisses } from "./pacingAudit.ts";
 import { readFrameMeta } from "./frameDesign.ts";
 import {
   recordSentinelLayerFinding,
@@ -3722,6 +3722,27 @@ export function parseStoryboardResponse(
         `${topped.added.map((moment) => `${moment.id}@${moment.atSec.toFixed(1)}s`).join(", ")}\n`,
     );
   }
+  // Sentinel Phase 3: mechanical pacing fixes (delete/degrade/retime, never
+  // invent content) run before the pacing gate sees the plan, so arithmetic
+  // the host can already do never burns a paid storyboard retry. Camera
+  // budget first (drops moves, which changes which beats even hit the
+  // reading/outcome checks), then the marginal-miss stretch.
+  const cameraBudget = normalizeCameraBudget(storyboard);
+  if (cameraBudget.normalized.length) {
+    storyboard = cameraBudget.storyboard;
+    for (const line of cameraBudget.normalized) {
+      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
+    }
+    recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
+  }
+  const pacingStretch = stretchMarginalPacingMisses(storyboard);
+  if (pacingStretch.normalized.length) {
+    storyboard = pacingStretch.storyboard;
+    for (const line of pacingStretch.normalized) {
+      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
+    }
+    recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
+  }
   let errors = validateStoryboardPlan(storyboard, requirements);
   // Degrade-never-veto for pacing on LATE attempts: pacing findings are
   // polish-grade (they never abort a compile or ship a dead film), and two
@@ -5199,6 +5220,22 @@ function browserQualityPenalty(
         ),
       0,
     );
+}
+
+/**
+ * Sentinel Phase 3 critic gating: a draft the deterministic gates already
+ * love has nothing for the continuity critic to repair, so its 1-2 paid
+ * calls (~1-2 min) are pure latency. "Already loved" = a browser-QA pass ran
+ * (not an infra outage), it is `strictOk` (no polish finding requested a
+ * repair), and its quality penalty is zero (no weighted issue, no browser
+ * console warning). Every declared moment is necessarily bound too — an
+ * unbound moment fails `validateDirectComposition` upstream, so any draft that
+ * reaches the critic has already cleared the moment contract. Conservative by
+ * construction: anything less than pristine still runs the critic.
+ */
+export function criticSkippableCleanDraft(browserQa: DirectBrowserQaResult | undefined): boolean {
+  if (!browserQa || browserQa.infraError) return false;
+  return browserQa.strictOk && browserQualityPenalty(browserQa) === 0;
 }
 
 function availableAssets(projectDir: string): string {
@@ -6981,6 +7018,19 @@ async function applyContinuityCritique(
   const last = lockedStoryboard[lockedStoryboard.length - 1]!;
   const durationSec = last.startSec + last.durationSec;
   if (durationSec < 10) return result;
+  // Sentinel Phase 3: skip the critic on a pristine draft (kill switch
+  // `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` restores always-run). Always run it
+  // when any polish finding shipped — that is exactly the draft the critic
+  // exists to improve.
+  if (
+    process.env.SLACK_SEQUENCES_CRITIC_SKIP_CLEAN !== "0" &&
+    criticSkippableCleanDraft(result.browserQa)
+  ) {
+    process.stderr.write(
+      "[critic] skipped: draft is already clean (strictOk, zero quality penalty)\n",
+    );
+    return result;
+  }
   let directives: string[];
   try {
     directives = await requestContinuityCritique(

@@ -364,6 +364,13 @@ slot path is **not yet judge-ready** and correctly stays flag-OFF. Phase 5's
 default flip is appropriately blocked until the stage-CSS fix lands and a probe
 confirms it.
 
+> **SUPERSEDED (2026-07-06):** the stage-CSS fix landed in commit `0864c19` and
+> the confirming probe was run this session — see **"Carryover A — the flip-gate
+> probe, confirmed"** below. The flags-ON slot path now **publishes clean** on
+> this exact brief (`sentinel-carryoverA-denseui`), so the "Final (flags ON) =
+> fail-loud" row in the table above reflects the pre-fix state only. This table
+> is retained as an honest historical record, not the current state.
+
 **What the baseline proves about the plan's diagnosis** (the §1 doom loop, now
 measured): storyboard-plan alone was **~16.9 min across 3 attempts** — by far the
 dominant cost — and the author prompt was **105,516 chars** (2.3× the 45k
@@ -496,3 +503,273 @@ both slot tests + browser QA) · fix commit noted below.
 brief, `SENTINEL_SKELETON=1 SENTINEL_SLOTS=1`, fail-loud) must publish. The
 stage-CSS root cause is fixed and browser-proven; the probe confirms it
 end-to-end. A separate SKELETON-only probe isolates the two flags.
+
+---
+
+## Carryover A — the flip-gate probe, confirmed (2026-07-06, resumed session)
+
+**Verdict: PASS.** The paid probe the auditor's fix was waiting on now
+publishes clean. This unblocks Phase 3-5.
+
+**Probe 1 — both flags on** (`SLACK_SEQUENCES_SENTINEL_SKELETON=1
+SLACK_SEQUENCES_SENTINEL_SLOTS=1`, `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0`,
+fresh `--job-id sentinel-carryoverA-denseui`, the same §7.1 dense-UI shape as
+`sentinel-final-denseui` — command-palette runs deploy, palette + modal +
+stat-card + button + terminal):
+
+- `sequence:check` → `"status": "pass"`, `authoringMode: "hyperframes-direct"`,
+  `fallbackStage: null`, no `FAILURE.md` written.
+- 19/19 moments bound, 10 thumbnails, MP4 rendered
+  (`.data/projects/sentinel-carryoverA-denseui/renders/cursorflow-20260706-025452.mp4`).
+- The Phase-2 slot path was exercised live: `[author] attempt 1/3 · prompt
+  107428 chars · scene slots · deepseek/deepseek-v4-pro`. Unlike the prior
+  `sentinel-final-denseui` run, **no scene rendered blank** — the host-owned
+  stage `<style>` (`sequences-slot-stage`) and reveal/clear `tl.set` pairs from
+  the auditor's fix positioned every scene correctly. Attempt 1 (slots) was
+  rejected on ordinary browser-QA findings (`interaction_not_visible`,
+  `layout_intent_missing`, one `near_blank_scene` warning — not the film-level
+  `near_blank_film` hard error that killed the prior run), attempt 2 was a
+  compact patch, attempt 3 forced a full re-author (per the existing
+  "no browser-valid draft banked" escalation), then the critic applied 5
+  repair directives and the film published. This is the *existing* Phase-2
+  cut-line behavior (slot-scoped validation attribution, whole-doc retries)
+  working as designed — not a new capability.
+- `planning/sentinel-run.json`: `disposition: "published"`. `storyboard-plan`
+  1,310,607ms (~21.8 min) over 4 attempts (primary rung exhausted on a
+  transient OpenRouter timeout/empty-completion pair, not a normalizable
+  content issue → rescue rung, 1 rejected + 1 accepted). `source-author`
+  324,582ms (~5.4 min) over 3 attempts. `promptChars.maxAuthor: 107,428`
+  (2.4× the 45k target — consistent with baseline's 105,516). Layer counts:
+  normalize 26 (island-strip 8, interaction-binding 16, runtime-order 2),
+  static 1, browser 2, model-retry 2, scaffold 0 (not separately telemetered
+  — the skeleton fires unconditionally once the flag is on, ahead of the L2
+  repair pass it replaces, so `sentinelTelemetry` doesn't yet carry a
+  distinct scaffold counter; see Phase 4 Open items).
+
+**Probe 2 — SKELETON only** (`SLACK_SEQUENCES_SENTINEL_SKELETON=1`, `SLOTS`
+unset/OFF, fresh `--job-id sentinel-carryoverA-skeletononly-denseui`, same
+brief): isolates whether the skeleton alone (without slot authoring) is
+independently clean. **PASS** — `sequence:check` → `"status": "pass"`,
+`authoringMode: "hyperframes-direct"`, `fallbackStage: null`, no `FAILURE.md`,
+18/18 moments bound, MP4 rendered
+(`.data/projects/sentinel-carryoverA-skeletononly-denseui/renders/cursorflow-20260706-031518.mp4`).
+`planning/sentinel-run.json`: `disposition: "published"`, `skeletonEnabled:
+true`, `slotsEnabled: false`. This run was **cleaner than the both-flags run**:
+storyboard-plan succeeded in 3 primary attempts (742,188ms ≈ 12.4 min) with
+**no rescue rung** (the both-flags run needed rescue only because of a
+transient OpenRouter timeout/empty-completion pair on the primary rung, not a
+content issue). Source-author 315,342ms (~5.3 min) over 3 attempts,
+`promptChars.maxAuthor: 113,602`. Layer counts: normalize 23 (island-strip 10,
+interaction-binding 11, runtime-order 2), static 2, browser 1, model-retry 2.
+The authored draft carried a runtime-invalid optional interaction that was
+quarantined (an author-quality issue independent of the scaffold), and the film
+still published — the skeleton itself produced no binding failures.
+
+**Conclusion (Carryover A: PASS).** The stage-CSS fix from the prior auditor
+commit is confirmed end-to-end on the hardest §7 brief for **both** flag
+combinations: SKELETON+SLOTS and SKELETON-alone each publish `hyperframes-direct`
+with zero fallback. SLOTS is judge-ready. Both probes also re-confirm the plan's
+diagnosis that Phases 1-2 do **not** move the two dominant costs: storyboard-plan
+still runs 12–22 min and the author prompt is still 107–114k chars (2.4–2.5× the
+45k target). Those are exactly what Phase 3 (storyboard latency) and Phase 4
+(prompt-budget enforcement) target.
+
+> **Caveat for the auditor:** both Carryover A probes were launched at the
+> start of this session, i.e. against the code as of commit `0864c19` (the
+> flip-gate fix), **before** the Phase 3 normalization/critic-gating code below
+> was written. They therefore validate the flip gate, **not** Phase 3. Phase 3
+> is validated by unit + integration tests, the full suite, and `film:demo`
+> byte-stability — **not** by a paid probe (paid-probe validation of Phase 3 is
+> part of the descoped Phase 5 probe set; see the Phase 3 section).
+
+---
+
+## Session 2 scope note (2026-07-06, Claude Opus 4.8)
+
+This resumed session was **explicitly narrowed to Carryover A + Phase 3 only.**
+Phases 4 and 5 are **NOT** done and are not started — they remain fully open per
+the "Open items" list above. This section documents Phase 3 for audit; the
+partial/deferred items inside Phase 3 are called out precisely so nothing reads
+as more complete than it is.
+
+## Phase 3 — storyboard normalization + critic gating
+
+**Status:** the two **safe, deterministically-verifiable** levers landed and are
+tested — (3.1) normalize-before-retry at the storyboard gate, and (3.4) critic
+gating on already-clean drafts. The three levers that the plan itself makes
+**contingent on paid-probe measurement** — (3.2) storyboard ladder 3→2, (3.3)
+`REASONING_STORYBOARD_MAX_TOKENS` 30,720→20,480, (3.5) one-slot-retry-before-
+least-bad — are **deliberately deferred** because their validation belongs to
+the descoped Phase 5 probe set. Rationale per item below. Full suite green
+(**507/507**, up from 493), `film:demo` byte-stable.
+
+### 3.1 Normalize-before-retry at the storyboard gate — LANDED
+
+The Sentinel decision rule (SENTINEL_PLAN §3 Phase 3.1): a fix that
+**deletes / degrades / retimes without inventing content** ⇒ normalize
+deterministically and log it; a **creative deficit** ⇒ still goes back to the
+model. Two new deterministic normalizers implement exactly that, run in
+`parseStoryboardResponse` **before** `validateStoryboardPlan` (so the arithmetic
+the host can already do never burns a paid storyboard retry):
+
+- **`normalizeCameraBudget`** (`src/engine/pacingAudit.ts`) — clamps camera-move
+  counts to `auditPacing`'s own ceilings. (a) Per-scene: drops the lowest-energy
+  extra full moves down to `1 + floor(durationSec / CAMERA_BUDGET_WINDOW_SEC)`;
+  a dropped move leaves a gap the camera resolver already auto-fills with a
+  drift, which is the finding's own suggested fix. (b) Film-wide: keeps the
+  earliest `MAX_WHIPS_PER_FILM` (=2) whips chronologically and drops the rest
+  ("drop the 3rd+ whip"). Energy rank mirrors `auditCameraEnergy`'s own
+  high-energy test (whip/orbit, or a push/pull committing to
+  `HIGH_ENERGY_PUSH_ZOOM`), so a clamp never sacrifices the film's one required
+  peak. A clamp that would empty a scene's path drops `camera` entirely (never
+  a `{ path: [] }`), matching the contract's degrade-never-veto philosophy.
+- **`stretchMarginalPacingMisses`** (`src/engine/pacingAudit.ts`) — closes a
+  **marginal** `pacing/reading` or `pacing/outcome` shortfall
+  (≤ `MAX_PACING_STRETCH_SEC` = 1.0s) by extending the scene's own cut boundary
+  by the shortfall and cascade-shifting every later scene's absolute times by
+  the same delta. Only shortfalls constrained by the scene's **own end** (not an
+  internal camera move already in flight) are stretched — an internal-move
+  conflict is a creative layout call left to the model. Scenes inside a declared
+  (resolvable) `timeRamp` hold are skipped, because a raw content-time stretch
+  there would not deliver the viewer-time hold the finding demands. Detection
+  runs in each scene's original (unshifted) time frame — where the resolved
+  beats live — and the cumulative shift is applied only when emitting the output
+  scene; a uniform later shift preserves every within-scene distance, so
+  detection is shift-invariant (this was a real bug caught in review: an earlier
+  draft compared shifted `sceneEnd` against unshifted beat times).
+
+Both are wired at `compositionRunner.ts` `parseStoryboardResponse`, camera
+budget first (it changes which beats even reach the reading/outcome checks),
+then the stretch. Every normalization is logged to stderr as
+`[storyboard] sentinel-normalized: …` (visible in STORYBOARD.md / the run log)
+and recorded in telemetry via `recordSentinelNormalization("camera-budget-clamp")`
+/ `("pacing-stretch")` — two new normalization tags on the existing
+`sentinelTelemetry` counter.
+
+**Small supporting export:** `cameraContract.ts` now exports
+`HIGH_ENERGY_PUSH_ZOOM` and a `cameraMoveZoom(move)` helper (declared-else-default
+zoom) so the energy-rank logic shares one source of truth with `auditCameraEnergy`
+rather than duplicating the constant.
+
+**Why this is safe to ship default-on (no flag):** it can only *delete a move* or
+*extend a cut by <1s* — it never authors content, never relaxes a gate (the gates
+run unchanged on the normalized plan), and the model retains all creative
+authority (a genuine over-density or a >1s deficit still goes back as a finding).
+It is the exact "host owns the arithmetic" move the plan sanctions at L2.
+
+### 3.4 Critic gating on already-clean drafts — LANDED (kill-switch, default on)
+
+`applyContinuityCritique` (`compositionRunner.ts`) now skips the continuity
+critic when the draft is already pristine, via the exported pure predicate
+**`criticSkippableCleanDraft(browserQa)`**: a browser-QA pass ran (not an infra
+outage) **and** it is `strictOk` (no polish finding requested a repair) **and**
+`browserQualityPenalty(browserQa) === 0` (no weighted issue, no `browser_warning:`
+console warning). Every declared moment is necessarily bound too — an unbound
+moment fails `validateDirectComposition` upstream, so any draft reaching the
+critic has already cleared the moment contract; the predicate does not need to
+re-check it. This saves the critic's 1–2 paid calls (~1–2 min) on a good run.
+Conservative by construction: anything less than pristine still runs the critic —
+which is exactly the draft the critic exists to improve.
+
+Kill switch `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` restores always-run;
+`SLACK_SEQUENCES_CREATIVE_CRITIC=0` semantics are unchanged (still disables the
+critic entirely).
+
+**Honest limitation:** default-on is a genuine behavior change to the live model
+path, and it is **not** paid-probe-validated this session (the golden `film:demo`
+is model-free and never exercises the critic, so it cannot validate this lever).
+The predicate is unit-tested and the gate is maximally conservative and instantly
+revertable via the kill switch. An auditor who wants zero unvalidated live-path
+change can set `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` until a Phase-5 probe
+confirms no quality regression; I judged default-on correct because the plan
+lists it as a sanctioned cost lever and the gate only fires on a draft every
+deterministic gate already passed.
+
+### Deferred within Phase 3 (require paid-probe measurement — Phase 5 scope)
+
+These three are **not** implemented. Each is deferred because the plan itself
+conditions it on probe evidence this session cannot produce (paid probes are
+Phase 5, descoped), and each **reduces a safety/quality margin** if shipped blind:
+
+- **3.2 Storyboard ladder 3→2** (`compositionRunner.ts:4640`, `maxAttempts: 3`).
+  The plan gates this on "(only after 1 lands)" **and** probe confirmation that
+  normalization absorbs the arithmetic rejections. Dropping a primary rung
+  reduces resilience to transient provider faults — and the both-flags Carryover
+  A probe exhausted its primary rung on exactly such transient faults
+  (timeout + empty completion), then recovered via the rescue rung. Cutting the
+  rung blind would have made that run *more* likely to fail loud, not less. Left
+  at 3.
+- **3.3 `REASONING_STORYBOARD_MAX_TOKENS` 30,720→20,480**
+  (`compositionRunner.ts:144`). The plan is explicit: "**only if** probe
+  storyboards stay clean at 2 rungs … Measure, don't guess — keep it if quality
+  moves." With no A/B probe, a blind drop risks truncating a good long think
+  into a worse plan. Left at 30,720.
+- **3.5 One-slot-retry-before-least-bad shipping policy.** This needs a *new*
+  single-scene slot-retry entry point (none exists — Phase 2 shipped attribution
+  only, per its own report) that issues a *new paid model call*, and it only
+  fires on the SLOTS path, which defaults OFF and whose default-flip is the
+  descoped Phase 5. Building an unvalidated new paid-call path that is dormant in
+  the shipping default has low value and real audit risk. The substrate it would
+  reuse (`authorSlotDraft`, `attributeFindingsToScenes`, `assembleSlotComposition`)
+  is in place from Phase 2; the retry entry point is the remaining work.
+
+### Flags added (Phase 3)
+
+`SLACK_SEQUENCES_CRITIC_SKIP_CLEAN` (default ON; `=0` restores always-run the
+critic). No other flags. `SENTINEL_SKELETON` / `SENTINEL_SLOTS` unchanged
+(still default OFF — the Phase 5 default-flip is descoped).
+
+### Tests added (names)
+
+- **`test/pacingAudit.test.ts`** (+7): describe **"Sentinel Phase 3 —
+  normalizeCameraBudget"** (drops lowest-energy extra keeping the peak; no-op
+  when within budget; drops camera entirely rather than an empty path; caps
+  whips at 2 keeping the earliest) and **"Sentinel Phase 3 —
+  stretchMarginalPacingMisses"** (stretches a boundary reading miss + cascade
+  shift; never stretches beyond `MAX_PACING_STRETCH_SEC` — a larger deficit
+  stays a real finding; never touches a scene inside a resolvable `timeRamp`
+  hold, with a precondition assert that the ramp actually resolves).
+- **`test/directComposition.test.ts`** (+7): describe **"Sentinel Phase 3 —
+  storyboard normalization is wired into parseStoryboardResponse"** (an
+  over-budget camera scene is clamped and parses instead of throwing
+  `pacing/camera-budget`; a marginal boundary reading miss is stretched and the
+  later scene shifts to stay contiguous) and **"Sentinel Phase 3 —
+  criticSkippableCleanDraft"** (skips on a pristine draft; runs when not
+  strictOk / when a weighted issue is present / when a `browser_warning:` is
+  present / when browser QA did not execute or is absent).
+
+### Commands run (Phase 3)
+
+- `npm run typecheck --workspace @sequences/slack` — ✅ exit 0.
+- `npm run test --workspace @sequences/slack` — ✅ **507/507** across 42 files
+  (up from 493; +14 new tests, all browser gates included).
+- `npm run film:demo --workspace @sequences/slack` — ✅ byte-stable
+  (`lint: clean · 3 static warning(s) · 48 samples · 6 warning(s)` — identical
+  signature to the pre-Phase-3 baseline; the model-free golden path never
+  reaches `parseStoryboardResponse` or the critic, so it is unaffected).
+- **No paid probe** exercised the Phase 3 code — see the acceptance caveat.
+
+### Acceptance verdict (Phase 3)
+
+**PARTIAL — the safe levers landed and are green; the measurement-gated levers
+are deferred.** The plan's Phase 3 acceptance ("probe-set storyboard attempts
+avg ≤1.5; no quality regression on the golden film; report shows normalization
+log lines instead of retries") is met only in the parts a non-probe session can
+prove: `film:demo` shows **no golden-film regression** (byte-stable), and the
+normalization emits `sentinel-normalized:` log lines + telemetry tags instead of
+retries (proven by unit + integration tests). The **"storyboard attempts avg
+≤1.5"** clause requires the descoped paid probe set and is **not** demonstrated;
+it is the first thing to run when Phase 3 validation resumes (a clean-plan probe
+should now show `sentinel-normalized:` lines where the Carryover A runs showed
+`pacing/*` retries — e.g. the both-flags run's attempt-1 rejection carried a
+`pacing/outcome` finding my stretch pass now absorbs, though that same attempt
+also carried a non-normalizable `terminal-open` component-kind error, so it
+would not have been saved outright).
+
+### Prompt diff (Phase 3)
+
+`prompts/planning-director.md` is **unchanged** (37,010 bytes / 624 lines — the
+post-Phase-1 count). Phase 3 adds no prose and deletes none; prompt shrinkage is
+Phase 5's job (descoped). The assembled author prompt is still ~107–114k chars
+(measured in both Carryover A probes) — the ≤45k enforcement is Phase 4's
+`test/promptBudget.test.ts` (descoped).
