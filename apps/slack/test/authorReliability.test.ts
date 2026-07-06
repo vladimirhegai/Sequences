@@ -1083,6 +1083,18 @@ describe("Sentinel Phase 1 — host plan islands are host-owned, always", () => 
     }
   });
 
+  it("counts only unmarked islands as model-authored — host-marked islands re-strip as plumbing", () => {
+    const mixed = [
+      '<script type="application/json" id="sequences-camera">{"model":true}</script>',
+      '<script type="application/json" data-sequences-host="1" id="sequences-cuts">{"host":true}</script>',
+    ].join("\n");
+    const result = stripAllHostPlanIslands(mixed);
+    // Both are stripped (host islands are host-owned, always)…
+    expect(new Set(result.removed)).toEqual(new Set(["sequences-camera", "sequences-cuts"]));
+    // …but only the unmarked one counts as a model-authored normalization.
+    expect(result.removedModel).toEqual(["sequences-camera"]);
+  });
+
   it("incident 2 replay: a model-authored shadow sequences-camera island is replaced with the canonical plan", () => {
     const storyboard = incident1Storyboard(); // carries a camera plan (stat-resolve)
     const dir = tempDir();
