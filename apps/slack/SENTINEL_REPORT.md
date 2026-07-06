@@ -307,19 +307,62 @@ fallback risk). "Final" = `SENTINEL_SKELETON=1 SENTINEL_SLOTS=1`.
 
 | Metric | Target | Baseline (flags OFF) | Final (flags ON) |
 | --- | --- | --- | --- |
-| Disposition | published | **published, no fallback** | ⏳ |
-| Hard authoring failures (fail-loud) | 0 | 0 | ⏳ |
-| Visible fallbacks | 0 | 0 | ⏳ |
-| Storyboard attempts / run (avg) | ≤ 1.5 | 3 | ⏳ |
-| Source-author attempts / run (avg) | ≤ 1.5 | 3 | ⏳ |
-| Wall-clock to tier-1 (avg) | ≤ 8 min | 22.1 min | ⏳ |
-| Wall-clock to tier-2 (avg) | ≤ 14 min | 24.1 min | ⏳ |
-| Author prompt size (max chars) | ≤ 45,000 | 105,516 | ⏳ |
-| Model calls / clean run (avg) | ≤ 5 | 8 | ⏳ |
+| Disposition | published | **published, no fallback** | **fail-loud** (see below) |
+| Hard authoring failures (fail-loud) | 0 | 0 | 1 |
+| Visible fallbacks | 0 | 0 | 0 (failed loud, not fallback) |
+| Storyboard attempts / run (avg) | ≤ 1.5 | 3 | 4 |
+| Source-author attempts / run (avg) | ≤ 1.5 | 3 | 4 (exhausted → rescue) |
+| Wall-clock to tier-1 (avg) | ≤ 8 min | 22.1 min | n/a (never reached tier 1) |
+| Wall-clock to tier-2 (avg) | ≤ 14 min | 24.1 min | n/a |
+| Author prompt size (max chars) | ≤ 45,000 | 105,516 | 107,535 |
+| Model calls / clean run (avg) | ≤ 5 | 8 | 9 (failed run) |
 
 Baseline layer breakdown: normalize **26** (island-strip 10, interaction-binding
 14, runtime-order 2), static 1, browser 2, model-retry 2; scaffold 0 (flags OFF).
-Baseline project dir: `.data/projects/sentinel-baseline-denseui` (immutable).
+Final layer breakdown: normalize **36** (island-strip 10, interaction-binding 23,
+runtime-order 3), static 1, browser 3, model-retry 3; scaffold 0.
+Project dirs (immutable): baseline `.data/projects/sentinel-baseline-denseui`;
+final `.data/projects/sentinel-final-denseui`.
+
+### Final probe — honest failure (flags ON)
+
+**The flags-ON run FAILED (fail-loud) at source-author** —
+`FAILURE.md`: `.data/projects/sentinel-final-denseui/FAILURE.md`. This is
+reported, not retried into a clean table. What happened, from the persisted
+artifacts:
+
+- The Phase-2 **slot path was exercised live** (author attempts 1 and 3 logged
+  `scene slots`; the per-scene attribution worked —
+  `slot findings by scene — command-palette-hook:2 deploy-and-stream:2`).
+- Author attempts 1/3 (slots) and 2 (compact patch) were rejected on
+  **`near_blank_film` / `near_blank_scene`** — the scenes rendered as blank
+  frames. The source-rescue rung (tencent/hy3-preview, whole-doc) also failed →
+  fail-loud.
+- **Root cause (evidence-backed).** The assembled slot document
+  (`planning/attempts/author-1-static-rejected.html`) has **no `.scene` stage
+  CSS**: the model's `<film_style>` supplied design tokens but omitted the
+  structural rule (`.scene { position:absolute; inset:0; … }` and composition-root
+  sizing) that the whole-doc path authors implicitly. Without it the
+  `<section class="scene clip">` wrappers and their `data-camera-world` planes
+  (4800×2160 absolute) are not stage-positioned, so content lands off-frame and
+  every scene samples blank.
+- **The shipping default is unaffected.** SLOTS/SKELETON default OFF; the same
+  brief on the default path (the baseline) **published cleanly with no
+  fallback**. The failure is entirely inside the opt-in Sentinel path.
+- **Concrete fix for the resume** (not applied — user paused): the stage layout
+  is host-owned, so `assembleSlotComposition` should inject a minimal
+  deterministic stage `<style>` (`.scene` absolute/inset, root sizing,
+  camera-world containment) into the assembled `<head>` — exactly as the cinema
+  and component kits are injected — so scene positioning never depends on the
+  model's `film_style`. This is a Phase-1-style "host owns structure" move and is
+  the gate on flipping SLOTS on. Isolating whether SKELETON-only (slots off) is
+  clean needs one more probe.
+
+**Conclusion:** the baseline confirms the shipping default is healthy on the
+hardest §7 brief (published, no fallback); the final probe shows the opt-in
+slot path is **not yet judge-ready** and correctly stays flag-OFF. Phase 5's
+default flip is appropriately blocked until the stage-CSS fix lands and a probe
+confirms it.
 
 **What the baseline proves about the plan's diagnosis** (the §1 doom loop, now
 measured): storyboard-plan alone was **~16.9 min across 3 attempts** — by far the
@@ -377,6 +420,12 @@ The user directed **Phase 2 only, then reassess**, and after Phase 2 chose to
 **pause** (report finalized with one baseline + one final probe). The following
 are therefore deliberately deferred, not dropped:
 
+- **Slot-path stage CSS (the gate on flipping SLOTS on).** `assembleSlotComposition`
+  must inject a host-owned minimal stage `<style>` (`.scene` absolute/inset, root
+  sizing, `data-camera-world` containment) so scenes are positioned regardless of
+  the model's `film_style`. The final probe failed loud precisely because this was
+  missing (blank frames). This is the first thing to do when Phase 2 resumes,
+  followed by a confirming probe. Until then SLOTS must stay default OFF.
 - **Phase 3 — storyboard normalization + ladder/latency retune** (NOT built).
   The baseline measured the exact problem it targets: storyboard-plan ~16.9 min
   over 3 attempts, driven by *pacing/reading* and *moment-spacing* rejections
