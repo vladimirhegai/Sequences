@@ -1421,12 +1421,16 @@ const REVEALABLE_CHILD_CLASS =
 
 /** The kind-appropriate revealable child class for a rows-markup top-up. */
 function rowsChildMarkup(kind: string | undefined, index: number): string {
-  if (kind === "kanban") return `<div class="cmp-card material">Card ${index}</div>`;
-  if (kind === "chat") return `<div class="cmp-msg">Message ${index}</div>`;
+  // data-sequences-neutral marks host-invented placeholder copy so the
+  // publish-time honesty scan can tell whether it actually SHIPPED (an
+  // earlier attempt's injection may be superseded by a real re-author).
+  const mark = ' data-sequences-neutral="1"';
+  if (kind === "kanban") return `<div class="cmp-card material"${mark}>Card ${index}</div>`;
+  if (kind === "chat") return `<div class="cmp-msg"${mark}>Message ${index}</div>`;
   if (kind === "table") {
-    return `<div class="cmp-row"><span>Row ${index}</span><span class="cmp-chip">ok</span></div>`;
+    return `<div class="cmp-row"${mark}><span>Row ${index}</span><span class="cmp-chip">ok</span></div>`;
   }
-  return `<div class="cmp-item">Item ${index}</div>`;
+  return `<div class="cmp-item"${mark}>Item ${index}</div>`;
 }
 
 /**
@@ -5513,7 +5517,6 @@ async function recoverByQuarantiningInteractions(
     `[author] quarantining ${quarantined.removedIds.length} persistently invalid optional ` +
       `interaction(s): ${quarantined.removedIds.join(", ")}\n`,
   );
-  recordSentinelDegradation(`interaction-quarantine:${quarantined.removedIds.join(",")}`);
   const validation = await validateDirectComposition(projectDir, quarantined.draft);
   if (!validation.ok) return undefined;
   const browserQa = await inspectDirectComposition(projectDir, quarantined.draft, {
@@ -7149,9 +7152,6 @@ async function authorCompositionLoop(
             `[author] quarantining ${recovered.removedIds.length} statically invalid optional ` +
               `interaction(s): ${recovered.removedIds.join(", ")}\n`,
           );
-          recordSentinelDegradation(
-            `interaction-quarantine:${recovered.removedIds.join(",")}`,
-          );
           draft = recovered.draft;
           validation = await validateDirectComposition(args.projectDir, draft);
         }
@@ -8097,6 +8097,20 @@ export async function requestDirectComposition(
     recordSentinelScaffold(
       countScaffoldBindingsPresent(final.draft.storyboard, final.draft.html),
     );
+  }
+  // Publish-time honesty scan: host-invented neutral placeholder children
+  // (`topUpRowsMarkup`) that survived into the SHIPPING document mean the
+  // film shows literal "Item 1…" copy (the s5-slotrepair probe's terminal did,
+  // on frame). Detected here — not at injection — because an earlier attempt's
+  // injection may be superseded by a real re-author.
+  if (/\bdata-sequences-neutral\s*=\s*["']1["']/i.test(final.draft.html)) {
+    recordSentinelDegradation("rows-neutral-children-shipped");
+  }
+  // Quarantined interactions likewise leave a detectable style tag; scanning
+  // the shipping document (not the quarantine helpers, which also run on
+  // attempts that later lose) keeps the ledger exact.
+  if (/<style\s+data-sequences-quarantine\b/i.test(final.draft.html)) {
+    recordSentinelDegradation("interaction-quarantine-shipped");
   }
   return final;
 }

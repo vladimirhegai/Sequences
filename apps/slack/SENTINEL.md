@@ -267,11 +267,16 @@ The 2026-07-06 final audit made the instrument honest end-to-end:
 
 - **`published-degraded` is real.** Every degradation the run ships with —
   `moment-demote-last-resort`, `least-bad-pick` (browser-valid with open polish
-  findings), `interaction-quarantine`, `degraded-volunteered-cut`,
-  `cut-degraded-shipped`, `rescue-published-with-polish-findings`,
-  `browser-qa-infra-bypass` — is recorded (`recordSentinelDegradation`), and
-  `finalizeSentinelRun("published")` auto-downgrades to `published-degraded`
-  when any exists. A salvaged film can no longer report itself clean.
+  findings; BOTH least-bad seams), `interaction-quarantine-shipped`,
+  `rows-neutral-children-shipped` (host placeholder "Item 1…" copy on frame),
+  `degraded-volunteered-cut`, `cut-degraded-shipped`,
+  `rescue-published-with-polish-findings`, `browser-qa-infra-bypass` — is
+  recorded (`recordSentinelDegradation`), and `finalizeSentinelRun("published")`
+  auto-downgrades to `published-degraded` when any exists. Draft-embedded
+  degradations (quarantine's style tag, neutral children's
+  `data-sequences-neutral`) are detected on the SHIPPING document at the end of
+  `requestDirectComposition`, so an attempt that later loses can't leave a
+  stale entry. A salvaged film can no longer report itself clean.
 - **Cost ledger counts failures.** `modelCalls.failed`/`failedTotal` record
   failed logical calls (transport faults, stalls, truncations) and
   `modelCalls.hedged`/`hedgedTotal` the hedge duplicates launched — previously
