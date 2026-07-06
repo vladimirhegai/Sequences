@@ -203,6 +203,94 @@ paths intact; full suite + `film:demo` green.
 
 ---
 
+## Phase 2 — scene-scoped authoring (slots)
+
+**Status:** cut-line shipped (slot artifact boundary + host assembly + validation
+attribution + truncation-tail recovery), flag-gated behind
+`SLACK_SEQUENCES_SENTINEL_SLOTS` (default OFF). Full slot-scoped *validation*
+retry is the reassess item (see Deviations). Full suite green (491/491),
+`film:demo` byte-stable.
+
+### What changed (files + why)
+
+- **`src/engine/sceneSlots.ts`** (new) — the artifact-boundary change:
+  - `extractSceneSlots(raw)` parses `<film_style>` + per-scene `<scene_html id>` /
+    `<scene_script id>`, tolerant of a truncated tail (an unclosed slot marks
+    `truncated` and is dropped; completed slots are kept).
+  - `assembleSlotComposition(...)` deterministically builds the canonical
+    document: chassis + shared `<style>` + host-owned `<section>` wrappers
+    (id/timing/track) around each interior + one paused timeline that invokes
+    each scene's statements in its own `(function (tl) { … })(tl)` scope +
+    host-owned `window.__timelines` init/registration/seek. Byte-stable for
+    fixed inputs; `applyDeterministicSourceRepairs` then injects runtimes,
+    islands, compile calls, and kits exactly as for a whole-doc composition.
+  - `attributeFindingsToScenes(findings, ids)` maps each rejection to the
+    scene(s) it names (arrows `a->b` attribute to both; a dashed id never
+    matches inside a longer one; film-level findings land under `__film__`).
+- **`src/engine/compositionRunner.ts`**:
+  - `buildSceneSkeletonInterior` extracted from `buildSceneSkeleton` (+
+    `sceneSkeletonOpenTag`, `skeletonContext`), and `buildSceneSlotInteriors`
+    exposes the per-scene interior templates the slot prompt shows.
+  - `slotSceneTemplates` / `slotResponseContract` — the slot prompt (host owns
+    the wrappers/chassis/timeline; author returns film_style + interiors +
+    per-scene statement blocks). `creationPrompt` grows a `slots` mode.
+  - `authorSlotDraft` runs the first authoring pass as slots: request → parse →
+    **truncation-tail recovery** (re-request only the missing scenes, keeping
+    every completed one — the `slotContinuationPrompt`) → assemble. Wired into
+    `authorCompositionLoop` behind `useSlots` (`sentinelSlotsEnabled()` &&
+    locked storyboard && first full pass). `logSlotFindingAttribution` reports
+    findings-by-scene on a slot rejection.
+- **`src/engine/sentinelFlags.ts`** — `sentinelSlotsEnabled()`.
+
+### Deviations from the plan
+
+- **Retries after the first slot pass stay whole-doc (the §3 cut-line).** The
+  plan's full slot-scoped *validation* retry (re-request only failing scenes in
+  parallel, cap 2, then a whole-doc terminal rung) is **not** implemented; a slot
+  attempt that fails validation falls through to the existing whole-doc ladder
+  (compact patch / full re-author on the assembled document). This ships "slot
+  validation attribution but whole-doc retries," which the plan explicitly names
+  as the shippable Phase-2 cut-line. The parallel slot-scoped validation retry is
+  the reassess item — the artifact boundary + attribution it needs are now in
+  place (`attributeFindingsToScenes`, `authorSlotDraft`).
+- **Truncation recovery is implemented** (Phase 2.4): `authorSlotDraft` keeps
+  completed scenes and re-requests only the missing tail once before falling
+  back, rather than deleting `MAX_AUTHOR_SEGMENTS` (which stays for the whole-doc
+  path until the slot path is default-on and probe-confirmed).
+
+### Flags added
+
+`SLACK_SEQUENCES_SENTINEL_SLOTS` (default OFF; `=1` enables slot authoring).
+
+### Tests added (names)
+
+- **`test/sceneSlots.test.ts`** (7): `extractSceneSlots` (parse, truncation,
+  fence-strip); `assembleSlotComposition` (canonical wrappers/timeline,
+  determinism, missing-scene reporting); `attributeFindingsToScenes`.
+- **`test/sceneSlots.browser.test.ts`** (1): a two-scene slot response is
+  assembled + repaired and passes the **real gate** — `validateDirectComposition`
+  clean and `inspectDirectComposition` ok. (This caught a real bug: the assembly
+  must `window.__timelines = window.__timelines || {}` before registration —
+  now fixed and asserted by the gate.)
+
+### Commands run
+
+- `npm run typecheck --workspace @sequences/slack` — ✅ exit 0.
+- `npm run test --workspace @sequences/slack` — ✅ **491/491** across 42 files.
+- `npm run film:demo --workspace @sequences/slack` — ✅ identical output
+  (lint clean · 3 static warnings · 48 samples · 6 warnings), byte-stable.
+
+### Acceptance verdict
+
+**PARTIAL (cut-line met).** The scene-addressable artifact boundary, host
+assembly, per-scene validation attribution, and truncation-tail recovery are in
+and gated; an assembled composition passes the real browser gate. The plan's
+headline cost-lever metric ("a seeded single-scene failure costs one ~4k call")
+requires the full slot-scoped validation retry, which is deferred to the
+reassess along with its paid-probe confirmation.
+
+---
+
 ## Metrics table (baseline vs post-Phase-5)
 
 Populated from `npm run sentinel:report`. Baseline = pre-Sentinel defaults

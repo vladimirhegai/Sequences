@@ -98,7 +98,13 @@ import {
   recordSentinelModelCall,
   recordSentinelNormalization,
 } from "./sentinelTelemetry.ts";
-import { sentinelSkeletonEnabled } from "./sentinelFlags.ts";
+import { sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./sentinelFlags.ts";
+import {
+  assembleSlotComposition,
+  attributeFindingsToScenes,
+  extractSceneSlots,
+  type ParsedSceneSlots,
+} from "./sceneSlots.ts";
 import {
   creativeModel,
   creativeThinkingMode,
@@ -5413,15 +5419,26 @@ type ResolvedCameraScene = ReturnType<typeof resolveCameraPlan>["scenes"][number
  * are present by construction, so `reconcileCameraWorldPlanes`,
  * `reconcileComponentBindings`, and `reconcileContractBindings` become no-ops.
  */
-function buildSceneSkeleton(
+/** The host-owned opening `<section>` tag for a scene (id/timing/track). */
+export function sceneSkeletonOpenTag(scene: DirectScene): string {
+  return (
+    `<section id="${scene.id}" class="scene clip" data-scene="${scene.id}" ` +
+    `data-start="${scene.startSec}" data-duration="${scene.durationSec}" data-track-index="1">`
+  );
+}
+
+/**
+ * The interior of a scene's shell (everything between the `<section>` tags) —
+ * the camera-world plane + stations + component roots + focal carriers the
+ * storyboard implies. Shared by the whole-doc skeleton (wrapped in the section)
+ * and the slot path (shown as the `<scene_html>` template, assembled into the
+ * host-owned section wrapper).
+ */
+function buildSceneSkeletonInterior(
   scene: DirectScene,
   cameraScene: ResolvedCameraScene | undefined,
   cutFocalParts: ReadonlySet<string>,
 ): string {
-  const open =
-    `<section id="${scene.id}" class="scene clip" data-scene="${scene.id}" ` +
-    `data-start="${scene.startSec}" data-duration="${scene.durationSec}" data-track-index="1">`;
-
   const components = scene.components ?? [];
   const componentIds = new Set(components.map((component) => component.id));
 
@@ -5476,29 +5493,34 @@ function buildSceneSkeleton(
       ? "\n<div data-camera-overlay>…cursors/labels in screen space…</div>"
       : "";
     return [
-      open,
       `<div data-camera-world style="${cameraWorldStyle(scene)}">`,
       ...stations,
       ...loose,
       `</div>${overlay}`,
-      "</section>",
     ].join("\n");
   }
 
-  const body = [
+  return [
     ...components.map((component) => `  ${componentSkeletonMarkup(component)}`),
     ...[...requiredParts].map((part) => `  ${carrier(part)}`),
     "  …compose this scene's interior…",
-  ];
-  return [open, ...body, "</section>"].join("\n");
+  ].join("\n");
 }
 
-/**
- * Full-fidelity skeletons for every scene (Sentinel Phase 1). Camera plans, cut
- * focal parts, and component roots are resolved once for the whole storyboard so
- * cross-scene cut endpoints land in the right scene.
- */
-export function buildSceneSkeletons(scenes: DirectScene[]): string[] {
+function buildSceneSkeleton(
+  scene: DirectScene,
+  cameraScene: ResolvedCameraScene | undefined,
+  cutFocalParts: ReadonlySet<string>,
+): string {
+  const interior = buildSceneSkeletonInterior(scene, cameraScene, cutFocalParts);
+  return `${sceneSkeletonOpenTag(scene)}\n${interior}\n</section>`;
+}
+
+/** Resolve per-scene camera plans + cut focal parts once for a storyboard. */
+function skeletonContext(scenes: DirectScene[]): {
+  cameraById: Map<string, ResolvedCameraScene>;
+  focalByScene: Map<string, Set<string>>;
+} {
   const cameraById = new Map(
     resolveCameraPlan(scenes).scenes.map((scenePlan) => [scenePlan.sceneId, scenePlan]),
   );
@@ -5513,9 +5535,90 @@ export function buildSceneSkeletons(scenes: DirectScene[]): string[] {
     addFocal(cut.fromScene, cut.focalPartOut);
     addFocal(cut.toScene, cut.focalPartIn);
   }
+  return { cameraById, focalByScene };
+}
+
+/**
+ * Full-fidelity skeletons for every scene (Sentinel Phase 1). Camera plans, cut
+ * focal parts, and component roots are resolved once for the whole storyboard so
+ * cross-scene cut endpoints land in the right scene.
+ */
+export function buildSceneSkeletons(scenes: DirectScene[]): string[] {
+  const { cameraById, focalByScene } = skeletonContext(scenes);
   return scenes.map((scene) =>
     buildSceneSkeleton(scene, cameraById.get(scene.id), focalByScene.get(scene.id) ?? new Set()),
   );
+}
+
+/**
+ * Per-scene interior templates (Sentinel Phase 2 slots): the inner HTML the
+ * author fills for each `<scene_html id>` slot. The host owns the `<section>`
+ * wrapper at assembly time, so the model only sees and returns the interior.
+ */
+export function buildSceneSlotInteriors(scenes: DirectScene[]): Map<string, string> {
+  const { cameraById, focalByScene } = skeletonContext(scenes);
+  return new Map(
+    scenes.map((scene) => [
+      scene.id,
+      buildSceneSkeletonInterior(
+        scene,
+        cameraById.get(scene.id),
+        focalByScene.get(scene.id) ?? new Set(),
+      ),
+    ]),
+  );
+}
+
+/** Prompt lines showing each scene's interior template for the slot path. */
+function slotSceneTemplates(storyboard: DirectScene[]): string[] {
+  const interiors = buildSceneSlotInteriors(storyboard);
+  const lines = [
+    "## Scene interior templates (fill each; the host owns the wrappers)",
+    "The host owns the document chassis, every <section> wrapper (its id, timing,",
+    "and track), the paused GSAP timeline, its registration, and every runtime,",
+    "JSON island, and compile seam. You author only the shared film style, each",
+    "scene's INTERIOR html, and each scene's timeline statements. For each scene",
+    "the template below is the host contract: keep its data-camera-world plane,",
+    "data-region stations, component roots (data-part/data-component), and focal",
+    "carriers; fill and restyle the … placeholders and placeholder copy. Never",
+    "author a <section>, <html>, <head>, <body>, a gsap.timeline, a",
+    "window.__timelines registration, or a JSON island.",
+  ];
+  for (const scene of storyboard) {
+    lines.push(
+      "",
+      `<scene_html id="${scene.id}">`,
+      interiors.get(scene.id) ?? "…compose this scene's interior…",
+      "</scene_html>",
+    );
+  }
+  return lines;
+}
+
+/** The scene-slot response contract (replaces the single <index_html>). */
+function slotResponseContract(storyboard: DirectScene[]): string {
+  const ids = storyboard.map((scene) => scene.id).join(", ");
+  return [
+    "## Response contract (scene slots)",
+    "Return these tags and nothing else — no <index_html>, no storyboard_json,",
+    "no <html>/<head>/<body>, no prose or Markdown fences:",
+    "- exactly one <film_style>…</film_style>: the shared <style> payload (design",
+    "  tokens, shared classes) used across every scene. Do not repeat per-scene",
+    "  styles the film style already covers.",
+    "- one <scene_html id=\"<scene-id>\">…</scene_html> per scene: the INTERIOR of",
+    "  that scene only (no <section> wrapper). Fill its template.",
+    "- one <scene_script id=\"<scene-id>\">…</scene_script> per scene: the GSAP",
+    "  statements for that scene, appended into a host-owned (tl) => { … } function.",
+    "  Use absolute composition times inside the scene's window. Include the scene's",
+    "  entrances, information beats, and the plain scene-window visibility",
+    "  tl.set(...) pairs at the scene's start and end. Do NOT create a timeline,",
+    "  register it, seek it, or call any SequencesX.compile — the host owns those.",
+    "  Each scene's statements run in their own function scope, so never rely on a",
+    "  variable declared in another scene.",
+    `Author every scene, in order: ${ids}.`,
+    "Keep each scene's html + script focused; the whole response must stay under",
+    "the output-size limit above.",
+  ].join("\n");
 }
 
 function creationPrompt(args: {
@@ -5530,6 +5633,8 @@ function creationPrompt(args: {
   lockedStoryboard?: DirectScene[];
   compact?: boolean;
   structuredPatches?: boolean;
+  /** Sentinel Phase 2: request scene-addressable slots, not one <index_html>. */
+  slots?: boolean;
 }): string {
   if (args.scratch) {
     const scratchComponents = componentReferenceFor(
@@ -5649,10 +5754,12 @@ function creationPrompt(args: {
         // verbatim removes the whole authored-N-scenes-against-an-M-scene-plan
         // failure class (a live run burned a full paid attempt on 10 scenes
         // vs a 5-scene plan). The author spends budget on interiors only.
-        // Sentinel Phase 1: when the skeleton flag is on, the shells carry the
-        // camera-world plane, stations, component roots, and focal carriers the
-        // storyboard implies, so those paperwork classes are unrepresentable.
-        ...(sentinelSkeletonEnabled()
+        // Sentinel Phase 2 (slots): the host owns the section wrapper, chassis,
+        // and timeline; the author fills each scene's interior template.
+        // Phase 1 (skeleton): full shells copied verbatim. Else: bare shells.
+        ...(args.slots
+          ? slotSceneTemplates(args.lockedStoryboard)
+          : sentinelSkeletonEnabled()
           ? [
               "## Mandatory scene skeleton (copy verbatim; fill the interiors)",
               "Your <body> must contain EXACTLY these scene shells, in this order,",
@@ -5682,11 +5789,13 @@ function creationPrompt(args: {
       ].join("\n")
     : "";
   const lockedResponse = args.lockedStoryboard
-    ? [
-        "## Builder response override",
-        "The storyboard already exists. Return exactly one <index_html> tag with",
-        "the complete document and nothing else. Do not repeat storyboard_json.",
-      ].join("\n")
+    ? args.slots
+      ? slotResponseContract(args.lockedStoryboard)
+      : [
+          "## Builder response override",
+          "The storyboard already exists. Return exactly one <index_html> tag with",
+          "the complete document and nothing else. Do not repeat storyboard_json.",
+        ].join("\n")
     : "";
   const frame = args.frameMd
     ? [
@@ -6060,6 +6169,129 @@ function persistAuthorRunSummary(projectDir: string, summary: AuthorRunSummary):
   }
 }
 
+/** A stable, valid `data-composition-id` for a host-assembled slot document. */
+function slotCompositionId(projectDir: string): string {
+  const base = path.basename(projectDir).replace(/[^a-zA-Z0-9_-]/g, "-").replace(/^-+|-+$/g, "");
+  return `${base || "composition"}-slots`;
+}
+
+/**
+ * A compact continuation prompt for a truncated slot response: keep every
+ * completed scene, re-request only the missing tail. Carries the shared film
+ * style already produced (so the tail matches) and only the missing scenes'
+ * interior templates — far cheaper than re-authoring the whole film.
+ */
+function slotContinuationPrompt(
+  args: DirectCompositionArgs,
+  filmStyle: string | undefined,
+  missing: DirectScene[],
+): string {
+  const interiors = buildSceneSlotInteriors(args.lockedStoryboard ?? []);
+  const templates = missing.flatMap((scene) => [
+    "",
+    `<scene_html id="${scene.id}">`,
+    interiors.get(scene.id) ?? "…compose this scene's interior…",
+    "</scene_html>",
+  ]);
+  return [
+    "SYSTEM: You are the HyperFrames author finishing a partly-written launch film.",
+    "The previous response was cut off. The completed scenes are kept; author ONLY",
+    "the missing scenes below, matching the established film style exactly.",
+    "",
+    "## Job brief and trusted evidence",
+    args.brief,
+    "",
+    ...(filmStyle
+      ? ["## Established film style (already applied; reuse its classes/tokens)", "<film_style>", filmStyle, "</film_style>", ""]
+      : []),
+    "## Missing scene interior templates",
+    ...templates,
+    "",
+    "## Response contract",
+    "Return ONLY these tags, nothing else:",
+    ...missing.flatMap((scene) => [
+      `- one <scene_html id="${scene.id}">…interior…</scene_html>`,
+      `- one <scene_script id="${scene.id}">…GSAP statements for a host-owned (tl) => { … }…</scene_script>`,
+    ]),
+    "Absolute times inside each scene window; include the scene-window visibility",
+    "tl.set(...) pairs. Do not create/register a timeline or call any compile.",
+  ].join("\n");
+}
+
+/**
+ * Author one scene-slot composition (Sentinel Phase 2). Requests the shared
+ * film style + per-scene interior/script slots in one call, recovers a
+ * truncated tail by re-requesting only the missing scenes (keeping every
+ * completed scene), and assembles the canonical document deterministically.
+ * A response missing every scene, or still missing scenes after one
+ * continuation, throws so the loop falls back to the whole-doc ladder.
+ */
+async function authorSlotDraft(
+  provider: AgentProvider,
+  args: DirectCompositionArgs,
+  initialPrompt: string,
+  completeOptions: CompleteOptions,
+): Promise<{ draft: DirectCompositionDraft; raw: string; slots: ParsedSceneSlots }> {
+  const storyboard = args.lockedStoryboard!;
+  let raw = await completeSourceWithContinuation(provider, initialPrompt, completeOptions);
+  let slots = extractSceneSlots(raw);
+  const missingOf = (parsed: ParsedSceneSlots): DirectScene[] =>
+    storyboard.filter((scene) => !parsed.scenes.get(scene.id)?.html?.trim());
+  let missing = missingOf(slots);
+  if (missing.length && missing.length < storyboard.length) {
+    process.stderr.write(
+      `[author] slot response truncated (${missing.length}/${storyboard.length} scenes missing); ` +
+        `re-requesting only the missing tail: ${missing.map((s) => s.id).join(", ")}\n`,
+    );
+    const contRaw = await completeSourceWithContinuation(
+      provider,
+      slotContinuationPrompt(args, slots.filmStyle, missing),
+      { ...completeOptions, maxTokens: Math.min(authorMaxTokens(), 8_192) },
+    );
+    const contSlots = extractSceneSlots(contRaw);
+    for (const [id, slot] of contSlots.scenes) {
+      slots.scenes.set(id, { ...slots.scenes.get(id), ...slot });
+    }
+    if (!slots.filmStyle && contSlots.filmStyle) slots = { ...slots, filmStyle: contSlots.filmStyle };
+    raw = `${raw}\n<!-- slot continuation -->\n${contRaw}`;
+    missing = missingOf(slots);
+  }
+  const { html, missingHtml } = assembleSlotComposition({
+    storyboard,
+    slots,
+    compositionId: slotCompositionId(args.projectDir),
+  });
+  if (missingHtml.length === storyboard.length) {
+    throw new Error("author response is missing every <scene_html> slot");
+  }
+  if (missingHtml.length) {
+    throw new Error(
+      `author slot response is missing scene interior(s) after continuation: ${missingHtml.join(", ")}` +
+        " — the next attempt must emit every scene more compactly.",
+    );
+  }
+  return { draft: { storyboard, html }, raw, slots };
+}
+
+/**
+ * Slot-scoped validation attribution (Sentinel Phase 2): report which scene
+ * each rejection finding belongs to, so the failure is diagnosed per scene
+ * (and, once slot-scoped retries land, re-requested per scene) instead of as
+ * one opaque document rejection.
+ */
+function logSlotFindingAttribution(findings: string[], storyboard: DirectScene[]): void {
+  const byScene = attributeFindingsToScenes(
+    findings,
+    storyboard.map((scene) => scene.id),
+  );
+  const summary = [...byScene.entries()]
+    .map(([scene, list]) => `${scene}:${list.length}`)
+    .join(" ");
+  if (summary) {
+    process.stderr.write(`[author] slot findings by scene — ${summary}\n`);
+  }
+}
+
 async function authorComposition(
   provider: AgentProvider,
   args: DirectCompositionArgs,
@@ -6138,6 +6370,12 @@ async function authorCompositionLoop(
       compact = true;
     }
     const patchMode = Boolean(scratch);
+    // Sentinel Phase 2: the initial full authoring pass is scene-addressable
+    // (film_style + per-scene slots the host assembles). Recovery passes stay
+    // whole-doc (patch / compact re-author) — the slot path owns first-pass
+    // coherence + truncation recovery; the ladder owns bounded repair.
+    const useSlots =
+      sentinelSlotsEnabled() && Boolean(args.lockedStoryboard) && !patchMode && !compact;
     // Never downgrade a full-document recovery because of its attempt number.
     // A separately configured repair model is eligible only when a valid
     // scratch document exists and the task is a bounded exact patch.
@@ -6152,10 +6390,11 @@ async function authorCompositionLoop(
       scratch,
       compact,
       structuredPatches,
+      slots: useSlots,
     });
     process.stderr.write(
       `[author] attempt ${attempt}/3 · prompt ${prompt.length} chars · ` +
-      `${patchMode ? "compact repair" : compact ? "full re-author (compact context)" : "full context"} · ` +
+      `${patchMode ? "compact repair" : useSlots ? "scene slots" : compact ? "full re-author (compact context)" : "full context"} · ` +
       `${repairTier ? "explicit repair tier" : selectedTier ?? "provider primary tier"} · ` +
       `reasoning ${attemptThinking}\n`,
     );
@@ -6169,19 +6408,27 @@ async function authorCompositionLoop(
         ...(patchMode && structuredPatches ? { responseFormat: PATCH_RESPONSE_FORMAT } : {}),
         ...(selectedTier ? { model: selectedTier } : {}),
       };
-      const raw = patchMode
-        ? await completeWithRetry(provider, prompt, completeOptions, "author patch")
-        : await completeSourceWithContinuation(provider, prompt, completeOptions);
+      let raw: string;
+      let parsedDraft: DirectCompositionDraft;
+      if (useSlots) {
+        const slotResult = await authorSlotDraft(provider, args, prompt, completeOptions);
+        raw = slotResult.raw;
+        parsedDraft = slotResult.draft;
+      } else {
+        raw = patchMode
+          ? await completeWithRetry(provider, prompt, completeOptions, "author patch")
+          : await completeSourceWithContinuation(provider, prompt, completeOptions);
+        parsedDraft = patchMode
+          ? applyCompositionRepair(raw, scratch!)
+          : args.lockedStoryboard
+            ? {
+                storyboard: args.lockedStoryboard,
+                html: extractIndexHtmlSource(raw),
+              }
+            : parseCompositionResponse(raw);
+      }
       attemptRaw = raw;
       process.stderr.write(`[author] attempt ${attempt}/3 response ${raw.length} chars\n`);
-      const parsedDraft = patchMode
-        ? applyCompositionRepair(raw, scratch!)
-        : args.lockedStoryboard
-          ? {
-              storyboard: args.lockedStoryboard,
-              html: extractIndexHtmlSource(raw),
-            }
-          : parseCompositionResponse(raw);
       let draft = applyDeterministicSourceRepairs(
         parsedDraft,
         args.projectDir,
@@ -6253,6 +6500,9 @@ async function authorCompositionLoop(
           `[author] attempt ${attempt}/3 static validation rejected: ` +
             `${validation.errors.slice(0, 8).join(" | ").slice(0, 1_500)}\n`,
         );
+        if (useSlots && args.lockedStoryboard) {
+          logSlotFindingAttribution(validation.errors, args.lockedStoryboard);
+        }
         persistAuthorAttempt(args.projectDir, attempt, "static-rejected", {
           mode: patchMode ? "patch" : "full",
           findings: validation.errors,
