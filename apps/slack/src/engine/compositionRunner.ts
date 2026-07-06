@@ -5489,8 +5489,11 @@ function buildSceneSkeletonInterior(
       ...looseComponents.map((component) => `  ${componentSkeletonMarkup(component)}`),
       ...[...requiredParts].map((part) => `  ${carrier(part)}`),
     ];
+    // Positioned inline so an author who copies the shell verbatim never
+    // leaves the overlay in static flow pushing the world plane off-frame.
     const overlay = (scene.interactions?.length ?? 0) > 0
-      ? "\n<div data-camera-overlay>…cursors/labels in screen space…</div>"
+      ? '\n<div data-camera-overlay style="position:absolute;inset:0;pointer-events:none">' +
+        "…cursors/labels in screen space…</div>"
       : "";
     return [
       `<div data-camera-world style="${cameraWorldStyle(scene)}">`,
@@ -5610,9 +5613,11 @@ function slotResponseContract(storyboard: DirectScene[]): string {
     "- one <scene_script id=\"<scene-id>\">…</scene_script> per scene: the GSAP",
     "  statements for that scene, appended into a host-owned (tl) => { … } function.",
     "  Use absolute composition times inside the scene's window. Include the scene's",
-    "  entrances, information beats, and the plain scene-window visibility",
-    "  tl.set(...) pairs at the scene's start and end. Do NOT create a timeline,",
-    "  register it, seek it, or call any SequencesX.compile — the host owns those.",
+    "  entrances and information beats on INTERIOR elements. The host owns the",
+    "  stage (root sizing, absolute scene stacking) and scene-window visibility",
+    "  (each scene is revealed at its start and cleared at its end) — do NOT",
+    "  author opacity sets on the scene wrapper itself, and do NOT create a",
+    "  timeline, register it, seek it, or call any SequencesX.compile.",
     "  Each scene's statements run in their own function scope, so never rely on a",
     "  variable declared in another scene.",
     `Author every scene, in order: ${ids}.`,
@@ -6213,8 +6218,9 @@ function slotContinuationPrompt(
       `- one <scene_html id="${scene.id}">…interior…</scene_html>`,
       `- one <scene_script id="${scene.id}">…GSAP statements for a host-owned (tl) => { … }…</scene_script>`,
     ]),
-    "Absolute times inside each scene window; include the scene-window visibility",
-    "tl.set(...) pairs. Do not create/register a timeline or call any compile.",
+    "Absolute times inside each scene window, beats on interior elements only —",
+    "the host owns the stage and scene-window visibility. Do not author opacity",
+    "sets on the scene wrapper, create/register a timeline, or call any compile.",
   ].join("\n");
 }
 

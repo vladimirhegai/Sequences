@@ -86,6 +86,39 @@ describe("assembleSlotComposition", () => {
     expect(html.match(/<section/g)?.length).toBe(2);
   });
 
+  it("emits the host-owned stage floor and scene-window visibility (the sentinel-final-denseui fix)", () => {
+    // A film style with NO structural rules — exactly what the failed live
+    // probe's model returned. The host stage must position and reveal the
+    // scenes regardless.
+    const slots = extractSceneSlots(
+      [
+        "<film_style>.hero{font-size:96px;color:#fff}</film_style>",
+        '<scene_html id="hero-open"><div class="hero">Ship</div></scene_html>',
+        '<scene_script id="hero-open">tl.from(".hero", { y: 30, opacity: 0, duration: 0.5 }, 0.2);</scene_script>',
+        '<scene_html id="cta-close"><div class="hero">Go</div></scene_html>',
+        '<scene_script id="cta-close">tl.from(".hero", { scale: 0.9, duration: 0.5 }, 4.2);</scene_script>',
+      ].join("\n"),
+    );
+    const { html } = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });
+    // Stage floor: root sizing + absolute scene stacking + hidden baseline,
+    // injected BEFORE the model's film style so the model may extend it but
+    // positioning never depends on it.
+    expect(html).toContain('<style id="sequences-slot-stage">');
+    expect(html).toContain("#root{position:relative;width:1920px;height:1080px;overflow:hidden}");
+    expect(html).toContain(".scene{position:absolute;inset:0;opacity:0}");
+    expect(html.indexOf("sequences-slot-stage")).toBeLessThan(html.indexOf(".hero{font-size:96px"));
+    // Host-owned visibility: reveal at data-start, clear at window end, for
+    // every scene — emitted AFTER the authored scene blocks so host sets win
+    // insertion-order ties at the window edges.
+    expect(html).toContain('tl.set("[data-scene=\\"hero-open\\"]", { opacity: 1 }, 0);');
+    expect(html).toContain('tl.set("[data-scene=\\"hero-open\\"]", { opacity: 0 }, 4);');
+    expect(html).toContain('tl.set("[data-scene=\\"cta-close\\"]", { opacity: 1 }, 4);');
+    expect(html).toContain('tl.set("[data-scene=\\"cta-close\\"]", { opacity: 0 }, 8);');
+    expect(html.lastIndexOf("(function (tl)")).toBeLessThan(
+      html.indexOf('tl.set("[data-scene=\\"hero-open\\"]"'),
+    );
+  });
+
   it("is byte-stable for fixed inputs (deterministic assembly)", () => {
     const slots = extractSceneSlots(TWO_SCENE_RESPONSE);
     const a = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });
@@ -121,5 +154,20 @@ describe("attributeFindingsToScenes", () => {
     expect(byScene.has("risk")).toBe(false);
     // A film-level finding lands under the shared bucket.
     expect(byScene.get("__film__")).toHaveLength(1);
+  });
+
+  it("attributes colon-delimited finding signatures (the live failure-receipt shape)", () => {
+    const byScene = attributeFindingsToScenes(
+      [
+        'component_root_missing:palette-ship:cmd-palette',
+        "kit_markup_incomplete:stat-resolve",
+        "cut_missing_incoming_part:dashboard-overwhelm->palette-ship:palette-input",
+      ],
+      ["palette-ship", "stat-resolve", "dashboard-overwhelm"],
+    );
+    expect(byScene.get("palette-ship")).toHaveLength(2);
+    expect(byScene.get("stat-resolve")).toHaveLength(1);
+    expect(byScene.get("dashboard-overwhelm")).toHaveLength(1);
+    expect(byScene.has("__film__")).toBe(false);
   });
 });

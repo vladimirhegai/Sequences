@@ -118,6 +118,51 @@ function sectionOpen(scene: DirectScene): string {
 }
 
 /**
+ * The host-owned stage floor: root sizing, absolute scene stacking, clip
+ * containment, overlay positioning, and the hidden-scene baseline. The
+ * 2026-07-05 `sentinel-final-denseui` probe failed loud (`near_blank_film`)
+ * precisely because scene positioning depended on the model's `<film_style>`
+ * — the model supplied design tokens but no `.scene` rule, so every scene
+ * (and its 4800×2160 camera world) landed in static flow, off-frame. Stage
+ * layout is structure, not art direction, so the host owns it; the model's
+ * film style is injected AFTER and may extend (padding, display, background)
+ * but positioning never depends on it. Mirrors the proven fallback-film
+ * convention (`fallbackComposition.ts`: `.scene{position:absolute;inset:0;…;
+ * opacity:0}` + timeline reveal/clear sets).
+ */
+export function slotStageStyle(width: number, height: number): string {
+  return [
+    "html,body{margin:0;padding:0}",
+    `#root{position:relative;width:${width}px;height:${height}px;overflow:hidden}`,
+    ".scene{position:absolute;inset:0;opacity:0}",
+    ".clip{overflow:hidden}",
+    "[data-camera-overlay]{position:absolute;inset:0;pointer-events:none}",
+  ].join("\n");
+}
+
+/**
+ * Host-owned scene-window visibility: reveal each scene at its `data-start`,
+ * clear it at the end of its window (the final scene clears at the film end,
+ * exactly like the fallback film). Emitted AFTER the authored scene blocks so
+ * the host sets win insertion-order ties at the window edges — an authored
+ * wrapper set at the same time can never leave a scene stuck hidden. Selector
+ * literals go through JSON.stringify (the WS7 lesson: never hand-balance
+ * quotes in generated JS).
+ */
+function sceneVisibilityStatements(storyboard: DirectScene[]): string {
+  return storyboard
+    .map((scene) => {
+      const selector = JSON.stringify(`[data-scene="${scene.id}"]`);
+      const endSec = scene.startSec + scene.durationSec;
+      return (
+        `tl.set(${selector}, { opacity: 1 }, ${scene.startSec});\n` +
+        `tl.set(${selector}, { opacity: 0 }, ${endSec});`
+      );
+    })
+    .join("\n");
+}
+
+/**
  * Assemble the canonical document from the parsed slots. The host owns the
  * chassis, every `<section>` wrapper (so a scene can never be added, dropped,
  * merged, or retimed), the single paused timeline, its registration, and the
@@ -158,6 +203,10 @@ export function assembleSlotComposition(args: SlotAssemblyArgs): SlotAssemblyRes
     '<html lang="en">',
     "<head>",
     '<meta charset="utf-8">',
+    // Host stage floor first, model film style second: the model may extend
+    // the stage (padding, display, background) but positioning never depends
+    // on what it remembered to write.
+    `<style id="sequences-slot-stage">\n${slotStageStyle(width, height)}\n</style>`,
     `<style>\n${args.slots.filmStyle ?? ""}\n</style>`,
     "</head>",
     "<body>",
@@ -170,6 +219,8 @@ export function assembleSlotComposition(args: SlotAssemblyArgs): SlotAssemblyRes
     "window.__timelines = window.__timelines || {};",
     "const tl = gsap.timeline({ paused: true });",
     sceneBlocks,
+    "// Host-owned scene-window visibility (authoritative at the window edges).",
+    sceneVisibilityStatements(args.storyboard),
     `window.__timelines["${args.compositionId}"] = tl;`,
     "tl.seek(0);",
     "</script>",
@@ -202,10 +253,12 @@ export function attributeFindingsToScenes(
   for (const finding of findings) {
     const matched = ordered.filter((id) => {
       const esc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      // Match the id as a whole token: bounded by quotes/space/=/(/start, or a
-      // cut arrow (`a->b`), on either side — so `hero->cta` attributes to BOTH
-      // scenes while `risk` never matches inside `risk-score`.
-      const boundary = new RegExp(`(?:^|["'=\\s(]|->)${esc}(?:$|["'\\s)>.,;:!]|->)`);
+      // Match the id as a whole token: bounded by quotes/space/=/:/(/start, or
+      // a cut arrow (`a->b`), on either side — so `hero->cta` attributes to
+      // BOTH scenes, a colon-delimited signature like
+      // `component_root_missing:palette-ship:cmd-palette` attributes to
+      // `palette-ship`, and `risk` never matches inside `risk-score`.
+      const boundary = new RegExp(`(?:^|["'=:\\s(]|->)${esc}(?:$|["'\\s)>.,;:!]|->)`);
       return boundary.test(finding);
     });
     if (matched.length) {

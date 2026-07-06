@@ -20,13 +20,18 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-/** A complete slot response for a simple two-scene film. */
+/**
+ * A complete slot response for a simple two-scene film. Deliberately carries
+ * NO structural stage CSS (`#root` sizing, `.scene` positioning) and NO
+ * scene-wrapper visibility sets — exactly what the failed live probe
+ * (`sentinel-final-denseui`, blank frames) returned. The host stage floor and
+ * host-owned visibility must position and reveal the scenes on their own; if
+ * this fixture passes the gate, the chassis stands alone.
+ */
 const SLOT_RESPONSE = [
   "<film_style>",
-  "*{margin:0;box-sizing:border-box}",
   "body{background:#0b0d12;color:#f4f6fb;font-family:system-ui,sans-serif}",
-  "#root{position:relative;width:1920px;height:1080px;overflow:hidden}",
-  ".scene{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:120px}",
+  ".scene{display:flex;align-items:center;justify-content:center;padding:120px}",
   ".hero{font-size:104px;font-weight:800;line-height:1.05;max-width:1400px}",
   ".cta{font-size:88px;font-weight:800;color:#7cc4ff}",
   "</film_style>",
@@ -34,17 +39,12 @@ const SLOT_RESPONSE = [
   '<div class="hero" data-part="headline">Ship faster, every deploy</div>',
   "</scene_html>",
   '<scene_script id="hero-open">',
-  'tl.set("[data-scene=\\"hero-open\\"]", { opacity: 0 }, 0);',
-  'tl.set("[data-scene=\\"hero-open\\"]", { opacity: 1 }, 0);',
   'tl.from("[data-part=\\"headline\\"]", { y: 48, opacity: 0, duration: 0.7, ease: "power3.out" }, 0.2);',
-  'tl.set("[data-scene=\\"hero-open\\"]", { opacity: 0 }, 4);',
   "</scene_script>",
   '<scene_html id="cta-close">',
   '<div class="cta" data-part="cta">Start shipping today</div>',
   "</scene_html>",
   '<scene_script id="cta-close">',
-  'tl.set("[data-scene=\\"cta-close\\"]", { opacity: 0 }, 0);',
-  'tl.set("[data-scene=\\"cta-close\\"]", { opacity: 1 }, 4);',
   'tl.from("[data-part=\\"cta\\"]", { scale: 0.82, opacity: 0, duration: 0.7, ease: "power3.out" }, 4.2);',
   "</scene_script>",
 ].join("\n");

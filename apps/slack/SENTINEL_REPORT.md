@@ -445,7 +445,54 @@ are therefore deliberately deferred, not dropped:
 Probe artifacts (immutable):
 - Baseline (flags OFF): `.data/projects/sentinel-baseline-denseui` — published,
   no fallback.
-- Final (flags ON): `.data/projects/sentinel-final-denseui` — see the metrics
-  table (result recorded when the run lands).
+- Final (flags ON): `.data/projects/sentinel-final-denseui` — **failed loud**;
+  `FAILURE.md` at `.data/projects/sentinel-final-denseui/FAILURE.md` (root cause
+  + fix in "Final probe — honest failure" above).
 
-No probe fell back or failed loud; there are no `FAILURE.md` paths to report.
+---
+
+## Auditor review + fixes (2026-07-05, Claude Fable)
+
+Audit of the five Sentinel commits (`8e34aee`…`240c600`) against SENTINEL_PLAN.md,
+the diff, and the persisted probe artifacts.
+
+**Verdict:** Phase 0 PASS · Phase 1 PASS (both incident replays verified in the
+suite; the staged-prompt-deletion and L2-runtime-block deviations are sound
+calls) · Phase 2 cut-line met, and the reported flip-gate defect was real —
+root-caused correctly from `attempts/author-1-static-rejected.html`. The report
+was honest, with one stale contradiction (its closing line still said "no probe
+failed loud" from the pre-probe commit — corrected above).
+
+**Fixes applied by the auditor** (this commit):
+
+1. **Slot stage floor + host-owned scene-window visibility** — the flip gate.
+   `assembleSlotComposition` now injects `<style id="sequences-slot-stage">`
+   (root sizing, `.scene{position:absolute;inset:0;opacity:0}`, `.clip`
+   containment, overlay positioning) BEFORE the model's `film_style`, and emits
+   host-owned `tl.set` reveal/clear pairs per scene AFTER the authored scene
+   blocks (host wins insertion-order ties at window edges — an authored wrapper
+   set can never leave a scene stuck hidden). Mirrors the proven
+   `fallbackComposition.ts` convention. The slot prompt + continuation prompt
+   now say the host owns stage + visibility (no wrapper opacity sets).
+2. **`attributeFindingsToScenes` colon boundary.** Colon-delimited signatures —
+   the exact shape of the live failure receipts
+   (`component_root_missing:palette-ship:cmd-palette`) — previously fell into
+   `__film__`; `:` joined the left token boundary.
+3. **Skeleton overlay positioned inline.** The Phase-1 shell's
+   `<div data-camera-overlay>` carried no style; copied verbatim it would sit in
+   static flow and push the world plane. Now
+   `style="position:absolute;inset:0;pointer-events:none"`.
+4. **Tests hardened to prove the chassis, not the fixture.**
+   `test/sceneSlots.browser.test.ts` now supplies NO structural CSS and NO
+   wrapper visibility sets (the `sentinel-final-denseui` condition) and still
+   passes the real gate (`validateDirectComposition` clean +
+   `inspectDirectComposition` ok). `test/sceneSlots.test.ts` adds stage-floor /
+   visibility-emission assertions and the colon-signature attribution case.
+
+**Verification:** slack typecheck ✅ · full slack suite ✅ (all files, incl.
+both slot tests + browser QA) · fix commit noted below.
+
+**Remaining gate on flipping SLOTS on:** one paid probe (the §7.1 dense-UI
+brief, `SENTINEL_SKELETON=1 SENTINEL_SLOTS=1`, fail-loud) must publish. The
+stage-CSS root cause is fixed and browser-proven; the probe confirms it
+end-to-end. A separate SKELETON-only probe isolates the two flags.
