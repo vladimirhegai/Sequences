@@ -16,8 +16,11 @@ import {
   reconcileInteractionTargets,
   requestDirectComposition,
   requestStoryboardPlan,
+  retimeUnmotivatedTimeRamps,
   criticSkippableCleanDraft,
+  StoryboardValidationError,
 } from "../src/engine/compositionRunner.ts";
+import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
 import {
   commitDirectComposition,
   hasDirectComposition,
@@ -529,34 +532,66 @@ describe("unsupported component beats degrade at parse (fallback-elimination)", 
       .toBe("highlight");
   });
 
-  it("keeps a load-bearing unsupported beat blocking (a moment anchors on it)", () => {
-    // The beat is NOT silently degraded, so storyboard validation rejects the
-    // plan with the support-map finding — the findings-retry stays the
-    // delivery mechanism for evidence a declared moment binds to.
+  it("degrades even a LOAD-BEARING text arrival to swap (same text, same time — evidence survives)", () => {
+    // Phase-5 hardening: the 2026-07-06 probes repeatedly died on a
+    // load-bearing `type` on a non-text kind. A swap carries the SAME text on
+    // the SAME component at the SAME second, so the anchored moment keeps its
+    // evidence beat and its claim — this degrade is safe even load-bearing.
+    const parsed = planWith(
+      [{
+        version: 1,
+        id: "bad-type",
+        sceneId: "product-proof",
+        component: "alerts-table",
+        kind: "type",
+        atSec: 3.5,
+        text: "rollback checkout",
+      }],
+      [{
+        version: 1,
+        id: "m-typed-query",
+        sceneId: "product-proof",
+        atSec: 3.8,
+        title: "Query lands",
+        visualState: "typed query visible",
+        change: "the query arrives",
+        motionIntent: "type-on",
+        importance: "primary",
+      }],
+    );
+    const beat = parsed[1]!.beats!.find((entry) => entry.id === "bad-type")!;
+    expect(beat.kind).toBe("swap");
+    expect(beat.text).toBe("rollback checkout");
+    expect(parsed[1]!.moments!.some((entry) => entry.id === "m-typed-query")).toBe(true);
+  });
+
+  it("keeps a load-bearing NON-text unsupported beat blocking (a moment anchors on it)", () => {
+    // A non-text analog (highlight) changes the visual channel, so evidence a
+    // declared moment binds to is never silently rewritten — the findings-retry
+    // stays the delivery mechanism there.
     expect(() =>
       planWith(
         [{
           version: 1,
-          id: "bad-type",
+          id: "bad-open",
           sceneId: "product-proof",
-          component: "alerts-table",
-          kind: "type",
+          component: "latency-stat",
+          kind: "open",
           atSec: 3.5,
-          text: "rollback checkout",
         }],
         [{
           version: 1,
-          id: "m-typed-query",
+          id: "m-opened",
           sceneId: "product-proof",
           atSec: 3.8,
-          title: "Query lands",
-          visualState: "typed query visible",
-          change: "the query arrives",
-          motionIntent: "type-on",
+          title: "Panel opens",
+          visualState: "panel visible",
+          change: "the panel opens",
+          motionIntent: "ui-state",
           importance: "primary",
         }],
       )
-    ).toThrow(/uses "type" on a table component/);
+    ).toThrow(/uses "open" on a stat-card component/);
   });
 
   it("accepts a plan clean except for pacing on late attempts (degrade-never-veto)", () => {
@@ -706,6 +741,251 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     // new boundary — the plan stays contiguous.
     expect(middle.durationSec).toBeGreaterThan(3);
     expect(closer.startSec).toBeCloseTo(middle.startSec + middle.durationSec, 3);
+  });
+});
+
+describe("Sentinel Phase 5 — morph twin reconciliation at parse", () => {
+  function planWithMorph(components: object[], moments: object[] = []) {
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            components,
+            beats: [{
+              version: 1,
+              id: "showpiece-morph",
+              sceneId: "product-proof",
+              component: "quick-search",
+              kind: "morph",
+              atSec: 4.0,
+              morphTo: "cmd-palette",
+            }],
+            moments,
+          }
+        : scene
+    );
+    return `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+  }
+
+  it("declares the missing twin when the source kind has exactly one legal partner", () => {
+    // search morphs only with command-palette: the twin's kind is a one-choice
+    // table lookup, so the host completes the model's own declaration.
+    const parsed = parseStoryboardResponse(
+      planWithMorph([{ version: 1, id: "quick-search", kind: "search" }]),
+    );
+    const twin = parsed[1]!.components!.find((entry) => entry.id === "cmd-palette");
+    expect(twin?.kind).toBe("command-palette");
+    const beat = parsed[1]!.beats!.find((entry) => entry.id === "showpiece-morph")!;
+    expect(beat.kind).toBe("morph");
+    expect(beat.morphTo).toBe("cmd-palette");
+    expect(parsed[1]!.sentinelNormalizations?.length).toBe(1);
+  });
+
+  it("degrades an ambiguous non-load-bearing morph to highlight instead of vetoing", () => {
+    // A button has no catalog morph partner — no unique twin kind exists.
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            components: [{ version: 1, id: "cta-button", kind: "button" }],
+            beats: [{
+              version: 1,
+              id: "vague-morph",
+              sceneId: "product-proof",
+              component: "cta-button",
+              kind: "morph",
+              atSec: 4.0,
+              morphTo: "mystery-panel",
+            }],
+          }
+        : scene
+    );
+    const parsed = parseStoryboardResponse(`<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`);
+    const beat = parsed[1]!.beats!.find((entry) => entry.id === "vague-morph")!;
+    expect(beat.kind).toBe("highlight");
+    expect(beat.morphTo).toBeUndefined();
+  });
+
+  it("keeps an ambiguous LOAD-BEARING morph blocking", () => {
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            components: [{ version: 1, id: "cta-button", kind: "button" }],
+            beats: [{
+              version: 1,
+              id: "vague-morph",
+              sceneId: "product-proof",
+              component: "cta-button",
+              kind: "morph",
+              atSec: 4.0,
+              morphTo: "mystery-panel",
+            }],
+            moments: [{
+              version: 1,
+              id: "m-morph",
+              sceneId: "product-proof",
+              atSec: 4.3,
+              title: "The morph",
+              visualState: "twin visible",
+              change: "button becomes panel",
+              motionIntent: "morph",
+              importance: "primary",
+            }],
+          }
+        : scene
+    );
+    expect(() =>
+      parseStoryboardResponse(`<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`)
+    ).toThrow(/morphs to undeclared component/);
+  });
+});
+
+describe("Sentinel Phase 5 — timeRamp retime normalization", () => {
+  function rampPlan(atSec: number, withMoment: boolean) {
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            durationSec: 6,
+            timeRamp: { version: 1, atSec, slowTo: 0.35, holdSec: 0.6, recoverSec: 0.9 },
+            ...(withMoment
+              ? {
+                  moments: [{
+                    version: 1,
+                    id: "m-resolve",
+                    sceneId: "product-proof",
+                    atSec: 5.0,
+                    title: "Metric resolves",
+                    visualState: "metric at final value",
+                    change: "the number lands",
+                    motionIntent: "resolve",
+                    importance: "primary",
+                  }],
+                }
+              : {}),
+          }
+        : { ...scene, startSec: index === 2 ? 9 : scene.startSec }
+    );
+    return `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+  }
+
+  it("retimes a ramp whose hold misses the scene's own moment (direct)", () => {
+    // Declared dip at 3.6s; the only moment sits at 5.0s — previously three
+    // probe attempts died on exactly this sub-second targeting problem.
+    // (Unit-level: a full parse would also demand the film-wide moment grid,
+    // which is not what this proves.)
+    const scenes = storyboard();
+    const plan = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            durationSec: 6,
+            timeRamp: { version: 1 as const, atSec: 3.6, slowTo: 0.35, holdSec: 0.6, recoverSec: 0.9 },
+            moments: [{
+              version: 1 as const,
+              id: "m-resolve",
+              sceneId: "product-proof",
+              atSec: 5.0,
+              title: "Metric resolves",
+              visualState: "metric at final value",
+              change: "the number lands",
+              motionIntent: "resolve",
+              importance: "primary" as const,
+            }],
+          }
+        : index === 2
+          ? { ...scene, startSec: 9 }
+          : scene
+    );
+    const result = retimeUnmotivatedTimeRamps(plan);
+    expect(result.normalized).toHaveLength(1);
+    const ramped = result.scenes[1]!;
+    expect(ramped.timeRamp!.atSec).not.toBe(3.6);
+    // The retimed ramp provably resolves AND covers the moment.
+    const resolved = resolveTimeRampPlan(result.scenes).ramps.find(
+      (ramp) => ramp.sceneId === "product-proof",
+    )!;
+    const hold = timeRampHoldWindow(resolved);
+    expect(5.0).toBeGreaterThanOrEqual(hold.contentStartSec - 0.35);
+    expect(5.0).toBeLessThanOrEqual(hold.contentEndSec + 0.35);
+    expect(ramped.sentinelNormalizations?.some((note) => note.includes("retimed the timeRamp")))
+      .toBe(true);
+  });
+
+  it("leaves a scene with no moments untouched (nothing to motivate with)", () => {
+    const scenes = storyboard();
+    const plan = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            durationSec: 6,
+            timeRamp: { version: 1 as const, atSec: 3.6, slowTo: 0.35, holdSec: 0.6, recoverSec: 0.9 },
+          }
+        : index === 2
+          ? { ...scene, startSec: 9 }
+          : scene
+    );
+    const result = retimeUnmotivatedTimeRamps(plan);
+    expect(result.normalized).toEqual([]);
+    expect(result.scenes[1]!.timeRamp!.atSec).toBe(3.6);
+  });
+
+  it("keeps the blocking finding for a required ramp no retime can motivate (parse)", () => {
+    expect(() =>
+      parseStoryboardResponse(rampPlan(3.6, false), { requireTimeRamp: true })
+    ).toThrow(/timeRamp dip must be motivated/);
+  });
+});
+
+describe("Sentinel Phase 5 — normalization commits when remaining findings pre-existed", () => {
+  it("commits the pacing fix and rejects with ONLY the model's own remaining finding class", () => {
+    // The middle scene has a marginal reading miss (host-stretchable) AND the
+    // film misses the framing floor... instead use a duplicated-id error as the
+    // co-occurring, normalization-independent deficit: the stretch must COMMIT
+    // (its class is absent from the remaining findings) and the thrown message
+    // must no longer carry pacing/reading.
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            components: [{ version: 1, id: "headline", kind: "search" }],
+            beats: [{
+              version: 1,
+              id: "type-headline",
+              sceneId: "product-proof",
+              component: "headline",
+              kind: "type",
+              atSec: 5.0,
+              text: "deploy",
+            }],
+          }
+        : index === 2
+          ? { ...scene, foreground: undefined }
+          : scene
+    );
+    const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+    let error: unknown;
+    try {
+      parseStoryboardResponse(response);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(StoryboardValidationError);
+    const validation = error as StoryboardValidationError;
+    // The model's own deficit survives; the host-fixable arithmetic does not.
+    expect(validation.message).toContain("missing foreground");
+    expect(validation.message).not.toContain("pacing/reading");
+    // The carried retry baseline is the NORMALIZED plan (stretched scene).
+    expect(validation.storyboard[1]!.durationSec).toBeGreaterThan(3);
+    expect(
+      validation.storyboard[1]!.sentinelNormalizations?.some((note) => note.includes("stretched")),
+    ).toBe(true);
   });
 });
 

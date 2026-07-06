@@ -77,6 +77,7 @@ import {
   dedupeRedundantBeats,
   injectComponentKit,
   injectComponentRuntimeTag,
+  morphPartnerKinds,
   normalizeStoryboardComponentBeats,
   normalizeStoryboardComponents,
   resolveComponentPlan,
@@ -89,9 +90,16 @@ import {
   resolveMomentContract,
   topUpStoryboardMoments,
   validatePlannedMoments,
+  type StoryboardMomentV1,
 } from "./storyboardMoments.ts";
 import { analyzeMotionDensity } from "./motionDensity.ts";
-import { auditPacing, normalizeCameraBudget, stretchMarginalPacingMisses } from "./pacingAudit.ts";
+import {
+  auditPacing,
+  delayConflictingCameraMoves,
+  normalizeCameraBudget,
+  stretchMarginalPacingMisses,
+  withNormalizationNotes,
+} from "./pacingAudit.ts";
 import { readFrameMeta } from "./frameDesign.ts";
 import {
   recordSentinelLayerFinding,
@@ -3346,7 +3354,9 @@ export function validateStoryboardPlan(
   if (requirements.minCameraMoves && cameraMoves < requirements.minCameraMoves) {
     errors.push(
       `the brief explicitly requests spatial camera choreography; plan at least ` +
-        `${requirements.minCameraMoves} typed camera moves, not ${cameraMoves}`,
+        `${requirements.minCameraMoves} FULL typed camera moves ` +
+        `(pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit — drift and ` +
+        `hold do NOT count), not ${cameraMoves}`,
     );
   }
   if (
@@ -3357,7 +3367,11 @@ export function validateStoryboardPlan(
   ) {
     errors.push(
       "the brief requests one large spatial UI world; at least one shot must travel through " +
-        "multiple stations with two or more typed camera moves",
+        "multiple stations with two or more FULL typed camera moves in its own path. " +
+        "Full moves are pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit — " +
+        "drift and hold are connective and do NOT count. Recipe: give one 5s+ shot " +
+        "worldLayout cells for 2-3 regions, then pan to the second region at ~1s and " +
+        "track-to-anchor a part in the third at ~3s",
     );
   }
   if (
@@ -3587,9 +3601,16 @@ export function degradeUnsupportedComponentBeats(
       const loadBearing = (scene.moments ?? []).some((moment) =>
         moment.atSec >= beat.atSec - 0.35 && moment.atSec <= windowEnd
       );
-      if (loadBearing) return beat;
+      // A text arrival degrades to `swap` — the SAME text on the SAME
+      // component at the SAME second — so a moment anchored on it keeps its
+      // evidence beat and its claim: this one is safe even load-bearing (the
+      // 2026-07-06 probe set repeatedly died on load-bearing `type` on an
+      // app-window). Every other analog changes the visual channel, so a
+      // load-bearing beat there keeps its blocking finding.
+      const isTextAnalog = (beat.kind === "type" || beat.kind === "stream") && beat.text;
+      if (loadBearing && !isTextAnalog) return beat;
       const analog: ComponentBeatKind =
-        (beat.kind === "type" || beat.kind === "stream") && beat.text
+        isTextAnalog
           ? "swap"
           : beat.kind === "rows" &&
               typeof beat.value === "number" &&
@@ -3605,6 +3626,134 @@ export function degradeUnsupportedComponentBeats(
     return { ...scene, beats };
   });
   return { scenes, degraded };
+}
+
+/**
+ * Reconcile morph beats whose twin component was never declared (Phase-5
+ * hardening: the 2026-07-06 `sentinel-p5-camera-b` rescue attempt died SOLELY
+ * on `morphs to undeclared component`). Same conservative ladder as
+ * interaction-target reconciliation:
+ * 1. The source kind has exactly ONE legal catalog morph partner → DECLARE the
+ *    twin with that kind (id and pairing are both the model's own; only the
+ *    kind is filled from a one-choice table). The morph the model asked for
+ *    actually happens.
+ * 2. Ambiguous partner and the beat is not load-bearing → degrade the beat to
+ *    a `highlight` pulse (delete/degrade, never invent).
+ * 3. Ambiguous AND load-bearing → keep the blocking finding (silently changing
+ *    evidence a moment binds to would corrupt the review contract).
+ */
+export function reconcileUndeclaredMorphTargets(
+  storyboard: DirectScene[],
+): { scenes: DirectScene[]; changed: string[] } {
+  const changed: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    if (!scene.beats?.length) return scene;
+    const declared = new Map((scene.components ?? []).map((entry) => [entry.id, entry]));
+    let components = scene.components ?? [];
+    const notes: string[] = [];
+    const beats = scene.beats.map((beat) => {
+      if (beat.kind !== "morph" || !beat.morphTo || declared.has(beat.morphTo)) return beat;
+      const source = declared.get(beat.component);
+      const partners = source ? morphPartnerKinds(source.kind) : [];
+      if (source && partners.length === 1) {
+        const twin: (typeof components)[number] = {
+          version: 1,
+          id: beat.morphTo,
+          kind: partners[0]!,
+          ...(source.region ? { region: source.region } : {}),
+        };
+        components = [...components, twin];
+        declared.set(twin.id, twin);
+        const note =
+          `beat "${beat.id}": declared the missing morph twin "${beat.morphTo}" as the ` +
+          `${source.kind} kind's only legal partner (${partners[0]})`;
+        notes.push(note);
+        changed.push(`scene "${scene.id}" ${note}`);
+        return beat;
+      }
+      const windowEnd = beat.atSec + (beat.durationSec ?? 1.2) + 0.35;
+      const loadBearing = (scene.moments ?? []).some((moment) =>
+        moment.atSec >= beat.atSec - 0.35 && moment.atSec <= windowEnd
+      );
+      if (loadBearing) return beat;
+      const note =
+        `beat "${beat.id}": morph targets undeclared twin "${beat.morphTo}" with no ` +
+        `unique catalog partner — degraded to "highlight" (declare BOTH twins to keep a morph)`;
+      notes.push(note);
+      changed.push(`scene "${scene.id}" ${note}`);
+      const { morphTo: _twin, ...rest } = beat;
+      return { ...rest, kind: "highlight" as ComponentBeatKind };
+    });
+    if (!notes.length) return scene;
+    return withNormalizationNotes({ ...scene, components, beats }, notes);
+  });
+  return { scenes, changed };
+}
+
+/**
+ * Retime an unmotivated or unsolvable timeRamp dip onto the scene's own
+ * declared moments instead of vetoing the plan (Phase-5 hardening: the
+ * 2026-07-06 `sentinel-p5-longcopy` probe burned three attempts on "declare a
+ * moment whose atSec falls inside the slow-motion hold (23.62–23.94s)" — a
+ * sub-second target the model must hit blind against the solver's own
+ * geometry, which is host arithmetic, not creative judgment). Scans candidate
+ * atSec values across the scene window (0.1s grid, nearest-to-declared first)
+ * and commits the FIRST candidate whose ramp both resolves and covers a
+ * declared moment; a scene with no moments, or no working candidate, is left
+ * untouched (the volunteered drop / required finding path is unchanged).
+ * Retiming only ever moves the dip the model already declared — it never
+ * invents a dip or a moment.
+ */
+export function retimeUnmotivatedTimeRamps(
+  storyboard: DirectScene[],
+): { scenes: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  let scenes = [...storyboard];
+  const motivatedBy = (
+    ramp: ReturnType<typeof resolveTimeRampPlan>["ramps"][number],
+    moments: StoryboardMomentV1[],
+  ): boolean => {
+    const hold = timeRampHoldWindow(ramp);
+    return moments.some((moment) =>
+      moment.atSec >= hold.contentStartSec - 0.35 && moment.atSec <= hold.contentEndSec + 0.35
+    );
+  };
+  for (const [index, scene] of scenes.entries()) {
+    if (index === 0 || !scene.timeRamp || typeof scene.timeRamp.atSec !== "number") continue;
+    const moments = scene.moments ?? [];
+    if (!moments.length) continue;
+    const plan = resolveTimeRampPlan(scenes);
+    const resolved = plan.ramps.find((ramp) => ramp.sceneId === scene.id);
+    if (resolved && motivatedBy(resolved, moments)) continue;
+    const declaredAt = scene.timeRamp.atSec;
+    const windowStart = scene.startSec + 0.3;
+    const windowEnd = scene.startSec + scene.durationSec - 0.9;
+    const candidates: number[] = [];
+    for (let t = windowStart; t <= windowEnd + 1e-9; t += 0.1) {
+      candidates.push(Math.round(t * 100) / 100);
+    }
+    candidates.sort((a, b) => Math.abs(a - declaredAt) - Math.abs(b - declaredAt));
+    for (const candidate of candidates) {
+      const trial = scenes.map((entry, entryIndex) =>
+        entryIndex === index
+          ? { ...entry, timeRamp: { ...entry.timeRamp!, atSec: candidate } }
+          : entry
+      );
+      const trialResolved = resolveTimeRampPlan(trial).ramps.find(
+        (ramp) => ramp.sceneId === scene.id,
+      );
+      if (!trialResolved || !motivatedBy(trialResolved, moments)) continue;
+      const note =
+        `retimed the timeRamp dip from ${declaredAt.toFixed(2)}s to ${candidate.toFixed(2)}s ` +
+        `so its slow-motion hold covers a declared moment`;
+      scenes = trial.map((entry, entryIndex) =>
+        entryIndex === index ? withNormalizationNotes(entry, [note]) : entry
+      );
+      normalized.push(`scene "${scene.id}": ${note}`);
+      break;
+    }
+  }
+  return { scenes, normalized };
 }
 
 /**
@@ -3654,6 +3803,22 @@ export function dropUnusableVolunteeredTimeRamps(storyboard: DirectScene[]): Dir
   return scenes;
 }
 
+/**
+ * A storyboard rejection that carries the exact plan the findings describe
+ * (post any committed normalization), so the findings-retry can hand the model
+ * its own artifact back for a MINIMAL edit instead of a from-scratch redesign
+ * — the 2026-07-06 probe set showed every from-scratch retry minting fresh
+ * violations (whack-a-mole) across both planner models.
+ */
+export class StoryboardValidationError extends Error {
+  readonly storyboard: DirectScene[];
+  constructor(errors: string[], storyboard: DirectScene[]) {
+    super(`invalid storyboard plan: ${errors.join("; ")}`);
+    this.name = "StoryboardValidationError";
+    this.storyboard = storyboard;
+  }
+}
+
 export function parseStoryboardResponse(
   raw: string,
   requirements: StoryboardPlanRequirements = {},
@@ -3672,8 +3837,19 @@ export function parseStoryboardResponse(
       ? { capabilityIds: scene.capabilityIds.filter((id) => knownCapabilities.has(id)) }
       : {}),
   }));
-  // Ramps are enhancements: a volunteered dip degrades to no dip rather than
-  // vetoing the plan. Brief-demanded ramps keep their blocking findings.
+  // Ramp arithmetic is host-owned: an unmotivated or unsolvable dip first gets
+  // retimed onto the scene's own declared moments (commits only when the
+  // retimed ramp provably resolves + motivates — a per-scene convergence
+  // check). Only then are still-broken VOLUNTEERED dips dropped; brief-demanded
+  // ramps that no retime can save keep their blocking findings.
+  const rampRetime = retimeUnmotivatedTimeRamps(storyboard);
+  if (rampRetime.normalized.length) {
+    storyboard = rampRetime.scenes;
+    for (const line of rampRetime.normalized) {
+      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
+    }
+    recordSentinelNormalization("timeramp-retime", rampRetime.normalized.length);
+  }
   if (!requirements.requireTimeRamp) {
     storyboard = dropUnusableVolunteeredTimeRamps(storyboard);
   }
@@ -3726,9 +3902,16 @@ export function parseStoryboardResponse(
   // the findings-retry describes what the model actually wrote (the
   // degradeVolunteeredBridgedCuts commit-only-if-clean precedent).
   const preNormalization = storyboard;
-  const cameraBudget = normalizeCameraBudget(storyboard);
-  const pacingStretch = stretchMarginalPacingMisses(cameraBudget.storyboard);
-  const normalizationLines = [...cameraBudget.normalized, ...pacingStretch.normalized];
+  const morphFix = reconcileUndeclaredMorphTargets(storyboard);
+  const cameraBudget = normalizeCameraBudget(morphFix.scenes);
+  const moveDelay = delayConflictingCameraMoves(cameraBudget.storyboard);
+  const pacingStretch = stretchMarginalPacingMisses(moveDelay.storyboard);
+  const normalizationLines = [
+    ...morphFix.changed,
+    ...cameraBudget.normalized,
+    ...moveDelay.normalized,
+    ...pacingStretch.normalized,
+  ];
   if (normalizationLines.length) storyboard = pacingStretch.storyboard;
 
   // Moment paperwork the plan already proves is filled in by the host, not
@@ -3780,31 +3963,51 @@ export function parseStoryboardResponse(
 
   storyboard = topUpMoments(storyboard);
   let errors = resolveErrors(storyboard);
-  if (normalizationLines.length) {
-    if (errors.length) {
-      // Non-convergent: the normalization fixed the pacing arithmetic but the
-      // plan still (or newly) fails validation. Revert to the model's own
-      // artifact — its findings are the honest retry input, and on a final
-      // attempt the polish demotion judges the plan the model actually wrote.
+  if (normalizationLines.length && errors.length) {
+    // The normalized plan still fails validation. COMMIT anyway when every
+    // remaining finding belongs to a class the model's OWN plan already had
+    // (digit-stripped comparison, so re-timed instances of the same class
+    // match): the arithmetic fixes stand, the retry list shrinks to the real
+    // deficits, and the findings describe the plan the retry baseline carries.
+    // REVERT when the normalization MINTED a finding class the model never
+    // earned (minCameraMoves after a clamp, moment spacing after a stretch…)
+    // — the model's own findings are the honest retry input then. This is the
+    // 2026-07-06 probe lesson: the old commit-only-if-fully-clean rule meant
+    // normalizations never committed (every probe plan also carried a moments
+    // deficit) and the model had to re-fix host-fixable arithmetic each retry.
+    const classKey = (finding: string): string => finding.replace(/\d+(?:\.\d+)?/g, "#");
+    const originalPlan = topUpMoments(preNormalization);
+    const originalErrors = resolveErrors(originalPlan);
+    const originalKeys = new Set(originalErrors.map(classKey));
+    const introduced = errors.filter((finding) => !originalKeys.has(classKey(finding)));
+    if (introduced.length) {
       process.stderr.write(
-        `[storyboard] sentinel-normalization reverted (normalized plan still fails ` +
-          `validation: ${errors[0]}${errors.length > 1 ? `; +${errors.length - 1} more` : ""})\n`,
+        `[storyboard] sentinel-normalization reverted (it would mint a new finding ` +
+          `class: ${introduced[0]})\n`,
       );
-      storyboard = topUpMoments(preNormalization);
-      errors = resolveErrors(storyboard);
-    } else {
-      for (const line of normalizationLines) {
-        process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
-      }
-      if (cameraBudget.normalized.length) {
-        recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
-      }
-      if (pacingStretch.normalized.length) {
-        recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
-      }
+      storyboard = originalPlan;
+      errors = originalErrors;
+      normalizationLines.length = 0;
     }
   }
-  if (errors.length) throw new Error(`invalid storyboard plan: ${errors.join("; ")}`);
+  if (normalizationLines.length) {
+    for (const line of normalizationLines) {
+      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
+    }
+    if (morphFix.changed.length) {
+      recordSentinelNormalization("morph-twin-reconcile", morphFix.changed.length);
+    }
+    if (cameraBudget.normalized.length) {
+      recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
+    }
+    if (moveDelay.normalized.length) {
+      recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);
+    }
+    if (pacingStretch.normalized.length) {
+      recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
+    }
+  }
+  if (errors.length) throw new StoryboardValidationError(errors, storyboard);
   return storyboard;
 }
 
@@ -4217,8 +4420,17 @@ export function inferStoryboardPlanRequirements(
   );
   const explicitComponents =
     /\bcomponent beats?\b|\bcomponents?\s+for\b|\bmotion-native components?\b/i.test(brief);
+  // A WORLD demand ("one large spatial UI world", "stations") is stronger than
+  // a camera-motion mention ("camera moves"): only the former earns the
+  // multi-station single-shot requirement — the validation finding literally
+  // claims "the brief requests one large spatial UI world", so inferring it
+  // from a passing "camera move" fabricated a demand the brief never made
+  // (2026-07-06 probe `sentinel-p5-camera-b` burned 5 attempts against it).
+  const explicitWorld =
+    /\blarge spatial\b|\bspatial ui world\b|\bone (?:large|big|continuous) world\b|\b(?:camera |named |multiple )stations?\b/i
+      .test(brief);
   const explicitCamera =
-    /\blarge spatial\b|\bspatial ui world\b|\bcamera (?:push|pan|whip|move|travel)/i.test(brief);
+    explicitWorld || /\bcamera (?:push|pan|whip|move|travel)/i.test(brief);
   return {
     ...(targetDurationSec ? { targetDurationSec } : {}),
     ...(requestedComponentKinds.length ? { requestedComponentKinds } : {}),
@@ -4234,7 +4446,10 @@ export function inferStoryboardPlanRequirements(
         }
       : {}),
     ...(explicitCamera
-      ? { minCameraMoves: 2, requireMultiStationWorld: true }
+      ? {
+          minCameraMoves: 2,
+          ...(explicitWorld ? { requireMultiStationWorld: true } : {}),
+        }
       : {}),
     ...(/\bobject[\s-]?match cuts?\b/i.test(brief)
       ? { requireObjectMatch: true }
@@ -4526,10 +4741,20 @@ export async function requestStoryboardPlan(
     ...(requirements.minCameraMoves
       ? [
           "",
-          "BRIEF-SPECIFIC CAMERA COVERAGE â€” this brief explicitly asks for a",
-          `spatial camera world. Plan at least ${requirements.minCameraMoves} full typed camera`,
-          "moves, with one shot traveling through multiple named stations. A set of",
-          "static shots or a single minor pan does not satisfy the request.",
+          "BRIEF-SPECIFIC CAMERA COVERAGE — this brief explicitly asks for a",
+          `spatial camera world. Plan at least ${requirements.minCameraMoves} FULL typed camera`,
+          "moves. Full moves are pan/whip/push-in/pull-back/track-to-anchor/",
+          "parallax-pass/orbit — drift and hold are connective travel and do NOT",
+          "count toward this coverage. A set of static shots or a single minor",
+          "pan does not satisfy the request.",
+          ...(requirements.requireMultiStationWorld
+            ? [
+                "At least ONE shot must itself travel through multiple stations with",
+                "2+ FULL moves in its own path. Recipe: one 5s+ shot, worldLayout",
+                "cells for 2-3 regions, pan to the second region at ~1s, then",
+                "track-to-anchor (or pan with zoom) onto the third at ~3s.",
+              ]
+            : []),
         ]
       : []),
     ...(requirements.requireObjectMatch
@@ -4568,6 +4793,12 @@ export async function requestStoryboardPlan(
     "the back half); do not cluster them at entrances, and make consecutive",
     "moments show visibly different frames. Mark the film's key images",
     '"primary" (5-8 per film) and connective development "supporting".',
+    "METHOD — plan typed beats and camera arrivals FIRST, then place moments",
+    "ON them: any ~2.5s stretch of the film with no typed beat, camera",
+    "arrival, or cut is rejected as a dead interval, because a moment there",
+    "would have no executable evidence. When you find a dead stretch, add a",
+    "count/progress/highlight development beat on an existing component (or a",
+    "camera arrival) there — never a bare moment.",
     "",
     ...(concept
       ? [
@@ -4673,14 +4904,16 @@ export async function requestStoryboardPlan(
     "cursor actor, hotspot, endpoint, press, visibility lifecycle, and ripple.",
   ].filter(Boolean).join("\n");
   // The storyboard is a bounded artifact: when the model returns a plan that
-  // deterministic validation rejects, retry only this stage with the
-  // exact findings — never fall through to the safe fallback on a first
-  // creative miss, and never replay the concept pass. When the primary model
-  // exhausts its attempts — validation rejections OR transient route
-  // exhaustion — one independent rescue model gets the same brief plus the
-  // accumulated findings before the caller may ship the deterministic
-  // fallback: a fresh draw from a different model recovers far more often
-  // than a fourth try of a model that is systematically missing the contract.
+  // deterministic validation rejects, retry only this stage with the exact
+  // findings PLUS the rejected plan itself for a minimal edit — never fall
+  // through to the safe fallback on a first creative miss, and never replay
+  // the concept pass. (2026-07-06 probe lesson: findings-only retries made
+  // both planner models redesign from scratch each attempt, minting fresh
+  // violations — 4/5 probes exhausted all five rungs that way.) When the
+  // primary model exhausts its attempts — validation rejections OR transient
+  // route exhaustion — one independent rescue model gets the same brief, the
+  // last rejected plan, and the accumulated findings before the caller may
+  // ship the deterministic fallback: different model, same convergence seam.
   const rescue = storyboardRescueModel(provider, model);
   const rungs: Array<{
     label: string;
@@ -4700,6 +4933,7 @@ export async function requestStoryboardPlan(
   ];
   let totalAttempts = 0;
   let lastValidationError: Error | undefined;
+  let lastRejectedPlan: DirectScene[] | undefined;
   let lastError: unknown;
   // One grace replay per RUN for a response carrying no storyboard artifact at
   // all: there was no plan to reject, so spending a scarce attempt on it is
@@ -4720,9 +4954,28 @@ export async function requestStoryboardPlan(
         ...(lastValidationError
           ? [
               "",
-              "## Previous attempt rejected",
-              "Deterministic validation rejected the previous storyboard. Fix every",
-              "finding below and return a corrected, complete storyboard:",
+              "## Previous attempt rejected — fix it with the SMALLEST edit",
+              ...(lastRejectedPlan
+                ? [
+                    "Deterministic validation rejected the storyboard below. Do NOT",
+                    "redesign it: keep every shot id, duration, camera move, beat,",
+                    "moment, and creative choice that no finding names EXACTLY as it",
+                    "is; apply the smallest edit that fixes each finding (each finding",
+                    "names its own fix), and return the corrected COMPLETE storyboard.",
+                    "A redesign mints new violations — surgical fixes converge.",
+                    "<previous_storyboard_json>",
+                    JSON.stringify(
+                      lastRejectedPlan.map(
+                        ({ sentinelNormalizations: _notes, ...scene }) => scene,
+                      ),
+                    ),
+                    "</previous_storyboard_json>",
+                    "Findings to fix (each names its own fix):",
+                  ]
+                : [
+                    "Deterministic validation rejected the previous storyboard. Fix every",
+                    "finding below and return a corrected, complete storyboard:",
+                  ]),
               ...lastValidationError.message
                 .replace(/^invalid storyboard plan:\s*/i, "")
                 .split("; ")
@@ -4859,6 +5112,11 @@ export async function requestStoryboardPlan(
             continue;
           }
           lastValidationError = error;
+          // The retry baseline: the exact plan the findings describe (post any
+          // committed normalization). Minimal-edit retries converge where
+          // findings-only from-scratch retries whack-a-mole.
+          lastRejectedPlan =
+            error instanceof StoryboardValidationError ? error.storyboard : undefined;
           persistStoryboardAttempt(args.projectDir, totalAttempts, "rejected", {
             rung: rung.label,
             raw,
