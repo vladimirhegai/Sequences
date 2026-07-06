@@ -1030,6 +1030,13 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     expect(criticSkippableCleanDraft({ ...base, infraError: "no chrome" })).toBe(false);
     expect(criticSkippableCleanDraft(undefined)).toBe(false);
   });
+
+  it("runs the critic when the shipped draft carries static repair warnings", () => {
+    // A repaired-but-pixel-pristine least-bad pick is exactly a draft the
+    // critic can improve — the least-bad penalty weights these, so the skip
+    // predicate must too (Phase-5 audit item S3a).
+    expect(criticSkippableCleanDraft(base, ["frame: hero contrast repaired"])).toBe(false);
+  });
 });
 
 describe("direct HyperFrames composition", () => {

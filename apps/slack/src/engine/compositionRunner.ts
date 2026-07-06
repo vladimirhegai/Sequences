@@ -137,6 +137,12 @@ export interface CompositionRunResult {
   attempts: number;
   /** Browser QA of the returned draft when a pass ran (feeds cut discovery). */
   browserQa?: DirectBrowserQaResult;
+  /**
+   * Static frame/motion repair warnings the returned draft still carries (the
+   * least-bad pick weights these; the critic-skip predicate must too — a
+   * repaired-but-pixel-pristine draft is exactly a draft the critic can help).
+   */
+  staticRepairWarnings?: string[];
 }
 
 const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
@@ -5521,9 +5527,12 @@ function browserQualityPenalty(
  * reaches the critic has already cleared the moment contract. Conservative by
  * construction: anything less than pristine still runs the critic.
  */
-export function criticSkippableCleanDraft(browserQa: DirectBrowserQaResult | undefined): boolean {
+export function criticSkippableCleanDraft(
+  browserQa: DirectBrowserQaResult | undefined,
+  staticRepairWarnings: string[] = [],
+): boolean {
   if (!browserQa || browserQa.infraError) return false;
-  return browserQa.strictOk && browserQualityPenalty(browserQa) === 0;
+  return browserQa.strictOk && browserQualityPenalty(browserQa, staticRepairWarnings) === 0;
 }
 
 function availableAssets(projectDir: string): string {
@@ -6960,7 +6969,14 @@ async function authorCompositionLoop(
         ];
         const qualityPenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
         if (!lastBrowserValid || qualityPenalty < lastBrowserValid.qualityPenalty) {
-          lastBrowserValid = { draft, raw, attempts: attempt, browserQa, qualityPenalty };
+          lastBrowserValid = {
+            draft,
+            raw,
+            attempts: attempt,
+            browserQa,
+            qualityPenalty,
+            staticRepairWarnings,
+          };
         }
       }
       // Visual findings receive a repair opportunity, but they are heuristic:
@@ -7343,7 +7359,7 @@ async function applyContinuityCritique(
   // exists to improve.
   if (
     process.env.SLACK_SEQUENCES_CRITIC_SKIP_CLEAN !== "0" &&
-    criticSkippableCleanDraft(result.browserQa)
+    criticSkippableCleanDraft(result.browserQa, result.staticRepairWarnings ?? [])
   ) {
     process.stderr.write(
       "[critic] skipped: draft is already clean (strictOk, zero quality penalty)\n",
