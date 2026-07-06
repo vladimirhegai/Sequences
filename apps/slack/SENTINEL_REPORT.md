@@ -293,20 +293,42 @@ reassess along with its paid-probe confirmation.
 
 ## Metrics table (baseline vs post-Phase-5)
 
-Populated from `npm run sentinel:report`. Baseline = pre-Sentinel defaults
-(flags OFF); Final = Phase-5 defaults (flags ON).
+Populated from `npm run sentinel:report`. Per the user's decision, **one**
+baseline probe (flags OFF) + **one** final probe (flags ON) were run on the §7.1
+dense-UI brief (command-palette + modal + stat-card + button + terminal),
+`--provider openrouter-api --no-mcp --render`, fail-loud ON. The full 3-brief ×
+2 set is left for the Phase-5 pass.
 
-| Metric | Target | Baseline | Final |
+Note: "Baseline" here is **not** truly pre-Sentinel — Phase 1's unconditional
+island-strip is active even with flags OFF (it is not flag-gated). The baseline
+below already shows it firing 10× (`island-strip: 10`), i.e. the model authored
+10 host islands that would have reached validation pre-Sentinel (the incident-2
+fallback risk). "Final" = `SENTINEL_SKELETON=1 SENTINEL_SLOTS=1`.
+
+| Metric | Target | Baseline (flags OFF) | Final (flags ON) |
 | --- | --- | --- | --- |
-| Hard authoring failures (fail-loud) | 0 | ⏳ | ⏳ |
-| Storyboard attempts / run (avg) | ≤ 1.5 | ⏳ | ⏳ |
-| Source-author attempts / run (avg) | ≤ 1.5 | ⏳ | ⏳ |
-| Wall-clock to tier-1 (avg) | ≤ 8 min | ⏳ | ⏳ |
-| Wall-clock to tier-2 (avg) | ≤ 14 min | ⏳ | ⏳ |
-| Author prompt size (max chars) | ≤ 45,000 | ⏳ | ⏳ |
-| Model calls / clean run (avg) | ≤ 5 | ⏳ | ⏳ |
+| Disposition | published | **published, no fallback** | ⏳ |
+| Hard authoring failures (fail-loud) | 0 | 0 | ⏳ |
+| Visible fallbacks | 0 | 0 | ⏳ |
+| Storyboard attempts / run (avg) | ≤ 1.5 | 3 | ⏳ |
+| Source-author attempts / run (avg) | ≤ 1.5 | 3 | ⏳ |
+| Wall-clock to tier-1 (avg) | ≤ 8 min | 22.1 min | ⏳ |
+| Wall-clock to tier-2 (avg) | ≤ 14 min | 24.1 min | ⏳ |
+| Author prompt size (max chars) | ≤ 45,000 | 105,516 | ⏳ |
+| Model calls / clean run (avg) | ≤ 5 | 8 | ⏳ |
 
-⏳ = requires a paid `sequence:check` probe (§7). Not yet run — see Open items.
+Baseline layer breakdown: normalize **26** (island-strip 10, interaction-binding
+14, runtime-order 2), static 1, browser 2, model-retry 2; scaffold 0 (flags OFF).
+Baseline project dir: `.data/projects/sentinel-baseline-denseui` (immutable).
+
+**What the baseline proves about the plan's diagnosis** (the §1 doom loop, now
+measured): storyboard-plan alone was **~16.9 min across 3 attempts** — by far the
+dominant cost — and the author prompt was **105,516 chars** (2.3× the 45k
+target). These are exactly what Phase 3 (normalize-before-retry + ladder/latency
+retune) and Phase 4 (prompt-budget test) target and are **not yet built** (the
+user paused after Phase 2). The Sentinel *paperwork* fixes (Phases 1-2) do not
+by themselves move storyboard latency or prompt size; those two metrics move
+only with Phase 3-4.
 
 ---
 
@@ -351,7 +373,30 @@ Evidence: `apps/slack/test/authorReliability.test.ts`; run with
 
 ## Open items
 
-- **Paid baseline numbers.** The mission metrics table needs the §7 probe set
-  run once at baseline (flags OFF) and once post-Phase-5 (flags ON). The
-  instrument is proven on a real model-free run; the paid runs are a spend
-  decision and are pending. When run, each records its project dir here.
+The user directed **Phase 2 only, then reassess**, and after Phase 2 chose to
+**pause** (report finalized with one baseline + one final probe). The following
+are therefore deliberately deferred, not dropped:
+
+- **Phase 3 — storyboard normalization + ladder/latency retune** (NOT built).
+  The baseline measured the exact problem it targets: storyboard-plan ~16.9 min
+  over 3 attempts, driven by *pacing/reading* and *moment-spacing* rejections
+  (mechanically normalizable — reading-floor shift, moment top-up already exists
+  partially). Highest-value remaining work for the Jul 13 latency target.
+- **Phase 4 — contract manifest (`sentinel.ts`) + prompt-budget test +
+  SENTINEL.md** (NOT built). The baseline author prompt was 105,516 chars (2.3×
+  the 45k target); `test/promptBudget.test.ts` would enforce the ceiling. The
+  closed-world finding-prefix CI test and the feature-addition protocol doc are
+  the "airtight system + how to extend it" deliverable — still owed.
+- **Phase 5 — flip defaults ON + full §7 probe set + Docker/Railway smoke** (NOT
+  done). Flags remain default OFF; the legacy path is the shipping default.
+- **Phase 2 full slot-scoped validation retry** — the cut-line shipped; the
+  parallel per-scene re-request (the headline cost lever) is deferred (its
+  attribution + assembly substrate are in place).
+
+Probe artifacts (immutable):
+- Baseline (flags OFF): `.data/projects/sentinel-baseline-denseui` — published,
+  no fallback.
+- Final (flags ON): `.data/projects/sentinel-final-denseui` — see the metrics
+  table (result recorded when the run lands).
+
+No probe fell back or failed loud; there are no `FAILURE.md` paths to report.
