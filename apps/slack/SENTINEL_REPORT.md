@@ -1353,3 +1353,171 @@ at the auditor's discretion — no code in it.
 - ❌ **NOT run:** Docker gate, `railway up` + `/healthz`, Slack sandbox smoke,
   real hosted-MCP flow, a live revise/undo probe (verified by code instead). The
   flip is not applied, so no flag-flip diff was gated.
+
+---
+
+## Auditor review + Sentinel COMPLETION (2026-07-06, session 4 — Fable)
+
+Commits `505de05` (convergence + morph quality), `55e6df9` (S3a),
+`bfdc5c0` (default flip + last-resort salvage + copy fidelity), plus this
+report. The operator's completion bar — multiple probes with no failures,
+fewer model attempts, faster generation, higher motion-design quality — is
+measured below against the immutable job dirs.
+
+### Phase 4 — audit verdict: PASS
+
+- **Closed-world registry test verified to bite**: a fake finding injected
+  into `pacingAudit.ts` failed `test/sentinel.test.ts` with the exact
+  register-or-whitelist message (source restored after). Both directions
+  (unregistered-emitted, registered-but-dead) enforce.
+- Registry structure, layer/blocking vocabulary, per-row test existence, and
+  the 15 obligation groups check out. `promptCostChars` values are advisory
+  hand-estimates (as documented) — not verified numerically.
+- `test/promptBudget.test.ts` measures the assembled fixture prompt (81,099
+  chars) against a regression ceiling with the 45k target as an intentional
+  `.todo` — honest scoping. The L1 scaffold counter is real (probe evidence)
+  and `sentinelFlags.ts` is the single flag source of truth.
+
+### Phase 5 probes — the "out of Sentinel scope" verdict was WRONG
+
+The implementer's flag-independence claim was code-verified and correct; the
+storyboard-fragility diagnosis was correct; but the handoff's conclusion
+("fixing storyboard capability is outside Sentinel's scope") was rejected by
+this audit. The persisted rejected storyboards show the failures were
+host-owned CONVERGENCE defects, every one fixable inside Sentinel doctrine:
+
+1. **Findings-only retries caused the whack-a-mole.** The retry prompt never
+   included the rejected plan, so every retry was a from-scratch redesign
+   minting fresh violations (visible attempt-over-attempt in all four p5
+   fail-loud dirs, on both planner models). Fixed:
+   `StoryboardValidationError` carries the exact plan the findings describe;
+   the retry demands a FIELD-FOR-FIELD reproduction with only the named
+   fixes (`sentinel-p6-camera-r2` additionally showed GLM lossy-copying —
+   dropping camera `toRegion` targets — so the prompt names the droppable
+   fields). The rescue rung gets the same baseline.
+2. **The Phase-3 atomic rule was too strict to ever commit live.**
+   Commit-only-if-fully-clean meant every probe engagement REVERTED (every
+   plan also carried a moments deficit) and models re-fixed host-fixable
+   arithmetic each retry. Fixed: normalizations commit when every remaining
+   finding belongs to a class (digit-stripped) the model's own plan already
+   carried; a minted NEW class still reverts.
+3. **`requireMultiStationWorld` was fabricated from weak signals** (a passing
+   "camera moves" inferred a demand the finding attributed to the brief
+   verbatim). Fixed: only explicit world/station language infers it; finding
+   + prompt now name which verbs count (drift/hold do NOT) with a recipe —
+   the p5 plans show models declaring drift/hold pairs believing they
+   complied.
+4. **Three new L2 normalizers** own the dominant mechanical rejection classes
+   (all load-bearing-guarded, all atomic, all registered):
+   `delayConflictingCameraMoves` (the `pacing/outcome` "0.0s later" spam),
+   `retimeUnmotivatedTimeRamps` (the sub-second solver-geometry hold window
+   models had to hit blind), `reconcileUndeclaredMorphTargets` (unique
+   catalog partner declares the missing morph twin; ambiguity still blocks).
+   Plus load-bearing TEXT beats degrade to `swap` and load-bearing numeric
+   fills to `count` (same payload, same second — evidence survives).
+5. **Last-resort moment salvage** (`normalize.moment-demote-last-resort`):
+   when the author ladder exhausts with a draft blocked SOLELY by
+   `storyboard/moments:` paperwork, the unbound PRIMARY moments demote to
+   supporting (re-anchor-or-drop with a warning — the existing supporting
+   path), and the draft ships only if static + browser gates then pass.
+   This was `sentinel-p6-longcopy`'s death (5 paid author attempts on one
+   unbound decorative moment). NOTE: a plan-time typed-anchor gate was
+   prototyped and REVERTED — the fallback film and the 2026-07-04 paperwork
+   lever both legitimately declare tween-bound moments; blocking them early
+   would RAISE attempt counts. The salvage owns the class at the right layer.
+
+### Quality — the operator's "weird morphing / flashing components" report
+
+Both root causes found and fixed deterministically, then verified in a live
+re-run of the same brief:
+
+- `compileMorph` FLIPped onto the full-scene overlay ROOT (`.cmp-modal` is
+  `inset:0`), not its visual `.cmp-dialog` — a palette "morphing into a
+  modal" scaled onto a full-screen rect. It now FLIPs visual-box→visual-box
+  AND performs the full open-equivalent reveal (scrim/panel/items +
+  data-state): a morph IS the twin's entrance.
+- The p5 film's `morph @3.10 → open @3.70` on the same modal re-ran the
+  entrance over the morph reveal (two build-time fromTo tweens fighting →
+  the split-second flash). `dedupeRedundantBeats` Rule 4 now drops an `open`
+  on a morphed-in twin (unless a `close` intervened).
+- Live proof: `sentinel-p7-denseui` (same brief) published with 1 morph and
+  ZERO open-on-twin conflicts; `sentinel-p7-camera`'s brief-required
+  sparkline→bars morph shipped through a host-reconciled twin.
+
+### The completion probe battery (all fail-loud, fresh job-ids)
+
+Round 1 (flags ON via env) and round 2 (NO flag env — the flipped DEFAULTS,
+validating Phase 5.3 live):
+
+| Probe | Brief shape | p5 baseline | This session | Storyboard | Total | Moments |
+| --- | --- | --- | --- | --- | --- | --- |
+| `sentinel-p6-camera-b` | gentle camera | fail-loud, 5 att / 28.7 min | **published** | 3 att / 2.5 min | 8.4 min | 10/10 |
+| `sentinel-p6-interactions` | inbox + 2 cursors | fail-loud, 5 att / 25.5 min | **published** | 3 att / 2.8 min | 9.7 min | 18/18 |
+| `sentinel-p7-camera` | §7.2 forced-world camera + morph | fail-loud (also failed p6 pre-fix) | **published** | **2 att** / 6.9 min | 11.4 min | 17/17 |
+| `sentinel-p7-longcopy` | §7.3 long copy + 2 cursors + required ramp | fail-loud (p6: died at source) | **published** | 3 att / 11.3 min | 18.9 min | 21/21 |
+| `sentinel-p7-denseui` | §7.1 dense-UI (morph-quality regression) | published (with the morph artifacts) | **published**, clean morph hygiene | 4 att / 12.5 min | 19.1 min | 19/19 |
+
+- **Zero fallbacks, zero fail-louds across all five publishing runs**; every
+  probe ran fail-loud (`ALLOW_DETERMINISTIC_FALLBACK=0`), so nothing was
+  masked. The two p6 fail-louds (`sentinel-p6-camera-r2`,
+  `sentinel-p6-longcopy`) were diagnosed from artifacts, fixed, and their
+  re-runs published — their job dirs remain as evidence.
+- **The §7 acceptance ("all three publish, zero fallback") is now MET**, on
+  the flipped defaults (p7 probes ran with no flag env;
+  `skeletonEnabled/slotsEnabled: true` in their sentinel-run.json).
+- **Attempts and wall-clock**: storyboard attempts 2-4 (was 5-6 + fail),
+  wall-clock 2.5-12.5 min (was 10-29 min + fail); the p5 "storyboard attempts
+  avg ≤1.5" acceptance remains unmet as written, but the metric it proxied
+  (cost of the storyboard stage) fell by 3-10× on the failing shapes, with
+  publishes instead of failures.
+- **The Phase-3/5 normalizers are now probe-proven COMMITTED** (closing p5
+  open item S2): `timeramp-retime` (p6-camera-b, p7-denseui),
+  `pacing-stretch` (p7-longcopy ×2, p7-denseui), committed-with-findings
+  observed live shrinking retry lists. `camera-move-delay` and
+  `morph-twin-reconcile` are unit-proven; their trigger shapes did not recur
+  in the final battery.
+- Deferred levers stay deferred with probe backing: 3.2 ladder 3→2 (probes
+  still use the 3rd primary attempt — the demotion rung — routinely; cutting
+  it would have fail-louded p7-longcopy and p7-denseui), 3.3 token budget
+  (rescue attempts still hit the completion ceiling occasionally), 3.5
+  slot-retry (its trigger — a hero-frame defect on a least-bad pick — did
+  not occur).
+
+### Flags / state after this session
+
+`SLACK_SEQUENCES_SENTINEL_SKELETON` and `SLACK_SEQUENCES_SENTINEL_SLOTS`
+**default ON** (`=0` reverts, one release). The legacy whole-doc author
+suites pin `=0` explicitly; slot coverage lives in `sceneSlots*`,
+`promptBudget`, and the probes. `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN` default
+ON, now weighing static repair warnings (S3a closed). Storyboard cache
+contract stays v10 — every new normalizer fires only on validation-failing
+plans, which are never cached; validation semantics changed only in finding
+TEXT (message wording), which re-validation absorbs.
+
+### Verification layers that actually ran (session 4)
+
+- ✅ typecheck; ✅ full suite **539 passed + 1 todo** (under the flipped
+  defaults); ✅ `film:demo` byte-stable signature (twice, incl. post-flip);
+  ✅ `demo`, ✅ `mcp:demo`, ✅ `direct:demo`; ✅ closed-world bite test
+  (negative control).
+- ✅ **10 paid live probes** across two rounds (5 published, 2 diagnosed
+  fail-louds that re-published after fixes, plus round-1 re-runs), all
+  fail-loud, all artifact-verified.
+- ❌ NOT run: Docker gate, `railway up`/`healthz`, Slack sandbox smoke, real
+  hosted-MCP flow, a live revise/undo. **Owed before judging:** the Docker +
+  sandbox ladder, and `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1` on
+  Railway (FALLBACKS.md pre-judging checklist).
+
+### Remaining open items (ranked)
+
+1. **Prompt budget (S4, Phase-4 `.todo`)**: the author prompt is still
+   ~99-120k chars live vs the 45k target. The skeleton is now default-ON, so
+   SENTINEL.md's reduction-plan item 1 (scaffold-prose deletion) is
+   unblocked — the single biggest cost lever left.
+2. **In-flight payoff conflicts** (`pacing/outcome` on a beat during a
+   camera move) remain the most common surviving finding class — they demote
+   honestly on the final rung today; a camera-arrival-sync normalizer is
+   possible but touches the "signature move" and should be probe-designed.
+3. **Slot-envelope drift** (author returns whole-doc into slot mode) costs
+   ~1 author attempt occasionally; a deterministic whole-doc→slot splitter
+   at parse would absorb it.
