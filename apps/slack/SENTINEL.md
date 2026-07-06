@@ -114,6 +114,7 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.camera-move-delay` | L2 normalize | det-repair | — (prevents `pacing/outcome` "0.0s later") | pacingAudit |
 | normalize | `normalize.timeramp-retime` | L2 normalize | det-repair | — (prevents ramp motivation/solvability vetoes) | directComposition |
 | normalize | `normalize.morph-twin-reconcile` | L2 normalize | det-repair | — (prevents morph-to-undeclared-twin vetoes) | directComposition |
+| normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites `fromTo(t, vars, <number>)` → `from(...)`; prevents a `runtime_bind_exception` compile crash) | authorReliability |
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
 | camera | `camera.energy` | L3 static | blocking | `camera/energy` | cameraContract |
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |

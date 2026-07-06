@@ -17,6 +17,7 @@ import {
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
   reconcileContractBindings,
+  repairMalformedFromToCalls,
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
   stripAllHostPlanIslands,
@@ -1068,6 +1069,28 @@ describe("Sentinel Phase 1 — skeleton scaffold makes paperwork classes unrepre
     expect(paletteShell).toContain("cmp-button");
     // The exemplar's placeholder data-part is not leaked.
     expect(paletteShell).not.toContain('data-part="deploy-cta"');
+  });
+});
+
+describe("repairMalformedFromToCalls — the s5-interactions call-shape class", () => {
+  it("rewrites fromTo(target, vars, <number>) to from(target, vars, position)", () => {
+    const source =
+      '<script>tl.fromTo("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);</script>';
+    const result = repairMalformedFromToCalls(source);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toContain(
+      'tl.from("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);',
+    );
+    expect(result.html).not.toContain("fromTo");
+  });
+
+  it("never touches a well-formed fromTo (toVars present) or non-literal targets", () => {
+    const wellFormed =
+      'tl.fromTo("[data-part=\'ack\']",{opacity:0,y:40},{opacity:1,y:0,duration:1.2},0.2);\n' +
+      "tl.fromTo(el, { opacity: 0 }, 1.5);"; // variable target — conservative skip
+    const result = repairMalformedFromToCalls(wellFormed);
+    expect(result.repairs).toBe(0);
+    expect(result.html).toBe(wellFormed);
   });
 });
 

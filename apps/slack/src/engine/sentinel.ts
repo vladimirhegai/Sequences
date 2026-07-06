@@ -239,6 +239,24 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
   },
 
   {
+    id: "normalize.gsap-call-shape",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-06 sentinel-s5-interactions probe: a `.fromTo(target, vars, " +
+      "<number>)` call (toVars omitted) makes GSAP treat the position number as " +
+      "the to-object and the compile throws 'Cannot create property parent on " +
+      "number' — a runtime_bind_exception and a burned paid attempt for a " +
+      "call-shape typo. repairMalformedFromToCalls rewrites the call to " +
+      "`.from(target, vars, position)` — exact, content-free, valid signature; " +
+      "only string-literal targets with a flat vars object match (conservative). " +
+      "It PREVENTS the runtime.invariants row's runtime_bind_exception.",
+  },
+  {
     id: "normalize.moment-demote-last-resort",
     group: "normalize",
     layer: "normalize",

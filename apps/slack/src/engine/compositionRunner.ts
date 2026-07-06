@@ -2164,6 +2164,33 @@ export function ensureRuntimeScriptOrdering(source: string): { html: string; cha
   return { html: rebuilt, changed: rebuilt !== source };
 }
 
+/**
+ * `.fromTo(target, vars, <number>)` is never valid GSAP — fromTo takes
+ * (target, fromVars, toVars, position). When the model omits toVars, GSAP
+ * receives the position NUMBER as the to-object and the compile throws
+ * "Cannot create property 'parent' on number '…'" — a runtime_bind_exception
+ * (and the whole paid attempt) spent on a call-shape typo (the
+ * sentinel-s5-interactions probe class, 2026-07-06). Rewriting the call to
+ * `.from(target, vars, position)` is exact and content-free: same target,
+ * same authored vars, same position, valid signature. Conservative by
+ * construction: only a string-literal target and a FLAT vars object match.
+ */
+export function repairMalformedFromToCalls(
+  source: string,
+): { html: string; repairs: number } {
+  let repairs = 0;
+  const pattern =
+    /\.fromTo\(\s*((["'])(?:\\.|(?!\2).)*\2)\s*,\s*(\{[^{}]*\})\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
+  const html = source.replace(
+    pattern,
+    (_match, target: string, _quote: string, vars: string, position: string) => {
+      repairs += 1;
+      return `.from(${target}, ${vars}, ${position})`;
+    },
+  );
+  return { html, repairs };
+}
+
 export function applyDeterministicSourceRepairs(
   draft: DirectCompositionDraft,
   projectDir: string,
@@ -2175,6 +2202,15 @@ export function applyDeterministicSourceRepairs(
     html = visibilityTweens.html;
     process.stderr.write(
       `[author] normalized ${visibilityTweens.repairs} GSAP display/visibility tween(s)\n`,
+    );
+  }
+  const fromToShape = repairMalformedFromToCalls(html);
+  if (fromToShape.repairs) {
+    html = fromToShape.html;
+    recordSentinelNormalization("gsap-call-shape", fromToShape.repairs);
+    process.stderr.write(
+      `[author] rewrote ${fromToShape.repairs} malformed fromTo(target, vars, <position>) ` +
+        `call(s) to from(...) — a missing toVars crashes GSAP compile\n`,
     );
   }
   if (lockedStoryboard?.length) {
