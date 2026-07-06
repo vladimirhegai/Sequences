@@ -41,6 +41,16 @@ import { injectCameraRuntimeTag } from "../src/engine/cameraContract.ts";
 import { injectComponentKit } from "../src/engine/componentContract.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 
+// The authoring-loop suites below prove the LEGACY whole-doc path, which stays
+// supported behind `SLACK_SEQUENCES_SENTINEL_SKELETON=0` /
+// `SLACK_SEQUENCES_SENTINEL_SLOTS=0` for one release after the 2026-07-06
+// default flip (their mocked provider responses are whole-doc `<index_html>`
+// artifacts). Default-ON slot/skeleton coverage lives in
+// test/sceneSlots.test.ts, test/sceneSlots.browser.test.ts,
+// test/promptBudget.test.ts, and the live probe set.
+process.env.SLACK_SEQUENCES_SENTINEL_SKELETON = "0";
+process.env.SLACK_SEQUENCES_SENTINEL_SLOTS = "0";
+
 /** Every published draft carries the host-injected runtimes and kits. */
 function withHostInjections(html: string): string {
   return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(html)));
@@ -1097,6 +1107,46 @@ describe("direct HyperFrames composition", () => {
     expect(result.draft.html).not.toMatch(
       /(?:\.(?:to|from|fromTo|set)|gsap\.(?:to|from|fromTo|set))\s*\([^;]{0,1000}\b(?:display|visibility)\s*:/is,
     );
+  });
+
+  it("last-resort salvage demotes an unbound primary moment instead of failing loud", async () => {
+    // The sentinel-p6-longcopy death class: every rung exhausts while the only
+    // static blocker is a declared PRIMARY moment the author never delivered
+    // evidence for. The pre-throw salvage demotes exactly that moment to
+    // supporting (it then drops with a warning at binding) and ships the
+    // runnable, browser-clean draft instead of no film.
+    const dir = projectDir();
+    const value = draft();
+    value.storyboard[0]!.moments = [{
+      version: 1,
+      id: "hairline-grow",
+      sceneId: "hook",
+      atSec: 2.0,
+      title: "Terracotta hairline grows",
+      visualState: "hairline visible",
+      change: "a hairline grows across the panel",
+      motionIntent: "draw-on",
+      importance: "primary",
+    }];
+    const complete = vi.fn().mockResolvedValue(response(value));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "test author",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    const result = await requestDirectComposition(provider, {
+      brief: "Launch Relay",
+      projectDir: dir,
+      skills: skills(),
+      lockedStoryboard: value.storyboard,
+    });
+    expect(result.attempts).toBe(4);
+    const shipped = result.draft.storyboard[0]!.moments!.find(
+      (entry) => entry.id === "hairline-grow",
+    );
+    expect(shipped?.importance).toBe("supporting");
   });
 
   it("deduplicates declared component data-part bindings before validation", async () => {

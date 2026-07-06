@@ -228,6 +228,27 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "components/complexity reverts). Telemetry tag: morph-twin-reconcile.",
   },
 
+  {
+    id: "normalize.moment-demote-last-resort",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "Phase-5 completion (2026-07-06 sentinel-p6-longcopy): the author ladder " +
+      "exhausted with a runnable, browser-clean draft blocked SOLELY by an " +
+      "unbound PRIMARY moment ('hairline-grow has no executable timeline " +
+      "evidence' x 5 paid attempts -> fail-loud). The pre-throw salvage demotes " +
+      "exactly the unbound primaries to supporting (they re-anchor onto authored " +
+      "evidence or drop with a warning — the path supporting moments already " +
+      "take), re-validates, and ships only if the draft then passes static + " +
+      "browser gates. Any other finding still fails the salvage; STORYBOARD.md " +
+      "and the moment strip show the true bound set. Telemetry tag: " +
+      "moment-demote-last-resort.",
+  },
+
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {
     id: "camera.energy",

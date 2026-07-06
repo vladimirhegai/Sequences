@@ -266,8 +266,8 @@ the existing kill-switch culture.
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `SLACK_SEQUENCES_SENTINEL_SKELETON` | **OFF** (Phase-5 flips ON) | Host emits scene skeletons carrying the camera-world plane + stations, component roots, and focal-part carriers so those paperwork classes are unrepresentable. `=0` force-reverts to bare shells. |
-| `SLACK_SEQUENCES_SENTINEL_SLOTS` | **OFF** (Phase-5 flips ON) | Scene-addressable authoring (`film_style` + per-scene `scene_html`/`scene_script`) so validation/truncation/retries are scene-scoped. `=0` force-reverts to whole-doc. |
+| `SLACK_SEQUENCES_SENTINEL_SKELETON` | **ON** (flipped 2026-07-06; `=0` reverts for one release) | Host emits scene skeletons carrying the camera-world plane + stations, component roots, and focal-part carriers so those paperwork classes are unrepresentable. `=0` force-reverts to bare shells. |
+| `SLACK_SEQUENCES_SENTINEL_SLOTS` | **ON** (flipped 2026-07-06; `=0` reverts for one release) | Scene-addressable authoring (`film_style` + per-scene `scene_html`/`scene_script`) so validation/truncation/retries are scene-scoped. `=0` force-reverts to whole-doc. |
 | `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN` | **ON** | Skip the continuity critic when the banked draft is already pristine (`strictOk` + `browserQualityPenalty == 0`). `=0` restores always-run. |
 
 ### The kill-switch family it joins

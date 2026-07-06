@@ -3611,16 +3611,22 @@ export function degradeUnsupportedComponentBeats(
       // component at the SAME second — so a moment anchored on it keeps its
       // evidence beat and its claim: this one is safe even load-bearing (the
       // 2026-07-06 probe set repeatedly died on load-bearing `type` on an
-      // app-window). Every other analog changes the visual channel, so a
-      // load-bearing beat there keeps its blocking finding.
+      // app-window). A numeric fill (`progress`/`rows` carrying a value) on a
+      // kind that counts degrades to `count` the same way — same number, same
+      // second, same numeric-development claim (`sentinel-p6-camera-r2`'s
+      // rescue died on a load-bearing `progress` on a stat-card). Every other
+      // analog changes the visual channel, so a load-bearing beat there keeps
+      // its blocking finding.
       const isTextAnalog = (beat.kind === "type" || beat.kind === "stream") && beat.text;
-      if (loadBearing && !isTextAnalog) return beat;
+      const isNumericAnalog =
+        (beat.kind === "progress" || beat.kind === "rows") &&
+        typeof beat.value === "number" &&
+        componentSupportsBeat(kind, "count");
+      if (loadBearing && !isTextAnalog && !isNumericAnalog) return beat;
       const analog: ComponentBeatKind =
         isTextAnalog
           ? "swap"
-          : beat.kind === "rows" &&
-              typeof beat.value === "number" &&
-              componentSupportsBeat(kind, "count")
+          : isNumericAnalog
             ? "count"
             : "highlight";
       degraded.push(
@@ -4964,11 +4970,15 @@ export async function requestStoryboardPlan(
               ...(lastRejectedPlan
                 ? [
                     "Deterministic validation rejected the storyboard below. Do NOT",
-                    "redesign it: keep every shot id, duration, camera move, beat,",
-                    "moment, and creative choice that no finding names EXACTLY as it",
-                    "is; apply the smallest edit that fixes each finding (each finding",
-                    "names its own fix), and return the corrected COMPLETE storyboard.",
-                    "A redesign mints new violations — surgical fixes converge.",
+                    "redesign it: reproduce it FIELD-FOR-FIELD — every shot id,",
+                    "duration, camera move (including its toRegion/toPart/zoom/ease),",
+                    "beat, moment, worldLayout cell, and creative choice that no",
+                    "finding names stays EXACTLY as written. Apply the smallest edit",
+                    "that fixes each finding (each finding names its own fix), then",
+                    "return the corrected COMPLETE storyboard. Dropping a field you",
+                    "were not asked to change (a camera move's target, a beat's text)",
+                    "creates NEW violations — surgical fixes converge, redesigns and",
+                    "lossy copies do not.",
                     "<previous_storyboard_json>",
                     JSON.stringify(
                       lastRejectedPlan.map(
@@ -6713,6 +6723,10 @@ async function authorCompositionLoop(
   let lastBrowserValid:
     | (CompositionRunResult & { qualityPenalty: number })
     | undefined;
+  // The most recent draft whose ONLY static blockers were declared-moment
+  // paperwork (`storyboard/moments:` findings) — the last-resort salvage
+  // candidate if the whole ladder exhausts (see the pre-throw salvage below).
+  let lastMomentBlocked: { draft: DirectCompositionDraft; raw: string } | undefined;
   const interactionFallbacks: Array<{
     draft: DirectCompositionDraft;
     raw: string;
@@ -6873,6 +6887,9 @@ async function authorCompositionLoop(
         );
         if (useSlots && args.lockedStoryboard) {
           logSlotFindingAttribution(validation.errors, args.lockedStoryboard);
+        }
+        if (validation.errors.every((error) => error.startsWith("storyboard/moments:"))) {
+          lastMomentBlocked = { draft, raw };
         }
         persistAuthorAttempt(args.projectDir, attempt, "static-rejected", {
           mode: patchMode ? "patch" : "full",
@@ -7153,6 +7170,9 @@ async function authorCompositionLoop(
         }
       }
       if (!validation.ok) {
+        if (validation.errors.every((error) => error.startsWith("storyboard/moments:"))) {
+          lastMomentBlocked = { draft, raw };
+        }
         persistAuthorAttempt(args.projectDir, 4, "static-rejected", {
           mode: "rescue",
           findings: validation.errors,
@@ -7201,6 +7221,71 @@ async function authorCompositionLoop(
         outcome: "exception",
         findingSignatures: [findingSignature(message)],
       });
+    }
+  }
+  // LAST RESORT (degrade-never-veto, the sentinel-p6-longcopy death class):
+  // the whole ladder exhausted while a runnable draft was blocked SOLELY by
+  // declared-moment paperwork — an unbound PRIMARY moment the author never
+  // delivered evidence for, and the floor/interval math downstream of it.
+  // Demote exactly the unbound primaries to supporting (they then re-anchor
+  // onto authored evidence or drop with a warning — the same honest path
+  // supporting moments already take) and re-validate: a film missing one
+  // reviewable claim ships with its paperwork saying so, instead of no film
+  // at all. Gates are not loosened — every demotion is logged, the moment
+  // strip and STORYBOARD.md show the true bound set, and any OTHER finding
+  // still fails this salvage.
+  if (lastMomentBlocked && args.lockedStoryboard) {
+    const scenes = args.lockedStoryboard;
+    const filmEnd = scenes.length
+      ? scenes[scenes.length - 1]!.startSec + scenes[scenes.length - 1]!.durationSec
+      : undefined;
+    const contract = resolveMomentContract(lastMomentBlocked.draft.html, scenes, filmEnd);
+    const unboundPrimaryIds = new Set(
+      contract.moments
+        .filter((moment) =>
+          !moment.evidence && moment.importance === "primary" && moment.origin !== "synthesized"
+        )
+        .map((moment) => moment.id),
+    );
+    if (unboundPrimaryIds.size) {
+      const demoted = scenes.map((scene) => ({
+        ...scene,
+        ...(scene.moments
+          ? {
+              moments: scene.moments.map((moment) =>
+                unboundPrimaryIds.has(moment.id)
+                  ? { ...moment, importance: "supporting" as const }
+                  : moment
+              ),
+            }
+          : {}),
+      }));
+      const salvageDraft = { ...lastMomentBlocked.draft, storyboard: demoted };
+      const salvageValidation = await validateDirectComposition(args.projectDir, salvageDraft);
+      if (salvageValidation.ok) {
+        const browserQa = await inspectDirectComposition(args.projectDir, salvageDraft, {
+          captureGuide: false,
+        });
+        if (browserQa.ok || browserQa.infraError) {
+          process.stderr.write(
+            `[author] last-resort moment salvage: demoted ${unboundPrimaryIds.size} unbound ` +
+              `primary moment(s) (${[...unboundPrimaryIds].join(", ")}) to supporting — the ` +
+              `draft is runnable and browser-clean; shipping it minus the unprovable claim(s)\n`,
+          );
+          summary.strategyChanges.push(
+            `moment-demote-last-resort:${[...unboundPrimaryIds].join(",")}`,
+          );
+          recordSentinelNormalization("moment-demote-last-resort", unboundPrimaryIds.size);
+          args = { ...args, lockedStoryboard: demoted };
+          persistUpgradedStoryboard(args.projectDir, demoted);
+          return { draft: salvageDraft, raw: lastMomentBlocked.raw, attempts: 4, browserQa };
+        }
+      }
+      process.stderr.write(
+        `[author] last-resort moment salvage did not converge ` +
+          `(${(salvageValidation.errors[0] ?? "browser QA rejected").slice(0, 200)}); ` +
+          `failing loud honestly\n`,
+      );
     }
   }
   throw new Error(
