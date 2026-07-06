@@ -340,6 +340,9 @@
   }
 
   function compileHighlight(timeline, el, beat) {
+    // Style variants beyond the default ring (sweep, underline) are compiled
+    // by the host fx runtime (sequences-fx) — one owner per visual channel.
+    if (beat.style && beat.style !== "ring") return;
     var ring = el.querySelector(".cmp-highlight-ring");
     if (!ring) {
       ring = document.createElement("span");

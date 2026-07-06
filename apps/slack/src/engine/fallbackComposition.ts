@@ -6,6 +6,7 @@ import {
   resolveComponentPlan,
 } from "./componentContract.ts";
 import { TIME_RUNTIME_FILE, resolveTimeRampPlan } from "./timeRamp.ts";
+import { FX_RUNTIME_FILE, resolveFxPlan } from "./fxContract.ts";
 import type { StoryboardMomentV1 } from "./storyboardMoments.ts";
 import type { DirectCompositionDraft, DirectScene } from "./directComposition.ts";
 
@@ -324,12 +325,18 @@ export function buildFallbackComposition(
   const cameraIsland = JSON.stringify(resolveCameraPlan(storyboard));
   const componentIsland = JSON.stringify(resolveComponentPlan(storyboard));
   const timeIsland = JSON.stringify(resolveTimeRampPlan(storyboard));
+  // MD2 deterministic proof path: the same host-derived fx plan every live
+  // film gets (a sweep + glow answering the progress payoff, connector slots
+  // for the camera arrivals) rides the fallback too, so the model-free gate
+  // proves the fx runtime on every CI pass.
+  const fxIsland = JSON.stringify(resolveFxPlan(storyboard));
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=1920, height=1080">
 <title>${product} launch</title><script src="gsap.min.js"></script>
 <script src="${CAMERA_RUNTIME_FILE}"></script>
 <script src="${COMPONENT_RUNTIME_FILE}"></script>
-<script src="${TIME_RUNTIME_FILE}"></script>${componentKitStyleTag()}${cinemaKitStyleTag()}<style>
+<script src="${TIME_RUNTIME_FILE}"></script>
+<script src="${FX_RUNTIME_FILE}"></script>${componentKitStyleTag()}${cinemaKitStyleTag()}<style>
 *{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:${bg}}
 body{color:${foreground};font-family:${body},Arial,sans-serif}
 #root{--space-safe:72px;--space-region:64px;--space-element:28px;--surface:${surface};--accent:${accent};--accent-text:${accentText};--text:${foreground};--muted:${muted};position:relative;width:1920px;height:1080px;overflow:hidden;background:radial-gradient(circle at 80% 12%,${surface},${bg} 52%)}
@@ -375,6 +382,7 @@ h1{max-width:11ch;font-size:150px;line-height:.88}h2{max-width:15ch;font-size:92
 <script type="application/json" id="sequences-camera">${cameraIsland}</script>
 <script type="application/json" id="sequences-components">${componentIsland}</script>
 <script type="application/json" id="sequences-time">${timeIsland}</script>
+<script type="application/json" id="sequences-fx">${fxIsland}</script>
 <script>
 window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
 tl.set("#fallback-hook",{opacity:1},0).set("#fallback-hook",{opacity:0},${cut(starts[1]!)});
@@ -395,6 +403,7 @@ tl.fromTo("#fallback-close .cta",{y:44,opacity:0},{y:0,opacity:1,duration:.6,eas
 tl.fromTo("#close-promise",{y:18,opacity:0},{y:0,opacity:1,duration:.5,ease:"power3.out"},${closePromise});
 SequencesCamera.compile(tl,document.querySelector("[data-composition-id]"));
 SequencesComponents.compile(tl,document.querySelector("[data-composition-id]"));
+SequencesFx.compile(tl,document.querySelector("[data-composition-id]"));
 var __seqWarped = SequencesTime.wrap(tl); window.__timelines["${compositionId}"]=__seqWarped;tl.seek(0);
 </script></body></html>`;
   return { storyboard, html };

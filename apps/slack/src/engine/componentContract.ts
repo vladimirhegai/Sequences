@@ -415,6 +415,14 @@ export interface ComponentBeatIntentV1 {
   toState?: string;
   /** morph: the declared component id this one morphs into. */
   morphTo?: string;
+  /**
+   * Optional style variant on an EXISTING beat kind (the MOTION_DESIGN_PLAN
+   * vocabulary rule: one optional field on an existing concept, never a new
+   * system). `type`: typewriter|rise|pop|assemble · `open`: pop ·
+   * `highlight`: ring|sweep|underline. Absent = today's behavior; an
+   * unsupported value is style-dropped at parse, never beat-dropped.
+   */
+  style?: string;
   ease?: string;
 }
 
@@ -431,6 +439,7 @@ export interface ResolvedComponentBeatV1 {
   item?: number;
   toState?: string;
   morphTo?: string;
+  style?: string;
 }
 
 export interface SceneComponentPlanV1 {
@@ -470,6 +479,22 @@ const BEAT_DEFAULTS: Record<ComponentBeatKind, BeatDefaults> = {
 const EASE_PATTERN = new RegExp(
   `^(?:${SEQUENCES_EASES.join("|")}|(?:power[1-4]|expo|sine|circ)\\.(?:in|out|inOut)|none|linear)$`,
 );
+
+/** Legal `style` variants per beat kind, with the default listed first (a
+ * declared default is normalized away so islands stay canonical). */
+const BEAT_STYLE_OPTIONS: Partial<Record<ComponentBeatKind, readonly string[]>> = {
+  type: ["typewriter", "rise", "pop", "assemble"],
+  open: ["default", "pop"],
+  highlight: ["ring", "sweep", "underline"],
+};
+
+/** Normalize a beat's optional style: unknown/unsupported/default → absent. */
+function beatStyle(kind: ComponentBeatKind, value: unknown): string | undefined {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  const options = BEAT_STYLE_OPTIONS[kind];
+  if (!raw || !options || !options.includes(raw)) return undefined;
+  return raw === options[0] ? undefined : raw;
+}
 
 function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -575,6 +600,7 @@ export function normalizeStoryboardComponentBeats(
       ...(finite(item.item) ? { item: clamp(Math.round(item.item), 1, 48) } : {}),
       ...(toState && (kind === "set-state" || kind === "press") ? { toState } : {}),
       ...(kind === "morph" ? { morphTo } : {}),
+      ...(beatStyle(kind, item.style) ? { style: beatStyle(kind, item.style) } : {}),
       ...(ease ? { ease } : {}),
     }];
   }).sort((a, b) => a.atSec - b.atSec);
@@ -627,6 +653,7 @@ export function resolveComponentPlan(scenes: DirectScene[]): ComponentPlanV1 {
         ...(finite(beat.item) ? { item: beat.item } : {}),
         ...(beat.toState ? { toState: beat.toState } : {}),
         ...(beat.morphTo ? { morphTo: beat.morphTo } : {}),
+        ...(beat.style ? { style: beat.style } : {}),
       }];
     });
     if (resolved.length) planScenes.push({ sceneId: scene.id, beats: resolved });

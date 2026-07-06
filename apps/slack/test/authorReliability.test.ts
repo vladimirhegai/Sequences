@@ -244,7 +244,7 @@ describe("volunteered bridged-cut degradation", () => {
     ].join("\n");
   }
 
-  it("degrades a persistently unbindable volunteered shape-match to zoom-through", () => {
+  it("degrades a persistently unbindable volunteered shape-match to a swipe", () => {
     const storyboard = incidentStoryboard();
     const result = degradeVolunteeredBridgedCuts({
       draft: { storyboard, html: draftHtml() },
@@ -256,12 +256,12 @@ describe("volunteered bridged-cut degradation", () => {
     });
     expect(result).toBeDefined();
     expect(result!.degraded).toEqual(["search-typing->trace-resolve (shape-match)"]);
-    expect(result!.storyboard[0]!.cut).toEqual({ version: 1, style: "zoom-through" });
+    expect(result!.storyboard[0]!.cut).toEqual({ version: 1, style: "swipe", axis: "right" });
     const island = result!.draft.html.match(
       /<script[^>]*id="sequences-cuts"[^>]*>([\s\S]*?)<\/script>/,
     );
     expect(island).toBeTruthy();
-    expect(island![1]).toContain('"zoom-through"');
+    expect(island![1]).toContain('"swipe"');
     expect(island![1]).not.toContain("shape-match");
     expect(
       validateCutContract(result!.draft.html, result!.storyboard).errors,
@@ -321,7 +321,7 @@ describe("plan-time silhouette-hint sanity (WS1)", () => {
   it("flags cross-family hint pairs and passes rhyming ones", () => {
     expect(auditShapeMatchHints(hintedStoryboard("pill", "card"))).toHaveLength(1);
     expect(auditShapeMatchHints(hintedStoryboard("pill", "card"))[0]).toContain(
-      "shape-match open->land",
+      "morph open->land",
     );
     expect(auditShapeMatchHints(hintedStoryboard("circle", "bar"))).toHaveLength(1);
     expect(auditShapeMatchHints(hintedStoryboard("pill", "bar"))).toEqual([]);
@@ -334,12 +334,12 @@ describe("plan-time silhouette-hint sanity (WS1)", () => {
     expect(auditShapeMatchHints(storyboard)).toEqual([]);
   });
 
-  it("degrades a hopeless pair to zoom-through with honest prose", () => {
+  it("degrades a hopeless pair to a swipe with honest prose", () => {
     const { scenes, degraded } = degradeMismatchedShapeHintCuts(
       hintedStoryboard("pill", "card"),
     );
     expect(degraded).toEqual(["open->land (pill->card)"]);
-    expect(scenes[0]!.cut).toEqual({ version: 1, style: "zoom-through" });
+    expect(scenes[0]!.cut).toEqual({ version: 1, style: "swipe", axis: "right" });
     expect(scenes[0]!.outgoingCut).toContain("degraded at plan time");
     expect(auditShapeMatchHints(scenes)).toEqual([]);
   });
@@ -362,7 +362,8 @@ describe("plan-time silhouette-hint sanity (WS1)", () => {
     const { scenes } = degradeMismatchedShapeHintCuts(storyboard);
     expect(scenes[0]!.cut).toEqual({
       version: 1,
-      style: "zoom-through",
+      style: "swipe",
+      axis: "right",
       travelPx: 240,
       exitSec: 0.3,
       entrySec: 0.6,

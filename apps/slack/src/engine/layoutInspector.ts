@@ -46,6 +46,7 @@ import {
   timeRampRuntimeSource,
   warpInverseOf,
 } from "./timeRamp.ts";
+import { FX_RUNTIME_FILE, fxRuntimeSource } from "./fxContract.ts";
 import { resolveMomentContract } from "./storyboardMoments.ts";
 import {
   pingPongCandidates,
@@ -273,7 +274,11 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 //     final-scene landing tier + zero-coverage parity with the static path.
 // v7: camera_framed_sparse mid-window sample covers full-move-less camera scenes.
 // v8: exit discipline — advisory stale_asset_lingers overlap audit (WS4).
-const QA_CACHE_VERSION = 8;
+// v9: MD1 3-transition language — `match` boundaries carry a tightened
+//     eye-trace budget, degraded morphs retarget to an axis-derived swipe
+//     (cut_degraded messages carry the executed target), and swipes gain a
+//     directional blur lens + optional cover panel in the overlay layer.
+const QA_CACHE_VERSION = 9;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -288,6 +293,7 @@ function qaStaticFingerprint(): string {
         cameraRuntimeSource(),
         componentRuntimeSource(),
         timeRampRuntimeSource(),
+        fxRuntimeSource(),
       ].map((source) => createHash("sha256").update(source).digest("hex")),
       audits: [
         loadBrowserAudit("layout-audit.browser.js"),
@@ -395,6 +401,11 @@ function prepareScratch(projectDir: string, draft: DirectCompositionDraft): stri
   fs.writeFileSync(
     path.join(scratch, TIME_RUNTIME_FILE),
     timeRampRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(scratch, FX_RUNTIME_FILE),
+    fxRuntimeSource(),
     "utf8",
   );
   const assets = path.join(projectDir, "assets");
@@ -1846,8 +1857,17 @@ async function judgeRenderedMoments(
       ].slice(0, TEMPORAL_JUDGE_MAX_MOMENTS)
   ).slice().sort((a, b) => a.atSec - b.atSec);
   const sceneById = new Map(draft.storyboard.map((scene) => [scene.id, scene]));
+  const judgeCuts = parseCutPlan(draft.html).plan?.cuts ?? [];
   const cutExitByScene = new Map(
-    (parseCutPlan(draft.html).plan?.cuts ?? []).map((cut) => [cut.fromScene, cut.exitSec ?? 0]),
+    judgeCuts.map((cut) => [cut.fromScene, cut.exitSec ?? 0]),
+  );
+  // A cover swipe's panel is still on frame through the incoming scene's
+  // entry window — a before-frame sampled under the panel would compare a
+  // solid wipe against content and judge any change "visible" dishonestly.
+  const entryCoverByScene = new Map(
+    judgeCuts
+      .filter((cut) => cut.style === "swipe" && (cut as { cover?: boolean }).cover)
+      .map((cut) => [cut.toScene, cut.entrySec ?? 0]),
   );
   const pairs = selected.flatMap((moment) => {
     const scene = sceneById.get(moment.sceneId);
@@ -1861,8 +1881,12 @@ async function judgeRenderedMoments(
       sceneStart,
       sceneEnd - 0.05 - (cutExitByScene.get(moment.sceneId) ?? 0),
     );
+    const earliest = Math.min(
+      latest,
+      sceneStart + (entryCoverByScene.get(moment.sceneId) ?? 0),
+    );
     const beforeSec = roundTime(
-      Math.max(sceneStart, Math.min(evidence.startSec - 0.12, latest)),
+      Math.max(earliest, Math.min(evidence.startSec - 0.12, latest)),
     );
     const afterSec = roundTime(
       Math.min(Math.max(evidence.endSec + 0.08, beforeSec + 0.15), latest),
@@ -2091,6 +2115,7 @@ export async function inspectDirectComposition(
           };
           degraded?: boolean;
           reason?: string;
+          target?: string;
         }>;
       }).__sequencesCutBindings ?? [];
       return bindings
@@ -2102,12 +2127,13 @@ export async function inspectDirectComposition(
           focalPartOut: binding.cut?.focalPartOut ?? "",
           focalPartIn: binding.cut?.focalPartIn ?? "",
           reason: binding.reason ?? "geometry audit failed",
+          target: binding.target ?? "zoom-through",
         }));
     });
     const degradedCutWarnings = degradedCutBindings.map((binding) =>
       `cut_degraded: ${binding.style} ` +
       `${binding.fromScene}->${binding.toScene} ` +
-      `compiled as zoom-through: ${binding.reason}`
+      `compiled as ${binding.target}: ${binding.reason}`
     );
     const tweenBoundaries = await collectTweenBoundaries(page);
     const samples = buildDirectLayoutSampleTimes(draft.storyboard, tweenBoundaries, duration);
@@ -2311,7 +2337,10 @@ export async function inspectDirectComposition(
     for (let index = 0; index < draft.storyboard.length - 1; index += 1) {
       const scene = draft.storyboard[index]!;
       const style = scene.cut?.style;
-      if (style !== "shape-match" && style !== "object-match") continue;
+      if (
+        style !== "morph" && style !== "match" &&
+        style !== "shape-match" && style !== "object-match"
+      ) continue;
       declaredBridgedBoundaries.set(
         `${scene.id}->${draft.storyboard[index + 1]!.id}`,
         scene.startSec + scene.durationSec,
@@ -2342,7 +2371,7 @@ export async function inspectDirectComposition(
         selector: `[data-part="${degraded.focalPartOut}"]`,
         message:
           `The storyboard declares a ${degraded.style} cut ${boundaryKey}, but the runtime ` +
-          `degraded it to zoom-through at bind time: ${degraded.reason}. Measured at the ` +
+          `degraded it to ${degraded.target} at bind time: ${degraded.reason}. Measured at the ` +
           `boundary: outgoing ${summarize(inventory?.outgoing, degraded.focalPartOut)} vs ` +
           `incoming ${summarize(inventory?.incoming, degraded.focalPartIn)}.`,
         fixHint:
@@ -2386,7 +2415,11 @@ export async function inspectDirectComposition(
             `"${jump.toScene}", but the incoming attention target "${jump.inPart}" ` +
             `appears at (${jump.inCenter.x},${jump.inCenter.y}) — a ` +
             `${Math.round(jump.displacementFraction * 100)}%-of-frame-diagonal jump ` +
-            `across a ${jump.cutStyle} cut, which does not carry the eye.`,
+            `across a ${jump.cutStyle} cut ` +
+            `(budget ${Math.round(jump.budgetFraction * 100)}%` +
+            `${jump.cutStyle === "match"
+              ? " — match PROMISES the incoming subject lands where the eye already is"
+              : ""}).`,
           fixHint:
             "Place the incoming shot's opening subject where the eye already is at the " +
             "cut: align the two focal elements' frame positions, or move the incoming " +
@@ -2716,9 +2749,21 @@ export async function inspectDirectComposition(
         if (!segment.toRegion && !segment.toPart) continue;
         // A zoom above fit crops the station deliberately; audit fit framings.
         if (segment.zoom > 1.05) continue;
-        const settleAt = Math.min(segment.endSec + 0.35, sceneEnd - 0.1);
-        if (settleAt <= segment.endSec - 0.01 || insideCutWindow(settleAt)) continue;
-        const confirmAt = Math.min(settleAt + 0.8, sceneEnd - 0.05);
+        // A dive (MD5) lands twice: on the part when its push-in leg ends,
+        // and back on the prior framing at endSec. The prior framing was
+        // already sampled by its own segment, so audit the PART landing —
+        // inside the held window, never after the pull-back has left it.
+        const isDive = segment.move === "dive";
+        const legFallback = Math.min(0.8, (segment.endSec - segment.startSec) * 0.25);
+        const arriveSec = isDive
+          ? segment.startSec + (segment.inSec ?? legFallback)
+          : segment.endSec;
+        const windowEnd = isDive
+          ? segment.endSec - (segment.outSec ?? legFallback)
+          : sceneEnd;
+        const settleAt = Math.min(arriveSec + 0.35, windowEnd - 0.1, sceneEnd - 0.1);
+        if (settleAt <= arriveSec - 0.01 || insideCutWindow(settleAt)) continue;
+        const confirmAt = Math.min(settleAt + 0.8, windowEnd - 0.05, sceneEnd - 0.05);
         const canConfirm = confirmAt > settleAt + 0.05 && !insideCutWindow(confirmAt);
         const station = segment.toPart
           ? `part "${segment.toPart}"`
@@ -2751,7 +2796,7 @@ export async function inspectDirectComposition(
               ...(clip.text ? { text: clip.text } : {}),
               message:
                 `Camera ${segment.move} lands on ${station} in scene "${scenePlan.sceneId}" at ` +
-                `${segment.endSec.toFixed(1)}s, but ${clip.selector} is only ` +
+                `${arriveSec.toFixed(1)}s, but ${clip.selector} is only ` +
                 `${Math.round(clip.fraction * 100)}% inside the frame after the move settles — ` +
                 `the audience sees it clipped.`,
               fixHint:
@@ -2782,7 +2827,7 @@ export async function inspectDirectComposition(
                 : `[data-region="${segment.toRegion}"]`,
               message:
                 `Camera ${segment.move} lands on ${station} in scene "${scenePlan.sceneId}" at ` +
-                `${segment.endSec.toFixed(1)}s, but the scene's visible content fills only ` +
+                `${arriveSec.toFixed(1)}s, but the scene's visible content fills only ` +
                 `${Math.round(confirmedCoverage.fraction * 100)}% of the frame — a small subject ` +
                 `adrift in empty space.`,
               fixHint:

@@ -213,36 +213,35 @@ is rejected. Treat the moment list as your beat sheet:
 
 ## Typed boundary cuts — the host owns the seam
 
-Each storyboard shot declares a typed `cut` for its outgoing boundary
-(cut-left/right/up/down, zoom-through, inverse-zoom, flash-white,
-object-match, shape-match, or hard). A deterministic host runtime compiles
-those into velocity-matched motion on the scene wrappers around every
-boundary. Division of ownership:
+Each storyboard shot declares a typed `cut` from a three-transition language:
+`swipe` (directional carry, optional full-frame `cover` wipe), `morph` (two
+rhyming-silhouette elements swap through a bridge), `match` (the same subject
+on both sides of the seam), or `hard` (the register break). A deterministic
+host runtime compiles those — including swipe motion blur and the cover
+panel — on and above the scene wrappers. Division of ownership:
 
 - **You own** everything *inside* a scene: children, camera worlds, component
   state, copy, and the plain scene-window visibility `tl.set(...)` pairs at
   each scene's start and end. Keep those hard sets — they are the cut's swap
   frame.
 - **The host owns** the scene wrapper's transform/filter/opacity *around* the
-  boundary, the flash overlay, and the object-match bridge. Never `tl.to` /
+  boundary, the blur lens, the cover panel, and every bridge. Never `tl.to` /
   `tl.fromTo` a scene wrapper element itself — put camera moves on an inner
   `data-camera-world` wrapper so the two systems never fight over one
   transform.
-- **object-match** carries a real element across the boundary: author the
-  outgoing `focalPartOut` and incoming `focalPartIn` as `data-part` elements
-  (one each, styled to survive scaling — prefer %-based inner layout), and do
-  not author an entrance on the incoming focal part during the first
-  ~0.5s of its scene; the bridge owns its arrival.
-- **shape-match** swaps two *different* elements whose silhouettes rhyme
-  (window→card, pill→bar, avatar→chart dot) through a crossfading dual
-  bridge. The same authoring rules as object-match apply to both focal
-  parts, plus: give the two parts genuinely comparable aspect ratios and
-  border radii — the runtime audits geometry at bind time and degrades a
-  >2.5× aspect mismatch (or a >60-node subtree) to a zoom-through cut. Keep
-  each focal part's subtree light; the bridge clones it.
-- The `sequences-cuts` JSON island, runtime script tag, and
-  `SequencesCuts.compile(tl, root)` call are injected by the host. Do not
-  hand-write or alter them; never spend your output budget re-implementing a
+- **match** (bridged form) carries a real element across the boundary: author
+  `focalPartOut` and `focalPartIn` as `data-part` elements (one each, styled
+  to survive scaling — prefer %-based inner layout), and author no entrance
+  on the incoming focal part in its first ~0.5s; the bridge owns its arrival.
+  A `match` with only `focalPartIn` compiles as a hard cut whose incoming
+  subject must land where the eye already is — QA measures that promise.
+- **morph** swaps two *different* elements whose silhouettes rhyme
+  (window→card, pill→bar) through a crossfading dual bridge. Bridged-match
+  rules apply to both parts, plus comparable aspect ratios and border radii —
+  a >2.5× measured mismatch (or a >60-node subtree) degrades to a swipe
+  toward the incoming part. Keep focal subtrees light; the bridge clones them.
+- The `sequences-cuts` island, runtime tag, and `SequencesCuts.compile` call
+  are host-injected. Never hand-write or alter them, or re-implement a
   boundary the cut plan already owns.
 
 ## Continuous spatial world — the camera rig
@@ -291,6 +290,10 @@ it the way a camera operator would.
   context UI at `data-depth="0.3"` and the payoff content on the plane), and
   make sure any `focus.part` name exists as a scene-scoped `data-part`.
   Never author your own `filter: blur()` tweens on those layers.
+- **Dive.** A `dive` pushes into one `data-part` surface, holds while its
+  typed beats develop it, and returns to the pre-dive framing — all
+  host-timed. Author the dived surface like any component; never author
+  your own zoom-in/zoom-out pair around a beat.
 - **Orbit.** An `orbit` move arcs the camera around the framed subject in
   true 3D (the host sets perspective on the scene wrapper and rotates the
   world plane; it returns to rest by the end of the move). It is for one
@@ -301,11 +304,10 @@ it the way a camera operator would.
   camera arrives or drifts across it (the storyboard path tells you the
   arrival seconds). Content the camera has not reached yet may sit at rest —
   it does not need entrance tweens before it is ever framed.
-- **Overlap camera and content motion.** The camera travelling is not a
-  waiting period: let a region's first beat begin during the last ~30% of the
-  move that frames it, so the landing and the state change read as one
-  gesture. A film where every beat waits for the camera to park feels
-  stop-start.
+- **Overlap camera and content motion.** Let a region's first beat begin
+  during the last ~30% of the move that frames it, so the landing and the
+  state change read as one gesture; beats that wait for the camera to park
+  feel stop-start.
 - **Keep a region's content inside its station box.** The rig frames the
   region's rect; anything hanging outside that rect is clipped half out of
   frame when the camera arrives. Give every station an inner margin (~8%)

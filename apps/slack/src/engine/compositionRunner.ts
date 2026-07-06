@@ -34,14 +34,18 @@ import {
   CUT_SHAPE_HINTS,
   CUT_STYLES,
   auditCutCoherence,
+  canonicalCutStyle,
   normalizeStoryboardCutIntent,
   resolveCutPlan,
   shapeHintsRhyme,
+  type CutAxis,
 } from "./cutContract.ts";
 import {
   CAMERA_FULL_MOVES,
   CAMERA_MOVES,
   CAMERA_RUNTIME_FILE,
+  DIVE_LEG_FRACTION,
+  DIVE_LEG_MAX_SEC,
   SEQUENCES_EASES,
   auditCameraEnergy,
   injectCameraRuntimeTag,
@@ -60,8 +64,10 @@ import {
   normalizeStoryboardTimeRamp,
   resolveTimeRampPlan,
   timeRampHoldWindow,
+  warpInverseOf,
 } from "./timeRamp.ts";
 import { discoverShapeMatchUpgrade } from "./cutDiscovery.ts";
+import { FX_RUNTIME_FILE, resolveFxPlan } from "./fxContract.ts";
 import {
   COMPONENT_BEAT_KINDS,
   COMPONENT_KINDS,
@@ -94,6 +100,9 @@ import {
 } from "./storyboardMoments.ts";
 import { analyzeMotionDensity } from "./motionDensity.ts";
 import {
+  READING_MAX_SEC,
+  READING_MIN_SEC,
+  READING_SEC_PER_WORD,
   auditPacing,
   delayConflictingCameraMoves,
   normalizeCameraBudget,
@@ -1592,6 +1601,7 @@ export const HOST_PLAN_ISLAND_IDS = [
   "sequences-camera",
   "sequences-components",
   "sequences-time",
+  "sequences-fx",
 ] as const;
 
 /**
@@ -2057,6 +2067,7 @@ const HOST_STAGED_RUNTIME_FILES = new Set<string>([
   CAMERA_RUNTIME_FILE,
   COMPONENT_RUNTIME_FILE,
   TIME_RUNTIME_FILE,
+  FX_RUNTIME_FILE,
 ]);
 
 /**
@@ -2103,6 +2114,7 @@ const RUNTIME_SCRIPT_GLOBALS: ReadonlyArray<{ file: string; global: string }> = 
   { file: CAMERA_RUNTIME_FILE, global: "SequencesCamera" },
   { file: COMPONENT_RUNTIME_FILE, global: "SequencesComponents" },
   { file: TIME_RUNTIME_FILE, global: "SequencesTime" },
+  { file: FX_RUNTIME_FILE, global: "SequencesFx" },
 ];
 
 /** Match a runtime `<script src="…vN.js">` tag plus one leading newline/indent (so
@@ -2764,6 +2776,68 @@ export function applyDeterministicSourceRepairs(
       );
     }
   }
+  // The FX plan (MD2) is host-derived garnish — sweeps at payoffs, glow
+  // pulses, connector draws — injected exactly like the other contracts and
+  // BEFORE the time-wrap (which must stay the last injection).
+  {
+    const fxPlan = resolveFxPlan(lockedStoryboard ?? draft.storyboard);
+    if (fxPlan.effects.length) {
+      let repairedFx = 0;
+      if (
+        !html.includes(`src="${FX_RUNTIME_FILE}"`) &&
+        !html.includes(`src='${FX_RUNTIME_FILE}'`)
+      ) {
+        const withRuntime = html.replace(
+          /(<script\b[^>]*\bsrc\s*=\s*(["'])gsap\.min\.js\2[^>]*>\s*<\/script>)/i,
+          `$1\n<script src="${FX_RUNTIME_FILE}"></script>`,
+        );
+        if (withRuntime !== html) {
+          html = withRuntime;
+          repairedFx += 1;
+        }
+      }
+      const payload = JSON.stringify(fxPlan);
+      const fxIslandPattern =
+        /(<script\b[^>]*\bid\s*=\s*(["'])sequences-fx\2[^>]*>)([\s\S]*?)(<\/script>)/i;
+      if (fxIslandPattern.test(html)) {
+        const updated = html.replace(fxIslandPattern, `$1${payload}$4`);
+        if (updated !== html) {
+          html = updated;
+          repairedFx += 1;
+        }
+      } else {
+        const timelineScript =
+          /<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?gsap\.timeline\s*\(/i.exec(html);
+        if (timelineScript?.index !== undefined) {
+          html = html.slice(0, timelineScript.index) +
+            `<script type="application/json" data-sequences-host="1" id="sequences-fx">${payload}</script>\n` +
+            html.slice(timelineScript.index);
+          repairedFx += 1;
+        }
+      }
+      if (!/\bSequencesFx\.compile\s*\(/.test(html)) {
+        const timelineName = html.match(
+          /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*gsap\.timeline\s*\(/,
+        )?.[1];
+        if (timelineName) {
+          const registration = timelineRegistrationAnchor(timelineName);
+          if (registration.test(html)) {
+            html = html.replace(
+              registration,
+              `SequencesFx.compile(${timelineName}, document.querySelector("[data-composition-id]"));\n$1`,
+            );
+            repairedFx += 1;
+          }
+        }
+      }
+      if (repairedFx) {
+        process.stderr.write(
+          `[author] injected ${repairedFx} deterministic fx binding(s) for ` +
+            `${fxPlan.effects.length} host-derived effect(s)\n`,
+        );
+      }
+    }
+  }
   {
     const liveness = injectMissingLivenessBeats(html, lockedStoryboard ?? draft.storyboard);
     if (liveness.repaired.length) {
@@ -3387,7 +3461,7 @@ function parseStoryboard(raw: string): DirectScene[] {
     };
   });
   const usedInteractionIds = new Set<string>();
-  return scenes.map((scene) => ({
+  const deduped = scenes.map((scene) => ({
     ...scene,
     ...(scene.interactions?.length
       ? {
@@ -3404,6 +3478,130 @@ function parseStoryboard(raw: string): DirectScene[] {
         }
       : {}),
   }));
+  // Dive legs are host arithmetic (MD5, lever-10 philosophy): the model
+  // declares only the intent + total window; the in/hold/out split is derived
+  // here from the overlapping beat windows and stored on the move.
+  const dives = deriveDiveWindows(deduped);
+  for (const line of dives.normalized) {
+    process.stderr.write(`[storyboard] dive-window derived: ${line}\n`);
+  }
+  if (dives.normalized.length) {
+    recordSentinelNormalization("dive-window", dives.normalized.length);
+  }
+  return dives.storyboard;
+}
+
+/** Content time at which the viewer has experienced `span` seconds past `fromSec`
+ * (identity without a time ramp; monotone binary search through the warp). */
+function contentTimeAfterViewerSpan(
+  toViewer: (time: number) => number,
+  fromSec: number,
+  span: number,
+  capSec: number,
+): number {
+  const target = toViewer(fromSec) + span;
+  if (toViewer(capSec) <= target) return capSec;
+  let low = fromSec;
+  let high = capSec;
+  for (let index = 0; index < 24; index += 1) {
+    const mid = (low + high) / 2;
+    if (toViewer(mid) < target) low = mid;
+    else high = mid;
+  }
+  return high;
+}
+
+/**
+ * MD5 L2 normalizer: derive each dive's push-in/pull-back legs so the held
+ * window exactly covers the beats/interactions acting on the dive's target —
+ * plus the reading floor for any typed/swapped copy among them (judged in
+ * viewer time, like `auditPacing`). The clamp guaranteeing a real hold
+ * (`diveWindows`) is shared with the resolver, so audits, island, and runtime
+ * all see one arithmetic. A dive with NOTHING acting on its target during the
+ * window is a zoom to a surface where nothing happens — it degrades to a
+ * plain push-in with a warning (degrade-never-veto), never a rejection.
+ */
+export function deriveDiveWindows(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  if (!storyboard.some((scene) => scene.camera?.path.some((move) => move.move === "dive"))) {
+    return { storyboard, normalized };
+  }
+  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const resolvedBeats = new Map(
+    resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
+  );
+  const scenes = storyboard.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path?.some((move) => move.move === "dive")) return scene;
+    const beats = resolvedBeats.get(scene.id) ?? [];
+    const notes: string[] = [];
+    const newPath = path.map((move) => {
+      if (move.move !== "dive" || !move.toPart) return move;
+      const start = move.startSec;
+      const end = move.startSec + move.durationSec;
+      const overlappingBeats = beats.filter((beat) =>
+        beat.component === move.toPart &&
+        beat.endSec > start + 0.01 && beat.startSec < end - 0.01
+      );
+      const interactionEnd = (interaction: NonNullable<DirectScene["interactions"]>[number]): number =>
+        interaction.holdUntilSec ?? interaction.releaseSec ?? interaction.arriveSec;
+      const overlappingInteractions = (scene.interactions ?? []).filter((interaction) =>
+        interaction.targetPart === move.toPart &&
+        interactionEnd(interaction) > start + 0.01 && interaction.startSec < end - 0.01
+      );
+      if (!overlappingBeats.length && !overlappingInteractions.length) {
+        const note =
+          `dive at ${start.toFixed(2)}s targets "${move.toPart}" but no beat/interaction ` +
+          `acts on it inside the window — degraded to push-in`;
+        notes.push(note);
+        normalized.push(`scene "${scene.id}": ${note}`);
+        const { inSec: _inSec, outSec: _outSec, ...rest } = move;
+        return { ...rest, move: "push-in" as const };
+      }
+      let holdStart = Math.min(
+        ...overlappingBeats.map((beat) => beat.startSec),
+        ...overlappingInteractions.map((interaction) => interaction.startSec),
+      );
+      let holdEnd = Math.max(
+        ...overlappingBeats.map((beat) => beat.endSec),
+        ...overlappingInteractions.map(interactionEnd),
+      );
+      // Typed/swapped copy inside the dive needs its reading floor before the
+      // pull-back — the whole reason the operator wanted the camera to wait.
+      for (const beat of overlappingBeats) {
+        if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
+          const wordCount = beat.text.trim() ? beat.text.trim().split(/\s+/).length : 0;
+          const floor = Math.min(
+            READING_MAX_SEC,
+            Math.max(READING_MIN_SEC, READING_SEC_PER_WORD * wordCount),
+          );
+          holdEnd = Math.max(
+            holdEnd,
+            contentTimeAfterViewerSpan(toViewer, beat.endSec, floor, end),
+          );
+        }
+      }
+      holdStart = Math.max(start, Math.min(holdStart, end));
+      holdEnd = Math.max(holdStart, Math.min(holdEnd, end));
+      const legCap = Math.min(DIVE_LEG_MAX_SEC, move.durationSec * DIVE_LEG_FRACTION);
+      const inSec = Math.round(Math.max(0.15, Math.min(legCap, holdStart - start)) * 1000) / 1000;
+      const outSec = Math.round(Math.max(0.15, Math.min(legCap, end - holdEnd)) * 1000) / 1000;
+      const note =
+        `dive on "${move.toPart}": in ${inSec.toFixed(2)}s / hold ` +
+        `${(move.durationSec - inSec - outSec).toFixed(2)}s / out ${outSec.toFixed(2)}s ` +
+        `covering ${overlappingBeats.length} beat(s) + ${overlappingInteractions.length} interaction(s)`;
+      notes.push(note);
+      normalized.push(`scene "${scene.id}": ${note}`);
+      return { ...move, inSec, outSec };
+    });
+    return withNormalizationNotes(
+      { ...scene, camera: { ...scene.camera!, path: newPath } },
+      notes,
+    );
+  });
+  return { storyboard: scenes, normalized };
 }
 
 export interface StoryboardPlanRequirements {
@@ -3535,7 +3733,7 @@ export function validateStoryboardPlan(
     errors.push(
       `the brief explicitly requests spatial camera choreography; plan at least ` +
         `${requirements.minCameraMoves} FULL typed camera moves ` +
-        `(pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit — drift and ` +
+        `(pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit/dive — drift and ` +
         `hold do NOT count), not ${cameraMoves}`,
     );
   }
@@ -3548,7 +3746,7 @@ export function validateStoryboardPlan(
     errors.push(
       "the brief requests one large spatial UI world; at least one shot must travel through " +
         "multiple stations with two or more FULL typed camera moves in its own path. " +
-        "Full moves are pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit — " +
+        "Full moves are pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit/dive — " +
         "drift and hold are connective and do NOT count. Recipe: give one 5s+ shot " +
         "worldLayout cells for 2-3 regions, then pan to the second region at ~1s and " +
         "track-to-anchor a part in the third at ~3s",
@@ -3556,15 +3754,20 @@ export function validateStoryboardPlan(
   }
   if (
     requirements.requireObjectMatch &&
-    !storyboard.some((scene) => scene.cut?.style === "object-match")
+    !storyboard.some((scene) =>
+      scene.cut?.style === "match" && scene.cut.focalPartOut && scene.cut.focalPartIn
+    )
   ) {
-    errors.push("the brief explicitly requests an object-match cut, but none is planned");
+    errors.push(
+      "the brief explicitly requests a match cut that carries an object across the " +
+        "boundary, but none is planned with both focal part names",
+    );
   }
   if (
     requirements.requireShapeMatch &&
-    !storyboard.some((scene) => scene.cut?.style === "shape-match")
+    !storyboard.some((scene) => scene.cut?.style === "morph")
   ) {
-    errors.push("the brief explicitly requests a shape-match cut, but none is planned");
+    errors.push("the brief explicitly requests a morph transition, but none is planned");
   }
   if (
     requirements.requireRackFocus &&
@@ -3683,6 +3886,12 @@ export function validateStoryboardPlan(
   // time, typed copy needs reading time, payoffs need outcome holds, and
   // camera density has a ceiling as well as a floor.
   errors.push(...auditPacing(storyboard));
+  // MD5: a dive re-frames twice inside its window; a cursor working a
+  // DIFFERENT surface through that window aims at a moving frame. Both
+  // windows are typed, so refuse the combination here where a retry costs
+  // one storyboard call (the dive-on-its-own-target pattern is designed-for
+  // and never flagged).
+  errors.push(...auditDiveInteractions(storyboard));
   // Exit discipline (WS4): a scene that opens a second content surface over a
   // still-live one in the same station stacks clutter — retire the outgoing
   // surface or give the incoming one its own station.
@@ -3704,16 +3913,53 @@ export function auditShapeMatchHints(storyboard: DirectScene[]): string[] {
   for (const [index, scene] of storyboard.entries()) {
     const next = storyboard[index + 1];
     const cut = scene.cut;
-    if (!next || cut?.style !== "shape-match" || !cut.shapeOut || !cut.shapeIn) continue;
+    // Canonicalize so cached storyboards still carrying "shape-match" get the
+    // same plan-time sanity as fresh morph declarations.
+    const style = cut ? canonicalCutStyle(cut.style).style : undefined;
+    if (!next || !cut || style !== "morph" || !cut.shapeOut || !cut.shapeIn) continue;
     if (shapeHintsRhyme(cut.shapeOut, cut.shapeIn)) continue;
     findings.push(
-      `shape-match ${scene.id}->${next.id} declares silhouette hints ` +
+      `morph ${scene.id}->${next.id} declares silhouette hints ` +
         `${cut.shapeOut}->${cut.shapeIn}, which cannot rhyme (a ${cut.shapeOut} and a ` +
         `${cut.shapeIn} differ beyond the runtime's 2.5x aspect cap at any plausible size, ` +
-        `so the cut would degrade to zoom-through at bind time) — re-point the cut at ` +
+        `so the cut would degrade to a swipe at bind time) — re-point the morph at ` +
         `endpoints whose silhouettes match (pill<->bar, or card<->window<->circle), fix the ` +
-        `hints if the real parts do rhyme, or declare zoom-through instead`,
+        `hints if the real parts do rhyme, or declare a swipe instead`,
     );
+  }
+  return findings;
+}
+
+/**
+ * MD5 plan-stage guard: a dive window may not overlap a cursor interaction's
+ * screen-space approach unless the interaction targets the dived surface —
+ * the hold then covers the interaction window by construction
+ * (`deriveDiveWindows` includes interaction windows on the dive target).
+ */
+export function auditDiveInteractions(storyboard: DirectScene[]): string[] {
+  const findings: string[] = [];
+  for (const scene of storyboard) {
+    const dives = (scene.camera?.path ?? []).filter((move) => move.move === "dive");
+    if (!dives.length || !scene.interactions?.length) continue;
+    for (const interaction of scene.interactions) {
+      const end =
+        interaction.holdUntilSec ?? interaction.releaseSec ?? interaction.arriveSec;
+      for (const dive of dives) {
+        if (dive.toPart === interaction.targetPart) continue;
+        if (
+          interaction.startSec < dive.startSec + dive.durationSec + 0.001 &&
+          end > dive.startSec - 0.001
+        ) {
+          findings.push(
+            `interaction "${interaction.id}" overlaps the dive on "${dive.toPart}" in scene ` +
+              `"${scene.id}" (${dive.startSec.toFixed(1)}s-` +
+              `${(dive.startSec + dive.durationSec).toFixed(1)}s) while targeting ` +
+              `"${interaction.targetPart}" — a cursor cannot work one surface while the camera ` +
+              `dives into another; aim the interaction at the dived surface, or retime one of them`,
+          );
+        }
+      }
+    }
   }
   return findings;
 }
@@ -3732,23 +3978,28 @@ export function degradeMismatchedShapeHintCuts(
   const scenes = storyboard.map((scene, index) => {
     const next = storyboard[index + 1];
     const cut = scene.cut;
-    if (!next || cut?.style !== "shape-match" || !cut.shapeOut || !cut.shapeIn) return scene;
+    const style = cut ? canonicalCutStyle(cut.style).style : undefined;
+    if (!next || !cut || style !== "morph" || !cut.shapeOut || !cut.shapeIn) return scene;
     if (shapeHintsRhyme(cut.shapeOut, cut.shapeIn)) return scene;
     degraded.push(`${scene.id}->${next.id} (${cut.shapeOut}->${cut.shapeIn})`);
     return {
       ...scene,
       // Keep any authored boundary timing so the executed window stays put —
       // the same policy as the QA-time rewrite (rewriteDegradedCutStoryboard);
-      // only the style and its focal/hint paperwork change.
+      // only the style and its focal/hint paperwork change. The degrade target
+      // is a swipe (MD1): no focal geometry exists at plan time, so the axis
+      // falls back to right-travel — the shipped film stays inside the
+      // 3-transition language either way.
       cut: {
         version: 1 as const,
-        style: "zoom-through" as const,
+        style: "swipe" as const,
+        axis: "right" as const,
         ...(cut.travelPx !== undefined ? { travelPx: cut.travelPx } : {}),
         ...(cut.exitSec !== undefined ? { exitSec: cut.exitSec } : {}),
         ...(cut.entrySec !== undefined ? { entrySec: cut.entrySec } : {}),
       },
       outgoingCut:
-        `Zoom-through into the next shot (a declared shape-match with non-rhyming ` +
+        `Swipe into the next shot (a declared morph with non-rhyming ` +
         `silhouette hints ${cut.shapeOut}->${cut.shapeIn} was degraded at plan time).`,
     };
   });
@@ -4063,15 +4314,15 @@ export function parseStoryboardResponse(
   }
   // Early attempts keep the hint-mismatch finding blocking so a cheap
   // findings-retry fixes the pair; the FINAL attempt degrades a volunteered
-  // hopeless shape-match to zoom-through instead of blocking the film
-  // (degrade-never-veto). Brief-required shape-match never degrades here.
+  // hopeless morph to a swipe instead of blocking the film
+  // (degrade-never-veto). Brief-required morph never degrades here.
   if (options.degradeShapeHintMismatches && !requirements.requireShapeMatch) {
     const degradation = degradeMismatchedShapeHintCuts(storyboard);
     if (degradation.degraded.length) {
       storyboard = degradation.scenes;
       for (const line of degradation.degraded) {
         process.stderr.write(
-          `[storyboard] degraded hint-mismatched shape-match to zoom-through: ${line}\n`,
+          `[storyboard] degraded hint-mismatched morph to swipe: ${line}\n`,
         );
         degradations.push(`storyboard-shape-cut-degraded:${findingSignature(line)}`);
       }
@@ -4767,8 +5018,12 @@ export async function requestStoryboardPlan(
     // beat/camera/interaction/moment/ramp times with their scene, the
     // final-resolve pacing exemption covers only compact resolve surfaces,
     // and headline detection no longer misreads "prototype"; v11 persists the
-    // accepted storyboard's degradation ledger beside the cached plan).
-    contract: 11,
+    // accepted storyboard's degradation ledger beside the cached plan; v12:
+    // the MOTION_DESIGN_PLAN schema fields land together — the 3-transition
+    // cut language (swipe+axis+cover / morph / match, legacy names
+    // canonicalized), the `dive` camera move, scene `gradeShift`, and the
+    // optional `style` enums on type/open/highlight beats).
+    contract: 12,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
@@ -4866,7 +5121,7 @@ export async function requestStoryboardPlan(
     "Use it only in scenes the author will build with 2+ depth layers.",
     "CAMERA ENERGY — camera verbs must track the film's energy curve, never",
     "distribute one verb evenly. Peak scenes get a whip, a hard push-in",
-    '("zoom":1.35+), or a zoom-through/inverse-zoom cut INTO them; valleys get',
+    '("zoom":1.35+), or a morph/cover-swipe cut INTO them; valleys get',
     "a short hold or slow drift so the claim can breathe. A 12s+ film with no",
     "whip, no 1.3+ push-in, and no energetic cut is rejected deterministically.",
     "Rhythm pattern that works: whip to a region, drift while its content",
@@ -4874,6 +5129,15 @@ export async function requestStoryboardPlan(
     "Give a camera path to any shot longer than ~4 seconds; name 2-4 regions",
     "per world using stable kebab-case (hero-claim, metric-wall, ui-demo,",
     "cta-station). track-to-anchor requires a toPart the author will create.",
+    "DIVE — to work inside a dense frame, declare ONE move:",
+    '{"move":"dive","toPart":"<the surface you are about to change>",',
+    '"startSec":…,"durationSec":<the TOTAL in+hold+out window>,"zoom":1.0-1.4}.',
+    "The host times the hold to your typed beats/interactions on that surface",
+    "(including reading time for typed copy) and returns the camera itself,",
+    "exactly to its pre-dive framing. Never choreograph push-in + hold +",
+    "pull-back yourself — dive replaces all three and counts as ONE full move.",
+    "A dive needs a beat or interaction on its toPart inside the window;",
+    "without one it degrades to a plain push-in.",
     "WORLD LAYOUT — for any shot whose camera visits 2+ stations, also declare",
     '"worldLayout": pin each region to a distinct viewport-sized grid cell of',
     "the world plane. [0,0] is the entry framing; [1,0] is one full screen",
@@ -4909,22 +5173,29 @@ export async function requestStoryboardPlan(
     "cursor interaction is pressing at the same time — the cursor's press",
     "feedback already animates the target, and the doubled pulse reads as a",
     "stutter.",
-    "Every shot's boundary is a typed, machine-executed cut. Choose cut.style from:",
-    "hard (intentional register break), cut-left/right/up/down (velocity-matched",
-    "directional carry — the default for scene-to-scene motion), zoom-through",
-    "(progressing deeper), inverse-zoom (arriving at a payoff), flash-white (one",
-    "energetic reset at most), object-match (a focal element visibly travels to a",
-    "matching element in the next shot; requires focalPartOut/focalPartIn data-part",
-    "names the author will create), shape-match (two DIFFERENT elements whose",
-    "silhouettes rhyme — a search pill lands as a status bar, a window becomes a",
-    "card, an avatar circle becomes a chart dot — swap across the boundary through",
-    "a crossfading bridge; requires focalPartOut/focalPartIn, plus optional",
-    'shapeOut/shapeIn hints from pill|bar|card|circle|window as your own',
-    "silhouette self-check. Declare shape-match only when the two silhouettes",
-    "genuinely rhyme; a >2.5x aspect mismatch degrades to zoom-through at bind",
-    "time. Silhouette families: pill and bar rhyme with each other; card,",
-    "window, and circle rhyme with each other; a cross-family pair like",
-    "pill->card is rejected deterministically at plan time).",
+    "Every shot's boundary is a typed, machine-executed cut. The transition",
+    "language is THREE transitions plus hard — pick ONE signature transition and",
+    "repeat it; morph/match are premium, at most one or two per film:",
+    "- swipe (movement/continuation — the default for scene-to-scene motion):",
+    '  requires "axis":"left|right|up|down" (the direction the outgoing content',
+    '  travels); optional "cover":true sends a palette panel wiping across the',
+    "  frame so the cut hides under full cover (loud — use at a register turn).",
+    "  The host adds directional motion blur; you never author it.",
+    "- morph (one thing BECOMES another): two DIFFERENT elements whose",
+    "  silhouettes rhyme — a search pill lands as a status bar, a window becomes",
+    "  a card — swap across the boundary through a crossfading bridge. Requires",
+    "  focalPartOut/focalPartIn data-part names the author will create, plus",
+    "  optional shapeOut/shapeIn hints from pill|bar|card|circle|window as your",
+    "  own silhouette self-check. pill<->bar rhyme; card<->window<->circle",
+    "  rhyme; a cross-family pair like pill->card is rejected at plan time, and",
+    "  a >2.5x measured aspect mismatch degrades to a swipe at bind time.",
+    "- match (the SAME subject on both sides of the seam): with BOTH",
+    "  focalPartOut/focalPartIn the element visibly travels to its counterpart;",
+    "  with only focalPartIn it is a hard cut whose incoming subject MUST land",
+    "  where the eye already is — QA enforces a tightened eye-trace budget, so",
+    "  declare match only when the two frames genuinely align.",
+    "- hard (punctuation, not a transition): the intentional register break.",
+    "  A film with zero plain cuts is its own tell.",
     "The host compiles the cut deterministically;",
     "the prose outgoingCut must describe the same editorial idea as cut.style.",
     "SPEED RAMP — time itself may bend for emphasis. A shot may declare ONE",
@@ -4959,7 +5230,7 @@ export async function requestStoryboardPlan(
           "BRIEF-SPECIFIC CAMERA COVERAGE — this brief explicitly asks for a",
           `spatial camera world. Plan at least ${requirements.minCameraMoves} FULL typed camera`,
           "moves. Full moves are pan/whip/push-in/pull-back/track-to-anchor/",
-          "parallax-pass/orbit — drift and hold are connective travel and do NOT",
+          "parallax-pass/orbit/dive — drift and hold are connective travel and do NOT",
           "count toward this coverage. A set of static shots or a single minor",
           "pan does not satisfy the request.",
           ...(requirements.requireMultiStationWorld
@@ -4974,14 +5245,14 @@ export async function requestStoryboardPlan(
       : []),
     ...(requirements.requireObjectMatch
       ? [
-          "The brief explicitly asks for object-match cuts; plan at least one typed",
-          "object-match boundary with both focal part names.",
+          "The brief explicitly asks for an object-carrying cut; plan at least one typed",
+          "match boundary with both focal part names.",
         ]
       : []),
     ...(requirements.requireShapeMatch
       ? [
-          "The brief explicitly asks for a shape-match transition; plan at least one",
-          "typed shape-match boundary with both focal part names and shapeOut/shapeIn",
+          "The brief explicitly asks for a morph transition; plan at least one",
+          "typed morph boundary with both focal part names and shapeOut/shapeIn",
           "silhouette hints, at the story beat where the two elements' meanings connect.",
         ]
       : []),
@@ -5064,13 +5335,14 @@ export async function requestStoryboardPlan(
     '"rules":["known rule"],"capabilityIds":["zero or more exact index ids"],',
     '"continuityAnchor":"what the eye tracks across this boundary",',
     '"outgoingCut":"cut mechanism and destination",',
-    '"cut":{"version":1,"style":"cut-left|cut-right|cut-up|cut-down|zoom-through|inverse-zoom|flash-white|object-match|shape-match|hard",',
-    '"focalPartOut":"for object-match/shape-match","focalPartIn":"for object-match/shape-match",',
-    '"shapeOut":"optional shape-match hint: pill|bar|card|circle|window","shapeIn":"same"},',
+    '"cut":{"version":1,"style":"swipe|morph|match|hard",',
+    '"axis":"swipe only: left|right|up|down","cover":true,',
+    '"focalPartOut":"for morph/match","focalPartIn":"for morph (and match when bridged)",',
+    '"shapeOut":"optional morph hint: pill|bar|card|circle|window","shapeIn":"same"},',
     '"timeRamp":{"version":1,"atSec":17.2,"slowTo":0.35,"holdSec":0.6,"recoverSec":0.9} for the',
     'one motivated slow-motion dip; use "timeRamp":{"version":1} for no ramp (the default).',
     "timeRamp atSec is absolute composition seconds where the dip begins.",
-    '"camera":{"version":1,"depth3d":true,"path":[{"version":1,"move":"hold|drift|pan|whip|push-in|pull-back|track-to-anchor|parallax-pass|orbit-lite|orbit",',
+    '"camera":{"version":1,"depth3d":true,"path":[{"version":1,"move":"hold|drift|pan|whip|push-in|pull-back|track-to-anchor|parallax-pass|orbit-lite|orbit|dive",',
     '"toRegion":"region name (or toPart for track-to-anchor)","zoom":1,"startSec":0,"durationSec":1.2,',
     '"arcDeg":28,"focus":{"part":"data-part to pull focus onto","depth":0.35,"blurMaxPx":6},',
     "arcDeg only for orbit; focus is an optional rack-focus modifier on any move,",
@@ -5837,15 +6109,16 @@ function lockedLayoutGuidance(scenes: DirectScene[]): string {
     );
   }
   const shapePairs = scenes.flatMap((scene) =>
-    scene.cut?.style === "shape-match" && scene.cut.focalPartOut && scene.cut.focalPartIn
+    (scene.cut?.style === "morph" || scene.cut?.style === "shape-match") &&
+      scene.cut.focalPartOut && scene.cut.focalPartIn
       ? [`${scene.cut.focalPartOut}→${scene.cut.focalPartIn}`]
       : []
   );
   if (shapePairs.length) {
     lines.push(
-      `- Shape-match focal parts (${[...new Set(shapePairs)].join(", ")}) must keep`,
+      `- Morph focal parts (${[...new Set(shapePairs)].join(", ")}) must keep`,
       "  comparable aspect ratios and border radii (within ~2.5×) and light",
-      "  subtrees (≤60 nodes) or the boundary degrades to zoom-through at bind",
+      "  subtrees (≤60 nodes) or the boundary degrades to a swipe at bind",
       "  time. Keep both parts on-frame at their scene's entry framing.",
     );
   }
@@ -6448,8 +6721,8 @@ export function creationPrompt(args: {
       "in an empty frame: enlarge the station's content, tighten its data-region rect so",
       "the fit zoom lands closer, or move more of that scene's content into the framed",
       "station — the viewer should never study a mostly-empty frame.",
-      "For cut_degraded findings, a declared shape-match/object-match compiled as",
-      "zoom-through because the endpoint silhouettes do not rhyme. Use the measured",
+      "For cut_degraded findings, a declared morph/match compiled as a plain",
+      "swipe because the endpoint silhouettes do not rhyme. Use the measured",
       "numbers in the finding: restyle one endpoint, or move its data-part attribute",
       "onto a sub-element whose box does rhyme (e.g. a condensed header band matching",
       "the outgoing pill), so both parts sit within a 2.5x aspect ratio, under 60 nodes,",
@@ -6836,6 +7109,11 @@ export function volunteeredCutBoundaries(
     const next = storyboard[index + 1];
     if (!next || !scene.cut) continue;
     const volunteered =
+      (scene.cut.style === "morph" && !requirements.requireShapeMatch) ||
+      (scene.cut.style === "match" &&
+        Boolean(scene.cut.focalPartOut && scene.cut.focalPartIn) &&
+        !requirements.requireObjectMatch) ||
+      // Legacy names survive in cached storyboards.
       (scene.cut.style === "shape-match" && !requirements.requireShapeMatch) ||
       (scene.cut.style === "object-match" && !requirements.requireObjectMatch);
     if (volunteered) boundaries.add(`${scene.id}->${next.id}`);
@@ -6877,14 +7155,14 @@ interface CutDegradationResult {
 
 /**
  * Volunteered bridged cuts must never sink an otherwise valid film. When a
- * shape-match/object-match endpoint binding persists across two consecutive
+ * morph/match endpoint binding persists across two consecutive
  * static rejections (so it survived at least one model repair that was told
  * to fix it) and the brief did not explicitly request that cut style, degrade
- * the boundary to zoom-through — a typed, energetic, non-bridged cut that
- * preserves the boundary beat, the energy audit's peak, and every moment
- * bound to the cut landing — then re-run the deterministic injections so the
- * shipped island matches the shipped storyboard. Explicitly requested bridged
- * cuts are never degraded here; they stay blocking and fall back honestly.
+ * the boundary to a swipe — a typed, non-bridged cut that preserves the
+ * boundary beat and every moment bound to the cut landing — then re-run the
+ * deterministic injections so the shipped island matches the shipped
+ * storyboard. Explicitly requested bridged cuts are never degraded here; they
+ * stay blocking and fall back honestly.
  */
 export function degradeVolunteeredBridgedCuts(args: {
   draft: DirectCompositionDraft;
@@ -6909,7 +7187,17 @@ export function degradeVolunteeredBridgedCuts(args: {
     const next = args.storyboard[index + 1];
     if (!next || !scene.cut || !stuck.has(`${scene.id}->${next.id}`)) return scene;
     degraded.push(`${scene.id}->${next.id} (${scene.cut.style})`);
-    return { ...scene, cut: { version: 1 as const, style: "zoom-through" as const } };
+    // MD1 retarget: the degrade target is a swipe (right-travel — the static
+    // gate has no measured focal geometry to derive an axis from), keeping the
+    // boundary typed, energetic enough to hold the beat, and inside the
+    // 3-transition language.
+    return {
+      ...scene,
+      cut: { version: 1 as const, style: "swipe" as const, axis: "right" as const },
+      outgoingCut:
+        `Swipe into "${next.title}" (a volunteered ${scene.cut.style} with persistently ` +
+        `unbindable focal parts was retired at repair time).`,
+    };
   });
   if (!degraded.length) return undefined;
   const draft = applyDeterministicSourceRepairs(
@@ -7583,7 +7871,7 @@ async function authorCompositionLoop(
       }
       // Degradation rung: a volunteered bridged cut whose endpoint binding
       // survived a model repair (same signature across consecutive static
-      // rejections) is provably stuck — retire the boundary to zoom-through
+      // rejections) is provably stuck — retire the boundary to a swipe
       // deterministically instead of burning the remaining budget on it. Only
       // a fully valid degraded draft is accepted (atomic, like every other
       // recovery); attempt 1 never degrades so the author always gets one
@@ -7602,7 +7890,7 @@ async function authorCompositionLoop(
           if (revalidated.ok) {
             process.stderr.write(
               `[author] degraded ${degradation.degraded.length} volunteered bridged cut(s) with ` +
-                `persistently unbindable focal parts to zoom-through: ` +
+                `persistently unbindable focal parts to swipe: ` +
                 `${degradation.degraded.join(", ")}\n`,
             );
             summary.strategyChanges.push(
@@ -8426,13 +8714,13 @@ async function applyShapeMatchUpgrade(
           // outgoingCut prose — rewrite it so paperwork matches the executed
           // boundary instead of describing the pre-upgrade cut.
           outgoingCut:
-            `Shape-match: "${upgrade.focalPartOut}" carries into ` +
+            `Morph: "${upgrade.focalPartOut}" becomes ` +
             `"${upgrade.focalPartIn}" (measured silhouette rhyme, discovered at QA).`,
         }
       : scene
   );
   process.stderr.write(
-    `[cut-discovery] upgrading ${upgrade.fromScene}->${upgrade.toScene} to shape-match ` +
+    `[cut-discovery] upgrading ${upgrade.fromScene}->${upgrade.toScene} to morph ` +
       `(${upgrade.focalPartOut} → ${upgrade.focalPartIn}, score ${upgrade.score.toFixed(2)})\n`,
   );
   try {
@@ -8462,7 +8750,7 @@ async function applyShapeMatchUpgrade(
       throw new Error("the runtime bind-time audit degraded the upgraded boundary");
     }
     persistUpgradedStoryboard(args.projectDir, storyboard);
-    process.stderr.write("[cut-discovery] upgrade validated; shipping the shape-match boundary\n");
+    process.stderr.write("[cut-discovery] upgrade validated; shipping the morph boundary\n");
     return { result: { ...result, draft, browserQa }, storyboard };
   } catch (error) {
     process.stderr.write(
@@ -8474,47 +8762,64 @@ async function applyShapeMatchUpgrade(
   }
 }
 
-/** The raw runtime-degradation warning emitted by browser QA. */
+/** The raw runtime-degradation warning emitted by browser QA. The degrade
+ * target is measured at bind time: `swipe-<axis>` for a retargeted morph
+ * (MD1), `zoom-through` for legacy runtimes replaying cached islands. */
 const RAW_DEGRADED_CUT_WARNING =
-  /^cut_degraded: \S+ ([\w-]+)->([\w-]+) compiled as zoom-through: (.*)$/;
+  /^cut_degraded: \S+ ([\w-]+)->([\w-]+) compiled as ([\w-]+): (.*)$/;
 
 /**
  * Pure half of the paperwork reconciler: rewrite every runtime-degraded
- * declared bridged cut in the SHIPPED storyboard as the zoom-through that
- * actually executed, with honest advertising prose. Exported for tests.
+ * declared bridged cut in the SHIPPED storyboard as the cut that actually
+ * executed (an axis-derived swipe, or zoom-through on legacy runtimes), with
+ * honest advertising prose. Exported for tests.
  */
 export function rewriteDegradedCutStoryboard(
   shipped: DirectScene[],
   qaWarnings: string[],
 ): { storyboard: DirectScene[]; rewritten: string[] } {
-  const degradedReasons = new Map<string, string>();
+  const degraded = new Map<string, { target: string; reason: string }>();
   for (const warning of qaWarnings) {
     const match = warning.match(RAW_DEGRADED_CUT_WARNING);
-    if (match) degradedReasons.set(`${match[1]}->${match[2]}`, match[3] ?? "");
+    if (match) {
+      degraded.set(`${match[1]}->${match[2]}`, {
+        target: match[3] ?? "zoom-through",
+        reason: match[4] ?? "",
+      });
+    }
   }
   const rewritten: string[] = [];
-  if (!degradedReasons.size) return { storyboard: shipped, rewritten };
+  if (!degraded.size) return { storyboard: shipped, rewritten };
   const storyboard = shipped.map((scene, index) => {
     const next = shipped[index + 1];
     const cut = scene.cut;
     if (!next || !cut) return scene;
-    if (cut.style !== "shape-match" && cut.style !== "object-match") return scene;
-    const reason = degradedReasons.get(`${scene.id}->${next.id}`);
-    if (reason === undefined) return scene;
+    if (
+      cut.style !== "morph" && cut.style !== "match" &&
+      cut.style !== "shape-match" && cut.style !== "object-match"
+    ) return scene;
+    const outcome = degraded.get(`${scene.id}->${next.id}`);
+    if (outcome === undefined) return scene;
     rewritten.push(`${scene.id}->${next.id} (${cut.style})`);
+    const swipeAxis = outcome.target.match(/^swipe-(left|right|up|down)$/)?.[1] as
+      | CutAxis
+      | undefined;
+    const executed = swipeAxis
+      ? { style: "swipe" as const, axis: swipeAxis }
+      : { style: "zoom-through" as const };
     return {
       ...scene,
       cut: {
         version: 1 as const,
-        style: "zoom-through" as const,
+        ...executed,
         // Keep any authored boundary timing so the executed window stays put.
         ...(cut.travelPx !== undefined ? { travelPx: cut.travelPx } : {}),
         ...(cut.exitSec !== undefined ? { exitSec: cut.exitSec } : {}),
         ...(cut.entrySec !== undefined ? { entrySec: cut.entrySec } : {}),
       },
       outgoingCut:
-        `Zoom-through into "${next.title}" (a declared ${cut.style} was degraded at ` +
-        `bind time: ${reason}).`,
+        `${swipeAxis ? `Swipe ${swipeAxis}` : "Zoom-through"} into "${next.title}" ` +
+        `(a declared ${cut.style} was degraded at bind time: ${outcome.reason}).`,
     };
   });
   return { storyboard, rewritten };
@@ -8559,8 +8864,8 @@ async function reconcileDegradedCutPaperwork(
     }
     persistUpgradedStoryboard(args.projectDir, storyboard);
     process.stderr.write(
-      `[cut-honesty] rewrote ${rewritten.length} runtime-degraded boundary/ies as executed ` +
-        `zoom-through in the shipped storyboard: ${rewritten.join(", ")}\n`,
+      `[cut-honesty] rewrote ${rewritten.length} runtime-degraded boundary/ies as the cut ` +
+        `that actually executed in the shipped storyboard: ${rewritten.join(", ")}\n`,
     );
     recordSentinelDegradation(`cut-degraded-shipped:${rewritten.join(",")}`);
     return { ...result, draft, browserQa };

@@ -36,6 +36,7 @@ import {
   CAMERA_FULL_MOVES,
   HIGH_ENERGY_PUSH_ZOOM,
   cameraMoveZoom,
+  diveWindows,
   type CameraMoveIntentV1,
 } from "./cameraContract.ts";
 import { resolveComponentPlan, type ResolvedComponentBeatV1 } from "./componentContract.ts";
@@ -102,6 +103,47 @@ const PAYOFF_BEAT_KINDS = new Set(["press", "set-state"]);
 function words(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/** One instant at which the framing visibly changes, and how long that change
+ * stays in flight. Ordinary full moves contribute one event; a `dive` (MD5)
+ * contributes two — the push-in and the pull-back — because its HELD middle is
+ * development time, not churn: a beat settling inside the hold is framed and
+ * readable until the pull-back starts. */
+export interface FramingChangeEvent {
+  changeAt: number;
+  activeUntil: number;
+}
+
+export function framingChangeEvents(fullMoves: CameraMoveIntentV1[]): FramingChangeEvent[] {
+  return fullMoves.flatMap((move): FramingChangeEvent[] => {
+    if (move.move === "dive") {
+      const legs = diveWindows(move);
+      const end = move.startSec + move.durationSec;
+      return [
+        { changeAt: move.startSec, activeUntil: move.startSec + legs.inSec },
+        { changeAt: end - legs.outSec, activeUntil: end },
+      ];
+    }
+    return [{
+      changeAt: move.startSec,
+      activeUntil: move.startSec + move.durationSec,
+    }];
+  });
+}
+
+/** The framing-change resolver shared by the audit and both normalizers. */
+export function nextFramingChangeAfter(
+  events: FramingChangeEvent[],
+  afterSec: number,
+  sceneEnd: number,
+): number {
+  let next = sceneEnd;
+  for (const event of events) {
+    if (event.activeUntil <= afterSec - 0.05) continue;
+    next = Math.min(next, Math.max(afterSec, event.changeAt));
+  }
+  return Math.min(sceneEnd, next);
 }
 
 /**
@@ -211,18 +253,14 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
       (scene.components ?? []).map((component) => [component.id, component.kind]),
     );
     // The next framing change after a content beat: the scene's own cut, or
-    // the first full camera move that starts after the beat settles. A move
-    // already IN FLIGHT when the beat settles is an immediate framing
-    // conflict (available hold = 0) — the frame is moving through the payoff
-    // even though no later move starts.
-    const nextFramingChange = (afterSec: number): number => {
-      let next = sceneEnd;
-      for (const move of fullMoves) {
-        if (move.startSec + move.durationSec <= afterSec - 0.05) continue;
-        next = Math.min(next, Math.max(afterSec, move.startSec));
-      }
-      return Math.min(sceneEnd, next);
-    };
+    // the first framing-change EVENT after the beat settles. A move already
+    // IN FLIGHT when the beat settles is an immediate framing conflict
+    // (available hold = 0) — except a dive's held middle, which is exactly
+    // the "hold ≠ freeze" pattern: the typed beat develops the held frame
+    // until the pull-back leg begins.
+    const changeEvents = framingChangeEvents(fullMoves);
+    const nextFramingChange = (afterSec: number): number =>
+      nextFramingChangeAfter(changeEvents, afterSec, sceneEnd);
 
     for (const beat of beats) {
       // 2. Reading-time floor for typed/swapped copy — swap re-fills a live
@@ -319,7 +357,9 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
 function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
   if (move.move === "whip" || move.move === "orbit") return 2;
   if (cameraMoveZoom(move) >= HIGH_ENERGY_PUSH_ZOOM) return 2;
-  if (move.move === "push-in" || move.move === "pull-back") return 1;
+  // A dive exists to serve a typed beat — it outranks connective reframes so
+  // a budget clamp never sacrifices the move the beat depends on.
+  if (move.move === "push-in" || move.move === "pull-back" || move.move === "dive") return 1;
   return 0;
 }
 
@@ -614,14 +654,9 @@ export function stretchMarginalPacingMisses(
     if (!rampSceneIds.has(original.id)) {
       const sceneEnd = original.startSec + original.durationSec;
       const fullMoves = (original.camera?.path ?? []).filter((move) => CAMERA_FULL_MOVES.has(move.move));
-      const nextFramingChange = (afterSec: number): number => {
-        let next = sceneEnd;
-        for (const move of fullMoves) {
-          if (move.startSec + move.durationSec <= afterSec - 0.05) continue;
-          next = Math.min(next, Math.max(afterSec, move.startSec));
-        }
-        return Math.min(sceneEnd, next);
-      };
+      const stretchEvents = framingChangeEvents(fullMoves);
+      const nextFramingChange = (afterSec: number): number =>
+        nextFramingChangeAfter(stretchEvents, afterSec, sceneEnd);
       const componentKinds = new Map(
         (original.components ?? []).map((component) => [component.id, component.kind]),
       );

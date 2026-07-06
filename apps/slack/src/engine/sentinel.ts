@@ -202,6 +202,42 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
   },
   {
+    id: "normalize.dive-window",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraDive.test.ts",
+    addedBecause:
+      "MD5 (2026-07-06): the operator's zoom-in→type→zoom-out ask kept dying on " +
+      "three-segment camera arithmetic GLM cannot do. `dive` collapses it into " +
+      "ONE typed move; deriveDiveWindows (parseStoryboard, unconditional like " +
+      "the timing re-base) derives the in/hold/out legs from the beats and " +
+      "interactions acting on the dive's toPart — including the viewer-time " +
+      "reading floor for typed/swapped copy — and stores them on the move. A " +
+      "dive with NOTHING acting on its target degrades to push-in with a " +
+      "warning (degrade-never-veto). Telemetry tag: dive-window.",
+  },
+  {
+    id: "normalize.fx-plan",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/fxContract.test.ts",
+    addedBecause:
+      "MD2 (2026-07-06): motion-design garnish (payoff sweeps + glow pulses, " +
+      "connector draw-ons, morph-bridge echo) is HOST-derived from data the " +
+      "storyboard already carries (resolveFxPlan) and injected like every " +
+      "contract island — zero planner options beyond highlight.style, zero " +
+      "author paperwork, zero new failure classes. validateFxContract errors " +
+      "are host-plumbing self-checks (island/runtime/compile drift), reachable " +
+      "only if the injection seam breaks; every runtime bind is " +
+      "enhancement-only (missing target compiles to nothing).",
+  },
+  {
     id: "normalize.timeramp-retime",
     group: "normalize",
     layer: "normalize",

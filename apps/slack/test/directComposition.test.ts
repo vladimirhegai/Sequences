@@ -1368,19 +1368,24 @@ describe("direct HyperFrames composition", () => {
     expect(requirements.minRequestedComponentKinds).toBe(3);
   });
 
-  it("keeps typed boundary cuts and degrades unusable ones before source authoring", () => {
+  it("keeps typed boundary cuts and canonicalizes legacy names before source authoring", () => {
     const plan = storyboard();
     plan[0]!.cut = { version: 1, style: "cut-left", travelPx: 9999 };
     plan[1]!.cut = {
       version: 1,
       style: "object-match",
       focalPartOut: "the-action-button",
-      // focalPartIn missing → unusable, must degrade to no cut, not fail
+      // focalPartIn missing → the hard-form match promise (QA enforces the
+      // tightened eye-trace budget); it resolves to no runtime bridge.
     };
     plan[2]!.cut = { version: 1, style: "hard" };
     const parsed = parseStoryboardResponse(JSON.stringify(plan));
-    expect(parsed[0]?.cut).toEqual({ version: 1, style: "cut-left", travelPx: 420 });
-    expect(parsed[1]?.cut).toBeUndefined();
+    expect(parsed[0]?.cut).toEqual({ version: 1, style: "swipe", axis: "left", travelPx: 420 });
+    expect(parsed[1]?.cut).toEqual({
+      version: 1,
+      style: "match",
+      focalPartOut: "the-action-button",
+    });
     expect(parsed[2]?.cut).toEqual({ version: 1, style: "hard" });
   });
 
