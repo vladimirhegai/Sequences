@@ -102,13 +102,15 @@ import {
 } from "./pacingAudit.ts";
 import { readFrameMeta } from "./frameDesign.ts";
 import {
+  claimSentinelHedge,
   recordSentinelDegradation,
-  recordSentinelHedge,
   recordSentinelLayerFinding,
   recordSentinelModelCall,
   recordSentinelModelCallFailure,
   recordSentinelNormalization,
   recordSentinelScaffold,
+  recordSentinelScaffoldRestoration,
+  recordSentinelSlotCall,
 } from "./sentinelTelemetry.ts";
 import { criticSkipCleanEnabled, sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./sentinelFlags.ts";
 import {
@@ -150,6 +152,7 @@ export interface CompositionRunResult {
 
 const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
+const SLOT_SKILL_BUDGET_CHARS = 5_000;
 const REPAIR_MAX_TOKENS = 4_096;
 const MAX_REPAIR_PATCHES = 16;
 // Camera-era storyboards carry typed camera paths and more shots, so the
@@ -1058,9 +1061,10 @@ export function reconcileCameraWorldPlanes(
 export function reconcileContractBindings(
   source: string,
   scenes: DirectScene[],
-): { html: string; repairs: number } {
+): { html: string; repairs: number; regionRepairs: number } {
   let html = source;
   let repairs = 0;
+  let regionRepairs = 0;
   const partBindings: ScenePartBinding[] = [];
   for (const cut of resolveCutPlan(scenes).cuts) {
     if (cut.focalPartOut) partBindings.push({ sceneId: cut.fromScene, part: cut.focalPartOut });
@@ -1086,8 +1090,9 @@ export function reconcileContractBindings(
     const regions = reconcileCameraRegionStations(html, regionBindings);
     html = regions.html;
     repairs += regions.repairs;
+    regionRepairs += regions.repairs;
   }
-  return { html, repairs };
+  return { html, repairs, regionRepairs };
 }
 
 /**
@@ -2170,25 +2175,102 @@ export function ensureRuntimeScriptOrdering(source: string): { html: string; cha
  * receives the position NUMBER as the to-object and the compile throws
  * "Cannot create property 'parent' on number '…'" — a runtime_bind_exception
  * (and the whole paid attempt) spent on a call-shape typo (the
- * sentinel-s5-interactions probe class, 2026-07-06). Rewriting the call to
- * `.from(target, vars, position)` is exact and content-free: same target,
- * same authored vars, same position, valid signature. Conservative by
- * construction: only a string-literal target and a FLAT vars object match.
+ * sentinel-s5-interactions probe class, 2026-07-06). The remaining vars do not
+ * reveal which object was omitted. The only safe rewrite currently proven is
+ * `.to`: visible/settled vars after the same selector was explicitly initialized
+ * to an opposite state. Hidden/off-position could be either an entrance `.from`
+ * or an exit `.to`, so it stays blocking too. Only a string-literal target and
+ * a flat vars object are considered.
  */
 export function repairMalformedFromToCalls(
   source: string,
-): { html: string; repairs: number } {
+): { html: string; repairs: number; fromRepairs: number; toRepairs: number; ambiguous: number } {
   let repairs = 0;
+  let fromRepairs = 0;
+  let toRepairs = 0;
+  let ambiguous = 0;
+  const classifyState = (vars: string): "from" | "to" | undefined => {
+    const cues: Array<"from" | "to"> = [];
+    const body = vars.slice(1, -1);
+    const numericCue = (
+      property: string,
+      classify: (value: number) => "from" | "to" | undefined,
+    ): void => {
+      const match = new RegExp(`(?:^|[,\\s])${property}\\s*:\\s*(-?\\d*\\.?\\d+)`, "i")
+        .exec(body);
+      if (!match) return;
+      const cue = classify(Number(match[1]));
+      if (cue) cues.push(cue);
+    };
+    numericCue("(?:opacity|autoAlpha)", (value) =>
+      value <= 0.05 ? "from" : value >= 0.95 ? "to" : undefined
+    );
+    for (const property of ["scale", "scaleX", "scaleY"]) {
+      numericCue(property, (value) =>
+        Math.abs(value - 1) <= 0.02 ? "to" : Math.abs(value - 1) >= 0.08 ? "from" : undefined
+      );
+    }
+    for (const property of ["x", "y", "xPercent", "yPercent", "rotation", "rotationX", "rotationY"]) {
+      numericCue(property, (value) =>
+        Math.abs(value) <= 0.01 ? "to" : Math.abs(value) >= 1 ? "from" : undefined
+      );
+    }
+    const visibility = /(?:^|[,\s])visibility\s*:\s*["'](visible|hidden)["']/i.exec(body)
+      ?.[1]?.toLowerCase();
+    if (visibility) cues.push(visibility === "visible" ? "to" : "from");
+    const display = /(?:^|[,\s])display\s*:\s*["']([^"']+)["']/i.exec(body)
+      ?.[1]?.toLowerCase();
+    if (display) cues.push(display === "none" ? "from" : "to");
+    return cues.length && cues.every((cue) => cue === cues[0]) ? cues[0] : undefined;
+  };
   const pattern =
     /\.fromTo\(\s*((["'])(?:\\.|(?!\2).)*\2)\s*,\s*(\{[^{}]*\})\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g;
   const html = source.replace(
     pattern,
-    (_match, target: string, _quote: string, vars: string, position: string) => {
+    (
+      _match,
+      target: string,
+      _quote: string,
+      vars: string,
+      position: string,
+      offset: number,
+    ) => {
+      const state = classifyState(vars);
+      let direction: "from" | "to" | undefined;
+      if (state === "to") {
+        // A settled state is safe as `.to` only when this same selector was
+        // explicitly initialized earlier to an opposite state. This is the
+        // exact s5 failure shape; a lone opacity:1 object remains ambiguous.
+        const before = source.slice(0, offset);
+        const escapedTarget = regexpEscape(target);
+        const candidates: Array<{ index: number; vars: string }> = [];
+        for (const match of before.matchAll(
+          new RegExp(`\\.(?:set|to)\\(\\s*${escapedTarget}\\s*,\\s*(\\{[^{}]*\\})`, "g"),
+        )) {
+          candidates.push({ index: match.index, vars: match[1]! });
+        }
+        for (const match of before.matchAll(
+          new RegExp(
+            `\\.fromTo\\(\\s*${escapedTarget}\\s*,\\s*\\{[^{}]*\\}\\s*,\\s*(\\{[^{}]*\\})`,
+            "g",
+          ),
+        )) {
+          candidates.push({ index: match.index, vars: match[1]! });
+        }
+        const prior = candidates.sort((a, b) => b.index - a.index)[0];
+        if (prior && classifyState(prior.vars) === "from") direction = "to";
+      }
+      if (!direction) {
+        ambiguous += 1;
+        return _match;
+      }
       repairs += 1;
-      return `.from(${target}, ${vars}, ${position})`;
+      if (direction === "from") fromRepairs += 1;
+      else toRepairs += 1;
+      return `.${direction}(${target}, ${vars}, ${position})`;
     },
   );
-  return { html, repairs };
+  return { html, repairs, fromRepairs, toRepairs, ambiguous };
 }
 
 export function applyDeterministicSourceRepairs(
@@ -2210,7 +2292,14 @@ export function applyDeterministicSourceRepairs(
     recordSentinelNormalization("gsap-call-shape", fromToShape.repairs);
     process.stderr.write(
       `[author] rewrote ${fromToShape.repairs} malformed fromTo(target, vars, <position>) ` +
-        `call(s) to from(...) — a missing toVars crashes GSAP compile\n`,
+        `call(s) (${fromToShape.fromRepairs} to from, ${fromToShape.toRepairs} to to) — ` +
+        `a missing vars object crashes GSAP compile\n`,
+    );
+  }
+  if (fromToShape.ambiguous) {
+    process.stderr.write(
+      `[author] left ${fromToShape.ambiguous} malformed fromTo call(s) blocking because ` +
+        `their intended from/to direction is ambiguous\n`,
     );
   }
   if (lockedStoryboard?.length) {
@@ -2430,6 +2519,7 @@ export function applyDeterministicSourceRepairs(
     if (contractBindings.repairs) {
       html = contractBindings.html;
       recordSentinelNormalization("contract-binding", contractBindings.repairs);
+      recordSentinelScaffoldRestoration("l2-normalize", contractBindings.regionRepairs);
       process.stderr.write(
         `[author] reconciled ${contractBindings.repairs} cut/camera contract binding(s)\n`,
       );
@@ -2440,6 +2530,7 @@ export function applyDeterministicSourceRepairs(
     if (cameraWorlds.repairs) {
       html = cameraWorlds.html;
       recordSentinelNormalization("camera-world-plane", cameraWorlds.repairs);
+      recordSentinelScaffoldRestoration("l2-normalize", cameraWorlds.repairs);
       process.stderr.write(
         `[author] wrapped ${cameraWorlds.repairs} scene(s) in deterministic camera world plane(s)\n`,
       );
@@ -2453,6 +2544,7 @@ export function applyDeterministicSourceRepairs(
     if (componentBindings.repairs) {
       html = componentBindings.html;
       recordSentinelNormalization("component-binding", componentBindings.repairs);
+      recordSentinelScaffoldRestoration("l2-normalize", componentBindings.repairs);
       process.stderr.write(
         `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
       );
@@ -2617,6 +2709,7 @@ export function applyDeterministicSourceRepairs(
     if (componentBindings.repairs) {
       html = componentBindings.html;
       recordSentinelNormalization("component-binding", componentBindings.repairs);
+      recordSentinelScaffoldRestoration("l2-normalize", componentBindings.repairs);
       process.stderr.write(
         `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
       );
@@ -2835,9 +2928,9 @@ function isTransientProviderError(error: unknown): boolean {
  * 2. Hedged requests: after HEDGE_DELAY_MS a duplicate of the same request is
  *    launched and the first completion wins (the loser is aborted). Both draws
  *    come from the identical model/prompt/params distribution; selection by
- *    arrival time does not change what the QA gates accept. Costs up to 2×
- *    tokens on slow calls — accepted policy is quality > price, and speed is
- *    the judged demo constraint. Kill switch: SLACK_SEQUENCES_HEDGED_REQUESTS=0.
+ *    arrival time does not change what the QA gates accept. A per-run budget
+ *    (default 2, `SLACK_SEQUENCES_HEDGE_MAX_PER_RUN`) prevents a slow run from
+ *    duplicating every stage. Kill switch: SLACK_SEQUENCES_HEDGED_REQUESTS=0.
  */
 const STREAM_IDLE_TIMEOUT_MS = (() => {
   const raw = Number(process.env.SLACK_SEQUENCES_STREAM_IDLE_TIMEOUT_MS);
@@ -2847,6 +2940,11 @@ const STREAM_IDLE_TIMEOUT_MS = (() => {
 const HEDGE_DELAY_MS = (() => {
   const raw = Number(process.env.SLACK_SEQUENCES_HEDGE_DELAY_MS);
   return Number.isFinite(raw) && raw >= 0 ? raw : 25_000;
+})();
+
+const HEDGE_MAX_PER_RUN = (() => {
+  const raw = Number(process.env.SLACK_SEQUENCES_HEDGE_MAX_PER_RUN);
+  return Number.isInteger(raw) && raw >= 0 ? raw : 2;
 })();
 
 export function hedgingEnabled(provider: AgentProvider): boolean {
@@ -2946,8 +3044,14 @@ export async function hedgedCompletion(
     };
     const startBackup = (): void => {
       if (settled || backupStarted || !inFlight.primary) return;
+      if (!claimSentinelHedge(label, HEDGE_MAX_PER_RUN)) {
+        process.stderr.write(
+          `[${label}] slow response — per-run hedge budget (${HEDGE_MAX_PER_RUN}) exhausted; ` +
+            `letting the primary continue\n`,
+        );
+        return;
+      }
       backupStarted = true;
-      recordSentinelHedge(label);
       process.stderr.write(
         `[${label}] slow response — hedging with a parallel duplicate request\n`,
       );
@@ -3100,11 +3204,13 @@ async function completeReasoningWithRetry(
   throw lastError;
 }
 
-function compactSkillText(text: string): string {
-  return text
+function compactSkillText(text: string, budgetChars = COMPACT_SKILL_BUDGET_CHARS): string {
+  const compacted = text
     .replace(/<(blueprint|motion-rule)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .slice(0, COMPACT_SKILL_BUDGET_CHARS);
+    .replace(/\n{3,}/g, "\n\n");
+  if (compacted.length <= budgetChars) return compacted;
+  const paragraphEnd = compacted.lastIndexOf("\n\n", budgetChars);
+  return compacted.slice(0, paragraphEnd >= Math.floor(budgetChars * 0.8) ? paragraphEnd : budgetChars);
 }
 
 /**
@@ -3899,6 +4005,8 @@ export class StoryboardValidationError extends Error {
   }
 }
 
+const acceptedStoryboardDegradations = new WeakMap<DirectScene[], string[]>();
+
 export function parseStoryboardResponse(
   raw: string,
   requirements: StoryboardPlanRequirements = {},
@@ -3908,6 +4016,7 @@ export function parseStoryboardResponse(
     degradePacingFindings?: boolean;
   } = {},
 ): DirectScene[] {
+  const degradations: string[] = [];
   const knownCapabilities = new Set(
     loadCapabilityIndex().capabilities.map((capability) => capability.id),
   );
@@ -3931,7 +4040,15 @@ export function parseStoryboardResponse(
     recordSentinelNormalization("timeramp-retime", rampRetime.normalized.length);
   }
   if (!requirements.requireTimeRamp) {
+    const beforeRampScenes = new Set(
+      storyboard.filter((scene) => scene.timeRamp).map((scene) => scene.id),
+    );
     storyboard = dropUnusableVolunteeredTimeRamps(storyboard);
+    for (const sceneId of beforeRampScenes) {
+      if (!storyboard.find((scene) => scene.id === sceneId)?.timeRamp) {
+        degradations.push(`storyboard-time-ramp-dropped:${sceneId}`);
+      }
+    }
   }
   // Support-map beat violations degrade to the nearest supported analog
   // (load-bearing beats keep their blocking finding) — see
@@ -3941,6 +4058,7 @@ export function parseStoryboardResponse(
     storyboard = beatDegradation.scenes;
     for (const line of beatDegradation.degraded) {
       process.stderr.write(`[storyboard] ${line}\n`);
+      degradations.push(`storyboard-component-beat-degraded:${findingSignature(line)}`);
     }
   }
   // Early attempts keep the hint-mismatch finding blocking so a cheap
@@ -3955,6 +4073,7 @@ export function parseStoryboardResponse(
         process.stderr.write(
           `[storyboard] degraded hint-mismatched shape-match to zoom-through: ${line}\n`,
         );
+        degradations.push(`storyboard-shape-cut-degraded:${findingSignature(line)}`);
       }
     }
   }
@@ -3966,6 +4085,7 @@ export function parseStoryboardResponse(
     storyboard = deduped.scenes;
     for (const line of deduped.dropped) {
       process.stderr.write(`[storyboard] ${line}\n`);
+      degradations.push(`storyboard-redundant-beat-dropped:${findingSignature(line)}`);
     }
   }
   // Sentinel Phase 3: mechanical pacing fixes (delete/degrade/retime, never
@@ -4035,6 +4155,7 @@ export function parseStoryboardResponse(
           process.stderr.write(
             `[storyboard] polish finding accepted as advisory on a final attempt: ${line}\n`,
           );
+          degradations.push(`storyboard-polish-advisory:${findingSignature(line)}`);
         }
       }
     }
@@ -4088,6 +4209,7 @@ export function parseStoryboardResponse(
     }
   }
   if (errors.length) throw new StoryboardValidationError(errors, storyboard);
+  acceptedStoryboardDegradations.set(storyboard, [...new Set(degradations)]);
   return storyboard;
 }
 
@@ -4644,8 +4766,9 @@ export async function requestStoryboardPlan(
     // unsupported-beat degrade at parse; v10: the re-base shifts nested
     // beat/camera/interaction/moment/ramp times with their scene, the
     // final-resolve pacing exemption covers only compact resolve surfaces,
-    // and headline detection no longer misreads "prototype").
-    contract: 10,
+    // and headline detection no longer misreads "prototype"; v11 persists the
+    // accepted storyboard's degradation ledger beside the cached plan).
+    contract: 11,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
@@ -4661,11 +4784,14 @@ export async function requestStoryboardPlan(
   const sharedFile = sharedPlanningCacheFile(args.projectDir, "storyboard", cacheKey);
   for (const candidate of [cacheFile, sharedFile]) {
     const cached = readPlanningArtifact(candidate, cacheKey) as
-      | { storyboard?: DirectScene[] }
+      | { storyboard?: DirectScene[]; degradations?: string[] }
       | undefined;
     if (cached?.storyboard) {
       const errors = validateStoryboardPlan(cached.storyboard, requirements);
       if (!errors.length) {
+        for (const degradation of cached.degradations ?? []) {
+          recordSentinelDegradation(degradation);
+        }
         if (candidate === sharedFile) {
           process.stderr.write(
             "[storyboard] reusing already-paid storyboard from the shared planning cache\n",
@@ -4674,6 +4800,7 @@ export async function requestStoryboardPlan(
             version: 1,
             key: cacheKey,
             storyboard: cached.storyboard,
+            degradations: cached.degradations ?? [],
           });
         }
         return cached.storyboard;
@@ -5227,8 +5354,12 @@ export async function requestStoryboardPlan(
         lastError = error;
         break attempts;
       }
-      writePlanningArtifact(cacheFile, { version: 1, key: cacheKey, storyboard });
-      writePlanningArtifact(sharedFile, { version: 1, key: cacheKey, storyboard });
+      const degradations = acceptedStoryboardDegradations.get(storyboard) ?? [];
+      for (const degradation of degradations) {
+        recordSentinelDegradation(degradation);
+      }
+      writePlanningArtifact(cacheFile, { version: 1, key: cacheKey, storyboard, degradations });
+      writePlanningArtifact(sharedFile, { version: 1, key: cacheKey, storyboard, degradations });
       return storyboard;
     }
   }
@@ -6198,6 +6329,7 @@ export function adaptDirectorPromptForSlots(
     adapted = adapted.replace(find, replace);
   }
   if (missed) {
+    recordSentinelDegradation("slot-director-rewrite-fallback");
     adapted += [
       "",
       "",
@@ -6210,6 +6342,68 @@ export function adaptDirectorPromptForSlots(
     ].join("\n");
   }
   return adapted;
+}
+
+/**
+ * Slot mode does not need the base prompt's whole-document architecture/runtime
+ * chapters: the host emits and validates that machinery. Remove those chapters
+ * after anchor-checked contradiction surgery, retaining all creative, motion,
+ * camera, component, cut, typography, color, and spatial-direction guidance.
+ */
+export function slotDirectorPrompt(prompt: string, misses?: string[]): string {
+  const adapted = adaptDirectorPromptForSlots(prompt, misses);
+  const precedenceMarker = "## SLOT-MODE PRECEDENCE";
+  const precedenceAt = adapted.indexOf(precedenceMarker);
+  const precedence = precedenceAt >= 0 ? adapted.slice(precedenceAt) : "";
+  const body = precedenceAt >= 0 ? adapted.slice(0, precedenceAt) : adapted;
+  const compact = body
+    .replace(
+      /## Storyboard moments[\s\S]*?(?=## Typed boundary cuts)/,
+      [
+        "## Storyboard moments",
+        "Make every locked moment visibly true at its exact atSec using an interior",
+        "state change, typed component beat, camera arrival, or cut. Do not retime it.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## Typed boundary cuts[\s\S]*?(?=## Continuous spatial world)/,
+      [
+        "## Typed boundary cuts",
+        "The host compiles the locked cut graph. Preserve every named data-part",
+        "endpoint and design matched silhouettes when the cut style asks for one.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## The Sequences ease library[\s\S]*?(?=## Cinematography)/,
+      [
+        "## Sequences easing",
+        "Use the supplied seq* eases or standard GSAP eases; never invent an ease name.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## Architecture laws[\s\S]*?(?=## Spatial intent)/,
+      "",
+    )
+    .replace(
+      /## Spatial intent[\s\S]*?(?=## Hard runtime contract)/,
+      [
+        "## Spatial intent",
+        "Treat locked worldLayout cells and camera stations as composition guides.",
+        "Keep named data-region/data-part/data-component bindings intact. Animate",
+        "interior elements only; the host owns camera, cuts, components, interactions,",
+        "scene windows, runtime compilation, and the shared timeline.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## Hard runtime contract[\s\S]*$/,
+      "",
+    )
+    .trim();
+  return precedence ? `${compact}\n\n${precedence}` : compact;
 }
 
 export function creationPrompt(args: {
@@ -6413,9 +6607,13 @@ export function creationPrompt(args: {
   );
   return [
     "SYSTEM:",
-    args.slots ? adaptDirectorPromptForSlots(DIRECTOR_PROMPT) : DIRECTOR_PROMPT,
+    args.slots ? slotDirectorPrompt(DIRECTOR_PROMPT) : DIRECTOR_PROMPT,
     "",
-    args.compact ? compactSkillText(args.skills.text) : args.skills.text,
+    args.slots
+      ? compactSkillText(args.skills.text, SLOT_SKILL_BUDGET_CHARS)
+      : args.compact
+      ? compactSkillText(args.skills.text)
+      : args.skills.text,
     "",
     componentReference,
     "## Job brief and trusted evidence",
@@ -6790,6 +6988,7 @@ function slotContinuationPrompt(
   missing: DirectScene[],
   repairNotes?: Map<string, string[]>,
   previousSlots?: ParsedSceneSlots,
+  repairPurpose: "scaffold" | "validation" = "scaffold",
 ): string {
   const interiors = buildSceneSlotInteriors(args.lockedStoryboard ?? []);
   const templates = missing.flatMap((scene) => {
@@ -6798,7 +6997,12 @@ function slotContinuationPrompt(
     return [
       "",
       ...(notes.length
-        ? [`Host-contract findings for scene "${scene.id}" (restore these bindings):`, ...notes.map((note) => `- ${note}`)]
+        ? [
+            repairPurpose === "scaffold"
+              ? `Host-contract findings for scene "${scene.id}" (restore these bindings):`
+              : `Validation findings for scene "${scene.id}" (make the smallest correction):`,
+            ...notes.map((note) => `- ${note}`),
+          ]
         : []),
       ...(previous?.html?.trim()
         ? [
@@ -6809,16 +7013,29 @@ function slotContinuationPrompt(
             "</previous_scene_html>",
           ]
         : []),
+      ...(previous?.script?.trim()
+        ? [
+            "Your previous scene script (keep its motion unless a finding requires a change):",
+            `<previous_scene_script id="${scene.id}">`,
+            previous.script,
+            "</previous_scene_script>",
+          ]
+        : []),
       `<scene_html id="${scene.id}">`,
       interiors.get(scene.id) ?? "…compose this scene's interior…",
       "</scene_html>",
     ];
   });
   const intro = repairNotes
-    ? "Some scenes came back without host-contract bindings the template carried. The" +
-      "\nother scenes are kept; re-author ONLY the scenes below, keeping each template's" +
-      "\ndata-camera-world plane, data-region stations, and component roots" +
-      "\n(data-part/data-component) exactly as given."
+    ? repairPurpose === "scaffold"
+      ? "Some scenes came back without host-contract bindings the template carried. The" +
+        "\nother scenes are kept; re-author ONLY the scenes below, keeping each template's" +
+        "\ndata-camera-world plane, data-region stations, and component roots" +
+        "\n(data-part/data-component) exactly as given."
+      : "The assembled film has scene-local validation findings. Every unlisted scene is" +
+        "\nlocked and kept byte-for-byte. Re-author ONLY the listed scenes as minimal edits;" +
+        "\npreserve their copy, visual thesis, host bindings, and motion unless a finding" +
+        "\nexplicitly requires a change."
     : "The previous response was cut off. The completed scenes are kept; author ONLY" +
       "\nthe missing scenes below, matching the established film style exactly.";
   return [
@@ -6888,6 +7105,12 @@ export function slotScaffoldViolations(
         }
       }
     }
+    const componentsByKind = new Map<string, NonNullable<DirectScene["components"]>>();
+    for (const component of scene.components ?? []) {
+      const group = componentsByKind.get(component.kind) ?? [];
+      group.push(component);
+      componentsByKind.set(component.kind, group);
+    }
     for (const component of scene.components ?? []) {
       const rootRe = new RegExp(
         `\\bdata-part\\s*=\\s*["']${regexpEscape(component.id)}["']`,
@@ -6897,10 +7120,13 @@ export function slotScaffoldViolations(
         `\\bdata-component\\s*=\\s*["']${regexpEscape(component.kind)}["']`,
         "i",
       );
-      // A kind-marked element without the right data-part is the near-miss
-      // reconcileComponentBindings claims for free; only a component with NO
-      // trace at all needs the model again.
-      if (!rootRe.test(html) && !kindRe.test(html)) {
+      // A kind-marked element is a safe L2 near-miss only when the storyboard
+      // declares exactly ONE component of that kind. With repeated buttons,
+      // cards, etc. the kind marker cannot identify which missing id it meant;
+      // guessing there can bind motion to the wrong object.
+      const uniqueKindCandidate =
+        (componentsByKind.get(component.kind)?.length ?? 0) === 1 && kindRe.test(html);
+      if (!rootRe.test(html) && !uniqueKindCandidate) {
         notes.push(
           `component root data-part="${component.id}" data-component="${component.kind}" ` +
             "is missing from this scene",
@@ -6942,7 +7168,10 @@ export async function authorSlotDraft(
   const requestScenes = async (
     scenes: DirectScene[],
     repairNotes?: Map<string, string[]>,
+    callKind: "truncation-continuation" | "scaffold-repair" | "validation-repair" =
+      "truncation-continuation",
   ): Promise<void> => {
+    recordSentinelSlotCall(callKind, scenes.length);
     const contRaw = await completeSourceWithContinuation(
       provider,
       slotContinuationPrompt(args, slots.filmStyle, scenes, repairNotes, repairNotes ? slots : undefined),
@@ -6977,7 +7206,18 @@ export async function authorSlotDraft(
       `[author] slot scaffold repair: ${violations.size} scene(s) dropped host-contract ` +
         `bindings (${offenders.map((s) => s.id).join(", ")}); re-requesting only those scenes\n`,
     );
-    await requestScenes(offenders, violations);
+    const violationCount = [...violations.values()].reduce((sum, notes) => sum + notes.length, 0);
+    await requestScenes(offenders, violations, "scaffold-repair");
+    const remaining = slotScaffoldViolations(storyboard, slots);
+    const remainingCount = [...remaining.values()].reduce((sum, notes) => sum + notes.length, 0);
+    const restored = Math.max(0, violationCount - remainingCount);
+    if (restored) recordSentinelScaffoldRestoration("scene-repair", restored);
+    if (remaining.size) {
+      process.stderr.write(
+        `[author] slot scaffold repair left ${remaining.size} scene(s) unresolved; ` +
+          `assembling for the unchanged L3 gate: ${[...remaining.keys()].join(", ")}\n`,
+      );
+    }
   }
   const { html, missingHtml, missingScript } = assembleSlotComposition({
     storyboard,
@@ -7004,10 +7244,111 @@ export async function authorSlotDraft(
 }
 
 /**
+ * One bounded scene-scoped validation retry. It repairs the scene-attributable
+ * SUBSET of findings: findings that map to named scenes are re-authored per
+ * scene, while any film/shared-level findings (eye-trace, cross-cut framing, a
+ * bare interaction/moment id) ride the whole-document ladder untouched. It
+ * declines only when NO finding maps to a scene. The atomic acceptance at each
+ * call site (finding-class count for static, quality penalty for browser — both
+ * measured over the WHOLE film) rejects any subset repair that leaves or worsens
+ * a film-level finding, so fixing part is never a regression, and the improved
+ * draft is banked as the next attempt's scratch. Both the previous HTML and
+ * script are sent as the minimal-edit baseline, and untouched scenes stay
+ * byte-stable. (This previously declined whenever ANY finding was film-level,
+ * which made it inert on dense briefs — the s5-interactions probe class always
+ * mixes one film-level finding into otherwise scene-local rejections, so the
+ * repair never fired on exactly the runs it exists to rescue.)
+ */
+export async function repairSlotDraftForFindings(
+  provider: AgentProvider,
+  args: DirectCompositionArgs,
+  slots: ParsedSceneSlots,
+  findings: string[],
+  completeOptions: CompleteOptions,
+): Promise<
+  | {
+      draft: DirectCompositionDraft;
+      slots: ParsedSceneSlots;
+      raw: string;
+      sceneIds: string[];
+    }
+  | undefined
+> {
+  const storyboard = args.lockedStoryboard;
+  if (!storyboard?.length || !findings.length) return undefined;
+  const attributed = attributeFindingsToScenes(
+    findings,
+    storyboard.map((scene) => scene.id),
+  );
+  // Repair the scene-attributable subset. Film/shared-level findings (the
+  // "__film__" bucket) are never sent to the scene author — they stay on the
+  // whole-document ladder — but their presence no longer cancels a scene repair
+  // that CAN help: declining only when NOTHING maps to a scene keeps the repair
+  // effective on dense briefs, where a lone film-level finding used to veto it.
+  const sceneIds = storyboard
+    .map((scene) => scene.id)
+    .filter((id) => attributed.has(id));
+  if (!sceneIds.length) return undefined;
+  const scenes = storyboard.filter((scene) => sceneIds.includes(scene.id));
+  recordSentinelSlotCall("validation-repair", scenes.length);
+  const raw = await completeSourceWithContinuation(
+    provider,
+    slotContinuationPrompt(
+      args,
+      slots.filmStyle,
+      scenes,
+      attributed,
+      slots,
+      "validation",
+    ),
+    { ...completeOptions, maxTokens: Math.min(authorMaxTokens(), 8_192) },
+  );
+  const repaired = extractSceneSlots(raw);
+  // A partial response must not look successful merely because merge fallback
+  // retained the old half of a scene. Require both requested blocks explicitly.
+  if (
+    scenes.some((scene) =>
+      !repaired.scenes.get(scene.id)?.html?.trim() ||
+      !repaired.scenes.get(scene.id)?.script?.trim()
+    )
+  ) {
+    process.stderr.write(
+      `[author] scene validation repair returned incomplete slots; keeping the previous draft\n`,
+    );
+    return undefined;
+  }
+  const merged: ParsedSceneSlots = {
+    filmStyle: slots.filmStyle,
+    scenes: new Map(slots.scenes),
+    order: [...slots.order],
+    truncated: slots.truncated || repaired.truncated,
+  };
+  for (const scene of scenes) {
+    merged.scenes.set(scene.id, {
+      ...merged.scenes.get(scene.id),
+      ...repaired.scenes.get(scene.id),
+    });
+  }
+  const assembled = assembleSlotComposition({
+    storyboard,
+    slots: merged,
+    compositionId: slotCompositionId(args.projectDir),
+  });
+  if (assembled.missingHtml.length || assembled.missingScript.length) return undefined;
+  return {
+    draft: { storyboard, html: assembled.html },
+    slots: merged,
+    raw,
+    sceneIds,
+  };
+}
+
+/**
  * Slot-scoped validation attribution (Sentinel Phase 2): report which scene
- * each rejection finding belongs to, so the failure is diagnosed per scene
- * (and, once slot-scoped retries land, re-requested per scene) instead of as
- * one opaque document rejection.
+ * each rejection finding belongs to, so the failure is diagnosed and the
+ * scene-attributable findings are re-requested per scene (any film-level
+ * remainder keeps the whole-document ladder) instead of as one opaque document
+ * rejection.
  */
 function logSlotFindingAttribution(findings: string[], storyboard: DirectScene[]): void {
   const byScene = attributeFindingsToScenes(
@@ -7148,10 +7489,13 @@ async function authorCompositionLoop(
       };
       let raw: string;
       let parsedDraft: DirectCompositionDraft;
+      let activeSlots: ParsedSceneSlots | undefined;
+      let sceneValidationRepairUsed = false;
       if (useSlots) {
         const slotResult = await authorSlotDraft(provider, args, prompt, completeOptions);
         raw = slotResult.raw;
         parsedDraft = slotResult.draft;
+        activeSlots = slotResult.slots;
       } else {
         raw = patchMode
           ? await completeWithRetry(provider, prompt, completeOptions, "author patch")
@@ -7190,6 +7534,51 @@ async function authorCompositionLoop(
           );
           draft = recovered.draft;
           validation = await validateDirectComposition(args.projectDir, draft);
+        }
+      }
+      if (!validation.ok && useSlots && activeSlots && args.lockedStoryboard) {
+        try {
+          const sceneRepair = await repairSlotDraftForFindings(
+            provider,
+            args,
+            activeSlots,
+            validation.errors,
+            completeOptions,
+          );
+          sceneValidationRepairUsed = Boolean(sceneRepair);
+          if (sceneRepair) {
+            const candidate = applyDeterministicSourceRepairs(
+              sceneRepair.draft,
+              args.projectDir,
+              args.lockedStoryboard,
+            );
+            const candidateValidation = await validateDirectComposition(args.projectDir, candidate);
+            const beforeCount = new Set(validation.errors.map(findingSignature)).size;
+            const afterCount = new Set(candidateValidation.errors.map(findingSignature)).size;
+            if (candidateValidation.ok || afterCount < beforeCount) {
+              process.stderr.write(
+                `[author] scene-scoped static repair improved ${sceneRepair.sceneIds.join(", ")}: ` +
+                  `${beforeCount} -> ${afterCount} finding class(es)\n`,
+              );
+              summary.strategyChanges.push(
+                `scene-static-repair:${sceneRepair.sceneIds.join(",")}`,
+              );
+              draft = candidate;
+              validation = candidateValidation;
+              activeSlots = sceneRepair.slots;
+              raw = `${raw}\n<!-- scene validation repair -->\n${sceneRepair.raw}`;
+              attemptRaw = raw;
+            } else {
+              process.stderr.write(
+                `[author] scene-scoped static repair did not reduce findings; keeping the previous draft\n`,
+              );
+            }
+          }
+        } catch (sceneRepairError) {
+          process.stderr.write(
+            `[author] scene-scoped static repair failed; keeping the previous draft: ` +
+              `${sceneRepairError instanceof Error ? sceneRepairError.message : String(sceneRepairError)}\n`,
+          );
         }
       }
       // Degradation rung: a volunteered bridged cut whose endpoint binding
@@ -7315,7 +7704,7 @@ async function authorCompositionLoop(
       // proven bindable; a later rejection would be a fresh patch regression,
       // not a persistent defect. Reset the persistence window accordingly.
       previousStaticSignatures = new Set();
-      const browserQa = await inspectDirectComposition(args.projectDir, draft, {
+      let browserQa = await inspectDirectComposition(args.projectDir, draft, {
         captureGuide: false,
       });
       if (browserQa.infraError) {
@@ -7325,6 +7714,82 @@ async function authorCompositionLoop(
         );
         recordSentinelDegradation("browser-qa-infra-bypass");
         return { draft, raw, attempts: attempt, browserQa };
+      }
+      if (
+        !browserQa.strictOk &&
+        useSlots &&
+        activeSlots &&
+        args.lockedStoryboard &&
+        !sceneValidationRepairUsed
+      ) {
+        const browserFindings = dedupeFeedbackBySignature([
+          ...validation.frameWarnings,
+          ...validation.motionWarnings,
+          ...browserQa.errors,
+          ...browserQa.warnings,
+        ]);
+        try {
+          const sceneRepair = await repairSlotDraftForFindings(
+            provider,
+            args,
+            activeSlots,
+            browserFindings,
+            completeOptions,
+          );
+          sceneValidationRepairUsed = Boolean(sceneRepair);
+          if (sceneRepair) {
+            const candidate = applyDeterministicSourceRepairs(
+              sceneRepair.draft,
+              args.projectDir,
+              args.lockedStoryboard,
+            );
+            const candidateValidation = await validateDirectComposition(args.projectDir, candidate);
+            if (candidateValidation.ok) {
+              const candidateQa = await inspectDirectComposition(args.projectDir, candidate, {
+                captureGuide: false,
+              });
+              const beforePenalty = browserQualityPenalty(browserQa, [
+                ...validation.frameWarnings,
+                ...validation.motionWarnings,
+              ]);
+              const afterPenalty = browserQualityPenalty(candidateQa, [
+                ...candidateValidation.frameWarnings,
+                ...candidateValidation.motionWarnings,
+              ]);
+              if (
+                !candidateQa.infraError &&
+                ((candidateQa.ok && !browserQa.ok) || afterPenalty < beforePenalty)
+              ) {
+                process.stderr.write(
+                  `[author] scene-scoped browser repair improved ${sceneRepair.sceneIds.join(", ")}: ` +
+                    `penalty ${beforePenalty} -> ${afterPenalty}\n`,
+                );
+                summary.strategyChanges.push(
+                  `scene-browser-repair:${sceneRepair.sceneIds.join(",")}`,
+                );
+                draft = candidate;
+                validation = candidateValidation;
+                browserQa = candidateQa;
+                activeSlots = sceneRepair.slots;
+                raw = `${raw}\n<!-- scene validation repair -->\n${sceneRepair.raw}`;
+                attemptRaw = raw;
+              } else {
+                process.stderr.write(
+                  `[author] scene-scoped browser repair did not improve quality; keeping the previous draft\n`,
+                );
+              }
+            } else {
+              process.stderr.write(
+                `[author] scene-scoped browser repair failed static validation; keeping the previous draft\n`,
+              );
+            }
+          }
+        } catch (sceneRepairError) {
+          process.stderr.write(
+            `[author] scene-scoped browser repair failed; keeping the previous draft: ` +
+              `${sceneRepairError instanceof Error ? sceneRepairError.message : String(sceneRepairError)}\n`,
+          );
+        }
       }
       if (
         !browserQa.ok &&
@@ -8132,6 +8597,7 @@ export async function requestDirectComposition(
   if (sentinelSkeletonEnabled() || sentinelSlotsEnabled()) {
     recordSentinelScaffold(
       countScaffoldBindingsPresent(final.draft.storyboard, final.draft.html),
+      countScaffoldedBindings(final.draft.storyboard),
     );
   }
   // Publish-time honesty scan: host-invented neutral placeholder children

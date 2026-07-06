@@ -1073,15 +1073,39 @@ describe("Sentinel Phase 1 — skeleton scaffold makes paperwork classes unrepre
 });
 
 describe("repairMalformedFromToCalls — the s5-interactions call-shape class", () => {
-  it("rewrites fromTo(target, vars, <number>) to from(target, vars, position)", () => {
+  it("replays the exact s5 failure as a final-state .to(), never a reversed .from()", () => {
     const source =
-      '<script>tl.fromTo("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);</script>';
+      '<script>tl.fromTo("#runbook .cmp-stat", { opacity: 0, scale: 0.96 }, ' +
+      '{ opacity: 0, scale: 0.96, duration: 0.01, immediateRender: true }, 13);' +
+      'tl.fromTo("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);</script>';
     const result = repairMalformedFromToCalls(source);
     expect(result.repairs).toBe(1);
+    expect(result.toRepairs).toBe(1);
+    expect(result.fromRepairs).toBe(0);
     expect(result.html).toContain(
-      'tl.from("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);',
+      'tl.to("#runbook .cmp-stat", { opacity: 1, scale: 1, duration: 0.6, ease: "seqSettle" }, 15.8);',
     );
-    expect(result.html).not.toContain("fromTo");
+    expect(result.html.match(/fromTo/g)).toHaveLength(1); // the well-formed initializer remains
+  });
+
+  it("keeps a lone entrance-looking state blocking because it could be an exit .to()", () => {
+    const source =
+      'tl.fromTo("#hero", { opacity: 0, y: 40, scale: 0.9, duration: 0.6 }, 0.2);';
+    const result = repairMalformedFromToCalls(source);
+    expect(result.repairs).toBe(0);
+    expect(result.ambiguous).toBe(1);
+    expect(result.html).toBe(source);
+  });
+
+  it("leaves mixed/cue-less direction ambiguous and blocking", () => {
+    const source =
+      'tl.fromTo("#mixed", { opacity: 1, y: 40, duration: 0.6 }, 1.2);\n' +
+      'tl.fromTo("#color", { color: "#fff", duration: 0.4 }, 2);\n' +
+      'tl.fromTo("#lone-final", { opacity: 1, scale: 1, duration: 0.4 }, 3);';
+    const result = repairMalformedFromToCalls(source);
+    expect(result.repairs).toBe(0);
+    expect(result.ambiguous).toBe(3);
+    expect(result.html).toBe(source);
   });
 
   it("never touches a well-formed fromTo (toVars present) or non-literal targets", () => {

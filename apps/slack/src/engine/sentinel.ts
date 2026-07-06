@@ -20,7 +20,7 @@
  *              moving an obligation down a layer is the whole Sentinel thesis.
  * - `blocking` — the enforcement disposition (see `SentinelBlocking`).
  * - `findingPrefixes` — the finding-code prefixes this row owns. A scaffold /
- *              normalize row that makes a class unrepresentable still lists the
+ *              normalize row that prevents or repairs a class still lists the
  *              L3/L4 backstop codes it prevents (the gate is never removed — the
  *              flag-OFF path and brief-required cases still fire them), so the
  *              closed-world test stays green with the flag in either position.
@@ -41,7 +41,7 @@
 /** The Sentinel layer model (SENTINEL_PLAN.md §2). Lower owns more cheaply. */
 export type SentinelLayerName =
   | "schema" // L0 — structured outputs; invalid output can't parse
-  | "scaffold" // L1 — host-emitted chassis; illegal states unrepresentable
+  | "scaffold" // L1 — host-emitted chassis + final shipped binding coverage
   | "normalize" // L2 — deterministic repair/normalization; zero paid attempts
   | "static" // L3 — linkedom / regex / kitMarkupAudit; cheap findings-retry
   | "browser" // L4 — measured browser truth; scene-scoped retry
@@ -72,7 +72,7 @@ export interface SentinelContractRow {
  * without adding/expanding a row here fails `test/sentinel.test.ts`.
  */
 export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
-  // ── L1 scaffold — host emits the chassis; the class is unrepresentable ──────
+  // ── L1 scaffold — host emits the chassis; L2/L3 remain honest backstops ─────
   {
     id: "camera.world-plane",
     group: "camera",
@@ -251,9 +251,12 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "<number>)` call (toVars omitted) makes GSAP treat the position number as " +
       "the to-object and the compile throws 'Cannot create property parent on " +
       "number' — a runtime_bind_exception and a burned paid attempt for a " +
-      "call-shape typo. repairMalformedFromToCalls rewrites the call to " +
-      "`.from(target, vars, position)` — exact, content-free, valid signature; " +
-      "only string-literal targets with a flat vars object match (conservative). " +
+      "call-shape typo. repairMalformedFromToCalls rewrites only a settled `.to` " +
+      "state when the same selector has an earlier opposite-state initialization; " +
+      "hidden/off-position could mean entrance or exit, so it and every mixed, " +
+      "cue-less, or lone-final call stays blocking rather than " +
+      "silently reversing motion. Only string-literal targets with a flat vars " +
+      "object match (conservative). " +
       "It PREVENTS the runtime.invariants row's runtime_bind_exception.",
   },
   {
@@ -500,7 +503,7 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     id: "layout",
     group: "layout",
     layer: "browser",
-    blocking: "blocking",
+    blocking: "advisory-late",
     findingPrefixes: [
       "layout_",
       "spatial_focal_",
@@ -515,13 +518,14 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "layoutInspector: the placement/spacing/optical audit — safe-area, anchor, " +
       "align, gap, annotation, focal-subject presence/visibility/on-frame, content " +
       "overlap, container overflow, WCAG-AA contrast. Heuristics suppressed during " +
-      "camera transits and for off-frame world stations.",
+      "camera transits and for off-frame world stations. Findings request repair " +
+      "on early attempts but may ship only through the explicitly degraded final rung.",
   },
   {
     id: "layout.hyperframes-spatial",
     group: "layout",
     layer: "browser",
-    blocking: "advisory",
+    blocking: "advisory-late",
     findingPrefixes: [
       "clipped_text",
       "text_box_overflow",
@@ -543,8 +547,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "text_box_overflow findings (p7-denseui). The closed world for these is the " +
       "vendored LayoutIssueCode union (vendor/hyperframes/packages/cli/src/utils/" +
       "layoutAudit.ts, now in FINDING_SOURCE_FILES). Disposition: layoutInspector " +
-      "deliberately converts visual severities to non-publication-blocking " +
-      "warnings (resilience policy) — but any run shipping them is recorded " +
+      "converts visual severities to repair-pressure warnings (resilience policy): " +
+      "they block clean acceptance early but may ship on the final rung, where " +
+      "the degradation ledger records " +
       "published-degraded, never clean.",
   },
   {
