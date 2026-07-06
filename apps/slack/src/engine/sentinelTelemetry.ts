@@ -127,6 +127,22 @@ export function recordSentinelNormalization(tag: string, count = 1): void {
   state.layerFindings.normalize += count;
 }
 
+/**
+ * Record the number of illegal states the scaffold made unrepresentable this
+ * run — the count of host-guaranteed bindings (camera planes/stations,
+ * component roots, focal-part carriers) the model no longer authors and so can
+ * no longer omit. Unlike the other layer counters this is idempotent-by-max,
+ * not additive: the skeleton is re-emitted on every author attempt, so a
+ * running sum would inflate — the meaningful figure is "how many bindings did
+ * the host guarantee", counted once. It gives L1 a real number instead of the
+ * always-0 that made scaffolding invisible in the Carryover A telemetry.
+ */
+export function recordSentinelScaffold(guaranteedBindings: number): void {
+  const state = active();
+  if (!state || guaranteedBindings <= 0) return;
+  state.layerFindings.scaffold = Math.max(state.layerFindings.scaffold, guaranteedBindings);
+}
+
 /** Attach the orchestrator's per-stage timings/attempts to the run. */
 export function recordSentinelStages(stages: SentinelStageTiming[]): void {
   const state = active();

@@ -97,6 +97,7 @@ import {
   recordSentinelLayerFinding,
   recordSentinelModelCall,
   recordSentinelNormalization,
+  recordSentinelScaffold,
 } from "./sentinelTelemetry.ts";
 import { sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./sentinelFlags.ts";
 import {
@@ -5620,6 +5621,23 @@ export function buildSceneSkeletons(scenes: DirectScene[]): string[] {
 }
 
 /**
+ * Count the illegal states the scaffold makes unrepresentable for a storyboard:
+ * the host-guaranteed bindings (a camera-world plane + its data-region stations
+ * per camera scene, a component root per declared component) that the model no
+ * longer authors and so cannot omit. This is the L1 metric — see
+ * `recordSentinelScaffold`. Kept in sync with what `buildSceneSkeletons` /
+ * `componentSkeletonMarkup` actually stamp.
+ */
+export function countScaffoldedBindings(scenes: DirectScene[]): number {
+  let count = 0;
+  for (const scene of scenes) {
+    if (scene.camera?.path?.length) count += 1 + worldStationRects(scene).size;
+    count += scene.components?.length ?? 0;
+  }
+  return count;
+}
+
+/**
  * Per-scene interior templates (Sentinel Phase 2 slots): the inner HTML the
  * author fills for each `<scene_html id>` slot. The host owns the `<section>`
  * wrapper at assembly time, so the model only sees and returns the interior.
@@ -5692,7 +5710,7 @@ function slotResponseContract(storyboard: DirectScene[]): string {
   ].join("\n");
 }
 
-function creationPrompt(args: {
+export function creationPrompt(args: {
   brief: string;
   projectDir: string;
   skills: RetrievedSkillContext;
@@ -5811,6 +5829,12 @@ function creationPrompt(args: {
         ...args.validationFeedback.map((issue) => `- ${issue}`),
       ].join("\n")
     : "";
+  // L1 telemetry: when the skeleton/slots path is active the host guarantees
+  // these bindings instead of leaving them to the model — count them once
+  // (idempotent-by-max, so re-emitting on a retry doesn't inflate).
+  if (args.lockedStoryboard && (args.slots || sentinelSkeletonEnabled())) {
+    recordSentinelScaffold(countScaffoldedBindings(args.lockedStoryboard));
+  }
   const lockedStoryboard = args.lockedStoryboard
     ? [
         "## Locked storyboard and cut graph",

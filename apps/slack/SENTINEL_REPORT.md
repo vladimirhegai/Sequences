@@ -927,3 +927,185 @@ SENTINEL.md) can proceed on this base; Phase 5's first probe should confirm
 the `sentinel-normalized:*` tags appear in a live `sentinel-run.json` and that
 storyboard attempts drop toward the ≤1.5 target before any ladder/token
 retune.
+
+---
+
+## Session 3 scope note (2026-07-06, Claude Opus 4.8)
+
+This session implements **Phase 4 in full** and takes **Phase 5 to its budget
+gate**. Phase 4 is code + docs + tests complete and green. Phase 5's paid probes
+are gated on OpenRouter credit and operator sign-off (probes cost real money);
+that gate is documented in the Phase 5 section below. Nothing in this session
+loosens a gate, raises an attempt rung, or flips a default — the
+`SENTINEL_SKELETON`/`SENTINEL_SLOTS` defaults remain OFF pending the probe set.
+
+## Phase 4 — the contract manifest + the ruleset
+
+**Status:** COMPLETE. All five plan items landed; typecheck clean, full suite
+green in isolation (525 tests, +14 new), `film:demo` byte-stable.
+
+### What changed (files + why)
+
+1. **`src/engine/sentinel.ts`** (new) — the typed contract registry. One
+   `SentinelContractRow` per obligation × layer (`id`, `group`, `layer`,
+   `blocking`, `findingPrefixes`, `promptCostChars`, `test`, `addedBecause`),
+   ordered cheapest-ownership-first (scaffold → normalize → static → browser).
+   Covers all fourteen umbrella obligations the plan names (cuts, camera,
+   components, interactions, pacing, moments, liveness, eye-trace, exits,
+   coherence, layout, markup-audit, runtime, frame) plus the two Phase-3
+   normalize levers. The two scaffold rows (`camera.world-plane`,
+   `components.root`) list their L3/L4 backstop codes so the closed-world test is
+   green with the skeleton flag in EITHER position; the four normalize rows carry
+   no `findingPrefixes` because they PREVENT another row's findings. The
+   `camera-budget-clamp` / `pacing-stretch` rows spell out the atomic
+   commit-or-revert and load-bearing-move guard in `addedBecause`, matching the
+   code as the Phase-3 audit left it. The module is pure data + pure helpers
+   (`allRegisteredFindingPrefixes`, `isRegisteredFinding`, `extractFindingCodes`,
+   `FINDING_SOURCE_FILES`, `NON_FINDING_LITERALS`) — it imports no runtime engine
+   code, so the manifest can never itself break a build.
+2. **`test/sentinel.test.ts`** (new, 10 tests) — the closed-world guarantee.
+   `extractFindingCodes` matches a finding-shaped token that sits immediately
+   after an opening quote/backtick and is followed by `:` or the closing
+   delimiter (a targeted wrapped-token match, NOT a full string tokenizer — a
+   naive scanner desyncs on apostrophes in comments/prose and silently swallows
+   real literals; this was a real bug caught in iteration). The suite asserts:
+   every emitted finding code across the 14 finding-source files is registered
+   (forward closed-world); every registered prefix is actually emitted (no dead
+   rows); a negative control proves the mechanism rejects an unregistered code;
+   `NON_FINDING_LITERALS` masks nothing registered; unique ids; valid
+   layers/dispositions; every row names a real test file; empty `findingPrefixes`
+   only on `deterministic-repair` rows; all fourteen obligation groups present.
+3. **`test/promptBudget.test.ts`** (new, 4 tests incl. 1 `.todo`) — the prompt
+   ceiling. `planning-director.md ≤ 40,711 bytes` (37,010 + 10%) is ENFORCED and
+   passing (currently 37,010). The assembled author prompt for a fixture job is
+   built through the REAL assembler (`creationPrompt`, now exported) with a
+   deterministic fallback storyboard + `create` RAG context; it measures **81,099
+   chars** (`slots: true`). The **≤ 45,000 target is marked `it.todo`** with a
+   written reduction plan (SENTINEL.md "Prompt budget") because it is structurally
+   unreachable this phase — a `proves the structural floor` test documents in code
+   that the base director prompt (~37k) + `create` RAG budget (28k) already exceed
+   45k. A clearly-labeled anti-growth regression guard holds the assembled prompt
+   at ≤ 88,000 (headroom over the 81k fixture, NOT the target) so the ceiling was
+   not silently raised.
+4. **`src/engine/sentinelTelemetry.ts` + `compositionRunner.ts`** — the L1
+   scaffold counter (Phase 4 item 5 carryover). `recordSentinelScaffold` records
+   the count of host-guaranteed bindings (camera planes + stations + component
+   roots) the skeleton/slots path makes unrepresentable, idempotent-by-max so
+   re-emitting on a retry doesn't inflate; `countScaffoldedBindings` computes it
+   and `creationPrompt` records it once when `slots || sentinelSkeletonEnabled()`.
+   Before this, L1 read 0 in the Carryover A telemetry even with the skeleton
+   active. `creationPrompt` is now `export`ed (for the budget test).
+5. **`SENTINEL.md`** (new, beside FALLBACKS.md) — the auditable system doc: the
+   layer model, the placement decision tree, the feature-addition protocol
+   (verbatim from plan §3 Phase 4 item 4), the contract table (hand-synced with
+   `sentinel.ts`, guarded by the closed-world test), the budgets (attempt ladders,
+   token/char budgets, the prompt-budget reduction plan, wall-clock targets), the
+   telemetry files + scaffold counter, and EVERY Sentinel flag
+   (`SENTINEL_SKELETON`, `SENTINEL_SLOTS`, `CRITIC_SKIP_CLEAN`) plus the existing
+   kill-switch family it joins.
+6. **Doc pointers** — FALLBACKS.md gets the "new classes go through SENTINEL.md
+   placement first; this catalog is the L2 ledger, not the default" pointer (top +
+   footer); `apps/slack/CLAUDE.md` gains a Sentinel section + deep-docs link;
+   the `.claude/skills/slack-map` skill gains a Sentinel section (local-only per
+   the gitignore/publish rule); ROADMAP.md logs the whole rework (Phases 0-5) in
+   the dated WS style.
+
+### Deviations from the plan
+
+- **`promptCostChars` is hand-estimated, advisory, not asserted.** Computing the
+  exact prompt-prose cost per obligation is not mechanized this phase; the values
+  are the pre-shrink estimates and are documented as such in `sentinel.ts`. They
+  are informational (they inform the reduction plan), not a test gate.
+- **The registry is one row per (obligation × layer), not one per umbrella.** The
+  plan lists 14 umbrella obligations; several are enforced at more than one layer
+  (camera at scaffold+static+browser, components at scaffold+static, moments/exits
+  at static+browser). Modeling each as a single-layer row keeps the `layer` field
+  honest (the §2 rule: "every obligation lives at exactly one layer") and the
+  `group` field carries the umbrella. Net ~23 rows.
+- **No prompt prose was deleted this phase.** The only sanctioned deletions
+  (scaffold-redundant prose) require the skeleton to be default-ON, which is the
+  Phase-5 flip; deleting them now (flag default OFF, bare shells) would degrade the
+  shipping default. Deferred to the flip, where the reduction plan's item 1 lands.
+  This is why the ≤45k target is a `.todo`, not a shrink — see SENTINEL.md.
+
+### Flags added
+
+None. Phase 4 is registry + tests + docs; it adds no runtime behavior flag.
+
+### Tests added (names)
+
+- `test/sentinel.test.ts` — 10 tests (closed-world coverage + structural
+  invariants). Run: `npx vitest run --root ../.. apps/slack/test/sentinel.test.ts`.
+- `test/promptBudget.test.ts` — 4 tests (3 pass + 1 `.todo`).
+
+### Commands run
+
+- `npm run typecheck --workspace @sequences/slack` — ✅ exit 0.
+- `npm run test --workspace @sequences/slack` — parallel run shows **519 passed /
+  1 todo** and 5 browser-file timeouts under parallel Chrome contention
+  (componentRuntime.browser, fallbackComposition, layoutInspector, perfPipeline,
+  and one diagnostics browser-service check). **All five pass in isolation**
+  (`--no-file-parallelism`): the 4 browser files → 25/25 passed; diagnostics
+  passed on a lighter run. This is the documented "known timeout flake under load,
+  passes in isolation" class, not a regression. Real suite total: **525 tests**
+  (511 + 14 new).
+- `npm run film:demo --workspace @sequences/slack` — ✅ byte-stable
+  (`lint: clean · 3 static warning(s) · browser QA: 48 samples · 6 warning(s)` —
+  identical signature; the model-free golden path shares none of the changed code).
+
+### Acceptance verdict (Phase 4)
+
+**PASS.** The contract registry exists and is load-bearing (an unregistered
+finding class fails CI, proven by the negative control and by the `eye_trace`
+iteration). The prompt-budget test enforces `planning-director.md` and tracks the
+≤45k target honestly as a `.todo` with a written, non-ceiling-raising plan. The L1
+scaffold counter closes the probe-report carryover. SENTINEL.md is the auditable
+"airtight system + how to extend it," and FALLBACKS.md/CLAUDE.md/slack-map/ROADMAP
+point at it.
+
+---
+
+## Phase 5 — budget gate (BLOCKED on credit / operator sign-off)
+
+**Status: BLOCKED at the very first Phase-5 step (the mandated budget check).**
+No paid probe was run this session.
+
+### Budget check (2026-07-06)
+
+Queried OpenRouter with the `apps/slack/.env` key (value not exposed):
+
+- `GET /api/v1/credits` → `{"total_credits": 35, "total_usage": 32.47}` ⇒
+  **≈ $2.53 of account credit remaining.**
+- `GET /api/v1/key` → `limit: null` (the per-key cap that produced the
+  2026-07-06 "403 key limit exceeded" is gone), `usage: 23.20`,
+  `usage_daily: 1.10`, `usage_monthly: 20.57`.
+
+### Why this blocks the §7 probe set
+
+The §7 canonical set is 3 dense briefs, flags ON, fail-loud, plus a revise+undo
+probe. The Carryover A artifacts show a single dense probe running storyboard-plan
+**12–22 min over 3–4 reasoning attempts** (30,720-token thinks) + source-author
+~5 min + critic. Three such runs with retries — and DeepSeek-v4-pro + GLM
+storyboard + rescue models — would very likely exceed $2.53, and a probe that runs
+out of credit mid-run leaves an **immutable half-baked job dir** (dirs are
+immutable per the plan) and wasted spend. Spending the last of the credit on a set
+that cannot complete is not a responsible use of the operator's money.
+
+### What is consequently deferred (all probe-gated by the plan)
+
+- The §7 probe set (Phase 5.2) — the live acceptance of Phases 1-3.
+- The deferred Phase-3 levers (3.2 ladder 3→2, 3.3 token 30,720→20,480, 3.5
+  one-slot-retry-before-least-bad) — each is explicitly gated on probe evidence.
+- One revise + one undo on a probe job (Phase 5.4).
+- The default flip (Phase 5.5) — sanctioned only after the probes publish clean.
+- The ship ladder + `railway up` (Phase 5.6) — outward-facing, operator-gated.
+
+### Recommendation
+
+Top up the OpenRouter account (even $10–15 comfortably covers the 3-brief set +
+revise/undo with headroom), then resume at Phase 5.2. Until then the shipping
+default is unchanged and healthy (`SENTINEL_SKELETON`/`SENTINEL_SLOTS` default OFF;
+Carryover A already proved BOTH flag combinations publish clean on the hardest §7
+brief), so nothing regresses by waiting. Phase 4 is independently complete and
+green and can be committed/published now as a checkpoint if desired (docs +
+registry + tests only — no runtime behavior change, no default flipped).
