@@ -1065,12 +1065,22 @@ point at it.
 
 ---
 
-## Phase 5 — budget gate (BLOCKED on credit / operator sign-off)
+## Phase 5 — probes run; flip/deploy paused for operator sign-off
 
-**Status: BLOCKED at the very first Phase-5 step (the mandated budget check).**
-No paid probe was run this session.
+**Status (updated):** the budget gate below was resolved — the operator topped up
+OpenRouter to $7.53 and authorized the §7 set. **Five probes ran** (all flags ON,
+fail-loud ON, fresh immutable job-ids); results + analysis in "Phase 5 — probe
+results" further below. Headline: the Sentinel source-author flags are validated
+where briefs reach source-author (dense-UI publishes clean, scaffold telemetry +
+Phase-3 atomic revert both confirmed live), but **4 of 5 fresh briefs fail-loud at
+the storyboard stage**, which is **provably flag-independent** and outside
+Sentinel's scope. The default flip and `railway up` are **paused for operator
+decision** (the plan's "confirm before railway up if anything looks marginal").
+The deferred Phase-3 levers are **probe-confirmed to stay deferred**.
 
-### Budget check (2026-07-06)
+### Budget check (2026-07-06) — resolved
+
+Original reading (pre-top-up):
 
 Queried OpenRouter with the `apps/slack/.env` key (value not exposed):
 
@@ -1109,3 +1119,237 @@ Carryover A already proved BOTH flag combinations publish clean on the hardest �
 brief), so nothing regresses by waiting. Phase 4 is independently complete and
 green and can be committed/published now as a checkpoint if desired (docs +
 registry + tests only — no runtime behavior change, no default flipped).
+
+> **RESOLVED:** the operator topped up to $7.53 and chose "run §7"; Phase 4 was
+> committed (`555ba67`) and published to `Slack_Sequences/main`. All five probes
+> together cost **$1.45** (~$0.29 each) — the models are cheap; budget was never
+> the real constraint. Results below.
+
+## Phase 5 — probe results (2026-07-06)
+
+Five probes, all `sequence:check --no-mcp --provider openrouter-api`, flags
+**`SENTINEL_SKELETON=1 SENTINEL_SLOTS=1`**, **`ALLOW_DETERMINISTIC_FALLBACK=0`**
+(fail-loud), fresh immutable `--job-id` each. The three original §7 briefs were
+written to FORCE the hard shapes the plan names; two of them
+(camera-heavy, long-copy+timeRamp) fail-loud at the storyboard stage on the exact
+hard-required features they forced, so two achievable re-briefs (2b, 3b) were run
+to test what the flags actually change (source authoring).
+
+| # | Job id | Brief shape | Disposition | Storyboard | Source | maxAuthor | scaffold(L1) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `sentinel-p5-denseui` | §7.1 dense-UI (palette+modal+stat+button+terminal) | **published** ✅ | 5 att / 7.2 min | 3 att / 4.2 min | 100,795 | **12** |
+| 2 | `sentinel-p5-camera` | §7.2 camera-heavy, forced multi-station+morph | **fail-loud** | 6 att / 9.8 min | — | 0 | 0 |
+| 3 | `sentinel-p5-longcopy` | §7.3 long-copy + 2 cursors + forced timeRamp | **fail-loud** | 5 att / 13 min | — | 0 | 0 |
+| 2b | `sentinel-p5-camera-b` | camera moves + morph, single world (achievable) | **fail-loud** | 5 att / 28.7 min | — | 0 | 0 |
+| 3b | `sentinel-p5-interactions` | inbox walkthrough, 2 cursors, no camera/ramp | **fail-loud** | 5 att / 25.5 min | — | 0 | 0 |
+
+Immutable project dirs under `.data/projects/<job-id>/`; each fail-loud carries a
+`FAILURE.md` + persisted `planning/attempts/`.
+
+### What the ONE success (Probe 1) confirms live
+
+- **The Sentinel source-author flags publish clean on the hardest source-author
+  brief.** `disposition: published`, `authoringMode: hyperframes-direct`,
+  `fallbackStage: null`, 11/11 moments bound, 10 thumbnails, both flags exercised
+  (`skeletonEnabled: true`, `slotsEnabled: true`, slot path ran). Consistent with
+  the three prior Carryover A dense-UI runs. `fullCameraMoves: 5` — the camera
+  world skeleton (plane + stations, the incident-1 fix) was exercised and
+  published.
+- **The new L1 scaffold counter works:** `scaffold: 12` (host-guaranteed
+  bindings), where Carryover A read 0. Phase 4 item 5 delivered.
+- **The Phase-3 atomic commit-or-revert is validated in production.** Probe 1's
+  log shows `sentinel-normalization reverted (normalized plan still fails
+  validation: storyboard/moments …)` firing repeatedly and correctly — the
+  pacing-stretch normalizer never masked a co-occurring `storyboard/moments`
+  block. This is the audit-hardened behavior (SENTINEL_REPORT "Auditor review —
+  Phase 3", bug #1) proven live, not just in unit tests.
+- Costs the plan targets are unmoved by Phases 1-3 (as predicted): storyboard 5
+  attempts / 7.2 min, tier-1 ≈ 11.8 min, `maxAuthor 100,795` (2.2× the 45k
+  target). These are the Phase-4 prompt-budget and (future) storyboard-latency
+  targets, not something Phases 1-3 claimed to move.
+
+### The dominant finding: storyboard-stage fragility (flag-independent)
+
+Four of five fresh briefs fail-loud at `storyboard-plan`, never reaching source
+authoring. The rejections are legitimate contract violations the planner models
+(`z-ai/glm-5.2` primary, `tencent/hy3-preview` rescue) repeatedly commit:
+
+- **`storyboard/moments` dead-intervals / clustering** — every probe. A gap with
+  no typed beat/camera/cut to anchor a moment on; `topUpStoryboardMoments`
+  correctly won't invent one (that would be fabricating content, per the Phase-3
+  decision rule), so it is a genuine "no development" veto back to the model.
+- **Hard-required contract features the models can't build to spec** —
+  `requireMultiStationWorld` ("at least one shot must travel through multiple
+  stations with 2+ typed camera moves", fired on BOTH camera briefs including the
+  gentle one) and the `timeRamp` motivation/solvability contract (Probe 3).
+- **Component-kind/beat mismatches** — `type` on an `app-window` (Probe 3b), morph
+  to an undeclared twin (Probe 2b) — instruction-following errors.
+- **Framing-density floor** (Probe 3b: 6 < 8 framings for 28s) and
+  **`cuts/coherence`** style-zoo (Probe 3).
+
+**This is provably flag-independent** (a code fact, not just a probe inference):
+`grep` confirms `sentinelSkeletonEnabled`/`sentinelSlotsEnabled` are read ONLY in
+the source-author path (`creationPrompt`, the `useSlots` author-loop decision at
+`compositionRunner.ts:6482`, and orchestrator arg/telemetry plumbing) — NEVER in
+`requestStoryboardPlan`/`parseStoryboardResponse`/`validateStoryboardPlan`. A
+flags-OFF run of the same brief fail-louds identically. So the flip cannot cause
+or prevent these failures; they are the pre-existing storyboard-capability sink
+the plan's §1 diagnosis named, exposed here on non-dense-UI brief shapes the
+system was less tuned for. **Fixing storyboard capability is explicitly outside
+Sentinel's scope** (plan §5: Sentinel does not redesign host contracts or add a
+storyboard model). It is the highest-value pre-judging work item, logged here as
+Open item S1.
+
+### Deferred Phase-3 levers — probe-confirmed to STAY deferred
+
+- **3.2 storyboard ladder 3→2: DO NOT CUT.** The plan gates the cut on "probes
+  show normalization absorbing the arithmetic rejections." The probes show the
+  opposite — the rejections are moment-spacing / hard-feature / component-kind
+  deficits (not arithmetic), so normalization does not absorb them, and Probe 1
+  needed **all five rungs** (primary 3 exhausted → rescue 2) to publish. Cutting
+  the primary rung to 2 would have turned Probe 1 into a sixth fail-loud. The
+  `degradePacingFindings` late-attempt boundary and attempt accounting are
+  therefore untouched (no landmine touched).
+- **3.3 `REASONING_STORYBOARD_MAX_TOKENS` 30,720→20,480: DO NOT DROP.** The plan
+  gates the drop on "probe storyboards stay clean at 2 rungs." They do not stay
+  clean at 3 rungs, let alone 2; two rescue attempts even hit the completion
+  budget (Probe 2) — dropping the reasoning budget would truncate more good
+  thinks into worse plans. Kept at 30,720.
+- **3.5 one-slot-retry-before-least-bad: NOT EXERCISED, correctly deferred.** Its
+  precondition — the least-bad shipped draft carries a measured
+  `camera_framed_clipped`/`_sparse`/`cut_degraded` on a hero frame — never
+  occurred: Probe 1 published clean (no least-bad situation), and the other four
+  never reached source authoring. Building the new paid-call entry point blind,
+  with no probe able to exercise it, has low value and real audit risk (the
+  Phase-3 audit's own conclusion). Deferred.
+
+### Revise + undo — verified by code (the plan's "verify, don't assume")
+
+`sequence:check` has no revise entry point, but the properties the plan flags are
+provable by construction: `useSlots = sentinelSlotsEnabled() && lockedStoryboard
+&& !patchMode && !compact` (`compositionRunner.ts:6482`) — a revision runs in
+`patchMode`, so `useSlots` is **false** on revise: **revision keeps whole-doc
+patch mode**, the slot path is never entered, and `directRevisionRouter` /
+`tweakRunner` are untouched. And the critic-skip predicate is evaluated after the
+author loop, on the create path only — the revision path returns before it (the
+Phase-3 audit's item #4 finding). Both properties hold without a live probe; a
+live revise smoke is available via the Slack path / orchestrator `reviseVideo`
+if the operator wants belt-and-suspenders.
+
+### Normalization tags in a live `sentinel-run.json` — NOT yet observed committed
+
+The plan wanted the probes to confirm `camera-budget-clamp` / `pacing-stretch`
+tags appear in a live `sentinel-run.json` and STORYBOARD.md. **Across all five
+probes, neither tag committed** — every engagement atomically REVERTED because a
+co-occurring `storyboard/moments` (or hard-feature) block failed the normalized
+plan. This is the atomic guard working exactly as designed (it must never commit a
+normalization that leaves a different blocking finding), but it means the
+committed-normalization path (and its STORYBOARD.md `- Sentinel normalized:` line)
+is still only unit-proven, not probe-proven. A brief with an over-budget camera
+count but NO moment gap would commit a `camera-budget-clamp`; none of the five
+happened to be that shape. Logged as Open item S2.
+
+### The flip + deploy decision — PAUSED for the operator
+
+Per the plan ("confirm with the operator before `railway up` if anything looks
+marginal"), and because 4/5 fresh briefs fail-loud, the default flip and deploy
+are **not** done autonomously. The honest read for the decision:
+
+- Flipping `SENTINEL_SKELETON`/`SENTINEL_SLOTS` default ON is **low-risk**: the
+  flags are flag-independent-safe (they cannot affect the storyboard fail-louds),
+  they are validated on the dense-UI source-author path across four runs (Probe 1
+  + three Carryover A runs), and they make the two 2026-07-05 incident classes
+  unrepresentable for every run that reaches source authoring. Its downside on the
+  four failing briefs is nil (they fail upstream regardless).
+- But the **§7 acceptance as written ("all three publish, zero fallback") is NOT
+  met**, and the real judge-risk the probes surfaced — storyboard fragility on
+  varied briefs — is a separate, larger, out-of-scope problem the flip does not
+  address. In judging mode (`ALLOW_DETERMINISTIC_FALLBACK=1`) a storyboard
+  fail-loud degrades to the labeled safe-fallback film, not a raw error, so it is
+  not catastrophic, but it is not the real film either.
+
+Nothing is flipped or deployed. Per the operator's direction, this session
+**stops at the flip/deploy gate** and hands the decision (and the open items) to
+the auditing agent + operator rather than acting on a marginal result.
+
+---
+
+## Handoff to the auditor (Fable) — 2026-07-06, end of Session 3
+
+**What is DONE and shipped:** Phase 4 in full — commit `555ba67`, published to
+`Slack_Sequences/main`. Contract registry + closed-world CI test + prompt-budget
+test + L1 scaffold counter + SENTINEL.md + doc pointers. Typecheck clean, suite
+525 tests green in isolation, `film:demo` byte-stable. No gate loosened, no rung
+raised, no default flipped.
+
+**What is DONE but NOT shipped (uncommitted at handoff):** this Phase-5 probe
+report + budget-gate updates in `SENTINEL_REPORT.md` (docs only). Commit/publish
+at the auditor's discretion — no code in it.
+
+**Decisions left OPEN for the auditor + operator (nothing was done autonomously):**
+
+1. **The default flip** (`SENTINEL_SKELETON`/`SENTINEL_SLOTS` → ON). Low-risk and
+   flag-independent-safe, validated on dense-UI (Probe 1 + 3 Carryover A runs),
+   but the §7 "all three publish" gate is unmet for flag-independent reasons.
+   Recommendation on file: either keep OFF (the Carryover-A-proven healthy default,
+   which already recovers the incident classes at L2) or flip-in-source-without-
+   deploy — do NOT flip+deploy on a 1/5-published probe set without a call.
+2. **`railway up`** — not done; the pre-judging checklist
+   (`ALLOW_DETERMINISTIC_FALLBACK=1` on Railway before judges) is still owed
+   regardless of the flip.
+
+**Open items for the auditor to pick up (ranked):**
+
+- **S1 — storyboard-stage fragility (HIGHEST value, out of Sentinel scope).**
+  4/5 fresh briefs fail-loud at `storyboard-plan` on legitimate contract
+  violations the planner models repeat (moment-spacing dead-intervals,
+  `requireMultiStationWorld`, `timeRamp` motivation, `type`-on-`app-window`,
+  framing-density). Diagnose: requirement strictness vs. model capability
+  (`z-ai/glm-5.2`) vs. storyboard-prompt teaching. This — not the flip — is the
+  real pre-judging risk. Evidence: `planning/attempts/storyboard-*-rejected.*` in
+  the four fail-loud job dirs (`sentinel-p5-{camera,longcopy,camera-b,interactions}`).
+- **S2 — committed normalization not probe-proven.** `camera-budget-clamp` /
+  `pacing-stretch` atomically REVERTED in every probe (a co-occurring
+  `storyboard/moments` block failed the normalized plan — the guard working). The
+  *committed* path (+ its STORYBOARD.md `- Sentinel normalized:` line) is still
+  only unit-proven. A brief with an over-budget camera count but NO moment gap
+  would commit one; construct one if you want the live proof.
+- **S3 — the two "extras" from the implementer brief, both deferred (safe, low
+  value without a probe):** (a) `criticSkippableCleanDraft` ignores static-repair
+  warnings that `browserQualityPenalty`'s 2nd arg weights — plumb them to the
+  critique seam so a repaired-but-"pristine" draft still gets the critic; (b) no
+  parse/validate semantics changed this session, so the storyboard cache contract
+  was correctly NOT bumped (still v10) — re-confirm if you change parse/validate.
+- **S4 — prompt budget (Phase 4 `.todo`).** The assembled author prompt is ~81k
+  (fixture) / ~100k (live Probe 1) vs. the 45k target. The reduction plan is in
+  SENTINEL.md "Prompt budget" (scaffold-prose deletion at the flip → RAG diet →
+  storyboard-JSON diet → director-prompt split). Item 1 is unblocked the moment
+  the skeleton is default-ON.
+
+**What to re-verify against the persisted artifacts (do not trust this summary):**
+
+- The closed-world test bites: add a fake finding code to any validator and
+  confirm `test/sentinel.test.ts` fails; confirm the registry covers the emitted
+  set both directions.
+- The flag-independence claim: `grep -rn "sentinelSkeletonEnabled\|sentinelSlotsEnabled" src/`
+  — every hit is source-author or telemetry, none in the storyboard path.
+- The deferred-lever verdicts: Probe 1's `sentinel-run.json` shows storyboard
+  `attempts: 5` (primary 3 exhausted → rescue 2) — cutting the ladder would have
+  fail-louded it.
+- Probe 1 is the one clean film:
+  `.data/projects/sentinel-p5-denseui/composition/index.html` (open in a browser).
+
+### Verification layers that ACTUALLY ran this session
+
+- ✅ `npm run typecheck` (Phase 4).
+- ✅ `npm run test` full suite — 525 tests, green **in isolation**; the 5
+  parallel-run failures are Chrome-launch timeouts under load (all pass with
+  `--no-file-parallelism`), the documented flake class.
+- ✅ `npm run film:demo` — byte-stable signature.
+- ✅ `test/sentinel.test.ts` + `test/promptBudget.test.ts` — run in isolation,
+  pass (3 pass + 1 intentional `.todo` for promptBudget).
+- ✅ **5 paid live probes** (`sequence:check --no-mcp`, flags ON, fail-loud) —
+  1 published, 4 fail-loud at storyboard; artifacts persisted per job-id.
+- ❌ **NOT run:** Docker gate, `railway up` + `/healthz`, Slack sandbox smoke,
+  real hosted-MCP flow, a live revise/undo probe (verified by code instead). The
+  flip is not applied, so no flag-flip diff was gated.
