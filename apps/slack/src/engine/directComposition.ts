@@ -339,6 +339,38 @@ function normalizeStoryboard(
   return { scenes, errors };
 }
 
+/**
+ * Does the source create a paused `gsap.timeline({ … paused: true … })`?
+ *
+ * A prior gate used `gsap\.timeline\(\s*\{[^}]*paused\s*:\s*true`, whose
+ * `[^}]*` terminates at the first `}` — so a valid config with a nested object
+ * before `paused`, e.g. `gsap.timeline({ defaults: { ease: "none" }, paused:
+ * true })`, false-rejected a correct composition (FALLBACKS.md "Known open
+ * risks"). This scans the timeline's config object with brace balancing so
+ * arbitrary nesting is handled; `paused: true` anywhere inside that object
+ * (top-level in practice) satisfies the invariant.
+ */
+export function hasPausedTimeline(html: string): boolean {
+  const callPattern = /gsap\.timeline\s*\(\s*\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = callPattern.exec(html)) !== null) {
+    const braceStart = match.index + match[0].length - 1; // index of the `{`
+    let depth = 0;
+    for (let i = braceStart; i < html.length; i += 1) {
+      const ch = html[i];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          if (/\bpaused\s*:\s*true\b/.test(html.slice(braceStart, i + 1))) return true;
+          break;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function invariantErrors(
   html: string,
   durationSec: number | undefined,
@@ -370,7 +402,7 @@ function invariantErrors(
   if (!/<script\b[^>]*\bsrc\s*=\s*(["'])gsap\.min\.js\1[^>]*>\s*<\/script>/i.test(html)) {
     errors.push('load the host-provided GSAP exactly as <script src="gsap.min.js"></script>');
   }
-  if (!/gsap\.timeline\s*\(\s*\{[^}]*paused\s*:\s*true/is.test(html)) {
+  if (!hasPausedTimeline(html)) {
     errors.push("create one synchronous gsap.timeline({ paused: true })");
   }
   if (compositionId) {

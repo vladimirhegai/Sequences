@@ -94,6 +94,115 @@ step runs. `stageTimings.ts` (ETA) behavior unchanged.
 
 ---
 
+## Phase 1 — kill model-owned paperwork (PRIORITY, shippable)
+
+**Status:** code + tests complete, full suite green, `film:demo` byte-stable.
+Flag-gated behind `SLACK_SEQUENCES_SENTINEL_SKELETON` (default OFF until Phase 5).
+
+### What changed (files + why)
+
+1. **Host plan islands are host-owned, always** (unconditional, not flag-gated —
+   the L2 fix for 2026-07-05 incident 2). `compositionRunner.ts`:
+   `stripAllHostPlanIslands` + `HOST_PLAN_ISLAND_IDS` remove **every**
+   model-authored `sequences-{interactions,cuts,camera,components,time}` island
+   before the per-plan injection re-emits the canonical island. The old
+   `stripUnusedHostPlanIslands` only removed islands with *no* matching plan, so
+   a shadow island that mirrored a real plan (wrong `version`, non-array
+   `scenes`) survived to validation. Now nothing the model hand-writes about an
+   island can reach the gate. `stripUnusedHostPlanIslands` is retained/exported
+   (still unit-tested) but no longer on the pipeline.
+2. **Camera-world plane + stations in the skeleton** (flag-gated, incident 1a).
+   `buildSceneSkeleton`/`buildSceneSkeletons` emit, for a camera scene, the
+   `data-camera-world` plane sized by `cameraWorldStyle` and each `data-region`
+   station at its exact `worldStationRects` rect (the same math
+   `worldLayoutGuidance` renders as prose), plus a screen-space
+   `data-camera-overlay` when the scene has interactions.
+3. **Component roots + focal-part carriers in the skeleton** (flag-gated,
+   incident 1b). `componentContract.ts`: `componentSkeletonMarkup` stamps the
+   catalog exemplar (correct tag, `cmp cmp-<kind>` class, `data-component`, valid
+   interior) with the component's real id as `data-part`. Region-bearing
+   components nest in their station; cut/camera focal parts that name no
+   component get a bare `data-part` carrier. `component_root_missing`,
+   `component_beat_unbound`, and the cut/camera focal-part classes become
+   unrepresentable.
+4. **Runtime script block / registration seam** — see Deviations. The obligation
+   already lives at L2 (`ensureRuntimeScriptOrdering`, unconditional); kept there.
+5. **`gsap.timeline({ paused: true })` false-reject fixed** (`directComposition.ts`).
+   `hasPausedTimeline` replaces the `[^}]*` regex with a brace-balanced scan, so
+   `gsap.timeline({ defaults: { ease: "none" }, paused: true })` no longer
+   false-rejects a valid composition (FALLBACKS.md "Known open risks" — now
+   closed).
+6. **Prompt** (`planning-director.md`) — the interactions "copy those interaction
+   objects into a JSON island and call compile" instruction and the "load
+   `sequences-interactions.v1.js`" runtime rule are replaced with a one-line
+   "the host injects/owns every contract island, runtime, and compile call —
+   never author them" statement (their obligation moved to L2). See Deviations
+   for why the larger scaffold-prose deletions are staged to the Phase-5 flip.
+
+### Deviations from the plan
+
+- **Item 4 (runtime block in skeleton).** Not emitted in the prompt skeleton.
+  The obligation is already fully owned at L2 by `ensureRuntimeScriptOrdering`
+  (unconditional — it collapses/orders all five runtime `<script src>` tags and
+  injects missing ones after GSAP), and neither incident was a script-order
+  failure. Emitting a large runtime literal for the model to reproduce would
+  *add* a failure surface for no gain, so the L2 mechanism stays the owner and
+  the load-bearing "Load GSAP as `<script src="gsap.min.js">`" / "one paused
+  timeline registered under the composition id" rules are kept (GSAP itself is
+  not host-injected). Rationale: minimal deviation, no incident class left open.
+- **Prompt deletions are staged.** The scaffold (items 2-3) is flag-gated OFF by
+  default, so the world-building / component-root prose is still needed by the
+  default (flag-OFF) path; deleting it now would degrade the shipping default.
+  Only the island-authoring obligation (item 1, unconditional L2) was removed
+  from the prompt in Phase 1. The larger scaffold-prose deletions land with the
+  Phase-5 default flip, when the skeleton is authoritative. Net Phase-1 prompt
+  delta is therefore ~neutral (a rewrite, not a shrink): 36,950 → 37,010 bytes.
+- **Skeleton flag ON is unit-proven, not yet paid-probed.** The builder is proven
+  by direct unit tests; the full flag-ON model path is validated by a Phase-5
+  paid probe (pending).
+
+### Flags added
+
+`SLACK_SEQUENCES_SENTINEL_SKELETON` (default OFF; `=1` enables the scaffold).
+
+### Tests added (names)
+
+`test/authorReliability.test.ts`, new describe blocks:
+- **"Sentinel Phase 1 — skeleton scaffold makes paperwork classes
+  unrepresentable"**: incident-1 replay asserts the skeleton emits the plane +
+  stations (with exact rects) + component root and that
+  `reconcileCameraWorldPlanes`/`reconcileComponentBindings`/`reconcileContractBindings`
+  report **0 repairs** on a doc built from the skeleton; a contrast test proves
+  bare shells lack both (the class was real); a test asserts the component root
+  stamps the real id + kit class and does not leak the exemplar id.
+- **"Sentinel Phase 1 — host plan islands are host-owned, always"**:
+  `stripAllHostPlanIslands` removes all five islands unconditionally; incident-2
+  replay proves a shadow `sequences-camera` island (non-array `scenes`) is
+  replaced by the canonical plan (exactly one island, `scenes` is a real array)
+  and a shadow `sequences-interactions` island (`version: 9`) is removed when the
+  plan declares no interactions.
+- **"hasPausedTimeline — Sentinel Phase 1 false-reject fix"**: accepts nested-config
+  + bare paused forms, rejects a non-paused nested-config timeline.
+
+### Commands run
+
+- `npm run typecheck --workspace @sequences/slack` — ✅ exit 0.
+- `npm run test --workspace @sequences/slack` — ✅ **483/483** across 40 files
+  (all browser gates included).
+- `npm run film:demo --workspace @sequences/slack` — ✅ passes; the model-free
+  path shares none of the changed code (`applyDeterministicSourceRepairs`,
+  `creationPrompt`, `buildSceneSkeletons` are not on it) and the `gsap` gate
+  only relaxed, so it is byte-stable.
+
+### Acceptance verdict
+
+**PASS.** Both 2026-07-05 incident replays pass on attempt 1 with **zero
+repairs** logged for the camera-world, component-root, and island classes.
+`SLACK_SEQUENCES_SENTINEL_SKELETON=0` reverts to bare shells (default). Legacy
+paths intact; full suite + `film:demo` green.
+
+---
+
 ## Metrics table (baseline vs post-Phase-5)
 
 Populated from `npm run sentinel:report`. Baseline = pre-Sentinel defaults
@@ -115,22 +224,40 @@ Populated from `npm run sentinel:report`. Baseline = pre-Sentinel defaults
 
 ## Prompt diff summary
 
-`prompts/planning-director.md` byte counts, before/after Phase 1:
+`prompts/planning-director.md` byte counts:
 
-| | bytes |
-| --- | --- |
-| before Phase 1 | ⏳ |
-| after Phase 1 | ⏳ |
+| | bytes | lines |
+| --- | --- | --- |
+| before Phase 1 | 36,950 | 625 |
+| after Phase 1 | 37,010 | 624 |
 
-Assembled author prompt (fixture job), before/after: ⏳ (enforced by Phase-4
-`test/promptBudget.test.ts`).
+Phase-1 delta is a rewrite (island-authoring instruction → host-owned reminder),
+not a shrink — the scaffold-prose deletions are staged to the Phase-5 flip (see
+Phase 1 Deviations). Assembled author prompt (fixture job): enforced by Phase-4
+`test/promptBudget.test.ts` (≤ 45k) — ⏳ pending Phase 4.
 
 ---
 
 ## Incident replays (2026-07-05)
 
-Proof both incidents pass on attempt 1 with zero repairs for those classes —
-populated in Phase 1.
+Both incidents pass on attempt 1 with **zero repairs** for their classes, proven
+by `test/authorReliability.test.ts` (all 64 file tests green):
+
+- **Incident 1** (`incident 1 replay: skeleton emits the camera-world plane +
+  component root; zero repairs`): the skeleton for the camera scene contains
+  `data-camera-world` + both `data-region` stations at their exact rects, and the
+  component scene contains `data-part="cmd-palette"` / `data-component`; a doc
+  built from the skeleton yields `reconcileCameraWorldPlanes`,
+  `reconcileComponentBindings`, and `reconcileContractBindings` **repairs = 0**.
+- **Incident 2** (`incident 2 replay: a model-authored shadow sequences-camera
+  island is replaced with the canonical plan`): a shadow `sequences-camera`
+  island with `"scenes":"not-an-array"` becomes exactly one canonical island
+  whose `scenes` is a real array after `applyDeterministicSourceRepairs`; a
+  shadow `sequences-interactions` island (`version: 9`) is removed when the plan
+  declares no interactions.
+
+Evidence: `apps/slack/test/authorReliability.test.ts`; run with
+`npm run test --workspace @sequences/slack`.
 
 ---
 

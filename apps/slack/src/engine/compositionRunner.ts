@@ -72,6 +72,7 @@ import {
   auditSurfaceExits,
   componentAuthoringReference,
   componentPlanningVocabulary,
+  componentSkeletonMarkup,
   componentSupportsBeat,
   dedupeRedundantBeats,
   injectComponentKit,
@@ -97,6 +98,7 @@ import {
   recordSentinelModelCall,
   recordSentinelNormalization,
 } from "./sentinelTelemetry.ts";
+import { sentinelSkeletonEnabled } from "./sentinelFlags.ts";
 import {
   creativeModel,
   creativeThinkingMode,
@@ -1538,6 +1540,38 @@ export function stripUnusedHostPlanIslands(
   return { html, removed };
 }
 
+/** Every host-owned JSON island id. These are executable contracts injected
+ * deterministically from the locked storyboard — never author notes. */
+export const HOST_PLAN_ISLAND_IDS = [
+  "sequences-interactions",
+  "sequences-cuts",
+  "sequences-camera",
+  "sequences-components",
+  "sequences-time",
+] as const;
+
+/**
+ * Sentinel Phase 1 (SENTINEL_PLAN.md §3.1): host plan islands are host-owned,
+ * always. `stripUnusedHostPlanIslands` only removed islands with NO matching
+ * plan, so a model-authored island that *shadows* a real plan survived until
+ * validation (the 2026-07-05 `sequences-interactions.version must be 1` /
+ * `sequences-camera.scenes must be an array` incident). This removes EVERY
+ * host island unconditionally; the per-plan injection that follows re-emits the
+ * canonical island from the locked storyboard, so nothing the model hand-wrote
+ * about an island can ever reach validation. Idempotent for a document with no
+ * author islands (the post-prompt-deletion steady state — removed stays empty).
+ */
+export function stripAllHostPlanIslands(source: string): { html: string; removed: string[] } {
+  let html = source;
+  const removed: string[] = [];
+  for (const id of HOST_PLAN_ISLAND_IDS) {
+    const result = removeJsonIsland(html, id);
+    html = result.html;
+    for (let index = 0; index < result.removed; index += 1) removed.push(id);
+  }
+  return { html, removed };
+}
+
 function ensureTagAttr(tag: string, name: string, value: string): string {
   const escaped = regexpEscape(name);
   const pattern = new RegExp(`\\b${escaped}\\s*=\\s*(["'])(.*?)\\1`, "i");
@@ -2197,14 +2231,17 @@ export function applyDeterministicSourceRepairs(
     }
   }
   {
-    const strippedPlans = stripUnusedHostPlanIslands(html, lockedStoryboard ?? draft.storyboard);
+    // Host plan islands are host-owned, always: delete every model-authored
+    // island unconditionally so the per-plan injection below is the single
+    // authority. A shadow island can no longer reach validation, and after the
+    // prompt stopped teaching island syntax this strips nothing on a clean run.
+    const strippedPlans = stripAllHostPlanIslands(html);
     if (strippedPlans.removed.length) {
       html = strippedPlans.html;
       recordSentinelNormalization("island-strip", strippedPlans.removed.length);
       process.stderr.write(
-        `[author] stripped unused host plan island(s): ${
-          [...new Set(strippedPlans.removed)].join(", ")
-        }\n`,
+        `[author] stripped ${strippedPlans.removed.length} model-authored host plan island(s) ` +
+          `(re-injected canonically): ${[...new Set(strippedPlans.removed)].join(", ")}\n`,
       );
     }
   }
@@ -5339,6 +5376,148 @@ function bridgedCutRepairChecklist(
   ].join("\n");
 }
 
+/**
+ * Exact per-region station rects derived from a scene's world-layout cells —
+ * the same math `worldLayoutGuidance` renders as prose, here as inline styles
+ * the skeleton stamps directly so the author copies coordinates instead of
+ * inventing them.
+ */
+function worldStationRects(scene: DirectScene): Map<string, string> {
+  const map = new Map<string, string>();
+  const cells = scene.worldLayout ?? [];
+  if (!cells.length) return map;
+  const xs = cells.map((entry) => entry.cell[0]);
+  const ys = cells.map((entry) => entry.cell[1]);
+  const minX = Math.min(...xs, 0);
+  const minY = Math.min(...ys, 0);
+  for (const { region, cell } of cells) {
+    const left = (cell[0] - minX) * 1920 + 260;
+    const top = (cell[1] - minY) * 1080 + 140;
+    map.set(region, `position:absolute;left:${left}px;top:${top}px;width:1400px;height:800px`);
+  }
+  return map;
+}
+
+type SkeletonComponent = NonNullable<DirectScene["components"]>[number];
+type ResolvedCameraScene = ReturnType<typeof resolveCameraPlan>["scenes"][number];
+
+/**
+ * Sentinel Phase 1 scaffold (SENTINEL_PLAN.md §3.1 items 2-3): the host-owned
+ * shell for one scene. For a camera scene it emits the `data-camera-world`
+ * plane sized from the world layout, each `data-region` station at its exact
+ * rect, every declared component root inside its station (or on the plane),
+ * cut/camera focal-part carriers, and a screen-space `data-camera-overlay` for
+ * cursors. For a plain scene it emits the component roots and carriers in the
+ * scene body. The author fills interiors; the paperwork bindings
+ * (`data-camera-world`, `data-region`, component `data-part`, focal carriers)
+ * are present by construction, so `reconcileCameraWorldPlanes`,
+ * `reconcileComponentBindings`, and `reconcileContractBindings` become no-ops.
+ */
+function buildSceneSkeleton(
+  scene: DirectScene,
+  cameraScene: ResolvedCameraScene | undefined,
+  cutFocalParts: ReadonlySet<string>,
+): string {
+  const open =
+    `<section id="${scene.id}" class="scene clip" data-scene="${scene.id}" ` +
+    `data-start="${scene.startSec}" data-duration="${scene.durationSec}" data-track-index="1">`;
+
+  const components = scene.components ?? [];
+  const componentIds = new Set(components.map((component) => component.id));
+
+  const regions = new Set<string>();
+  for (const cell of scene.worldLayout ?? []) regions.add(cell.region);
+  for (const component of components) if (component.region) regions.add(component.region);
+
+  const requiredParts = new Set<string>(cutFocalParts);
+  if (cameraScene) {
+    for (const segment of cameraScene.segments) {
+      if (segment.fromRegion) regions.add(segment.fromRegion);
+      if (segment.toRegion) regions.add(segment.toRegion);
+      for (const part of [segment.fromPart, segment.toPart, segment.focus?.part]) {
+        if (part) requiredParts.add(part);
+      }
+    }
+  }
+  // A component root and a station already carry their name as a binding; only
+  // truly free focal parts need a bare carrier.
+  for (const id of componentIds) requiredParts.delete(id);
+  for (const region of regions) requiredParts.delete(region);
+
+  const rects = worldStationRects(scene);
+  const componentsByRegion = new Map<string, SkeletonComponent[]>();
+  const looseComponents: SkeletonComponent[] = [];
+  for (const component of components) {
+    if (component.region && regions.has(component.region)) {
+      const bucket = componentsByRegion.get(component.region);
+      if (bucket) bucket.push(component);
+      else componentsByRegion.set(component.region, [component]);
+    } else {
+      looseComponents.push(component);
+    }
+  }
+
+  const carrier = (part: string): string => `<div data-part="${part}">…focal subject: style and fill…</div>`;
+
+  if (cameraScene) {
+    const stations = [...regions].map((region) => {
+      const style = rects.get(region);
+      const styleAttr = style ? ` style="${style}"` : "";
+      const inner = (componentsByRegion.get(region) ?? [])
+        .map(componentSkeletonMarkup)
+        .join("");
+      return `  <div data-region="${region}"${styleAttr}>${inner}…fill ${region}…</div>`;
+    });
+    const loose = [
+      ...looseComponents.map((component) => `  ${componentSkeletonMarkup(component)}`),
+      ...[...requiredParts].map((part) => `  ${carrier(part)}`),
+    ];
+    const overlay = (scene.interactions?.length ?? 0) > 0
+      ? "\n<div data-camera-overlay>…cursors/labels in screen space…</div>"
+      : "";
+    return [
+      open,
+      `<div data-camera-world style="${cameraWorldStyle(scene)}">`,
+      ...stations,
+      ...loose,
+      `</div>${overlay}`,
+      "</section>",
+    ].join("\n");
+  }
+
+  const body = [
+    ...components.map((component) => `  ${componentSkeletonMarkup(component)}`),
+    ...[...requiredParts].map((part) => `  ${carrier(part)}`),
+    "  …compose this scene's interior…",
+  ];
+  return [open, ...body, "</section>"].join("\n");
+}
+
+/**
+ * Full-fidelity skeletons for every scene (Sentinel Phase 1). Camera plans, cut
+ * focal parts, and component roots are resolved once for the whole storyboard so
+ * cross-scene cut endpoints land in the right scene.
+ */
+export function buildSceneSkeletons(scenes: DirectScene[]): string[] {
+  const cameraById = new Map(
+    resolveCameraPlan(scenes).scenes.map((scenePlan) => [scenePlan.sceneId, scenePlan]),
+  );
+  const focalByScene = new Map<string, Set<string>>();
+  const addFocal = (sceneId: string, part: string | undefined): void => {
+    if (!part) return;
+    const bucket = focalByScene.get(sceneId);
+    if (bucket) bucket.add(part);
+    else focalByScene.set(sceneId, new Set([part]));
+  };
+  for (const cut of resolveCutPlan(scenes).cuts) {
+    addFocal(cut.fromScene, cut.focalPartOut);
+    addFocal(cut.toScene, cut.focalPartIn);
+  }
+  return scenes.map((scene) =>
+    buildSceneSkeleton(scene, cameraById.get(scene.id), focalByScene.get(scene.id) ?? new Set()),
+  );
+}
+
 function creationPrompt(args: {
   brief: string;
   projectDir: string;
@@ -5470,16 +5649,34 @@ function creationPrompt(args: {
         // verbatim removes the whole authored-N-scenes-against-an-M-scene-plan
         // failure class (a live run burned a full paid attempt on 10 scenes
         // vs a 5-scene plan). The author spends budget on interiors only.
-        "## Mandatory scene skeleton (copy verbatim)",
-        "Your <body> must contain EXACTLY these scene shells, in this order, with",
-        "these exact id/data-scene/data-start/data-duration values — copy each tag",
-        "verbatim (you may add layout classes and fill the interior), and never",
-        "add, remove, split, merge, or retime a scene:",
-        ...args.lockedStoryboard.map((scene) =>
-          `<section id="${scene.id}" class="scene clip" data-scene="${scene.id}" ` +
-          `data-start="${scene.startSec}" data-duration="${scene.durationSec}" ` +
-          `data-track-index="1">…your scene content…</section>`
-        ),
+        // Sentinel Phase 1: when the skeleton flag is on, the shells carry the
+        // camera-world plane, stations, component roots, and focal carriers the
+        // storyboard implies, so those paperwork classes are unrepresentable.
+        ...(sentinelSkeletonEnabled()
+          ? [
+              "## Mandatory scene skeleton (copy verbatim; fill the interiors)",
+              "Your <body> must contain EXACTLY these scene shells, in this order,",
+              "with these exact tags. Copy each shell verbatim — its section",
+              "wrapper, any data-camera-world plane, data-region stations,",
+              "component roots (data-part/data-component), and focal-part carriers",
+              "are the host contract. Fill and restyle the interiors (the … marks",
+              "and placeholder copy); never add, remove, split, merge, or retime a",
+              "scene, and never delete a data-camera-world, data-region, data-part,",
+              "or data-component attribute the shell already carries:",
+              ...buildSceneSkeletons(args.lockedStoryboard),
+            ]
+          : [
+              "## Mandatory scene skeleton (copy verbatim)",
+              "Your <body> must contain EXACTLY these scene shells, in this order, with",
+              "these exact id/data-scene/data-start/data-duration values — copy each tag",
+              "verbatim (you may add layout classes and fill the interior), and never",
+              "add, remove, split, merge, or retime a scene:",
+              ...args.lockedStoryboard.map((scene) =>
+                `<section id="${scene.id}" class="scene clip" data-scene="${scene.id}" ` +
+                `data-start="${scene.startSec}" data-duration="${scene.durationSec}" ` +
+                `data-track-index="1">…your scene content…</section>`
+              ),
+            ]),
         ...[worldLayoutGuidance(args.lockedStoryboard)].filter(Boolean),
         lockedLayoutGuidance(args.lockedStoryboard),
       ].join("\n")
