@@ -7441,6 +7441,14 @@ async function authorCompositionLoop(
       `[author] final repair regressed; publishing browser-valid attempt ` +
         `${lastBrowserValid.attempts}/3 instead\n`,
     );
+    // The other least-bad publish seam (the s5-slotrepair probe found it
+    // unmarked): browser-valid but carrying open polish findings / repair
+    // warnings — an honest publish, not a clean one.
+    if (lastBrowserValid.qualityPenalty > 0 || !lastBrowserValid.browserQa?.strictOk) {
+      recordSentinelDegradation(
+        `least-bad-pick:penalty=${lastBrowserValid.qualityPenalty}`,
+      );
+    }
     const { qualityPenalty: _qualityPenalty, ...best } = lastBrowserValid;
     return { ...best, attempts: 3 };
   }
