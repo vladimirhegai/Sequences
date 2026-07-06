@@ -13,6 +13,7 @@ import { resolveTimeRampPlan, warpInverseOf } from "../src/engine/timeRamp.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import type { ComponentBeatIntentV1 } from "../src/engine/componentContract.ts";
 import type { CameraMoveIntentV1 } from "../src/engine/cameraContract.ts";
+import type { StoryboardMomentV1 } from "../src/engine/storyboardMoments.ts";
 
 function scene(
   overrides: Partial<DirectScene> & Pick<DirectScene, "id" | "startSec" | "durationSec">,
@@ -36,6 +37,20 @@ function move(
   spec: Partial<CameraMoveIntentV1> & Pick<CameraMoveIntentV1, "move" | "startSec" | "durationSec">,
 ): CameraMoveIntentV1 {
   return { version: 1, toRegion: "station", ...spec };
+}
+
+function moment(sceneId: string, id: string, atSec: number): StoryboardMomentV1 {
+  return {
+    version: 1,
+    id,
+    sceneId,
+    atSec,
+    title: id,
+    visualState: "test state",
+    change: "test change",
+    motionIntent: "camera-arrival",
+    importance: "primary",
+  };
 }
 
 describe("auditPacing camera budget", () => {
@@ -652,6 +667,73 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
     expect(droppedScene.camera).toBeUndefined();
   });
 
+  it("never drops a load-bearing move (a declared moment binds inside its window)", () => {
+    // 3s scene → cap 1, two quiet moves. The pan carries a declared moment at
+    // its arrival, so the clamp must drop the OTHER move even though both are
+    // equally low-energy — orphaning moment evidence is never a normalization.
+    const guarded = scene({
+      id: "guarded",
+      startSec: 0,
+      durationSec: 3,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 0.4, durationSec: 0.6 }),
+          move({ move: "track-to-anchor", toPart: "chip", startSec: 1.8, durationSec: 0.6 }),
+        ],
+      },
+      moments: [moment("guarded", "m-arrival", 1.0)],
+    });
+    const result = normalizeCameraBudget([guarded]);
+    expect(result.normalized).toHaveLength(1);
+    const surviving = result.storyboard[0]!.camera!.path;
+    expect(surviving).toHaveLength(1);
+    expect(surviving[0]!.move).toBe("pan");
+    // The note is carried on the scene for STORYBOARD.md visibility.
+    expect(result.storyboard[0]!.sentinelNormalizations?.length).toBe(1);
+  });
+
+  it("refuses to clamp when the budget cannot be met without load-bearing moves", () => {
+    // Both moves carry moment evidence: the clamp leaves the scene alone so
+    // the blocking finding goes back to the model (and the parse-side
+    // convergence check keeps everything atomic).
+    const pinned = scene({
+      id: "pinned",
+      startSec: 0,
+      durationSec: 3,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 0.4, durationSec: 0.6 }),
+          move({ move: "track-to-anchor", toPart: "chip", startSec: 1.8, durationSec: 0.6 }),
+        ],
+      },
+      moments: [moment("pinned", "m-a", 1.0), moment("pinned", "m-b", 2.4)],
+    });
+    const result = normalizeCameraBudget([pinned]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard[0]!.camera!.path).toHaveLength(2);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/camera-budget:"))).toBe(true);
+  });
+
+  it("never drops a load-bearing 3rd whip — the film-budget finding stays for the model", () => {
+    const whipScene = (id: string, startSec: number, withMoment: boolean): DirectScene => scene({
+      id,
+      startSec,
+      durationSec: 5,
+      camera: { version: 1, path: [move({ move: "whip", startSec: startSec + 1, durationSec: 0.5 })] },
+      ...(withMoment ? { moments: [moment(id, `${id}-m`, startSec + 1.4)] } : {}),
+    });
+    const result = normalizeCameraBudget([
+      whipScene("a", 0, false),
+      whipScene("b", 5, false),
+      whipScene("c", 10, true),
+    ]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard.find((s) => s.id === "c")!.camera).toBeDefined();
+    expect(auditPacing(result.storyboard).some((f) => f.includes("whips"))).toBe(true);
+  });
+
   it("caps whips at 2 per film, keeping the earliest chronologically", () => {
     const whipScene = (id: string, startSec: number): DirectScene => scene({
       id,
@@ -694,6 +776,8 @@ describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-ret
     // where opener now ends.
     expect(shiftedCloser!.startSec).toBeCloseTo(stretchedOpener!.startSec + stretchedOpener!.durationSec, 5);
     expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/reading:"))).toBe(false);
+    // The note is carried on the stretched scene for STORYBOARD.md visibility.
+    expect(stretchedOpener!.sentinelNormalizations?.length).toBe(1);
   });
 
   it("never stretches by more than MAX_PACING_STRETCH_SEC — a larger deficit stays a real finding", () => {

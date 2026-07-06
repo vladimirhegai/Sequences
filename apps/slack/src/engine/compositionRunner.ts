@@ -3711,39 +3711,37 @@ export function parseStoryboardResponse(
       process.stderr.write(`[storyboard] ${line}\n`);
     }
   }
-  // Moment paperwork the plan already proves is filled in by the host, not
-  // retried: a marginal dead interval that has a typed beat/camera/cut in it
-  // was the dominant live storyboard-stage veto (2026-07-04 incident).
-  const topped = topUpStoryboardMoments(storyboard, CAMERA_FULL_MOVES);
-  if (topped.added.length) {
-    storyboard = topped.storyboard;
-    process.stderr.write(
-      `[storyboard] topped up ${topped.added.length} moment(s) from typed evidence: ` +
-        `${topped.added.map((moment) => `${moment.id}@${moment.atSec.toFixed(1)}s`).join(", ")}\n`,
-    );
-  }
   // Sentinel Phase 3: mechanical pacing fixes (delete/degrade/retime, never
   // invent content) run before the pacing gate sees the plan, so arithmetic
   // the host can already do never burns a paid storyboard retry. Camera
   // budget first (drops moves, which changes which beats even hit the
-  // reading/outcome checks), then the marginal-miss stretch.
+  // reading/outcome checks), then the marginal-miss stretch. They run BEFORE
+  // the moment top-up so topped-up moments anchor only on surviving camera
+  // moves and final (post-stretch) timing, and they commit ATOMICALLY below:
+  // the normalized plan is kept only when it validates clean — a fix for the
+  // pacing arithmetic that mints a DIFFERENT blocking finding (the
+  // framing-density floor, an explicit brief requirement like minCameraMoves,
+  // moment spacing, the 60s film cap) reverts to the model's own artifact so
+  // the findings-retry describes what the model actually wrote (the
+  // degradeVolunteeredBridgedCuts commit-only-if-clean precedent).
+  const preNormalization = storyboard;
   const cameraBudget = normalizeCameraBudget(storyboard);
-  if (cameraBudget.normalized.length) {
-    storyboard = cameraBudget.storyboard;
-    for (const line of cameraBudget.normalized) {
-      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
-    }
-    recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
-  }
-  const pacingStretch = stretchMarginalPacingMisses(storyboard);
-  if (pacingStretch.normalized.length) {
-    storyboard = pacingStretch.storyboard;
-    for (const line of pacingStretch.normalized) {
-      process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
-    }
-    recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
-  }
-  let errors = validateStoryboardPlan(storyboard, requirements);
+  const pacingStretch = stretchMarginalPacingMisses(cameraBudget.storyboard);
+  const normalizationLines = [...cameraBudget.normalized, ...pacingStretch.normalized];
+  if (normalizationLines.length) storyboard = pacingStretch.storyboard;
+
+  // Moment paperwork the plan already proves is filled in by the host, not
+  // retried: a marginal dead interval that has a typed beat/camera/cut in it
+  // was the dominant live storyboard-stage veto (2026-07-04 incident).
+  const topUpMoments = (plan: DirectScene[]): DirectScene[] => {
+    const topped = topUpStoryboardMoments(plan, CAMERA_FULL_MOVES);
+    if (!topped.added.length) return plan;
+    process.stderr.write(
+      `[storyboard] topped up ${topped.added.length} moment(s) from typed evidence: ` +
+        `${topped.added.map((moment) => `${moment.id}@${moment.atSec.toFixed(1)}s`).join(", ")}\n`,
+    );
+    return topped.storyboard;
+  };
   // Degrade-never-veto for pacing on LATE attempts: pacing findings are
   // polish-grade (they never abort a compile or ship a dead film), and two
   // live probes (2026-07-05) showed both planner models playing whack-a-mole
@@ -3754,23 +3752,54 @@ export function parseStoryboardResponse(
   // (the findings-retry is still the delivery mechanism); from the primary
   // rung's final attempt onward a plan that is clean EXCEPT for pacing ships
   // with the findings logged as advisories.
-  if (options.degradePacingFindings) {
-    // Exit-discipline (WS4) and cut-coherence (WS6) findings are polish-grade
-    // in exactly the same sense as pacing — a stacked overlay or a style zoo
-    // never aborts a compile or ships a dead film — so they ride the same
-    // late-attempt demotion to keep a plan clean except for polish from
-    // triggering the far worse fallback.
-    const isPolish = (finding: string): boolean =>
-      finding.startsWith("pacing/") ||
-      finding.startsWith("components/exit:") ||
-      finding.startsWith("cuts/coherence:");
-    const polish = errors.filter(isPolish);
-    if (polish.length) {
-      errors = errors.filter((finding) => !isPolish(finding));
-      for (const line of polish) {
-        process.stderr.write(
-          `[storyboard] polish finding accepted as advisory on a final attempt: ${line}\n`,
-        );
+  const resolveErrors = (plan: DirectScene[]): string[] => {
+    let errors = validateStoryboardPlan(plan, requirements);
+    if (options.degradePacingFindings) {
+      // Exit-discipline (WS4) and cut-coherence (WS6) findings are polish-grade
+      // in exactly the same sense as pacing — a stacked overlay or a style zoo
+      // never aborts a compile or ships a dead film — so they ride the same
+      // late-attempt demotion to keep a plan clean except for polish from
+      // triggering the far worse fallback.
+      const isPolish = (finding: string): boolean =>
+        finding.startsWith("pacing/") ||
+        finding.startsWith("components/exit:") ||
+        finding.startsWith("cuts/coherence:");
+      const polish = errors.filter(isPolish);
+      if (polish.length) {
+        errors = errors.filter((finding) => !isPolish(finding));
+        for (const line of polish) {
+          process.stderr.write(
+            `[storyboard] polish finding accepted as advisory on a final attempt: ${line}\n`,
+          );
+        }
+      }
+    }
+    return errors;
+  };
+
+  storyboard = topUpMoments(storyboard);
+  let errors = resolveErrors(storyboard);
+  if (normalizationLines.length) {
+    if (errors.length) {
+      // Non-convergent: the normalization fixed the pacing arithmetic but the
+      // plan still (or newly) fails validation. Revert to the model's own
+      // artifact — its findings are the honest retry input, and on a final
+      // attempt the polish demotion judges the plan the model actually wrote.
+      process.stderr.write(
+        `[storyboard] sentinel-normalization reverted (normalized plan still fails ` +
+          `validation: ${errors[0]}${errors.length > 1 ? `; +${errors.length - 1} more` : ""})\n`,
+      );
+      storyboard = topUpMoments(preNormalization);
+      errors = resolveErrors(storyboard);
+    } else {
+      for (const line of normalizationLines) {
+        process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
+      }
+      if (cameraBudget.normalized.length) {
+        recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
+      }
+      if (pacingStretch.normalized.length) {
+        recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
       }
     }
   }
@@ -5789,7 +5818,15 @@ function creationPrompt(args: {
         "Author every shot as a distinct scene. Match its ids and timings exactly;",
         "do not merge shots or redesign the cut graph while writing source.",
         "<locked_storyboard_json>",
-        JSON.stringify(args.lockedStoryboard, null, 2),
+        // Host-normalization notes are operator paperwork (STORYBOARD.md),
+        // not authoring instructions — keep them out of the paid prompt.
+        JSON.stringify(
+          args.lockedStoryboard.map(
+            ({ sentinelNormalizations: _normalizations, ...scene }) => scene,
+          ),
+          null,
+          2,
+        ),
         "</locked_storyboard_json>",
         "",
         // The host already knows the exact scene shells; handing them over

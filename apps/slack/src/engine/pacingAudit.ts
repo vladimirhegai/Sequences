@@ -39,7 +39,11 @@ import {
   type CameraMoveIntentV1,
 } from "./cameraContract.ts";
 import { resolveComponentPlan, type ResolvedComponentBeatV1 } from "./componentContract.ts";
-import { FINAL_RESOLVE_ALLOWANCE_SEC } from "./storyboardMoments.ts";
+import {
+  EVIDENCE_AFTER_SEC,
+  EVIDENCE_BEFORE_SEC,
+  FINAL_RESOLVE_ALLOWANCE_SEC,
+} from "./storyboardMoments.ts";
 import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
 import type { DirectScene } from "./directComposition.ts";
 
@@ -320,6 +324,34 @@ function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
 }
 
 /**
+ * A camera move is LOAD-BEARING when a declared moment's evidence-search
+ * window (storyboardMoments.ts) overlaps it: publication may bind that moment
+ * to this move's arrival, so silently dropping the move could orphan the
+ * moment at publication time and burn a paid author attempt — the same
+ * "never silently change evidence a moment binds to" rule as
+ * degradeUnsupportedComponentBeats. Load-bearing moves survive every clamp;
+ * when a budget cannot be met without dropping one, the scene keeps its
+ * blocking finding (the parse-side convergence check then reverts the whole
+ * normalization).
+ */
+function isLoadBearingMove(scene: DirectScene, move: CameraMoveIntentV1): boolean {
+  const moveEnd = move.startSec + move.durationSec;
+  return (scene.moments ?? []).some((moment) =>
+    moveEnd >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+    move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
+  );
+}
+
+/** Append host-normalization notes a scene carries into STORYBOARD.md. */
+function withNormalizationNotes(scene: DirectScene, notes: string[]): DirectScene {
+  if (!notes.length) return scene;
+  return {
+    ...scene,
+    sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), ...notes],
+  };
+}
+
+/**
  * Sentinel Phase 3 normalize-before-retry: mechanically clamp camera-move
  * counts to `auditPacing`'s own ceilings instead of sending an over-dense
  * storyboard back to the model for a findings-retry. This deletes/degrades
@@ -354,34 +386,50 @@ export function normalizeCameraBudget(
       .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move));
     if (fullMoveEntries.length <= moveCap) return scene;
     const toDrop = fullMoveEntries.length - moveCap;
+    // Moves a declared moment may bind to as evidence are never dropped; if
+    // the budget cannot be met from the rest, leave the blocking finding for
+    // the model — silently orphaning moment evidence is worse than a retry.
+    const droppable = fullMoveEntries.filter((entry) => !isLoadBearingMove(scene, entry.move));
+    if (droppable.length < toDrop) return scene;
     const dropIndexes = new Set(
-      [...fullMoveEntries]
+      [...droppable]
         .sort((a, b) => cameraMoveEnergyRank(a.move) - cameraMoveEnergyRank(b.move) || a.index - b.index)
         .slice(0, toDrop)
         .map((entry) => entry.index),
     );
     const newPath = path.filter((_, index) => !dropIndexes.has(index));
-    normalized.push(
-      `scene "${scene.id}": dropped ${toDrop} lowest-energy camera move(s) to fit the ` +
-        `${moveCap}-move budget for a ${scene.durationSec.toFixed(1)}s window`,
-    );
+    const note =
+      `dropped ${toDrop} lowest-energy camera move(s) to fit the ` +
+      `${moveCap}-move budget for a ${scene.durationSec.toFixed(1)}s window`;
+    normalized.push(`scene "${scene.id}": ${note}`);
     if (!newPath.length) {
       const { camera: _camera, ...rest } = scene;
-      return rest;
+      return withNormalizationNotes(rest, [note]);
     }
-    return { ...scene, camera: { ...scene.camera!, path: newPath } };
+    return withNormalizationNotes({ ...scene, camera: { ...scene.camera!, path: newPath } }, [note]);
   });
 
   // move.startSec is already absolute (per CameraMoveIntentV1) — no
   // scene.startSec offset to add.
-  const whipRefs: Array<{ sceneIndex: number; moveIndex: number; startSec: number }> = [];
+  const whipRefs: Array<{
+    sceneIndex: number;
+    moveIndex: number;
+    move: CameraMoveIntentV1;
+  }> = [];
   scenes.forEach((scene, sceneIndex) => {
     (scene.camera?.path ?? []).forEach((move, moveIndex) => {
-      if (move.move === "whip") whipRefs.push({ sceneIndex, moveIndex, startSec: move.startSec });
+      if (move.move === "whip") whipRefs.push({ sceneIndex, moveIndex, move });
     });
   });
   if (whipRefs.length > MAX_WHIPS_PER_FILM) {
-    const dropRefs = [...whipRefs].sort((a, b) => a.startSec - b.startSec).slice(MAX_WHIPS_PER_FILM);
+    // Keep the earliest MAX whips; drop the rest — except load-bearing whips
+    // (a declared moment binds inside their window), which are never dropped:
+    // if one keeps the film over budget, the finding stays blocking and the
+    // parse-side convergence check reverts this normalization.
+    const dropRefs = [...whipRefs]
+      .sort((a, b) => a.move.startSec - b.move.startSec)
+      .slice(MAX_WHIPS_PER_FILM)
+      .filter((ref) => !isLoadBearingMove(scenes[ref.sceneIndex]!, ref.move));
     const dropBySceneIndex = new Map<number, Set<number>>();
     for (const ref of dropRefs) {
       if (!dropBySceneIndex.has(ref.sceneIndex)) dropBySceneIndex.set(ref.sceneIndex, new Set());
@@ -391,16 +439,21 @@ export function normalizeCameraBudget(
       const drop = dropBySceneIndex.get(sceneIndex);
       if (!drop || !scene.camera) return scene;
       const newPath = scene.camera.path.filter((_, moveIndex) => !drop.has(moveIndex));
+      const note =
+        `dropped ${drop.size} whip(s) beyond the ${MAX_WHIPS_PER_FILM}-per-film budget ` +
+        `(keeping the film's earliest ${MAX_WHIPS_PER_FILM})`;
       if (!newPath.length) {
         const { camera: _camera, ...rest } = scene;
-        return rest;
+        return withNormalizationNotes(rest, [note]);
       }
-      return { ...scene, camera: { ...scene.camera, path: newPath } };
+      return withNormalizationNotes({ ...scene, camera: { ...scene.camera, path: newPath } }, [note]);
     });
-    normalized.push(
-      `film: dropped ${dropRefs.length} whip(s) beyond the ${MAX_WHIPS_PER_FILM}-per-film budget, ` +
-        `keeping the earliest ${MAX_WHIPS_PER_FILM}`,
-    );
+    if (dropRefs.length) {
+      normalized.push(
+        `film: dropped ${dropRefs.length} whip(s) beyond the ${MAX_WHIPS_PER_FILM}-per-film budget, ` +
+          `keeping the earliest ${MAX_WHIPS_PER_FILM}`,
+      );
+    }
   }
 
   return { storyboard: scenes, normalized };
@@ -515,12 +568,15 @@ export function stretchMarginalPacingMisses(
     }
     const shifted = withShiftedSceneTimes(original, cumulativeShift);
     if (applied > 0) {
-      out.push({ ...shifted, durationSec: round(shifted.durationSec + applied) });
+      const note =
+        `stretched ${applied.toFixed(2)}s to close a marginal pacing-floor ` +
+        `shortfall at its own cut boundary`;
+      out.push(withNormalizationNotes(
+        { ...shifted, durationSec: round(shifted.durationSec + applied) },
+        [note],
+      ));
       cumulativeShift = round(cumulativeShift + applied);
-      normalized.push(
-        `scene "${original.id}": stretched ${applied.toFixed(2)}s to close a marginal pacing-floor ` +
-          `shortfall at its own cut boundary`,
-      );
+      normalized.push(`scene "${original.id}": ${note}`);
     } else {
       out.push(shifted);
     }

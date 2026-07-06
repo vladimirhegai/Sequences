@@ -123,6 +123,13 @@ export interface DirectScene {
   interactions?: InteractionIntentV1[];
   /** Ordered reviewable changed states this scene promises (the moment contract). */
   moments?: StoryboardMomentV1[];
+  /**
+   * Host-applied Sentinel normalization notes (delete/degrade/retime fixes the
+   * host made to this scene at parse — never model-authored). Rendered in
+   * STORYBOARD.md so every normalization stays visible (SENTINEL_PLAN §3
+   * Phase 3.1); stripped from the author prompt.
+   */
+  sentinelNormalizations?: string[];
 }
 
 export interface DirectCompositionDraft {
@@ -647,7 +654,7 @@ function writeJson(file: string, value: unknown): void {
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 }
 
-function storyboardMarkdown(title: string, scenes: DirectScene[]): string {
+export function storyboardMarkdown(title: string, scenes: DirectScene[]): string {
   return [
     `# STORYBOARD.md — ${title}`,
     "",
@@ -683,6 +690,7 @@ function storyboardMarkdown(title: string, scenes: DirectScene[]): string {
         ? `- Speed ramp: dip to ${scene.timeRamp.slowTo}× at ${scene.timeRamp.atSec.toFixed(2)}s` +
           ` (net-zero inside the shot)`
         : "",
+      ...(scene.sentinelNormalizations ?? []).map((note) => `- Sentinel normalized: ${note}`),
       scene.components?.length
         ? `- Components: ${scene.components
           .map((component) => `${component.id} (${component.kind})`)

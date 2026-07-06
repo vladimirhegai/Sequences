@@ -641,8 +641,7 @@ the host can already do never burns a paid storyboard retry):
 Both are wired at `compositionRunner.ts` `parseStoryboardResponse`, camera
 budget first (it changes which beats even reach the reading/outcome checks),
 then the stretch. Every normalization is logged to stderr as
-`[storyboard] sentinel-normalized: …` (visible in STORYBOARD.md / the run log)
-and recorded in telemetry via `recordSentinelNormalization("camera-budget-clamp")`
+`[storyboard] sentinel-normalized: …` and recorded in telemetry via `recordSentinelNormalization("camera-budget-clamp")`
 / `("pacing-stretch")` — two new normalization tags on the existing
 `sentinelTelemetry` counter.
 
@@ -773,3 +772,158 @@ post-Phase-1 count). Phase 3 adds no prose and deletes none; prompt shrinkage is
 Phase 5's job (descoped). The assembled author prompt is still ~107–114k chars
 (measured in both Carryover A probes) — the ≤45k enforcement is Phase 4's
 `test/promptBudget.test.ts` (descoped).
+
+---
+
+## Auditor review — Phase 3 (2026-07-05)
+
+Audited `dc8c591` (everything after `0864c19`) against SENTINEL_PLAN §3
+Phase 3 and the landmine list; three real bugs found and fixed in the audit
+commit. All fixes are in the deterministic parse path — no gate loosened, no
+threshold moved, no prompt changed.
+
+### Verdict per plan item
+
+1. **3.1 normalize-before-retry — LANDED, with three audit fixes (below).**
+   The two normalizers are the right shape (delete/degrade/retime only, never
+   invent), energy rank correctly mirrors `auditCameraEnergy` so a per-scene
+   clamp can never delete a scene's only peak, the stretch correctly skips
+   ramped scenes and is safe in content time elsewhere (ramps are net-zero, so
+   viewer time ≡ content time outside them), and the plan's "merge the serial
+   pan+push-in pair" clause was **already satisfied before Phase 3**:
+   `parseCamera` applies `mergeCompoundMoves` at parse, and `auditPacing`
+   counts the merged path (its own comment says so). Verified, not new work.
+2. **3.2 ladder 3→2 — DEFERRED, correctly.** Rungs unchanged (`maxAttempts: 3`),
+   so the `pacing/*`/`components/exit`/`cuts/coherence` late-attempt demotion
+   boundary and all attempt accounting are untouched — the landmine class
+   cannot fire. The deferral matches the plan's own gating ("only after 1
+   lands", probe-confirmed) and the probe evidence (the both-flags Carryover A
+   run survived only because the primary rung absorbed two transient provider
+   faults).
+3. **3.3 token budget — DEFERRED, correctly.** `REASONING_STORYBOARD_MAX_TOKENS`
+   still 30,720; the plan explicitly names keeping it a valid outcome.
+4. **3.4 critic gating — CORRECT as landed.** The predicate is measured on the
+   result actually being shipped: `applyContinuityCritique` runs after the
+   author loop and after `applyShapeMatchUpgrade`, so `result.browserQa` is
+   the post-repair, post-upgrade QA of the banked draft — not attempt-1 state.
+   The revision path cannot be affected (`revisionInstruction` returns before
+   the new check). `SLACK_SEQUENCES_CREATIVE_CRITIC=0` still short-circuits
+   first. One recommendation, not fixed: the predicate ignores static-repair
+   warnings (which the least-bad pick does weight via
+   `browserQualityPenalty`'s second argument); a draft that needed static
+   repairs but measures pristine will skip the critic. Plumbing those
+   warnings to the critique seam is a small follow-up if a probe ever shows a
+   repaired-but-pristine draft that the critic would have improved.
+5. **3.5 slot-retry-before-least-bad — DEFERRED, correctly** (no slot-retry
+   entry point exists; SLOTS defaults OFF; Phase-5 scope). Deferral rationale
+   in the implementer's section is accurate.
+
+### Bugs found and fixed (audit commit)
+
+1. **Normalization was not atomic (the biggest landmine, confirmed).** Both
+   normalizers committed unconditionally before validation, so a fix for the
+   pacing arithmetic could mint a NEW blocking finding the model never earned:
+   dropping moves can violate the framing-density floor,
+   `requirements.minCameraMoves`, `requireMultiStationWorld`, or
+   `requireRackFocus`; the stretch can push a film past the 60s cap or open a
+   moment-spacing gap past `MAX_MOMENT_INTERVAL_SEC`. Worst case was a LATE
+   attempt: a plan clean-except-pacing that would have shipped under the
+   polish demotion could instead die on a normalization-minted finding — a
+   regression of exactly the `improve-ws32-1` class. **Fix:**
+   `parseStoryboardResponse` now commits the normalized plan only when it
+   validates clean (after the late-attempt demotion filter); otherwise it
+   logs `sentinel-normalization reverted`, restores the model's own artifact,
+   and re-validates that — the `degradeVolunteeredBridgedCuts`
+   commit-only-if-clean precedent. Telemetry now records only committed
+   normalizations. Regression test: a clamp that would violate
+   `minCameraMoves: 3` reverts and throws the model's own
+   `pacing/camera-budget` finding (`directComposition.test.ts`).
+2. **Normalizers ran AFTER `topUpStoryboardMoments`, and could drop
+   moment-bearing moves.** Top-up anchors host-added moments on camera
+   arrivals; the clamp could then delete the anchoring move (and a
+   model-declared moment could equally anchor on a dropped move) — the plan
+   validates clean but publication-time evidence binding fails, burning paid
+   author attempts (primary moments) or silently re-anchoring (supporting).
+   **Fix:** normalizers now run before top-up (top-up anchors only on
+   surviving moves and post-stretch times), and `normalizeCameraBudget` got a
+   load-bearing guard: a move whose window overlaps any declared moment's
+   evidence-search window (`EVIDENCE_BEFORE_SEC`/`EVIDENCE_AFTER_SEC`, now
+   exported from `storyboardMoments.ts`) is never dropped — if the budget
+   cannot be met without one, the scene keeps its blocking finding (same rule
+   as `degradeUnsupportedComponentBeats`' load-bearing beats). Three new
+   tests in `pacingAudit.test.ts` prove both directions.
+3. **The plan's "keep every normalization visible in STORYBOARD.md" was
+   unmet**, and this report claimed it was met ("visible in STORYBOARD.md /
+   the run log" — normalizations only went to stderr + telemetry; stderr is
+   not STORYBOARD.md). **Fix:** `DirectScene` gains host-only
+   `sentinelNormalizations?: string[]` (never model-parseable), the
+   normalizers annotate each affected scene, `storyboardMarkdown` renders
+   `- Sentinel normalized: …` lines, and the author-prompt serialization
+   strips the field (operator paperwork, not authoring instructions). The
+   false report sentence above has been corrected in place.
+
+### Landmine checklist
+
+- **Storyboard cache contract v10 — deliberately NOT bumped; here is why that
+  is sound.** `validateStoryboardPlan` semantics are unchanged; cached
+  artifacts are post-parse plans re-validated on read; and the normalizers
+  only mutate plans that FAIL validation — which are never cached. A stale
+  v10 plan therefore cannot replay under different semantics. (The additive
+  `sentinelNormalizations` field is optional and absent from old artifacts,
+  which is correct — they were never normalized.) If a future change makes
+  normalization fire on validation-clean plans, bump then.
+- **QA_CACHE_VERSION 8 — correctly unchanged** (no browser-QA sampling change
+  in this diff).
+- **Nested-time integrity — sound.** `withShiftedSceneTimes` shifts
+  beat/camera/interaction/moment/ramp times with their scene (the v10 lesson
+  applied); detection runs pre-shift where the resolved beats live; ramped
+  scenes are excluded; viewer-time equivalence holds for non-ramped scenes
+  because ramps are net-zero inside their shot.
+- **Sanctioned levers — clean.** The full `0864c19..dc8c591` diff contains no
+  threshold drift in `pacingAudit.ts`/`layoutInspector.ts`/`eyeTrace.ts`
+  (additions only), an export-only change in `cameraContract.ts`, and no
+  prompt edits.
+- **Telemetry — plumbing verified** (`recordSentinelNormalization` →
+  `sentinel-run.json` `normalizations` + `layers.normalize`); no live probe
+  has exercised the Phase-3 tags yet, as the implementer's caveat honestly
+  states. The two Carryover A `sentinel-run.json` files show only
+  pre-existing tags (island-strip / interaction-binding / runtime-order),
+  consistent with those probes predating Phase 3.
+
+### Carryover A claims — verified against artifacts
+
+Both immutable job dirs inspected (no re-probe needed):
+`sentinel-run.json` disposition `published` in both; storyboard-plan 4
+attempts / 1,310,607ms and 3 attempts / 742,188ms; `promptChars.maxAuthor`
+107,428 and 113,602; layer counts exactly as reported; MP4s present;
+`planning/attempts/` corroborates the narrative (both-flags storyboard
+attempt 1 rejected with the `terminal-open` support error **plus** the
+`pacing/outcome` finding the acceptance verdict cites; author attempts
+browser-rejected → patch static-rejected → full). STORYBOARD.md moment rows:
+**19 bound / 0 unbound** and **18 bound / 0 unbound** — matching "19/19,
+18/18". No FAILURE.md in either dir.
+
+### Verification (audit commit)
+
+- `npm run typecheck --workspace @sequences/slack` — ✅.
+- `npm run test --workspace @sequences/slack` — **511 tests** (507 + 4 new:
+  3 load-bearing-guard tests, 1 atomic-revert test; plus annotation
+  assertions added to existing tests). One flake on the first full run:
+  `perfPipeline.test.ts` "browser QA cache" timed out at its 40s ceiling
+  under parallel suite load and **passed in isolation at 33.5s** — a
+  pre-existing timing margin, unrelated to this diff.
+- `npm run film:demo` — signature identical to baseline
+  (`lint: clean · 3 static warning(s) · browser QA: 48 samples · 6 warning(s)`).
+  The model-free golden path never reaches `parseStoryboardResponse`.
+- No paid probe run (artifact inspection sufficed; Phase-3 live validation
+  remains the first Phase-5 probe's job, unchanged).
+
+### Go/no-go for Phase 4/5
+
+**GO.** Phase 3's landed levers are now atomic, ordered correctly, visible in
+STORYBOARD.md, and telemetered; the deferred levers are cleanly deferred with
+their preconditions written down. Phase 4 (contract registry + prompt budget +
+SENTINEL.md) can proceed on this base; Phase 5's first probe should confirm
+the `sentinel-normalized:*` tags appear in a live `sentinel-run.json` and that
+storyboard attempts drop toward the ≤1.5 target before any ladder/token
+retune.

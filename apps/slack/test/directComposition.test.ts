@@ -24,6 +24,7 @@ import {
   isFloatingPointClipOverlap,
   loadDirectComposition,
   momentSubjectPart,
+  storyboardMarkdown,
   undoDirectComposition,
   validateDirectComposition,
   type DirectCompositionDraft,
@@ -635,6 +636,44 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
       .toHaveLength(1);
     // The surviving move is the highest-energy one (pull-back outranks pan/track).
     expect(middle.camera!.path.some((move) => move.move === "pull-back")).toBe(true);
+    // The committed normalization is visible on the scene → STORYBOARD.md.
+    expect(middle.sentinelNormalizations?.length).toBe(1);
+    expect(storyboardMarkdown("t", parsed)).toContain("- Sentinel normalized: dropped 2");
+  });
+
+  it("reverts a normalization that would mint a NEW blocking finding (atomic commit)", () => {
+    // Same over-budget scene, but the brief explicitly demands 3 typed camera
+    // moves: the clamp would satisfy pacing/camera-budget while violating
+    // minCameraMoves — a finding the model never earned. The parse must
+    // revert to the model's own plan and throw ITS findings, not the
+    // normalization's.
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            camera: {
+              version: 1,
+              path: [
+                { version: 1, move: "pan", toRegion: "left", startSec: 3.2, durationSec: 0.5 },
+                { version: 1, move: "track-to-anchor", toPart: "chip", startSec: 4.0, durationSec: 0.5 },
+                { version: 1, move: "pull-back", toRegion: "wide", startSec: 4.8, durationSec: 0.5 },
+              ],
+            },
+          }
+        : scene
+    );
+    const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+    let message = "";
+    try {
+      parseStoryboardResponse(response, { minCameraMoves: 3 });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    // The model's own finding (over budget), not the normalization's side
+    // effect (too few moves after the clamp).
+    expect(message).toContain("pacing/camera-budget");
+    expect(message).not.toContain("typed camera moves");
   });
 
   it("stretches a marginal scene-boundary reading miss and cascade-shifts later scenes", () => {
