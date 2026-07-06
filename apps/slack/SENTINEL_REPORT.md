@@ -1620,9 +1620,49 @@ the phase contract's shipped scope, not the mission table as written.
 
 ### Verification (session 5)
 
-- ✅ typecheck; ✅ full suite **555 passed + 1 todo** (new: script-aware
+- ✅ typecheck; ✅ full suite **557 passed + 1 todo** (new: script-aware
   continuation, scaffold-violation triage incl. near-miss/renamed-station
   negatives, slot-repair prompt shape, telemetry downgrade/cost-honesty,
   island host-marker counting, slot-prompt surgery anchors + absence of
-  whole-doc instructions).
-- Live probes: see the session-5 probe section below.
+  whole-doc instructions, gsap-call-shape repair). The QA-cache perf spec's
+  OUTER timeout rose 40s→75s (it measures two real browser passes at ~41s;
+  the <2s cache-hit assertion is unchanged).
+- ✅ **3 paid live probes** (all fail-loud, fresh briefs/job-ids, flipped
+  defaults; see below).
+
+### Session-5 probes — the new machinery, live
+
+| Probe | Brief shape | Outcome | SB att | Src att | Calls (fail/hedge) | Tier1 | Tier2 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `sentinel-s5-slotrepair` | 5-component incident-replay console + camera world, `--render` | **published** (MP4 2.7MB, 18/18 moments, 10 thumbs) | 3 | 3 | 9 (1/7) | 11.9 min | **13.6 min** |
+| `sentinel-s5-interactions` | chat+toast+kanban+ring handoff, required rack-focus | **fail-loud** (honest: 4 author attempts died on model runtime errors) | 3 | 4 | 11 (0/6) | — | — |
+| `sentinel-s5-interactions-b` | same brief, post `gsap-call-shape` fix | **published-degraded** (`least-bad-pick:penalty=72`) | 3 | 3 | 10 (0/8) | 17.0 min | — |
+
+What the probes proved live:
+
+- **Tier-2 finally measured: 13.6 min ≤ the 14-min target** (`--render` on
+  s5-slotrepair) — the mission table's last "unproven" row now has a data
+  point, barely under target.
+- **Both new slot mechanisms fired as true positives**: the script-aware
+  continuation re-requested `runbook-ring-resolve` (interior present, script
+  missing — previously assembled silently static), and the scene-scoped
+  scaffold repair re-requested `runbook-ring-resolve` / `scattered-signal`
+  after dropped host-contract bindings, each at continuation cost instead of
+  a whole-document paid retry.
+- **The disposition ledger works**: `-b` published via the least-bad seam and
+  recorded `published-degraded` with `least-bad-pick:penalty=72` — the exact
+  class (p7-denseui) that used to report itself clean. (s5-slotrepair ran
+  BEFORE the second least-bad seam was instrumented; under today's code its
+  clean `published` would read `published-degraded` too — its terminal
+  shipped host-injected neutral "Item 1/2/3" rows, which is also why the
+  publish-time `rows-neutral-children-shipped` scan now exists.)
+- **Cost honesty is visible**: failed calls (1) and hedge duplicates (6–8 per
+  run!) now appear in `modelCalls`; the hedge rate says wall-clock pressure is
+  mostly upstream-provider latency, not attempt count.
+- **The honest fail-loud earned its keep**: s5-interactions died on three
+  distinct model runtime errors; its attempt-3 class — `fromTo(target, vars,
+  <number>)` crashing GSAP compile — was mechanically decidable and became
+  the L2 `normalize.gsap-call-shape` repair the same day. The re-run
+  published.
+- L1 scaffold now reads a REAL number per run (11 / 17 bindings preserved in
+  the shipped document).
