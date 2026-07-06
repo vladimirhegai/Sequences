@@ -93,6 +93,11 @@ import { analyzeMotionDensity } from "./motionDensity.ts";
 import { auditPacing } from "./pacingAudit.ts";
 import { readFrameMeta } from "./frameDesign.ts";
 import {
+  recordSentinelLayerFinding,
+  recordSentinelModelCall,
+  recordSentinelNormalization,
+} from "./sentinelTelemetry.ts";
+import {
   creativeModel,
   creativeThinkingMode,
   lightModel,
@@ -2195,6 +2200,7 @@ export function applyDeterministicSourceRepairs(
     const strippedPlans = stripUnusedHostPlanIslands(html, lockedStoryboard ?? draft.storyboard);
     if (strippedPlans.removed.length) {
       html = strippedPlans.html;
+      recordSentinelNormalization("island-strip", strippedPlans.removed.length);
       process.stderr.write(
         `[author] stripped unused host plan island(s): ${
           [...new Set(strippedPlans.removed)].join(", ")
@@ -2283,6 +2289,7 @@ export function applyDeterministicSourceRepairs(
       }
     }
     if (repairedBindings) {
+      recordSentinelNormalization("interaction-binding", repairedBindings);
       process.stderr.write(
         `[author] normalized ${repairedBindings} deterministic interaction binding(s)\n`,
       );
@@ -2299,6 +2306,7 @@ export function applyDeterministicSourceRepairs(
     );
     if (contractBindings.repairs) {
       html = contractBindings.html;
+      recordSentinelNormalization("contract-binding", contractBindings.repairs);
       process.stderr.write(
         `[author] reconciled ${contractBindings.repairs} cut/camera contract binding(s)\n`,
       );
@@ -2308,6 +2316,7 @@ export function applyDeterministicSourceRepairs(
     const cameraWorlds = reconcileCameraWorldPlanes(html, lockedStoryboard ?? draft.storyboard);
     if (cameraWorlds.repairs) {
       html = cameraWorlds.html;
+      recordSentinelNormalization("camera-world-plane", cameraWorlds.repairs);
       process.stderr.write(
         `[author] wrapped ${cameraWorlds.repairs} scene(s) in deterministic camera world plane(s)\n`,
       );
@@ -2320,6 +2329,7 @@ export function applyDeterministicSourceRepairs(
     );
     if (componentBindings.repairs) {
       html = componentBindings.html;
+      recordSentinelNormalization("component-binding", componentBindings.repairs);
       process.stderr.write(
         `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
       );
@@ -2332,6 +2342,7 @@ export function applyDeterministicSourceRepairs(
     );
     if (componentAliases.repairs) {
       html = componentAliases.html;
+      recordSentinelNormalization("component-alias", componentAliases.repairs);
       process.stderr.write(
         `[author] materialized ${componentAliases.repairs} component-internal cut/camera alias part(s)\n`,
       );
@@ -2482,6 +2493,7 @@ export function applyDeterministicSourceRepairs(
     );
     if (componentBindings.repairs) {
       html = componentBindings.html;
+      recordSentinelNormalization("component-binding", componentBindings.repairs);
       process.stderr.write(
         `[author] reconciled ${componentBindings.repairs} component binding(s)\n`,
       );
@@ -2655,6 +2667,7 @@ export function applyDeterministicSourceRepairs(
   const orderedRuntimes = ensureRuntimeScriptOrdering(html);
   if (orderedRuntimes.changed) {
     html = orderedRuntimes.html;
+    recordSentinelNormalization("runtime-order");
     process.stderr.write(
       "[author] normalized host runtime <script> ordering (runtimes load after GSAP, before the inline timeline)\n",
     );
@@ -2885,7 +2898,7 @@ async function completeWithRetry(
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await hedgedCompletion(provider, label, async (raceSignal) => {
+      const output = await hedgedCompletion(provider, label, async (raceSignal) => {
         const controller = new AbortController();
         const unlinkOuter = linkAbort(options.signal, controller);
         const unlinkRace = linkAbort(raceSignal, controller);
@@ -2896,6 +2909,12 @@ async function completeWithRetry(
           unlinkRace();
         }
       });
+      recordSentinelModelCall({
+        stage: label,
+        promptChars: prompt.length,
+        completionChars: output.length,
+      });
+      return output;
     } catch (error) {
       lastError = error;
       if (attempt >= attempts || isOutputTruncation(error) || !isTransientProviderError(error)) {
@@ -2932,8 +2951,14 @@ async function completeReasoningWithRetry(
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await hedgedCompletion(provider, label, (raceSignal) =>
+      const output = await hedgedCompletion(provider, label, (raceSignal) =>
         streamOnceWithWatchdog(provider, prompt, options, label, raceSignal));
+      recordSentinelModelCall({
+        stage: label,
+        promptChars: prompt.length,
+        completionChars: output.length,
+      });
+      return output;
     } catch (error) {
       lastError = error;
       if (attempt >= attempts || isOutputTruncation(error) || !isTransientProviderError(error)) {
@@ -5858,6 +5883,13 @@ async function authorComposition(
     throw error;
   } finally {
     persistAuthorRunSummary(args.projectDir, summary);
+    // Attribute each rejected author attempt to the layer that caught it —
+    // static (L3) vs browser (L4) — plus the paid re-authors it cost (L5).
+    for (const attempt of summary.attempts) {
+      if (attempt.outcome === "static-rejected") recordSentinelLayerFinding("static");
+      else if (attempt.outcome === "browser-rejected") recordSentinelLayerFinding("browser");
+      if (attempt.number > 1) recordSentinelLayerFinding("model-retry");
+    }
   }
 }
 
