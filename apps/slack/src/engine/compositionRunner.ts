@@ -135,6 +135,10 @@ import {
 } from "./sentinelTelemetry.ts";
 import { criticSkipCleanEnabled, sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./sentinelFlags.ts";
 import {
+  SENTINEL_CONTRACT,
+  type SentinelBlocking,
+} from "./sentinel.ts";
+import {
   assembleSlotComposition,
   attributeFindingsToScenes,
   extractSceneSlots,
@@ -1725,6 +1729,112 @@ function ensureTagAttr(tag: string, name: string, value: string): string {
   return tag.replace(/>$/, ` ${name}="${value}">`);
 }
 
+// The intersection of the storyboard schema's `frameAnchor` enum and the
+// anchors the layout QA's data-layout-anchor audit understands. The schema's
+// corner anchors (frame:top-left/…) have no QA equivalent and are deliberately
+// NOT forwarded — the focal part still gets data-layout-important, which
+// satisfies layout_intent_missing without minting layout_anchor_invalid.
+const SUPPORTED_LAYOUT_ANCHORS = new Set([
+  "frame:center",
+  "frame:left-third",
+  "frame:right-third",
+]);
+
+/**
+ * Tolerance (px) for a HOST-injected data-layout-anchor. The audit's 12px
+ * default assumes the author placed the element while declaring the intent;
+ * here the host forwards storyboard intent onto placement the author made
+ * without knowing an anchor audit would run, so a repair meant to satisfy
+ * layout_intent_missing must not mint layout_anchor_mismatch on a hand-placed
+ * hero that honors the intent loosely.
+ */
+const INJECTED_ANCHOR_TOLERANCE = "48";
+
+function hasDeclaredLayoutIntent(scope: string): boolean {
+  return /\bdata-layout-(?:important|anchor|align|attach|gap)\b/i.test(scope);
+}
+
+function addLayoutAttrsToFirstTag(
+  scope: string,
+  pattern: RegExp,
+  attrs: Record<string, string>,
+): { scope: string; changed: boolean } {
+  const match = pattern.exec(scope);
+  if (!match?.[0] || match.index === undefined) return { scope, changed: false };
+  let tag = match[0];
+  for (const [name, value] of Object.entries(attrs)) {
+    tag = ensureTagAttr(tag, name, value);
+  }
+  if (tag === match[0]) return { scope, changed: false };
+  return {
+    scope: scope.slice(0, match.index) + tag + scope.slice(match.index + match[0].length),
+    changed: true,
+  };
+}
+
+export function injectLayoutIntentHints(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repaired: string[] } {
+  let html = source;
+  const repaired: string[] = [];
+  for (const scene of scenes) {
+    const scopeMeta = sceneScopeLocations(html).find((entry) => entry.id === scene.id);
+    if (!scopeMeta) continue;
+    let scope = html.slice(scopeMeta.openStart, scopeMeta.closeEnd);
+    if (hasDeclaredLayoutIntent(scope)) continue;
+
+    let nextScope = scope;
+    let changed = false;
+    const anchor = scene.spatialIntent?.frameAnchor &&
+        SUPPORTED_LAYOUT_ANCHORS.has(scene.spatialIntent.frameAnchor)
+      ? scene.spatialIntent.frameAnchor
+      : undefined;
+    if (scene.spatialIntent?.focalPart) {
+      const focalPattern = new RegExp(
+        `<[a-z][\\w:-]*\\b[^>]*\\bdata-part\\s*=\\s*(["'])${
+          regexpEscape(scene.spatialIntent.focalPart)
+        }\\1[^>]*>`,
+        "i",
+      );
+      const result = addLayoutAttrsToFirstTag(nextScope, focalPattern, {
+        "data-layout-important": "1",
+        ...(anchor
+          ? {
+              "data-layout-anchor": anchor,
+              "data-layout-tolerance": INJECTED_ANCHOR_TOLERANCE,
+            }
+          : {}),
+      });
+      nextScope = result.scope;
+      changed = result.changed;
+    }
+    if (!changed && scene.spatialIntent) {
+      const sceneOpenPattern =
+        /<[a-z][\w:-]*\b[^>]*\bdata-scene\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)[^>]*>/i;
+      const result = addLayoutAttrsToFirstTag(nextScope, sceneOpenPattern, {
+        "data-layout-anchor": anchor ?? "frame:center",
+        "data-layout-tolerance": INJECTED_ANCHOR_TOLERANCE,
+      });
+      nextScope = result.scope;
+      changed = result.changed;
+    }
+    if (!changed) {
+      const knownLayoutPattern =
+        /<[a-z][\w:-]*\b(?=[^>]*\bclass\s*=\s*(["'])[^"']*\b(?:zone|panel|card|hero|stack|grid|cluster|lockup|metric|surface|frame)\b[^"']*\1)(?![^>]*\bdata-scene\s*=)[^>]*>/i;
+      const result = addLayoutAttrsToFirstTag(nextScope, knownLayoutPattern, {
+        "data-layout-important": "1",
+      });
+      nextScope = result.scope;
+      changed = result.changed;
+    }
+    if (!changed) continue;
+    html = html.slice(0, scopeMeta.openStart) + nextScope + html.slice(scopeMeta.closeEnd);
+    repaired.push(scene.id);
+  }
+  return { html, repaired };
+}
+
 /**
  * Bind a declared component whose `data-part` element is entirely missing from
  * the scene to the one unambiguous, still-unlabeled candidate the author left
@@ -1996,6 +2106,63 @@ function rootDurationSec(source: string): number | undefined {
 
 function cssString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function cssCommentSafe(value: string): string {
+  // `*/` would close the comment; `<`/`>` could smuggle `</style>` past the
+  // HTML parser (a style element ends at the literal tag regardless of CSS
+  // comment state); `$` is special in String.replace replacement strings.
+  return value.replace(/\*\//g, "* /").replace(/[<>$]/g, "");
+}
+
+function safeContrastSelector(selector: string): boolean {
+  return /^(?:#[A-Za-z_][\w-]*|[a-z][\w-]*(?:\.[A-Za-z_][\w-]*){1,3})$/.test(selector);
+}
+
+function safeCssColor(value: string | undefined): value is string {
+  return typeof value === "string" &&
+    /^rgb\(\s*(?:\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\s*,\s*(?:\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\s*,\s*(?:\d|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])\s*\)$/i
+      .test(value);
+}
+
+export function repairContrastAaIssues(
+  draft: DirectCompositionDraft,
+  browserQa: DirectBrowserQaResult,
+): { draft: DirectCompositionDraft; repaired: string[] } {
+  const bySelector = new Map<string, DirectLayoutIssue>();
+  for (const issue of browserQa.issues ?? []) {
+    if (
+      issue.code !== "contrast_aa" ||
+      !safeContrastSelector(issue.selector) ||
+      !safeCssColor(issue.contrast?.suggestedColor)
+    ) {
+      continue;
+    }
+    const existing = bySelector.get(issue.selector);
+    if (!existing || (issue.contrast?.ratio ?? 999) < (existing.contrast?.ratio ?? 999)) {
+      bySelector.set(issue.selector, issue);
+    }
+  }
+  if (!bySelector.size) return { draft, repaired: [] };
+
+  const rules = [...bySelector.values()].map((issue) =>
+    `${issue.selector}{color:${issue.contrast!.suggestedColor} !important;}` +
+    `/* contrast ${issue.contrast!.ratio}:1 -> ${issue.contrast!.required}:1` +
+    `${issue.text ? ` ${cssCommentSafe(issue.text.slice(0, 32))}` : ""} */`
+  );
+  const style = `<style data-sequences-contrast-repair>\n${rules.join("\n")}\n</style>`;
+  let html = draft.html.replace(
+    /\n?\s*<style\b[^>]*\bdata-sequences-contrast-repair\b[^>]*>[\s\S]*?<\/style>/gi,
+    "",
+  );
+  // Function replacer: the style block carries audited on-screen text, and a
+  // string replacement would interpret `$&`/`$'`-style patterns inside it.
+  html = /<\/head>/i.test(html)
+    ? html.replace(/<\/head>/i, () => `${style}</head>`)
+    : `${style}\n${html}`;
+  return html === draft.html
+    ? { draft, repaired: [] }
+    : { draft: { ...draft, html }, repaired: [...bySelector.keys()] };
 }
 
 function decorativeLivenessName(value: string): boolean {
@@ -2512,6 +2679,17 @@ export function applyDeterministicSourceRepairs(
         `[author] stripped ${strippedPlans.removed.length} host plan island(s) ` +
           `(${modelAuthored} model-authored, re-injected canonically): ` +
           `${[...new Set(strippedPlans.removed)].join(", ")}\n`,
+      );
+    }
+  }
+  {
+    const layoutHints = injectLayoutIntentHints(html, lockedStoryboard ?? draft.storyboard);
+    if (layoutHints.repaired.length) {
+      html = layoutHints.html;
+      recordSentinelNormalization("layout-intent", layoutHints.repaired.length);
+      process.stderr.write(
+        `[author] injected minimal layout intent hint(s) for scene(s): ` +
+          `${layoutHints.repaired.join(", ")}\n`,
       );
     }
   }
@@ -6254,6 +6432,99 @@ function browserQualityPenalty(
     );
 }
 
+const SENTINEL_BLOCKING_BY_PREFIX = SENTINEL_CONTRACT.flatMap((row) =>
+  row.findingPrefixes.map((prefix) => ({ prefix, blocking: row.blocking }))
+);
+
+const EARLY_LEAST_BAD_MAX_PENALTY = (() => {
+  const raw = Number(process.env.SLACK_SEQUENCES_EARLY_LEAST_BAD_MAX_PENALTY);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 4;
+})();
+
+function sentinelBlockingForFinding(finding: string): SentinelBlocking | undefined {
+  const normalized = finding.trim();
+  return SENTINEL_BLOCKING_BY_PREFIX.find((entry) =>
+    normalized.startsWith(entry.prefix)
+  )?.blocking;
+}
+
+function isMomentStaticFrameFinding(finding: string): boolean {
+  return finding.trim().startsWith("moment_static_frame");
+}
+
+function hasHardLivenessOrBlankIssue(browserQa: DirectBrowserQaResult): boolean {
+  return (browserQa.errors ?? []).some((entry) =>
+    entry.startsWith("near_blank_film:") ||
+    entry.startsWith("motion/liveness") ||
+    entry.includes("motion/liveness")
+  );
+}
+
+/**
+ * Browser feedback for paid source retries. `moment_static_frame` is rendered
+ * temporal-judge polish: useful operator evidence, but not a source retry
+ * cause unless the same draft has a hard liveness/blank-frame defect.
+ */
+export function sourceRetryFeedbackForBrowserQa(
+  browserQa: DirectBrowserQaResult,
+  staticRepairWarnings: string[] = [],
+): string[] {
+  const keepMomentStatic = hasHardLivenessOrBlankIssue(browserQa);
+  return dedupeFeedbackBySignature([
+    ...staticRepairWarnings,
+    ...(browserQa.errors ?? []),
+    ...(browserQa.warnings ?? []).filter((warning) =>
+      keepMomentStatic || !isMomentStaticFrameFinding(warning)
+    ),
+  ]);
+}
+
+function staticWarningBlocksEarlyLeastBad(warning: string): boolean {
+  const blocking = sentinelBlockingForFinding(warning);
+  return blocking !== "advisory" && blocking !== "advisory-late";
+}
+
+function browserIssueBlocksEarlyLeastBad(issue: DirectLayoutIssue): boolean {
+  if (issue.severity === "info") return false;
+  if (issue.code === "moment_static_frame") return false;
+  if (HIGH_VISIBILITY_ISSUE_WEIGHTS[issue.code] !== undefined) return true;
+  const blocking = sentinelBlockingForFinding(issue.code);
+  if (blocking === "advisory" || blocking === "advisory-late") return false;
+  return true;
+}
+
+/**
+ * Attempt-2 budget broker: publish a banked browser-valid draft early only
+ * when the remaining findings are low-penalty advisory/polish classes. This
+ * saves the third paid author pass without weakening hard runtime, blank-film,
+ * interaction, or high-visibility visual gates.
+ */
+export function earlyLeastBadPublishReason(
+  candidate: CompositionRunResult & { qualityPenalty: number },
+): string | undefined {
+  const browserQa = candidate.browserQa;
+  if (!browserQa || !browserQa.ok || browserQa.infraError) return undefined;
+  if (candidate.qualityPenalty > EARLY_LEAST_BAD_MAX_PENALTY) return undefined;
+  if ((browserQa.warnings ?? []).some((warning) => warning.startsWith("browser_warning:"))) {
+    return undefined;
+  }
+  if ((candidate.staticRepairWarnings ?? []).some(staticWarningBlocksEarlyLeastBad)) {
+    return undefined;
+  }
+  if ((browserQa.issues ?? []).some(browserIssueBlocksEarlyLeastBad)) return undefined;
+  const codes = [
+    ...new Set([
+      ...(browserQa.issues ?? []).map((issue) => issue.code),
+      ...(candidate.staticRepairWarnings ?? []).map((warning) =>
+        warning.split(/\s+/, 1)[0] ?? "static-warning"
+      ),
+    ]),
+  ];
+  return `early-least-bad-pick:penalty=${candidate.qualityPenalty};findings=${
+    codes.length ? codes.join(",") : "polish"
+  }`;
+}
+
 /**
  * Sentinel Phase 3 critic gating: a draft the deterministic gates already
  * love has nothing for the continuity critic to repair, so its 1-2 paid
@@ -7954,6 +8225,29 @@ async function authorCompositionLoop(
   let lastBrowserValid:
     | (CompositionRunResult & { qualityPenalty: number })
     | undefined;
+  // Sentinel slot persistence (2026-07-07): the slot map that assembled the
+  // current retry baseline (`scratch`). Attempt 1's scene-addressable state
+  // used to die with its loop iteration — persisted ledgers showed slotCalls:0
+  // on retry-heavy runs — so every recovery attempt re-gambled the whole
+  // document. While the baseline is still slot-assembled, a rejected attempt
+  // first re-authors ONLY the failing scenes (one bounded call) before any
+  // whole-document patch; adopting a non-slot draft invalidates the map.
+  let persistedSlots: ParsedSceneSlots | undefined;
+  let slotRetryUsed = false;
+  const publishBrowserValidCandidate = (
+    candidate: CompositionRunResult & { qualityPenalty: number },
+    attempts: number,
+    reason: string,
+  ): CompositionRunResult => {
+    process.stderr.write(
+      `[author] ${reason}; publishing browser-valid attempt ${candidate.attempts}/3 ` +
+        `after ${attempts} attempt(s)\n`,
+    );
+    summary.strategyChanges.push(reason);
+    recordSentinelDegradation(reason);
+    const { qualityPenalty: _qualityPenalty, ...best } = candidate;
+    return { ...best, attempts };
+  };
   // The most recent draft whose ONLY static blockers were declared-moment
   // paperwork (`storyboard/moments:` findings) — the last-resort salvage
   // candidate if the whole ladder exhausts (see the pre-throw salvage below).
@@ -8024,27 +8318,72 @@ async function authorCompositionLoop(
         ...(patchMode && structuredPatches ? { responseFormat: PATCH_RESPONSE_FORMAT } : {}),
         ...(selectedTier ? { model: selectedTier } : {}),
       };
-      let raw: string;
-      let parsedDraft: DirectCompositionDraft;
+      let raw = "";
+      let parsedDraft: DirectCompositionDraft | undefined;
       let activeSlots: ParsedSceneSlots | undefined;
       let sceneValidationRepairUsed = false;
-      if (useSlots) {
-        const slotResult = await authorSlotDraft(provider, args, prompt, completeOptions);
-        raw = slotResult.raw;
-        parsedDraft = slotResult.draft;
-        activeSlots = slotResult.slots;
-      } else {
-        raw = patchMode
-          ? await completeWithRetry(provider, prompt, completeOptions, "author patch")
-          : await completeSourceWithContinuation(provider, prompt, completeOptions);
-        parsedDraft = patchMode
-          ? applyCompositionRepair(raw, scratch!)
-          : args.lockedStoryboard
-            ? {
-                storyboard: args.lockedStoryboard,
-                html: extractIndexHtmlSource(raw),
-              }
-            : parseCompositionResponse(raw);
+      // True while THIS attempt's draft is a host assembly of `activeSlots` —
+      // the precondition for every scene-scoped repair seam below.
+      let draftFromSlots = false;
+      if (
+        patchMode &&
+        !slotRetryUsed &&
+        persistedSlots &&
+        args.lockedStoryboard &&
+        validationFeedback?.length
+      ) {
+        // Scene-slot retry rung: while the retry baseline is still the slot
+        // assembly, repair ONLY the scenes the findings name (one bounded
+        // call) instead of gambling a whole-document patch. Findings that
+        // attribute to no scene fall through to the ladder unchanged.
+        try {
+          const sceneRepair = await repairSlotDraftForFindings(
+            provider,
+            args,
+            persistedSlots,
+            validationFeedback,
+            completeOptions,
+          );
+          if (sceneRepair) {
+            slotRetryUsed = true;
+            raw = sceneRepair.raw;
+            parsedDraft = sceneRepair.draft;
+            activeSlots = sceneRepair.slots;
+            draftFromSlots = true;
+            summary.strategyChanges.push(`slot-retry:${sceneRepair.sceneIds.join(",")}`);
+            process.stderr.write(
+              `[author] attempt ${attempt}/3 scene-slot retry re-authored only: ` +
+                `${sceneRepair.sceneIds.join(", ")}\n`,
+            );
+          }
+        } catch (slotRetryError) {
+          process.stderr.write(
+            `[author] scene-slot retry failed; falling back to the whole-document ladder: ${
+              slotRetryError instanceof Error ? slotRetryError.message : String(slotRetryError)
+            }\n`,
+          );
+        }
+      }
+      if (!parsedDraft) {
+        if (useSlots) {
+          const slotResult = await authorSlotDraft(provider, args, prompt, completeOptions);
+          raw = slotResult.raw;
+          parsedDraft = slotResult.draft;
+          activeSlots = slotResult.slots;
+          draftFromSlots = true;
+        } else {
+          raw = patchMode
+            ? await completeWithRetry(provider, prompt, completeOptions, "author patch")
+            : await completeSourceWithContinuation(provider, prompt, completeOptions);
+          parsedDraft = patchMode
+            ? applyCompositionRepair(raw, scratch!)
+            : args.lockedStoryboard
+              ? {
+                  storyboard: args.lockedStoryboard,
+                  html: extractIndexHtmlSource(raw),
+                }
+              : parseCompositionResponse(raw);
+        }
       }
       attemptRaw = raw;
       process.stderr.write(`[author] attempt ${attempt}/3 response ${raw.length} chars\n`);
@@ -8073,7 +8412,7 @@ async function authorCompositionLoop(
           validation = await validateDirectComposition(args.projectDir, draft);
         }
       }
-      if (!validation.ok && useSlots && activeSlots && args.lockedStoryboard) {
+      if (!validation.ok && draftFromSlots && activeSlots && args.lockedStoryboard) {
         try {
           const sceneRepair = await repairSlotDraftForFindings(
             provider,
@@ -8209,7 +8548,11 @@ async function authorCompositionLoop(
           args.lockedStoryboard &&
           lockedSceneGraphError(draft.html, args.lockedStoryboard),
         );
-        if (!patchMode && !graphBroken) scratch = draft;
+        if (!patchMode && !graphBroken) {
+          scratch = draft;
+          // Bank (or invalidate) the slot map alongside the baseline it built.
+          persistedSlots = draftFromSlots ? activeSlots : undefined;
+        }
         compact = true;
         // Non-convergence switch: a structural signature that survived the
         // very patch asked to fix it will not yield to a second identical
@@ -8232,9 +8575,16 @@ async function authorCompositionLoop(
           );
           summary.strategyChanges.push("full-reauthor-after-stalled-patch");
           scratch = undefined;
+          persistedSlots = undefined;
         }
         previousStaticSignatures = signatures;
         lastError = new Error(validationFeedback.join("; "));
+        if (attempt === 2 && lastBrowserValid) {
+          const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+          if (earlyReason) {
+            return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+          }
+        }
         continue;
       }
       // Static validation passed, so every tracked structural binding is now
@@ -8254,16 +8604,14 @@ async function authorCompositionLoop(
       }
       if (
         !browserQa.strictOk &&
-        useSlots &&
+        draftFromSlots &&
         activeSlots &&
         args.lockedStoryboard &&
         !sceneValidationRepairUsed
       ) {
-        const browserFindings = dedupeFeedbackBySignature([
+        const browserFindings = sourceRetryFeedbackForBrowserQa(browserQa, [
           ...validation.frameWarnings,
           ...validation.motionWarnings,
-          ...browserQa.errors,
-          ...browserQa.warnings,
         ]);
         try {
           const sceneRepair = await repairSlotDraftForFindings(
@@ -8328,6 +8676,42 @@ async function authorCompositionLoop(
           );
         }
       }
+      let staticRepairWarnings = [
+        ...validation.frameWarnings,
+        ...validation.motionWarnings,
+      ];
+      if (browserQa.ok && browserQa.issues?.some((issue) => issue.code === "contrast_aa")) {
+        const contrastRepair = repairContrastAaIssues(draft, browserQa);
+        if (contrastRepair.repaired.length) {
+          const candidateValidation = await validateDirectComposition(
+            args.projectDir,
+            contrastRepair.draft,
+          );
+          if (candidateValidation.ok) {
+            const candidateQa = await inspectDirectComposition(args.projectDir, contrastRepair.draft, {
+              captureGuide: false,
+            });
+            const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
+            const afterStaticWarnings = [
+              ...candidateValidation.frameWarnings,
+              ...candidateValidation.motionWarnings,
+            ];
+            const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
+            if (!candidateQa.infraError && candidateQa.ok && afterPenalty < beforePenalty) {
+              process.stderr.write(
+                `[author] deterministically repaired contrast for ` +
+                  `${contrastRepair.repaired.join(", ")}: penalty ${beforePenalty} -> ${afterPenalty}\n`,
+              );
+              recordSentinelNormalization("contrast-aa", contrastRepair.repaired.length);
+              summary.strategyChanges.push(`contrast-aa:${contrastRepair.repaired.join(",")}`);
+              draft = contrastRepair.draft;
+              validation = candidateValidation;
+              browserQa = candidateQa;
+              staticRepairWarnings = afterStaticWarnings;
+            }
+          }
+        }
+      }
       if (
         !browserQa.ok &&
         browserInteractionIssues(draft, browserQa).some((issue) =>
@@ -8339,10 +8723,6 @@ async function authorCompositionLoop(
         interactionFallbacks.push({ draft, raw, browserQa });
       }
       if (browserQa.ok) {
-        const staticRepairWarnings = [
-          ...validation.frameWarnings,
-          ...validation.motionWarnings,
-        ];
         const qualityPenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
         if (!lastBrowserValid || qualityPenalty < lastBrowserValid.qualityPenalty) {
           lastBrowserValid = {
@@ -8364,7 +8744,21 @@ async function authorCompositionLoop(
         validation.frameWarnings.length === 0 &&
         validation.motionWarnings.length === 0
       ) {
+        // moment_static_frame no longer blocks strictOk (temporal-judge polish
+        // is advisory), but a film shipping moments its own rendered frames
+        // can't prove is not a CLEAN publish — keep the honesty ledger exact.
+        const staticMomentCount = (browserQa.temporalJudge ?? [])
+          .filter((entry) => entry.verdict === "static").length;
+        if (staticMomentCount > 0) {
+          recordSentinelDegradation(`moment_static_frame:${staticMomentCount}`);
+        }
         return { draft, raw, attempts: attempt, browserQa };
+      }
+      if (attempt === 2 && lastBrowserValid) {
+        const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+        if (earlyReason) {
+          return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+        }
       }
       if (attempt === 3 && browserQa.ok && lastBrowserValid) {
         // The least-bad pick: browser-valid but with open polish findings /
@@ -8377,11 +8771,9 @@ async function authorCompositionLoop(
         const { qualityPenalty: _qualityPenalty, ...best } = lastBrowserValid;
         return { ...best, attempts: attempt };
       }
-      validationFeedback = dedupeFeedbackBySignature([
+      validationFeedback = sourceRetryFeedbackForBrowserQa(browserQa, [
         ...validation.frameWarnings,
         ...validation.motionWarnings,
-        ...browserQa.errors,
-        ...browserQa.warnings,
       ]).slice(0, 20);
       process.stderr.write(
         `[author] attempt ${attempt}/3 browser QA requested repair: ` +
@@ -8419,9 +8811,12 @@ async function authorCompositionLoop(
             : "full-reauthor-after-runtime-bind-exception",
         );
         scratch = undefined;
+        persistedSlots = undefined;
         compact = false;
       } else {
         scratch = draft;
+        // Bank (or invalidate) the slot map alongside the baseline it built.
+        persistedSlots = draftFromSlots ? activeSlots : undefined;
         compact = true;
       }
       lastError = new Error(validationFeedback.join("; "));
@@ -8468,10 +8863,19 @@ async function authorCompositionLoop(
       if (truncated) {
         // A truncated full composition cannot be repaired because it never
         // parsed. A truncated patch can retry safely against the same scratch.
-        if (!patchMode) scratch = undefined;
+        if (!patchMode) {
+          scratch = undefined;
+          persistedSlots = undefined;
+        }
         compact = true;
       }
       lastError = error;
+      if (attempt === 2 && lastBrowserValid) {
+        const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+        if (earlyReason) {
+          return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+        }
+      }
     }
   }
   if (lastBrowserValid) {

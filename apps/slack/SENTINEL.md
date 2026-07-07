@@ -40,6 +40,16 @@ remainder keeps the whole-document ladder. (It formerly declined whenever ANY
 finding was film-level, which left it inert on dense briefs — the s5-interactions
 class always mixes one film-level finding into otherwise scene-local rejections.)
 
+**Slots persist across paid attempts (2026-07-07).** The slot map that assembled
+the retry baseline (`scratch`) now survives the loop iteration. While the
+baseline is still slot-assembled, a rejected attempt first runs the
+**scene-slot retry rung**: `repairSlotDraftForFindings` re-authors ONLY the
+scenes the findings name (one bounded ≤8k-token call, at most once per run,
+`strategyChanges: slot-retry:<scenes>`) instead of gambling a whole-document
+patch. Findings that attribute to no scene fall through to the ladder unchanged;
+adopting any non-slot draft (a whole-doc patch, a compact/full re-author, a
+structural escalation) invalidates the map. Proof: `test/slotRetry.test.ts`.
+
 ## The layer model
 
 Every obligation lives at exactly ONE layer, and every new feature is placed at

@@ -304,6 +304,17 @@ describe("deriveGradeShifts (MD4 host derivation)", () => {
     ).toBeUndefined();
   });
 
+  it("ignores bare 'cool' — everyday SaaS copy, not a temperature turn", () => {
+    expect(
+      deriveGradeShifts([turnScene("cool insights keep your team calm")]).storyboard[0]?.gradeShift,
+    ).toBeUndefined();
+    // The inflected turn verb still counts.
+    expect(
+      deriveGradeShifts([turnScene("the dashboard cools as alerts clear")])
+        .storyboard[0]?.gradeShift?.toGrade,
+    ).toBe("cold");
+  });
+
   it("auto-derives at most ONE shift per film — the earliest turn — leaving the 2nd budget slot for the planner", () => {
     const scenes = ["a", "b", "c"].map((id, index) =>
       scene({

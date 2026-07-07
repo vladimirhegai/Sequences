@@ -155,8 +155,19 @@ export function recordSentinelHedge(stage: string): void {
   state.hedgedModelCalls[stage] = (state.hedgedModelCalls[stage] ?? 0) + 1;
 }
 
+function hedgeReserveForSourceAuthor(): number {
+  const raw = Number(process.env.SLACK_SEQUENCES_HEDGE_SOURCE_AUTHOR_RESERVE);
+  return Number.isInteger(raw) && raw >= 0 ? raw : 1;
+}
+
+function isSourceAuthorHedgeStage(stage: string): boolean {
+  return /\bauthor(?:\s|$)|source-author/i.test(stage);
+}
+
 /**
- * Atomically claim one hedge from a per-run budget. Calls outside a Sentinel
+ * Atomically claim one hedge from a per-run budget. A small source-author
+ * reservation prevents slow planning/storyboard calls from consuming every
+ * duplicate before the expensive author path begins. Calls outside a Sentinel
  * context (unit helpers/non-create flows) retain the historical behavior.
  */
 export function claimSentinelHedge(stage: string, maxPerRun: number): boolean {
@@ -164,6 +175,14 @@ export function claimSentinelHedge(stage: string, maxPerRun: number): boolean {
   if (!state) return true;
   const used = Object.values(state.hedgedModelCalls).reduce((sum, count) => sum + count, 0);
   if (used >= maxPerRun) return false;
+  const authorReserve = Math.min(hedgeReserveForSourceAuthor(), maxPerRun);
+  if (authorReserve > 0 && !isSourceAuthorHedgeStage(stage)) {
+    const authorUsed = Object.entries(state.hedgedModelCalls)
+      .filter(([hedgedStage]) => isSourceAuthorHedgeStage(hedgedStage))
+      .reduce((sum, [, count]) => sum + count, 0);
+    const missingAuthorReserve = Math.max(0, authorReserve - authorUsed);
+    if (maxPerRun - used <= missingAuthorReserve) return false;
+  }
   recordSentinelHedge(stage);
   return true;
 }

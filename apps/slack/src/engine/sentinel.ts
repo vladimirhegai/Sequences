@@ -604,6 +604,23 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "(normalize.source-bindings); ambiguity and measured invisibility stay here.",
   },
   {
+    id: "interactions.near-miss-normalize",
+    group: "interactions",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: ["cursor_near_miss"],
+    promptCostChars: 0,
+    test: "test/layoutInspector.test.ts",
+    addedBecause:
+      "2026-07-07: a measured cursor endpoint within 3px of its target is " +
+      "sub-perceptual easing drift, not a defect — auditInteractions snaps the " +
+      "evidence to the measured target anchor and labels it " +
+      "normalized:\"cursor_near_miss\" instead of burning a paid retry on an " +
+      "interaction_target_miss. >3px stays a hard blocking miss (the 4px " +
+      "regression test). Recorded as normalization tag cursor-near-miss so the " +
+      "ledger never hides the snap.",
+  },
+  {
     id: "moments.temporal",
     group: "moments",
     layer: "browser",

@@ -115,6 +115,22 @@ describe("sentinel telemetry — cost honesty", () => {
     expect(calls.hedgedTotal).toBe(2);
   });
 
+  it("reserves a hedge for source-author before non-author stages spend the cap", () => {
+    const dir = tempDir();
+    beginSentinelRun(dir);
+    expect(claimSentinelHedge("storyboard", 2)).toBe(true);
+    expect(claimSentinelHedge("storyboard rescue", 2)).toBe(false);
+    expect(claimSentinelHedge("author source", 2)).toBe(true);
+    finalizeSentinelRun("published");
+    const run = readRun(dir);
+    const calls = run.modelCalls as Record<string, unknown>;
+    expect(calls.hedgedTotal).toBe(2);
+    expect(calls.hedged).toMatchObject({
+      storyboard: 1,
+      "author source": 1,
+    });
+  });
+
   it("records tier wall-clock from run start where the tier artifact exists", () => {
     const dir = tempDir();
     beginSentinelRun(dir);

@@ -9,6 +9,7 @@ import {
 import {
   applyCompositionRepair,
   inferStoryboardPlanRequirements,
+  injectLayoutIntentHints,
   normalizeWorldLayout,
   parseCompositionResponse,
   parseStoryboardResponse,
@@ -18,6 +19,9 @@ import {
   requestStoryboardPlan,
   retimeUnmotivatedTimeRamps,
   criticSkippableCleanDraft,
+  earlyLeastBadPublishReason,
+  repairContrastAaIssues,
+  sourceRetryFeedbackForBrowserQa,
   StoryboardValidationError,
 } from "../src/engine/compositionRunner.ts";
 import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
@@ -1114,6 +1118,219 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     // critic can improve — the least-bad penalty weights these, so the skip
     // predicate must too (Phase-5 audit item S3a).
     expect(criticSkippableCleanDraft(base, ["frame: hero contrast repaired"])).toBe(false);
+  });
+
+  it("allows the attempt-2 broker to publish low-penalty advisory layout polish", () => {
+    const browserQa: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "layout_intent_missing",
+        severity: "warning",
+        time: 2,
+        selector: "#scene",
+        message: "Visible scene declares no relational layout intent.",
+        source: "sequences",
+      }],
+      warnings: ["layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent."],
+    };
+    const reason = earlyLeastBadPublishReason({
+      draft: draft(),
+      raw: "<index_html></index_html>",
+      attempts: 1,
+      browserQa,
+      qualityPenalty: 1,
+    });
+    expect(reason).toContain("early-least-bad-pick:penalty=1");
+  });
+
+  it("keeps high-visibility browser findings out of the early broker", () => {
+    const browserQa: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "camera_framed_clipped",
+        severity: "error",
+        time: 6,
+        selector: "[data-part=\"hero\"]",
+        message: "clipped",
+        source: "sequences",
+      }],
+      warnings: ["camera_framed_clipped [data-part=\"hero\"] (t=6.00s): clipped"],
+    };
+    expect(earlyLeastBadPublishReason({
+      draft: draft(),
+      raw: "<index_html></index_html>",
+      attempts: 1,
+      browserQa,
+      qualityPenalty: 10,
+    })).toBeUndefined();
+  });
+
+  it("removes moment_static_frame from source retry feedback unless the film is blank", () => {
+    const qa: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      warnings: [
+        "moment_static_frame moment:m-ghost (t=6.00s): invisible change",
+        "layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent.",
+      ],
+    };
+    expect(sourceRetryFeedbackForBrowserQa(qa)).toEqual([
+      "layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent.",
+    ]);
+    expect(sourceRetryFeedbackForBrowserQa({
+      ...qa,
+      errors: ["near_blank_film: 1 scene renders as blank frames"],
+    })).toContain("moment_static_frame moment:m-ghost (t=6.00s): invisible change");
+  });
+
+  it("injects deterministic selector-scoped contrast repairs from browser QA metadata", () => {
+    const repaired = repairContrastAaIssues(draft(), {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "contrast_aa",
+        severity: "warning",
+        time: 2,
+        selector: "#sell-btn-el",
+        text: "Sell it",
+        message: "Contrast is 2.57:1; needs 3:1.",
+        fixHint: "Adjust the existing semantic color.",
+        source: "hyperframes",
+        contrast: {
+          ratio: 2.57,
+          required: 3,
+          foreground: "rgb(120,120,120)",
+          background: "rgb(210,210,210)",
+          suggestedColor: "rgb(80,80,80)",
+        },
+      }, {
+        code: "contrast_aa",
+        severity: "warning",
+        time: 2,
+        selector: "div",
+        text: "Too broad",
+        message: "Contrast is 2.57:1; needs 3:1.",
+        fixHint: "Adjust the existing semantic color.",
+        source: "hyperframes",
+        contrast: {
+          ratio: 2.57,
+          required: 3,
+          foreground: "rgb(120,120,120)",
+          background: "rgb(210,210,210)",
+          suggestedColor: "rgb(80,80,80)",
+        },
+      }],
+      warnings: ["contrast_aa #sell-btn-el (t=2.00s): Contrast is 2.57:1; needs 3:1."],
+    });
+    expect(repaired.repaired).toEqual(["#sell-btn-el"]);
+    expect(repaired.draft.html).toContain("data-sequences-contrast-repair");
+    expect(repaired.draft.html).toContain("#sell-btn-el{color:rgb(80,80,80) !important;}");
+    expect(repaired.draft.html).not.toContain("div{color:");
+  });
+
+  it("contrast repair neutralizes replace-pattern and style-closing text in the comment", () => {
+    const before = draft();
+    const repaired = repairContrastAaIssues(before, {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "contrast_aa",
+        severity: "warning",
+        time: 2,
+        selector: "#sell-btn-el",
+        // On-screen copy is untrusted: `$'` / `$&` are special in String.replace
+        // replacement strings and `</style>` would end the injected block.
+        text: "$' $& </style> $$9",
+        message: "Contrast is 2.57:1; needs 3:1.",
+        fixHint: "Adjust the existing semantic color.",
+        source: "hyperframes",
+        contrast: {
+          ratio: 2.57,
+          required: 3,
+          suggestedColor: "rgb(80,80,80)",
+        },
+      }],
+      warnings: ["contrast_aa #sell-btn-el (t=2.00s): Contrast is 2.57:1; needs 3:1."],
+    });
+    expect(repaired.repaired).toEqual(["#sell-btn-el"]);
+    expect(repaired.draft.html).toContain("#sell-btn-el{color:rgb(80,80,80) !important;}");
+    // The style block closes exactly once and no replacement pattern expanded.
+    const styleBlock = repaired.draft.html.match(
+      /<style data-sequences-contrast-repair>[\s\S]*?<\/style>/,
+    )?.[0] ?? "";
+    expect(styleBlock).not.toContain("$");
+    expect(styleBlock).not.toContain("</style> ");
+    const headCloses = repaired.draft.html.match(/<\/head>/gi) ?? [];
+    expect(headCloses.length).toBeLessThanOrEqual(1);
+  });
+
+  it("injects missing layout intent from storyboard spatial intent", () => {
+    const value = draft();
+    const scenes = [{
+      ...value.storyboard[0]!,
+      spatialIntent: {
+        version: 1 as const,
+        focalPart: "hero-copy",
+        composition: "centered hero claim",
+        relationships: [],
+        frameAnchor: "frame:left-third" as const,
+      },
+    }];
+    const source = value.html
+      .replace('data-layout-important data-layout-anchor="frame:center"', "")
+      .replace('<h1 id="hook-title">', '<h1 id="hook-title" data-part="hero-copy">');
+
+    const repaired = injectLayoutIntentHints(source, scenes);
+
+    expect(repaired.repaired).toEqual(["hook"]);
+    expect(repaired.html).toContain(
+      '<h1 id="hook-title" data-part="hero-copy" data-layout-important="1" ' +
+        'data-layout-anchor="frame:left-third" data-layout-tolerance="48">',
+    );
+  });
+
+  it("injects a scene-level layout anchor when spatial intent has no authored focal part", () => {
+    const value = draft();
+    const scenes = [{
+      ...value.storyboard[0]!,
+      spatialIntent: {
+        version: 1 as const,
+        focalPart: "absent-copy",
+        composition: "centered hero claim",
+        relationships: [],
+      },
+    }];
+    const source = value.html.replace('data-layout-important data-layout-anchor="frame:center"', "");
+
+    const repaired = injectLayoutIntentHints(source, scenes);
+
+    expect(repaired.repaired).toEqual(["hook"]);
+    expect(repaired.html).toContain(
+      '<section id="hook" class="scene clip" data-scene="hook" data-start="0" ' +
+        'data-duration="4" data-track-index="1" data-layout-anchor="frame:center" ' +
+        'data-layout-tolerance="48">',
+    );
+  });
+
+  it("leaves existing authored layout intent unchanged", () => {
+    const value = draft();
+    const scenes = [{
+      ...value.storyboard[0]!,
+      spatialIntent: {
+        version: 1 as const,
+        focalPart: "hero-copy",
+        composition: "centered hero claim",
+        relationships: [],
+        frameAnchor: "frame:left-third" as const,
+      },
+    }];
+
+    const repaired = injectLayoutIntentHints(value.html, scenes);
+
+    expect(repaired.repaired).toEqual([]);
+    expect(repaired.html).toBe(value.html);
   });
 });
 
@@ -2596,14 +2813,6 @@ describe("direct HyperFrames composition", () => {
         issues: [],
         errors: ["browser runtime failed"],
         warnings: [],
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        strictOk: false,
-        samples: [],
-        issues: [],
-        errors: ["browser runtime still failed"],
-        warnings: [],
       });
     const provider: AgentProvider = {
       id: "openrouter-api",
@@ -2618,7 +2827,7 @@ describe("direct HyperFrames composition", () => {
       skills: skills(),
       lockedStoryboard: initial.storyboard,
     });
-    expect(result.attempts).toBe(3);
+    expect(result.attempts).toBe(2);
     expect(result.draft.html).toBe(withHostInjections(initial.html));
   });
 
@@ -2661,9 +2870,9 @@ describe("direct HyperFrames composition", () => {
       lockedStoryboard: initial.storyboard,
     });
 
-    expect(result.attempts).toBe(3);
+    expect(result.attempts).toBe(2);
     expect(result.draft.html).toBe(withHostInjections(initial.html));
-    expect(complete).toHaveBeenCalledTimes(3);
+    expect(complete).toHaveBeenCalledTimes(2);
   });
 
   it("mechanically replaces unseeded randomness before spending a model repair", async () => {

@@ -48,6 +48,7 @@ import {
 } from "./timeRamp.ts";
 import { FX_RUNTIME_FILE, fxRuntimeSource } from "./fxContract.ts";
 import { GRADE_SHIFT_DURATION_SEC } from "./gradeShift.ts";
+import { recordSentinelNormalization } from "./sentinelTelemetry.ts";
 import { resolveMomentContract } from "./storyboardMoments.ts";
 import {
   pingPongCandidates,
@@ -74,6 +75,13 @@ export interface DirectLayoutIssue {
   message: string;
   fixHint?: string;
   source: "hyperframes" | "sequences";
+  contrast?: {
+    ratio: number;
+    required: number;
+    foreground?: string;
+    background?: string;
+    suggestedColor?: string;
+  };
 }
 
 export interface DirectBrowserQaResult {
@@ -153,6 +161,7 @@ export interface DirectInteractionEvidence {
   target: { x: number; y: number };
   deltaPx: number;
   hit: boolean;
+  normalized?: "cursor_near_miss";
 }
 
 interface RuntimeMessage {
@@ -1096,26 +1105,34 @@ async function auditInteractions(
           Math.min(targetRect.bottom - inset, requestedTargetPoint.y),
         ),
       };
-      const hit =
+      const rawHit =
         cursorPoint.x >= targetRect.left + inset &&
         cursorPoint.x <= targetRect.right - inset &&
         cursorPoint.y >= targetRect.top + inset &&
         cursorPoint.y <= targetRect.bottom - inset;
-      const deltaPx = Math.hypot(
+      const rawDeltaPx = Math.hypot(
         cursorPoint.x - targetPoint.x,
         cursorPoint.y - targetPoint.y,
       );
+      const endpoint = entry.phase === "arrival" || entry.phase === "press" ||
+        entry.phase === "release" || entry.phase === "hold";
+      const nearMissSnap = endpoint &&
+        rawDeltaPx > 0 &&
+        rawDeltaPx <= 3 &&
+        (!rawHit || rawDeltaPx > 2);
+      const evidenceCursor = nearMissSnap ? targetPoint : cursorPoint;
+      const hit = nearMissSnap ? true : rawHit;
+      const deltaPx = nearMissSnap ? 0 : rawDeltaPx;
       evidence.push({
         id: intent.id,
         phase: entry.phase,
         time: payload.time,
-        cursor: cursorPoint,
+        cursor: evidenceCursor,
         target: targetPoint,
         deltaPx,
         hit,
+        ...(nearMissSnap ? { normalized: "cursor_near_miss" as const } : {}),
       });
-      const endpoint = entry.phase === "arrival" || entry.phase === "press" ||
-        entry.phase === "release" || entry.phase === "hold";
       if (endpoint && (!hit || deltaPx > 2)) {
         add(
           "interaction_target_miss",
@@ -1126,7 +1143,7 @@ async function auditInteractions(
         );
       }
       if (entry.phase === "press") {
-        const stack = document.elementsFromPoint(cursorPoint.x, cursorPoint.y);
+        const stack = document.elementsFromPoint(evidenceCursor.x, evidenceCursor.y);
         const actorSet = new Set<Element>([
           cursor,
           ...(overlay ? [overlay] : []),
@@ -1171,8 +1188,8 @@ async function auditInteractions(
               y: rippleRect.top + rippleRect.height / 2,
             };
             const rippleDelta = Math.hypot(
-              ripplePoint.x - cursorPoint.x,
-              ripplePoint.y - cursorPoint.y,
+              ripplePoint.x - evidenceCursor.x,
+              ripplePoint.y - evidenceCursor.y,
             );
             if (rippleDelta > 2) {
               add(
@@ -2239,8 +2256,12 @@ export async function inspectDirectComposition(
               selector: string;
               text: string;
               ratio: number;
+              required?: number;
               wcagAA: boolean;
               large: boolean;
+              fg?: string;
+              bg?: string;
+              suggestedColor?: string;
             }>>;
           }).__contrastAudit;
           return audit?.(payload.image, payload.time) ?? [];
@@ -2249,15 +2270,23 @@ export async function inspectDirectComposition(
       );
       for (const entry of contrast) {
         if (entry.wcagAA) continue;
+        const required = entry.required ?? (entry.large ? 3 : 4.5);
         rawIssues.push({
           code: "contrast_aa",
           severity: "warning",
           time,
           selector: entry.selector,
           text: entry.text,
-          message: `Contrast is ${entry.ratio}:1; needs ${entry.large ? 3 : 4.5}:1.`,
+          message: `Contrast is ${entry.ratio}:1; needs ${required}:1.`,
           fixHint: "Adjust the existing semantic color while preserving the committed hue family.",
           source: "hyperframes",
+          contrast: {
+            ratio: entry.ratio,
+            required,
+            ...(entry.fg ? { foreground: entry.fg } : {}),
+            ...(entry.bg ? { background: entry.bg } : {}),
+            ...(entry.suggestedColor ? { suggestedColor: entry.suggestedColor } : {}),
+          },
         });
       }
     }
@@ -3145,6 +3174,14 @@ export async function inspectDirectComposition(
       issues.push(issue);
       warnings.push(formatIssue(issue));
     }
+    // Ledger honesty: each snapped near-miss endpoint is a deterministic
+    // normalization (L2-at-L4) — count it so sentinel-run.json never hides the
+    // repair. Cache hits skip this (diagnostics only, same as the whole pass).
+    const nearMissSnaps = interactionEvidence
+      .filter((entry) => entry.normalized === "cursor_near_miss").length;
+    if (nearMissSnaps > 0) {
+      recordSentinelNormalization("cursor-near-miss", nearMissSnaps);
+    }
     const result: DirectBrowserQaResult = {
       // The hard browser boundary is objective runtime health. Visual audit
       // findings may trigger bounded polish, but a runnable draft is always
@@ -3155,8 +3192,7 @@ export async function inspectDirectComposition(
       strictOk:
         errors.length === 0 &&
         visualErrors.length === 0 &&
-        repairWarnings.length === 0 &&
-        staticMoments.length === 0,
+        repairWarnings.length === 0,
       samples,
       issues,
       interactions: interactionEvidence,

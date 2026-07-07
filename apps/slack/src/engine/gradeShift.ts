@@ -86,7 +86,10 @@ export function normalizeStoryboardGradeShift(
 const GRADE_WORD_PATTERNS: ReadonlyArray<[RegExp, GradeTone]> = [
   [/\b(?:warm(?:er|s|th|ing|ed)?|thaw(?:s|ed|ing)?|golden|amber|sunrise)\b/i, "warm"],
   [
-    /\b(?:cold(?:er)?|cool(?:s|er|ing|ed)?|chill(?:s|ed|ing|y)?|frost(?:y|ed)?|freez(?:e|es|ing)?|frozen|icy)\b/i,
+    // Bare "cool" is everyday SaaS copy ("cool insights", "keep your team
+    // cool") — only the inflected turn verbs (cools/cooling/cooled/cooler)
+    // count as naming a temperature TURN.
+    /\b(?:cold(?:er)?|cool(?:s|er|ing|ed)|chill(?:s|ed|ing|y)?|frost(?:y|ed)?|freez(?:e|es|ing)?|frozen|icy)\b/i,
     "cold",
   ],
   [/\b(?:noir|blackout|black-?out)\b/i, "noir"],
