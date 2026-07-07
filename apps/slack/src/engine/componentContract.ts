@@ -866,6 +866,49 @@ export interface StyleDegradeResult {
   dropped: string[];
 }
 
+export interface StyleDeriveResult {
+  scenes: DirectScene[];
+  /** Human-readable log lines, one per host-applied beat style. */
+  applied: string[];
+}
+
+/**
+ * MD6 host auto-derivation (the taste ladder, MOTION_DESIGN_PLAN §0): a
+ * production planner (GLM z-ai/glm-5.2) reliably declares the STRUCTURE — an
+ * `open` beat on a compact acknowledgment surface — but under-reaches for the
+ * OPTIONAL `style` field, so shipped films never pop even when the brief asks
+ * for it (the md-audit-probe-3b/4 evidence). `pop` is the tasteful default for
+ * a toast/badge/stat-card/button landing, so the HOST styles every style-less
+ * `open` on a [[COMPACT_POP_KINDS]] surface as `pop` — pure derivation from
+ * data the storyboard already carries, zero planner surface. It never overrides
+ * an explicit style and never exceeds the cap: the density + compact-kind
+ * discipline stays owned by [[degradeOpenPopStyles]], which runs immediately
+ * after this and is the single governor for the rule (SENTINEL L2). A scene
+ * with three compact opens gets three pops here, capped to two there.
+ */
+export function autoStyleCompactPops(storyboard: DirectScene[]): StyleDeriveResult {
+  const applied: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const beats = scene.beats ?? [];
+    if (!beats.length) return scene;
+    const kinds = new Map((scene.components ?? []).map((component) => [component.id, component.kind]));
+    let changed = false;
+    const next = beats.map((beat) => {
+      if (beat.kind !== "open" || beat.style) return beat;
+      const kind = kinds.get(beat.component);
+      if (!kind || !COMPACT_POP_KINDS.has(kind)) return beat;
+      changed = true;
+      applied.push(
+        `scene "${scene.id}": open "${beat.id}" on ${kind} "${beat.component}" → pop ` +
+          `(compact acknowledgment surface; planner left style blank)`,
+      );
+      return { ...beat, style: "pop" };
+    });
+    return changed ? { ...scene, beats: next } : scene;
+  });
+  return { scenes, applied };
+}
+
 /**
  * MD6 deterministic cap: `open` style "pop" is the typed overshoot exception,
  * allowed ONLY on compact acknowledgment surfaces ([[COMPACT_POP_KINDS]]) and

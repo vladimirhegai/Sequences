@@ -347,11 +347,9 @@ card, but a living interface whose state changes ARE the story beats.
   transitions, never authored class toggles in script.
 - **Hero copy is a `headline` component.** Make a title the camera, cuts, and
   moments can address a `headline` (its `data-cmp-text` slot holds the final
-  copy). A `type` beat carries the reveal via `style`: `typewriter` (default),
-  `rise` (staggered per-word/letter fade+lift), `pop` (per-word scale-in), or
-  `assemble` (scattered letters converging — the film's ONE loudest text
-  gesture, allowed once on a primary moment). The host splits the letters; you
-  author only the final copy.
+  copy). The host owns the reveal — it styles a headline `type` beat as a
+  staggered `rise` and promotes the film's one loudest resolve to a letter
+  `assemble` — and splits the letters for you; author only the final copy.
 - **Retire a surface before the next takes its place** (see Motion doctrine
   exits): retire the outgoing content surface with a `close`/`swap`/`morph`
   beat — or give the newcomer its own `data-region` station — rather than

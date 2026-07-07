@@ -76,6 +76,7 @@ import {
   COMPONENT_RUNTIME_FILE,
   auditComponentComplexity,
   auditSurfaceExits,
+  autoStyleCompactPops,
   componentAuthoringReference,
   componentPlanningVocabulary,
   componentSkeletonMarkup,
@@ -93,6 +94,7 @@ import {
   type ComponentKind,
 } from "./componentContract.ts";
 import {
+  deriveGradeShifts,
   dropUnusableGradeShifts,
   normalizeStoryboardGradeShift,
 } from "./gradeShift.ts";
@@ -106,11 +108,15 @@ import {
 } from "./storyboardMoments.ts";
 import { analyzeMotionDensity } from "./motionDensity.ts";
 import {
+  ASSEMBLE_HOLD_SEC,
+  PACING_TOLERANCE_SEC,
   READING_MAX_SEC,
   READING_MIN_SEC,
   READING_SEC_PER_WORD,
   auditPacing,
   delayConflictingCameraMoves,
+  framingChangeEvents,
+  nextFramingChangeAfter,
   normalizeCameraBudget,
   stretchMarginalPacingMisses,
   withNormalizationNotes,
@@ -3581,22 +3587,46 @@ function parseStoryboard(raw: string): DirectScene[] {
   if (dives.normalized.length) {
     recordSentinelNormalization("dive-window", dives.normalized.length);
   }
-  // MD6 + MD3 typed-style taste governors, and the MD4 grade-shift discipline
-  // — all deterministic degrade-never-veto normalizers (SENTINEL L2), run last
-  // at parse so the shipped plan already obeys the caps.
-  const pops = degradeOpenPopStyles(dives.storyboard);
+  // MD6 + MD3 + MD4 host auto-derivations, then their taste governors — all
+  // deterministic degrade-never-veto normalizers (SENTINEL L2), run last at
+  // parse so the shipped plan already carries the styled fields AND obeys the
+  // caps. Each derivation FILLS the optional field a production planner (GLM)
+  // under-reaches for, from data the storyboard already carries; the governor
+  // that runs immediately after stays the single owner of the discipline. This
+  // is the fix for the md-audit-probe gap: GLM lays down the structure
+  // (headline, compact opens, "world turns warm" moments) but never the styles.
+  const autoPops = autoStyleCompactPops(dives.storyboard);
+  for (const line of autoPops.applied) {
+    process.stderr.write(`[storyboard] auto-pop styled: ${line}\n`);
+  }
+  if (autoPops.applied.length) recordSentinelNormalization("auto-pop-style", autoPops.applied.length);
+  const pops = degradeOpenPopStyles(autoPops.scenes);
   for (const line of pops.dropped) {
     process.stderr.write(`[storyboard] open-pop degraded: ${line}\n`);
   }
   if (pops.dropped.length) recordSentinelNormalization("open-pop", pops.dropped.length);
-  const assembles = degradeExcessAssembles(pops.scenes);
+  const autoHeadlines = autoStyleHeadlineReveals(pops.scenes);
+  for (const line of autoHeadlines.applied) {
+    process.stderr.write(`[storyboard] auto-headline styled: ${line}\n`);
+  }
+  if (autoHeadlines.applied.length) {
+    recordSentinelNormalization("auto-headline-style", autoHeadlines.applied.length);
+  }
+  const assembles = degradeExcessAssembles(autoHeadlines.storyboard);
   for (const line of assembles.dropped) {
     process.stderr.write(`[storyboard] assemble degraded: ${line}\n`);
   }
   if (assembles.dropped.length) {
     recordSentinelNormalization("assemble-cap", assembles.dropped.length);
   }
-  const grades = dropUnusableGradeShifts(assembles.scenes);
+  const autoGrades = deriveGradeShifts(assembles.scenes);
+  for (const line of autoGrades.derived) {
+    process.stderr.write(`[storyboard] ${line}\n`);
+  }
+  if (autoGrades.derived.length) {
+    recordSentinelNormalization("auto-grade-shift", autoGrades.derived.length);
+  }
+  const grades = dropUnusableGradeShifts(autoGrades.storyboard);
   for (const line of grades.dropped) {
     process.stderr.write(`[storyboard] ${line}\n`);
   }
@@ -3715,6 +3745,102 @@ export function deriveDiveWindows(
     );
   });
   return { storyboard: scenes, normalized };
+}
+
+/**
+ * True when a headline `assemble` at `resolvedEndSec` would clear auditPacing's
+ * `pacing/assemble` lock-hold — computed with the EXACT gate arithmetic
+ * (framing-change events + viewer-time warp) so the host only ever promotes to
+ * assemble when it can prove the hold, never minting a pacing finding the model
+ * cannot fix (it did not author the style).
+ */
+function assembleHoldSatisfied(
+  scene: DirectScene,
+  resolvedEndSec: number,
+  toViewer: (time: number) => number,
+): boolean {
+  const sceneEnd = scene.startSec + scene.durationSec;
+  const fullMoves = (scene.camera?.path ?? []).filter((move) => CAMERA_FULL_MOVES.has(move.move));
+  const holdUntil = nextFramingChangeAfter(framingChangeEvents(fullMoves), resolvedEndSec, sceneEnd);
+  const hold = Math.max(0, toViewer(holdUntil) - toViewer(resolvedEndSec));
+  return hold + PACING_TOLERANCE_SEC >= ASSEMBLE_HOLD_SEC;
+}
+
+/**
+ * MD3 host auto-derivation (the taste ladder, MOTION_DESIGN_PLAN §0): hero copy
+ * on a `headline` component wants a refined reveal, but a production planner
+ * (GLM z-ai/glm-5.2) declares the `headline` + its `type` beat and leaves the
+ * OPTIONAL `style` blank, so the wordmark always arrives as a plain typewriter
+ * (md-audit-probe-4). The HOST fills it from data the storyboard already
+ * carries: every style-less headline `type` beat defaults to `rise` (the
+ * refined staggered reveal), and the SINGLE strongest resolve — the latest
+ * headline type beat that coincides with a `primary` moment AND can prove the
+ * assemble lock-hold ([[assembleHoldSatisfied]]) — is promoted to `assemble`,
+ * the film's loudest text gesture. The 1-per-film / headline-only / on-primary
+ * cap stays owned by [[degradeExcessAssembles]], which runs immediately after
+ * (SENTINEL L2, degrade-never-veto). Never overrides an explicit style; adds
+ * zero planner surface.
+ */
+export function autoStyleHeadlineReveals(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; applied: string[] } {
+  const applied: string[] = [];
+  const headlineIdsByScene = storyboard.map(
+    (scene) =>
+      new Set(
+        (scene.components ?? [])
+          .filter((component) => component.kind === "headline")
+          .map((component) => component.id),
+      ),
+  );
+  const isCandidate = (
+    beat: NonNullable<DirectScene["beats"]>[number],
+    sceneIndex: number,
+  ): boolean =>
+    beat.kind === "type" && !beat.style && headlineIdsByScene[sceneIndex]!.has(beat.component);
+  if (!storyboard.some((scene, index) => (scene.beats ?? []).some((beat) => isCandidate(beat, index)))) {
+    return { storyboard, applied };
+  }
+
+  const resolvedBeats = new Map(
+    resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
+  );
+  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+
+  // First pass: the single strongest assemble candidate across the film — the
+  // latest lock among headline type beats on a primary moment with a provable hold.
+  let best: { sceneIndex: number; beatId: string; endSec: number } | undefined;
+  storyboard.forEach((scene, index) => {
+    const resolved = resolvedBeats.get(scene.id) ?? [];
+    const primaries = (scene.moments ?? []).filter((moment) => moment.importance === "primary");
+    for (const beat of scene.beats ?? []) {
+      if (!isCandidate(beat, index)) continue;
+      const window = resolved.find((entry) => entry.id === beat.id);
+      if (!window) continue;
+      const onPrimary = primaries.some(
+        (moment) => moment.atSec >= window.startSec - 0.6 && moment.atSec <= window.endSec + 0.6,
+      );
+      if (!onPrimary || !assembleHoldSatisfied(scene, window.endSec, toViewer)) continue;
+      if (!best || window.endSec > best.endSec) {
+        best = { sceneIndex: index, beatId: beat.id, endSec: window.endSec };
+      }
+    }
+  });
+
+  // Second pass: style every style-less headline type beat — `assemble` for the
+  // one winner, `rise` for the rest.
+  const scenes = storyboard.map((scene, index) => {
+    if (!(scene.beats ?? []).some((beat) => isCandidate(beat, index))) return scene;
+    const beats = scene.beats!.map((beat) => {
+      if (!isCandidate(beat, index)) return beat;
+      const style =
+        best && best.sceneIndex === index && best.beatId === beat.id ? "assemble" : "rise";
+      applied.push(`scene "${scene.id}": headline type "${beat.id}" on "${beat.component}" → ${style}`);
+      return { ...beat, style };
+    });
+    return { ...scene, beats };
+  });
+  return { storyboard: scenes, applied };
 }
 
 export interface StoryboardPlanRequirements {
@@ -5135,8 +5261,12 @@ export async function requestStoryboardPlan(
     // the MOTION_DESIGN_PLAN schema fields land together — the 3-transition
     // cut language (swipe+axis+cover / morph / match, legacy names
     // canonicalized), the `dive` camera move, scene `gradeShift`, and the
-    // optional `style` enums on type/open/highlight beats).
-    contract: 12,
+    // optional `style` enums on type/open/highlight beats); v13: the host now
+    // AUTO-DERIVES the MD3/MD4/MD6 styles a production planner under-reaches for
+    // — compact `open`→pop, headline `type`→rise/assemble, and a scene
+    // `gradeShift` from a primary moment naming a temperature — so the same raw
+    // plan parses to a styled storyboard (the md-audit-probe gap fix).
+    contract: 13,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,

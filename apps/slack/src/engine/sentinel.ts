@@ -238,6 +238,26 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "enhancement-only (missing target compiles to nothing).",
   },
   {
+    id: "normalize.auto-pop-style",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/motionAutoStyle.test.ts",
+    addedBecause:
+      "md-audit gap (2026-07-07): MD3/MD4/MD6 shipped correct + tested but were " +
+      "INVISIBLE in production films — the GLM storyboard planner reliably " +
+      "declares the structure yet under-reaches for the OPTIONAL style/gradeShift " +
+      "fields (md-audit-probe-3b/4 shipped ZERO styled beats even when the brief " +
+      "demanded them; the claude-code-cli probe-1 filled them). autoStyleCompactPops " +
+      "(parseStoryboard) fills the field the planner left blank: every style-less " +
+      "`open` beat on a COMPACT_POP_KINDS surface (toast/button/stat-card/…) is " +
+      "styled `pop`. It never overrides an explicit style and adds zero planner " +
+      "surface; the compact-kind + 2/scene discipline stays owned by " +
+      "normalize.open-pop (below), the single governor. Telemetry tag: auto-pop-style.",
+  },
+  {
     id: "normalize.open-pop",
     group: "normalize",
     layer: "normalize",
@@ -252,6 +272,25 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "open on any non-compact kind (COMPACT_POP_KINDS) and beyond the second pop " +
       "in a scene — degrade-never-veto, the parse already strips unknown styles. " +
       "Telemetry tag: open-pop.",
+  },
+  {
+    id: "normalize.auto-headline-style",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/motionAutoStyle.test.ts",
+    addedBecause:
+      "md-audit gap (2026-07-07): the GLM planner declares a `headline` + its " +
+      "`type` beat but leaves `style` blank, so hero copy always arrives as a plain " +
+      "typewriter (md-audit-probe-4). autoStyleHeadlineReveals (parseStoryboard) " +
+      "defaults every style-less headline `type` beat to `rise` and promotes the " +
+      "SINGLE strongest resolve (latest headline type on a primary moment) to " +
+      "`assemble` ONLY when it can prove the assemble lock-hold with auditPacing's " +
+      "own arithmetic (assembleHoldSatisfied) — so it never mints a pacing/assemble " +
+      "finding the model can't fix. The 1/film + headline-only + on-primary cap " +
+      "stays owned by normalize.assemble-cap (below). Telemetry tag: auto-headline-style.",
   },
   {
     id: "normalize.assemble-cap",
@@ -269,6 +308,26 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "every other assemble to a `rise` reveal (SENTINEL L2 over an L3 " +
       "findings-retry: the degrade is unambiguous, so it costs zero paid " +
       "attempts). Telemetry tag: assemble-cap.",
+  },
+  {
+    id: "normalize.auto-grade-shift",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/motionAutoStyle.test.ts",
+    addedBecause:
+      "md-audit gap (2026-07-07): the GLM planner narrates the temperature turn in " +
+      "a moment ('world turns warm') but leaves the OPTIONAL scene `gradeShift` " +
+      "field blank, so no shift ships even when the brief demanded one " +
+      "(md-audit-probe-4). deriveGradeShifts (parseStoryboard) mechanizes the " +
+      "planner's OWN stated intent: when a scene has no declared gradeShift and a " +
+      "`primary` moment names a temperature (warm/cold/noir) with room to read, it " +
+      "injects a gradeShift AT that moment turning to the named tone — inventing no " +
+      "color decision. The window/aftermath/1-per-scene/2-per-film/moment-coincidence " +
+      "discipline stays owned by normalize.grade-shift (below). Telemetry tag: " +
+      "auto-grade-shift.",
   },
   {
     id: "normalize.grade-shift",
