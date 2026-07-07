@@ -5,6 +5,10 @@ import { resolveCameraPlan, parseCameraPlan } from "../src/engine/cameraContract
 import { resolveCutPlan, parseCutPlan } from "../src/engine/cutContract.ts";
 import { resolveTimeRampPlan, parseTimeRampPlan } from "../src/engine/timeRamp.ts";
 import { resolveFxPlan, parseFxPlan } from "../src/engine/fxContract.ts";
+import {
+  normalizeStoryboardInteractionIntents,
+  parseInteractionPlan,
+} from "../src/engine/interactionContract.ts";
 
 /**
  * Island round-trip invariant (the md-audit-probe-1 lesson).
@@ -180,6 +184,76 @@ describe("island round-trip invariant — camera / cut / time / fx", () => {
     ];
     // parseFxPlan is an identity parse, but the invariant guards against a future
     // reconstruction ever dropping toGrade / region / target.
-    assertRoundTrip("sequences-fx", resolveFxPlan(scenes), parseFxPlan);
+    const fx = resolveFxPlan(scenes);
+    for (const field of ["toGrade", "region", "target"] as const) {
+      expect(JSON.stringify(fx), `fx fixture must exercise "${field}"`).toContain(`"${field}"`);
+    }
+    assertRoundTrip("sequences-fx", fx, parseFxPlan);
+  });
+});
+
+describe("island round-trip invariant — interactions (the reconstructing parser the invariant missed)", () => {
+  // `parseInteraction` rebuilds every field with `...(x !== undefined ? { x } : {})`
+  // spreads — the exact emit/parse-asymmetry shape that dropped beat `style`. It
+  // was NOT covered by this invariant. Every OPTIONAL field an InteractionIntentV1
+  // can carry beyond the always-present version/id/sceneId/cursorId/targetPart/
+  // action/startSec/arriveSec/from/path/aimX/aimY/feedback. Adding a field to the
+  // type + emit normalizer means adding it here AND to parseInteraction.
+  const OPTIONAL_INTERACTION_FIELDS = [
+    "pressSec", "releaseSec", "holdUntilSec", "bend", "ease", "offsetX", "offsetY",
+    "hitInsetPx", "ripplePart", "dragTargetPart", "cursorScale", "targetScale", "waypoints",
+  ] as const;
+
+  // A maximal drag intent — drag needs press timing + dragTargetPart, press-ripple
+  // feedback derives ripplePart, a custom path carries waypoints — so ONE intent,
+  // run through the REAL emit normalizer, exercises every optional field. Values
+  // sit inside the normalizer's clamp ranges so nothing is altered.
+  const maximalRawIntent = {
+    version: 1,
+    id: "drag-card",
+    sceneId: "s",
+    cursorId: "pointer",
+    targetPart: "card",
+    action: "drag",
+    startSec: 0.5,
+    arriveSec: 1,
+    pressSec: 1.2,
+    releaseSec: 1.7,
+    holdUntilSec: 2.1,
+    from: "part:tray",
+    path: "custom",
+    waypoints: [{ x: 0.3, y: 0.35 }, { x: 0.6, y: 0.5 }],
+    bend: 0.2,
+    ease: "power2.out",
+    aimX: 0.5,
+    aimY: 0.5,
+    offsetX: 8,
+    offsetY: -6,
+    hitInsetPx: 4,
+    feedback: "press-ripple",
+    ripplePart: "card-ripple",
+    dragTargetPart: "slot",
+    cursorScale: 0.8,
+    targetScale: 0.9,
+  };
+
+  const normalized = normalizeStoryboardInteractionIntents([maximalRawIntent], {
+    sceneId: "s",
+    startSec: 0,
+    durationSec: 8,
+  });
+
+  it("the emit normalizer preserves every optional field (airtight coverage)", () => {
+    expect(normalized).toHaveLength(1);
+    const serialized = JSON.stringify(normalized[0]);
+    for (const field of OPTIONAL_INTERACTION_FIELDS) {
+      expect(serialized, `emit normalizer must preserve the optional field "${field}"`)
+        .toContain(`"${field}"`);
+    }
+  });
+
+  it("round-trips byte-identically (emit → island → parseInteractionPlan)", () => {
+    // The exact island the host injects: {version:1, interactions:[...]}.
+    assertRoundTrip("sequences-interactions", { version: 1, interactions: normalized }, parseInteractionPlan);
   });
 });
