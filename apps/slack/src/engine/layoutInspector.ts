@@ -282,7 +282,10 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // v10: MD4 animated grade shift — the contrast (AA) sample scheduler adds each
 //     grade shift's post-cover settle instant, so text AA is re-measured under
 //     the new wash a mid-scene temperature turn lands on.
-const QA_CACHE_VERSION = 10;
+// v11: MD3 split-style headline entrances (rise/pop/assemble) join the
+//     designed-motion suppression windows, so the transient letter scatter is
+//     not audited as a static-layout defect (the settled copy still is).
+const QA_CACHE_VERSION = 11;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;

@@ -1424,7 +1424,17 @@ export function componentMotionWindows(
   if (!plan) return [];
   return plan.scenes.flatMap((scene) =>
     scene.beats
-      .filter((beat) => beat.kind === "morph" || beat.kind === "open" || beat.kind === "close")
+      .filter((beat) =>
+        beat.kind === "morph" ||
+        beat.kind === "open" ||
+        beat.kind === "close" ||
+        // MD3 split-style headline entrances (rise/pop/assemble) transiently
+        // displace letters/words by transform (assemble scatters up to ~96px)
+        // before converging to the AUTHORED copy — designed entrance motion, not
+        // a layout defect, exactly like an open/morph window. The settled state
+        // (the authored text) is still audited outside this window.
+        (beat.kind === "type" && beat.style != null && HEADLINE_SPLIT_STYLES.has(beat.style))
+      )
       .map((beat) => ({ start: beat.startSec - 0.05, end: beat.endSec + 0.1 }))
   );
 }

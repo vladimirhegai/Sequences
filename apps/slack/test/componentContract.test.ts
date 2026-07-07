@@ -322,8 +322,28 @@ describe("validateComponentContract", () => {
 describe("component motion windows and density evidence", () => {
   it("exposes morph/open windows for layout-QA suppression", () => {
     const windows = componentMotionWindows(resolveComponentPlan([componentScene()]));
-    expect(windows).toHaveLength(1); // the morph; type does not suppress QA
+    expect(windows).toHaveLength(1); // the morph; plain typewriter type does not suppress QA
     expect(windows[0]!.start).toBeCloseTo(3.95, 2);
+  });
+
+  it("suppresses layout QA during a split-style headline entrance (MD3 scatter)", () => {
+    // A plain typewriter type stays audited; a rise/pop/assemble type displaces
+    // letters transiently (assemble scatters ~96px) before converging to the
+    // authored copy, so its entrance window is a designed-motion suppression.
+    const styledScene = scene({
+      id: "hero",
+      startSec: 0,
+      durationSec: 6,
+      components: declared(["hero-copy", "headline"]),
+      beats: [
+        { version: 1, id: "plain", sceneId: "hero", component: "hero-copy", kind: "type", atSec: 0.5, durationSec: 1, text: "hi" },
+        { version: 1, id: "assemble", sceneId: "hero", component: "hero-copy", kind: "type", atSec: 2, durationSec: 1.5, text: "SHIPFAST", style: "assemble" },
+      ],
+    });
+    const windows = componentMotionWindows(resolveComponentPlan([styledScene]));
+    // Only the assemble window is exposed — the plain type is still audited.
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.start).toBeCloseTo(1.95, 2);
   });
 
   it("counts typed beats as medium activities that satisfy scene liveness", () => {
