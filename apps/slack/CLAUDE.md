@@ -425,9 +425,12 @@ persistent volunteered cut degrades, required cut never does).
 Browser QA also runs the **rendered temporal judge**
 (`SLACK_SEQUENCES_TEMPORAL_JUDGE=0` to disable): before/mid/after frame
 triples around every evidence-bound moment, pixel-diffed in-page; an
-invisible claimed change becomes a `moment_static_frame` polish finding
-(strictOk-blocking repair guidance, never unpublishes a runnable draft),
-with per-moment evidence persisted as `temporalJudge` in the QA result.
+invisible claimed change becomes a `moment_static_frame` **advisory** polish
+finding (it does NOT block `strictOk` and never unpublishes a runnable draft) —
+but a draft that is otherwise clean and still ships static-verdict moments
+records a `moment_static_frame:<n>` degradation, so that publish is
+`published-degraded`, never clean. Per-moment evidence is persisted as
+`temporalJudge` in the QA result.
 Wall-clock is defended without touching quality (2026-07-04 performance
 pass): every streaming model call carries a 90s no-token idle watchdog; slow
 OpenRouter calls hedge with one delayed duplicate request whose first
