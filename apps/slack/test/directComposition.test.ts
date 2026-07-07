@@ -21,6 +21,7 @@ import {
   criticSkippableCleanDraft,
   earlyLeastBadPublishReason,
   repairContrastAaIssues,
+  correctSparseFraming,
   sourceRetryFeedbackForBrowserQa,
   StoryboardValidationError,
 } from "../src/engine/compositionRunner.ts";
@@ -41,7 +42,12 @@ import {
   dropUnusableGradeShifts,
   normalizeStoryboardGradeShift,
 } from "../src/engine/gradeShift.ts";
-import { inspectDirectComposition, type DirectBrowserQaResult } from "../src/engine/layoutInspector.ts";
+import {
+  inspectDirectComposition,
+  type DirectBrowserQaResult,
+  type DirectLayoutIssue,
+} from "../src/engine/layoutInspector.ts";
+import type { DirectScene } from "../src/engine/directComposition.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
 import { buildJobFrame } from "../src/engine/frameDesign.ts";
 import { injectCinemaKit } from "../src/engine/cinemaKit.ts";
@@ -263,6 +269,77 @@ describe("deterministic direct fallback", () => {
     expect(fallback.html).toContain("data-camera-world");
     expect(fallback.html).toContain("layout-center-stack");
     expect(fallback.html).not.toContain("<script>alert");
+  });
+
+  it("skins the safe film with the locked plan's own copy on a source-author failure", async () => {
+    const dir = projectDir();
+    const plan: DirectScene[] = [
+      {
+        id: "s1",
+        title: "The incident hits at 02:14",
+        purpose: "Open on the alert storm",
+        startSec: 0,
+        durationSec: 7,
+        moments: [{
+          version: 1,
+          sceneId: "s1",
+          id: "m1",
+          atSec: 2,
+          title: "PagerDuty lights up",
+          visualState: "Alerts cascade across the board",
+          change: "Every service goes red at once",
+          motionIntent: "reveal",
+          importance: "primary",
+        }],
+      },
+      { id: "s2", title: "One-click rollback", purpose: "Land the payoff", startSec: 7, durationSec: 8 },
+      {
+        id: "s3",
+        title: "Back to green <in seconds>",
+        purpose: "Resolve to calm",
+        startSec: 15,
+        durationSec: 7,
+      },
+    ];
+    const skinned = buildFallbackComposition({
+      product: "PulseDeck",
+      whatShipped: "one-click rollback from any deploy",
+      audience: "SREs",
+      lengthSec: 22,
+      plan,
+    });
+    // Hook line = first scene's primary-moment title; proof caption = its
+    // declared change; promise = the last scene's title. Generic filler is gone.
+    expect(skinned.html).toContain("PagerDuty lights up");
+    expect(skinned.html).toContain("Every service goes red at once");
+    expect(skinned.html).not.toContain("Live in your workspace today");
+    expect(skinned.html).not.toContain("From shipped to shown");
+    // Untrusted plan copy is escaped just like the brief fields.
+    expect(skinned.html).toContain("Back to green &lt;in seconds&gt;");
+    expect(skinned.html).not.toContain("Back to green <in seconds>");
+    // The proven 3-shot structure and its bespoke brief anchors are unchanged.
+    const validation = await validateDirectComposition(dir, skinned);
+    expect(validation.errors).toEqual([]);
+    expect(skinned.html).toContain("layout-editorial-left");
+    expect(skinned.html).toContain("data-camera-world");
+    expect(skinned.html).toContain("layout-center-stack");
+    expect(skinned.html).toContain(">PulseDeck<");
+  });
+
+  it("stays byte-identical to the generic reel when no usable plan is passed", () => {
+    const base = {
+      product: "PulseDeck",
+      whatShipped: "one-click rollback from any deploy",
+      audience: "SREs",
+      lengthSec: 22,
+    };
+    const noPlan = buildFallbackComposition(base);
+    const emptyPlan = buildFallbackComposition({ ...base, plan: [] });
+    // The plan param is a pure no-op when empty: same bytes, generic filler intact.
+    expect(emptyPlan.html).toBe(noPlan.html);
+    expect(noPlan.html).toContain("Live in your workspace today");
+    expect(noPlan.html).toContain("Shipped &middot; verified &middot; in the channel");
+    expect(noPlan.html).toContain("From shipped to shown");
   });
 });
 
@@ -1331,6 +1408,127 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
 
     expect(repaired.repaired).toEqual([]);
     expect(repaired.html).toBe(value.html);
+  });
+});
+
+describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
+  const cameraScene = (
+    id: string,
+    region: string,
+    move: "pan" | "drift" = "pan",
+    zoom?: number,
+  ): DirectScene => ({
+    id,
+    title: id,
+    purpose: `land on ${region}`,
+    startSec: 0,
+    durationSec: 4,
+    camera: {
+      version: 1,
+      path: [{
+        version: 1,
+        move,
+        toRegion: region,
+        startSec: 0.5,
+        durationSec: 1.2,
+        ...(zoom !== undefined ? { zoom } : {}),
+      }],
+    },
+  });
+
+  const sparseIssue = (
+    sceneId: string,
+    fraction: number,
+    target: { region?: string; part?: string } = {},
+  ): DirectLayoutIssue => ({
+    code: "camera_framed_sparse",
+    severity: "warning",
+    time: 2,
+    selector: target.part
+      ? `[data-part="${target.part}"]`
+      : target.region
+        ? `[data-region="${target.region}"]`
+        : `[data-scene="${sceneId}"]`,
+    framing: { sceneId, fraction, ...target },
+    message: `fills only ${Math.round(fraction * 100)}% of the frame`,
+    source: "sequences",
+  });
+
+  const qa = (issues: DirectLayoutIssue[]): DirectBrowserQaResult => ({
+    ok: true,
+    strictOk: false,
+    samples: [],
+    issues,
+    errors: [],
+    warnings: [],
+  });
+
+  it("zooms the framing move to raise coverage back to the audit floor", () => {
+    const storyboard = [cameraScene("lonely", "lonely")];
+    const result = correctSparseFraming(
+      storyboard,
+      qa([sparseIssue("lonely", 0.1, { region: "lonely" })]),
+    );
+    expect(result.corrected).toEqual(["lonely"]);
+    // sqrt(0.18/0.1) = 1.3416…, base 1 → ~1.342, safely past the 1.05 skip.
+    const zoom = result.storyboard[0]!.camera!.path[0]!.zoom!;
+    expect(zoom).toBeCloseTo(1.342, 2);
+    expect(zoom).toBeGreaterThan(1.05);
+    // The input storyboard is never mutated in place.
+    expect(storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
+  });
+
+  it("clamps the zoom factor at 1.8 for an extremely sparse landing", () => {
+    const result = correctSparseFraming(
+      [cameraScene("tiny", "tiny")],
+      qa([sparseIssue("tiny", 0.02, { region: "tiny" })]),
+    );
+    // sqrt(0.18/0.02) = 3.0 → clamped to the 1.8 ceiling.
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeCloseTo(1.8, 5);
+  });
+
+  it("bumps the last targeted full move for a scene-level [data-scene] finding", () => {
+    const scene: DirectScene = {
+      ...cameraScene("multi", "second"),
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "pan", toRegion: "first", startSec: 0.5, durationSec: 1 },
+          { version: 1, move: "pan", toRegion: "second", startSec: 2, durationSec: 1 },
+        ],
+      },
+    };
+    const result = correctSparseFraming([scene], qa([sparseIssue("multi", 0.08)]));
+    expect(result.corrected).toEqual(["multi"]);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
+    expect(result.storyboard[0]!.camera!.path[1]!.zoom).toBeGreaterThan(1.05);
+  });
+
+  it("leaves drift/hold-only and camera-less scenes to the model (no bumpable move)", () => {
+    const drift = cameraScene("drifter", "adrift", "drift");
+    const staticScene: DirectScene = {
+      id: "static",
+      title: "static",
+      purpose: "no camera path at all",
+      startSec: 0,
+      durationSec: 3,
+    };
+    const result = correctSparseFraming(
+      [drift, staticScene],
+      qa([
+        sparseIssue("drifter", 0.05, { region: "adrift" }),
+        sparseIssue("static", 0.05),
+      ]),
+    );
+    expect(result.corrected).toEqual([]);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
+  });
+
+  it("ignores findings without measured framing metadata", () => {
+    const issue = sparseIssue("lonely", 0.1, { region: "lonely" });
+    delete (issue as { framing?: unknown }).framing;
+    const result = correctSparseFraming([cameraScene("lonely", "lonely")], qa([issue]));
+    expect(result.corrected).toEqual([]);
   });
 });
 

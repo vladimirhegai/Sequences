@@ -427,6 +427,30 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "moment-demote-last-resort.",
   },
 
+  {
+    id: "normalize.camera-sparse-zoom",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/framingCoverage.browser.test.ts",
+    addedBecause:
+      "2026-07-07 camera-sparse auto-framing (the live probe's ONLY shipping " +
+      "degradation was least-bad-pick:penalty=7 from camera_framed_sparse on a " +
+      "resolve-scene landing). correctSparseFraming raises a landing the browser " +
+      "measured as a tiny subject adrift back to the 18% coverage floor with a " +
+      "bounded zoom-in (sqrt(0.18/fraction), clamped 1.0..1.8) on exactly the " +
+      "camera move that frames it — a storyboard mutation re-injected through the " +
+      "persistUpgradedStoryboard seam, adopted in authorCompositionLoop ONLY when " +
+      "the sparse finding clears, no new camera_framed_clipped appears, and " +
+      "browserQualityPenalty strictly decreases (enhancement-never-veto). It " +
+      "PREVENTS the camera.framing row's camera_framed_sparse; drift/hold-only " +
+      "and camera-less scenes have no bumpable move and keep the model/least-bad " +
+      "path (a storyboard zoom cannot invent content). Telemetry tag: " +
+      "camera-sparse-zoom.",
+  },
+
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {
     id: "camera.energy",

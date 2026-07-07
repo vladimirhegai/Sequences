@@ -44,6 +44,7 @@ import {
   CAMERA_FULL_MOVES,
   CAMERA_MOVES,
   CAMERA_RUNTIME_FILE,
+  type CameraMoveIntentV1,
   DIVE_LEG_FRACTION,
   DIVE_LEG_MAX_SEC,
   SEQUENCES_EASES,
@@ -2163,6 +2164,108 @@ export function repairContrastAaIssues(
   return html === draft.html
     ? { draft, repaired: [] }
     : { draft: { ...draft, html }, repaired: [...bySelector.keys()] };
+}
+
+/** Coverage floor the sparse framing audit enforces (layoutInspector SPARSE_COVERAGE_MIN). */
+const SPARSE_FRAMING_TARGET_COVERAGE = 0.18;
+/** Never magnify a sparse landing past this fit multiplier (well under camera ZOOM_MAX 2.8). */
+const SPARSE_FRAMING_ZOOM_MAX = 1.8;
+/** A correction must clear the audit's 1.05 zoom-skip threshold to actually take effect. */
+const SPARSE_FRAMING_ZOOM_FLOOR = 1.08;
+
+/**
+ * Choose the camera move a sparse finding should zoom in on. A finding that
+ * names a station gets the LAST full move that lands on exactly that station; a
+ * scene-level (`[data-scene]`) finding with no station gets the scene's last
+ * targeted full move. `-1` = nothing bumpable (drift/hold-only or camera-less):
+ * a storyboard zoom cannot invent content there, so the model / least-bad pick
+ * keeps ownership.
+ */
+function pickSparseMoveIndex(
+  path: CameraMoveIntentV1[],
+  finding: { part?: string; region?: string },
+): number {
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const move = path[index]!;
+    if (!CAMERA_FULL_MOVES.has(move.move)) continue;
+    if (finding.part) {
+      if (move.toPart === finding.part) return index;
+    } else if (finding.region) {
+      if (move.toRegion === finding.region) return index;
+    } else if (move.toRegion || move.toPart) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Deterministic L2-at-L4 framing correction (the camera analogue of
+ * `repairContrastAaIssues`): browser QA measured a camera landing — or a
+ * camera-less mid-window — as a tiny subject adrift, so raise its coverage to
+ * the audit floor with a bounded zoom-in on exactly the move that frames it.
+ * The zoom factor `sqrt(0.18 / fraction)` (clamped 1.0..1.8) magnifies the
+ * measured coverage back toward the 18% floor without ever cropping past it.
+ * Pure: returns the mutated storyboard + the scene ids corrected. The caller
+ * re-injects the camera island from the mutated storyboard (the
+ * `persistUpgradedStoryboard` seam cut-discovery uses), re-inspects, and adopts
+ * the result ONLY when the sparse finding clears, no new `camera_framed_clipped`
+ * appears, and the quality penalty strictly decreases (enhancement-never-veto).
+ */
+export function correctSparseFraming(
+  storyboard: DirectScene[],
+  browserQa: DirectBrowserQaResult,
+): { storyboard: DirectScene[]; corrected: string[] } {
+  // Smallest measured coverage per (scene, station) → one bump per framing move.
+  const wanted = new Map<string, { fraction: number; part?: string; region?: string }>();
+  for (const issue of browserQa.issues ?? []) {
+    if (issue.code !== "camera_framed_sparse" || !issue.framing) continue;
+    const { sceneId, fraction, part, region } = issue.framing;
+    if (!(fraction > 0)) continue;
+    const key = `${sceneId} ${part ?? ""} ${region ?? ""}`;
+    const existing = wanted.get(key);
+    if (!existing || fraction < existing.fraction) {
+      wanted.set(key, { fraction, part, region });
+    }
+  }
+  if (!wanted.size) return { storyboard, corrected: [] };
+
+  const corrected: string[] = [];
+  const mutated = storyboard.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path?.length) return scene;
+    const findings = [...wanted.entries()]
+      .filter(([key]) => key.startsWith(`${scene.id} `))
+      .map(([, value]) => value)
+      .sort((a, b) => a.fraction - b.fraction);
+    if (!findings.length) return scene;
+    const nextPath = path.map((move) => ({ ...move }));
+    let changed = false;
+    for (const finding of findings) {
+      const index = pickSparseMoveIndex(nextPath, finding);
+      if (index < 0) continue;
+      const move = nextPath[index]!;
+      const factor = Math.min(
+        Math.max(Math.sqrt(SPARSE_FRAMING_TARGET_COVERAGE / finding.fraction), 1),
+        SPARSE_FRAMING_ZOOM_MAX,
+      );
+      if (factor <= 1.0001) continue;
+      const base = move.zoom ?? 1;
+      const nextZoom = Math.round(
+        Math.min(
+          Math.max(base * factor, SPARSE_FRAMING_ZOOM_FLOOR),
+          SPARSE_FRAMING_ZOOM_MAX,
+        ) * 1000,
+      ) / 1000;
+      if (nextZoom <= base + 0.0001) continue;
+      move.zoom = nextZoom;
+      changed = true;
+    }
+    if (!changed) return scene;
+    corrected.push(scene.id);
+    return { ...scene, camera: { ...scene.camera!, path: nextPath } };
+  });
+  return corrected.length ? { storyboard: mutated, corrected } : { storyboard, corrected: [] };
 }
 
 function decorativeLivenessName(value: string): boolean {
@@ -8708,6 +8811,72 @@ async function authorCompositionLoop(
               validation = candidateValidation;
               browserQa = candidateQa;
               staticRepairWarnings = afterStaticWarnings;
+            }
+          }
+        }
+      }
+      // Camera-sparse auto-framing (L2-at-L4): a landing the browser measured as
+      // a tiny subject adrift is repaired by a bounded zoom-in on that exact
+      // camera move — a storyboard mutation re-injected through the same seam
+      // cut-discovery uses. Adopt only when the sparse finding clears, no new
+      // camera_framed_clipped appears, and the quality penalty strictly drops.
+      if (
+        browserQa.ok &&
+        args.lockedStoryboard &&
+        browserQa.issues?.some((issue) => issue.code === "camera_framed_sparse")
+      ) {
+        const sparseFix = correctSparseFraming(draft.storyboard, browserQa);
+        if (sparseFix.corrected.length) {
+          const candidate = applyDeterministicSourceRepairs(
+            { storyboard: sparseFix.storyboard, html: draft.html },
+            args.projectDir,
+            sparseFix.storyboard,
+          );
+          const candidateValidation = await validateDirectComposition(args.projectDir, candidate);
+          if (candidateValidation.ok) {
+            const candidateQa = await inspectDirectComposition(args.projectDir, candidate, {
+              captureGuide: false,
+            });
+            const afterStaticWarnings = [
+              ...candidateValidation.frameWarnings,
+              ...candidateValidation.motionWarnings,
+            ];
+            const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
+            const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
+            const correctedScenes = new Set(sparseFix.corrected);
+            const sparseCleared = !(candidateQa.issues ?? []).some((issue) =>
+              issue.code === "camera_framed_sparse" &&
+              issue.framing !== undefined &&
+              correctedScenes.has(issue.framing.sceneId)
+            );
+            const clippedBefore = (browserQa.issues ?? [])
+              .filter((issue) => issue.code === "camera_framed_clipped").length;
+            const clippedAfter = (candidateQa.issues ?? [])
+              .filter((issue) => issue.code === "camera_framed_clipped").length;
+            if (
+              !candidateQa.infraError &&
+              candidateQa.ok &&
+              sparseCleared &&
+              clippedAfter <= clippedBefore &&
+              afterPenalty < beforePenalty
+            ) {
+              process.stderr.write(
+                `[author] camera-sparse auto-framing zoomed ${sparseFix.corrected.join(", ")}: ` +
+                  `penalty ${beforePenalty} -> ${afterPenalty}\n`,
+              );
+              recordSentinelNormalization("camera-sparse-zoom", sparseFix.corrected.length);
+              summary.strategyChanges.push(`camera-sparse-zoom:${sparseFix.corrected.join(",")}`);
+              draft = candidate;
+              validation = candidateValidation;
+              browserQa = candidateQa;
+              staticRepairWarnings = afterStaticWarnings;
+              persistUpgradedStoryboard(args.projectDir, candidate.storyboard);
+            } else {
+              process.stderr.write(
+                `[author] camera-sparse auto-framing did not clear cleanly ` +
+                  `(sparseCleared=${sparseCleared}, clipped ${clippedBefore}->${clippedAfter}, ` +
+                  `penalty ${beforePenalty}->${afterPenalty}); keeping the previous draft\n`,
+              );
             }
           }
         }

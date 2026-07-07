@@ -82,6 +82,19 @@ export interface DirectLayoutIssue {
     background?: string;
     suggestedColor?: string;
   };
+  /**
+   * Measured framing coverage on a `camera_framed_sparse` finding — the scene,
+   * the fraction of the frame its visible content fills, and the station the
+   * camera landed on (when a full move framed one). Consumed by the
+   * deterministic `camera-sparse-zoom` correction (compositionRunner) to size a
+   * bounded zoom-in on exactly that move.
+   */
+  framing?: {
+    sceneId: string;
+    fraction: number;
+    part?: string;
+    region?: string;
+  };
 }
 
 export interface DirectBrowserQaResult {
@@ -2873,6 +2886,12 @@ export async function inspectDirectComposition(
               selector: segment.toPart
                 ? `[data-part="${segment.toPart}"]`
                 : `[data-region="${segment.toRegion}"]`,
+              framing: {
+                sceneId: scenePlan.sceneId,
+                fraction: confirmedCoverage.fraction,
+                ...(segment.toPart ? { part: segment.toPart } : {}),
+                ...(segment.toRegion ? { region: segment.toRegion } : {}),
+              },
               message:
                 `Camera ${segment.move} lands on ${station} in scene "${scenePlan.sceneId}" at ` +
                 `${arriveSec.toFixed(1)}s, but the scene's visible content fills only ` +
@@ -3010,6 +3029,7 @@ export async function inspectDirectComposition(
         severity: "warning",
         time: sampleAt,
         selector: `[data-scene="${scene.id}"]`,
+        framing: { sceneId: scene.id, fraction: confirmedCoverage.fraction },
         message:
           `Scene "${scene.id}" holds one framing whose visible content fills only ` +
           `${Math.round(confirmedCoverage.fraction * 100)}% of the frame — a small subject ` +

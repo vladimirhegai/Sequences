@@ -138,6 +138,7 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.morph-twin-reconcile` | L2 normalize | det-repair | — (prevents morph-to-undeclared-twin vetoes) | directComposition |
 | normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites malformed `fromTo(t, vars, <number>)` to `.to` only after an earlier opposite-state initialization; entrance-looking, mixed, and cue-less direction stays blocking) | authorReliability |
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
+| normalize | `normalize.camera-sparse-zoom` | L2 normalize | det-repair | — (repairs `camera_framed_sparse`: bounded zoom-in `sqrt(0.18/fraction)` on the framing move; adopted only if the finding clears, no new `camera_framed_clipped`, penalty strictly drops) | framingCoverage.browser |
 | camera | `camera.energy` | L3 static | blocking | `camera/energy` | cameraContract |
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |
 | coherence | `cuts.coherence` | L3 static | advisory-late | `cuts/coherence` | cutContract |
