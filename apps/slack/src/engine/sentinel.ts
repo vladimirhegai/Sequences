@@ -197,9 +197,27 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "was pacing/outcome 'framing changes 0.0s later' — a camera move starting " +
       "right after a payoff/typed-copy beat. delayConflictingCameraMoves delays " +
       "the move (<= MAX_PACING_STRETCH_SEC) so the hold lands, only when the move " +
-      "starts AT/after the beat settles, still fits the scene, does not pass the " +
-      "next full move, and is not load-bearing. Same atomic commit-or-revert. " +
-      "Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
+      "starts AT/after the beat settles, does not pass the next full move, and is " +
+      "not load-bearing. 2026-07-07 attempt-economy sweep: when the delayed move " +
+      "overruns the scene's own cut (the short-scene shape every probe re-rejected), " +
+      "the boundary stretches by the overflow (<= MAX_PACING_STRETCH_SEC, 15s scene " +
+      "cap) and later scenes cascade-shift — still pure arithmetic. Same atomic " +
+      "commit-or-revert. Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
+  },
+  {
+    id: "normalize.root-data-start",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-07 independent audit: a model-authored composition root that omits " +
+      "data-start=\"0\" breaks host timeline arithmetic downstream. " +
+      "applyDeterministicSourceRepairs inserts it on the data-composition-id root " +
+      "when absent (ensureRootDataStart) — idempotent, never duplicates. " +
+      "Telemetry tag: root-data-start.",
   },
   {
     id: "normalize.dive-window",
@@ -440,15 +458,38 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "degradation was least-bad-pick:penalty=7 from camera_framed_sparse on a " +
       "resolve-scene landing). correctSparseFraming raises a landing the browser " +
       "measured as a tiny subject adrift back to the 18% coverage floor with a " +
-      "bounded zoom-in (sqrt(0.18/fraction), clamped 1.0..1.8) on exactly the " +
-      "camera move that frames it — a storyboard mutation re-injected through the " +
-      "persistUpgradedStoryboard seam, adopted in authorCompositionLoop ONLY when " +
-      "the sparse finding clears, no new camera_framed_clipped appears, and " +
-      "browserQualityPenalty strictly decreases (enhancement-never-veto). It " +
-      "PREVENTS the camera.framing row's camera_framed_sparse; drift/hold-only " +
-      "and camera-less scenes have no bumpable move and keep the model/least-bad " +
-      "path (a storyboard zoom cannot invent content). Telemetry tag: " +
-      "camera-sparse-zoom.",
+      "bounded zoom-in (sqrt(0.18/fraction), clamped 1.0..2.8 — the camera " +
+      "contract's own fit-multiplier ceiling since the 2026-07-07 independent " +
+      "audit, which also marks the move framingCorrection:\"camera-sparse-zoom\" " +
+      "so browser QA keeps auditing the zoomed landing instead of skipping it) on " +
+      "exactly the camera move that frames it — a storyboard mutation re-injected " +
+      "through the persistUpgradedStoryboard seam, adopted in " +
+      "authorCompositionLoop ONLY when the sparse finding clears, no new " +
+      "camera_framed_clipped appears, and browserQualityPenalty strictly " +
+      "decreases (enhancement-never-veto); the adopted storyboard also replaces " +
+      "args.lockedStoryboard so later repair passes re-inject the corrected " +
+      "island. It PREVENTS the camera.framing row's camera_framed_sparse; " +
+      "drift/hold-only and camera-less scenes have no bumpable move and keep the " +
+      "model/least-bad path (a storyboard zoom cannot invent content). Telemetry " +
+      "tag: camera-sparse-zoom.",
+  },
+  {
+    id: "normalize.focal-late-sample",
+    group: "layout",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/layoutInspector.test.ts",
+    addedBecause:
+      "2026-07-07 attempt-economy sweep: spatial_focal_invisible repeated " +
+      "VERBATIM across paid patch attempts when the declared focal simply " +
+      "entered after the single 58% hero sample (a command palette opening a " +
+      "beat later). The inspector now re-samples <=2 bounded later instants " +
+      "inside the same shot and drops the finding when the subject is visible " +
+      "there — measurement honesty (the WS7 thumbnail walk applied to QA), " +
+      "never a gate change: a subject visible at NO sample still fires. " +
+      "Telemetry tag: focal-late-sample.",
   },
 
   {

@@ -488,11 +488,25 @@ lit `.material` surfaces, and per-scene color grades that give each film a
 cold→warm color arc; `frame.md` renders palette-derived `--cinema-*` values
 and the planning prompt teaches the vocabulary. Pure static CSS — no timeline
 ownership, enhancement-only, deterministic under seek.
+**Motion-design texture (MOTION_DESIGN_PLAN MD1–MD6, 2026-07-06/07)** adds the
+"produced, not just choreographed" garnish layer on top — all host-derived,
+seek-safe, and Sentinel-registered (see [MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md)
++ the SENTINEL.md contract table): a host **FX runtime** (`engine/fxContract.ts` +
+`templates/sequences-fx.v1.js`) applies sweep / glow-pulse / draw-on / echo mostly
+automatically at payoff moments (planner opt-in is one `highlight.style` field);
+the planner-facing cut vocabulary collapsed from ten styles to
+`swipe`/`morph`/`match`/`hard` (legacy names normalize at parse — old plans + the
+fallback film replay byte-identically); a typed `dive` camera move owns the
+zoom-in→act→zoom-out arithmetic (the host derives the hold from the overlapping
+beat); a 23rd `headline` component kind gives hero copy a stable `data-part` and
+`type.style` `rise`/`pop`/`assemble` letter machinery; scenes may declare an
+animated `gradeShift` (`engine/gradeShift.ts`); and `seqPop`/`seqStamp` eases power
+capped pops on compact kinds. Net planner-facing surface *shrank* while texture grew.
 Scenes may also declare **motion-native components** — the fourth host-owned
 contract (`engine/componentContract.ts`). The storyboard lists typed
-`components` (22-kind SaaS catalog: app-window, search, command-palette,
+`components` (23-kind SaaS catalog: app-window, search, command-palette,
 dropdown, button, toast, modal, stat-card, table, kanban, chat, charts,
-progress, terminal, tabs, …) and typed `beats` (state changes at absolute
+progress, terminal, tabs, headline, …) and typed `beats` (state changes at absolute
 seconds: `type`, `open`, `close`, `select`, `press`, `set-state`, `count`,
 `progress`, `chart`, `rows`, `stream`, `highlight`, `swap`, `morph`). The
 host injects the component kit CSS

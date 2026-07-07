@@ -4,14 +4,16 @@
  * One conversation per workspace, provider switchable per message. The context
  * is composed identically for every provider (`context.ts`) so switching is
  * seamless. A Claude CLI turn edits workspace files directly; the studio is the
- * referee, so after the turn we RE-GATE the composition (the real production
- * gate) and stream the findings into the same feed both the operator and the
- * agent see. Transcript + provider receipts persist under `chat/`.
+ * referee, so after the turn we RE-GATE through the relevant production path
+ * (recipe fragment scaffold or committed canvas composition) and stream the
+ * findings into the same feed both the operator and the agent see. Transcript
+ * + provider receipts persist under `chat/`.
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { loadWorkspace, saveWorkspace, workspaceProjectDir } from "../workspaces.ts";
-import { recipeFragmentHash } from "../../src/engine/recipeContract.ts";
+import { gateWorkspace } from "../gate.ts";
 import { runOpenRouterTurn, type OpenRouterModel } from "./openrouter.ts";
 import { runClaudeCliTurn } from "./cli.ts";
 import { regateComposition, writeAgentMd } from "./context.ts";
@@ -99,25 +101,35 @@ export async function runChatTurn(id: string, options: ChatTurnOptions): Promise
     // The agent edited files — re-gate and report to the same feed.
     options.onChunk("\n\n_re-gating your edits…_\n");
     try {
-      const gate = await regateComposition(id);
+      const workspace = loadWorkspace(id);
+      const gate = workspace.kind === "canvas"
+        ? await regateComposition(id)
+        : (await gateWorkspace(id)).gate;
+      const thumbnailCount = Array.isArray(gate.thumbnails) ? gate.thumbnails.length : gate.thumbnails;
       const summary = gate.ok
-        ? `✅ gate GREEN · ${gate.thumbnails} thumbnails${gate.warnings.length ? ` · ${gate.warnings.length} warning(s)` : ""}`
+        ? `✅ gate GREEN · ${thumbnailCount} thumbnails${gate.warnings.length ? ` · ${gate.warnings.length} warning(s)` : ""}`
         : `❌ gate RED\n${gate.errors.slice(0, 8).map((e) => `  ✗ ${e}`).join("\n")}`;
       options.onChunk(summary);
       replyText += `\n\n${summary}`;
-      // Mirror the re-gate into the workspace gate record so the UI badge updates.
-      const workspace = loadWorkspace(id);
-      workspace.gate = {
-        ok: gate.ok,
-        errors: gate.errors,
-        warnings: gate.warnings,
-        gatedAt: new Date().toISOString(),
-        fragmentHash: recipeFragmentHash(""),
-        thumbnails: gate.ok
-          ? fs.readdirSync(path.join(workspaceProjectDir(id), "build", "thumbs")).filter((f) => f.endsWith(".png"))
-          : [],
-      };
-      saveWorkspace(workspace);
+      if (workspace.kind === "canvas") {
+        // Canvas CLI edits target the committed composition directly; mirror
+        // that direct re-gate into the UI without pretending it proves a
+        // recipe fragment hash.
+        const compositionFile = path.join(workspaceProjectDir(id), "composition", "index.html");
+        workspace.gate = {
+          ok: gate.ok,
+          errors: gate.errors,
+          warnings: gate.warnings,
+          gatedAt: new Date().toISOString(),
+          fragmentHash: fs.existsSync(compositionFile)
+            ? createHash("sha256").update(fs.readFileSync(compositionFile)).digest("hex")
+            : "",
+          thumbnails: gate.ok
+            ? fs.readdirSync(path.join(workspaceProjectDir(id), "build", "thumbs")).filter((f) => f.endsWith(".png"))
+            : [],
+        };
+        saveWorkspace(workspace);
+      }
     } catch (error) {
       options.onChunk(`\n[re-gate error] ${error instanceof Error ? error.message : String(error)}`);
     }

@@ -20,6 +20,9 @@ import {
   retimeUnmotivatedTimeRamps,
   criticSkippableCleanDraft,
   earlyLeastBadPublishReason,
+  stagnantPolishShipReason,
+  stagnantPolishSignature,
+  browserQualityPenalty,
   repairContrastAaIssues,
   correctSparseFraming,
   sourceRetryFeedbackForBrowserQa,
@@ -67,7 +70,16 @@ process.env.SLACK_SEQUENCES_SENTINEL_SLOTS = "0";
 
 /** Every published draft carries the host-injected runtimes and kits. */
 function withHostInjections(html: string): string {
-  return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(html)));
+  const withRootTiming = html.replace(
+    /<[a-z][\w:-]*\b(?=[^>]*\bdata-composition-id\s*=)[^>]*>/i,
+    (tag) => {
+      if (/\bdata-start\s*=/.test(tag)) return tag;
+      return tag.replace(/\s*\/?>$/, (suffix) =>
+        suffix.includes("/") ? ` data-start="0" />` : ` data-start="0">`
+      );
+    },
+  );
+  return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(withRootTiming)));
 }
 
 vi.mock("../src/engine/layoutInspector.ts", () => ({
@@ -1244,6 +1256,103 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     })).toBeUndefined();
   });
 
+  it("counts declaration paperwork at zero weight in the quality penalty", () => {
+    // layout_intent_missing asks for a DECLARATION, not a visual change — a
+    // banked draft is not one pixel worse for lacking it, so it must not hold
+    // the attempt-2 broker under its penalty ceiling (2026-07-07 sweep).
+    const paperworkOnly: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      issues: [1, 2, 3, 4, 5, 6].map((n) => ({
+        code: "layout_intent_missing",
+        severity: "warning" as const,
+        time: n,
+        selector: `#scene-${n}`,
+        message: "Visible scene declares no relational layout intent.",
+        source: "sequences" as const,
+      })),
+    };
+    expect(browserQualityPenalty(paperworkOnly)).toBe(0);
+    // A measured visual warning still counts.
+    expect(browserQualityPenalty({
+      ...paperworkOnly,
+      issues: [...paperworkOnly.issues, {
+        code: "content_overlap",
+        severity: "warning",
+        time: 2,
+        selector: "#metric",
+        message: "Two text blocks overlap.",
+        source: "sequences",
+      }],
+    })).toBe(1);
+  });
+
+  it("normalizes measurement jitter out of stagnation keys (digit-stripped)", () => {
+    // The same defect re-measured: contrast moved 4.4:1 → 3.39:1 and the
+    // window shifted, but the defect LIST is unchanged — the classKey
+    // precedent from the storyboard commit-or-revert.
+    expect(stagnantPolishSignature(
+      "contrast_aa div.seg-time (t=7.74s): Contrast is 4.4:1; needs 4.5:1.",
+    )).toBe(stagnantPolishSignature(
+      "contrast_aa div.seg-time (t=7.74–8.35s): Contrast is 3.39:1; needs 4.5:1.",
+    ));
+    // A different element is a different defect.
+    expect(stagnantPolishSignature(
+      "contrast_aa div.seg-time (t=7.74s): Contrast is 4.4:1; needs 4.5:1.",
+    )).not.toBe(stagnantPolishSignature(
+      "contrast_aa span.alert-chip (t=8.35s): Contrast is 3.45:1; needs 4.5:1.",
+    ));
+  });
+
+  it("ships the banked draft when a patch provably changed nothing (stagnant signatures)", () => {
+    // Attempt 2's browser findings are byte-identical to attempt 1's — the
+    // paid patch between them moved nothing the gate measures, so attempt 3
+    // would publish the same banked draft with the same advisories anyway.
+    const signatures = [
+      "layout_intent_missing #cold-open",
+      "contrast_aa div.seg-time",
+    ];
+    expect(stagnantPolishShipReason({
+      attempt: 2,
+      browserQaOk: true,
+      currentSignatures: signatures,
+      previousSignatures: new Set(signatures),
+      bankedPenalty: 7,
+    })).toBe("stagnant-polish-early-ship:penalty=7");
+    // Progress (a differing set) keeps the ladder running.
+    expect(stagnantPolishShipReason({
+      attempt: 2,
+      browserQaOk: true,
+      currentSignatures: [signatures[0]!],
+      previousSignatures: new Set(signatures),
+      bankedPenalty: 7,
+    })).toBeUndefined();
+    // Attempt 1 has no previous rejection to compare against.
+    expect(stagnantPolishShipReason({
+      attempt: 1,
+      browserQaOk: true,
+      currentSignatures: signatures,
+      previousSignatures: new Set(),
+      bankedPenalty: 7,
+    })).toBeUndefined();
+    // A hard runtime failure (browserQa.ok false) never takes the early exit.
+    expect(stagnantPolishShipReason({
+      attempt: 2,
+      browserQaOk: false,
+      currentSignatures: signatures,
+      previousSignatures: new Set(signatures),
+      bankedPenalty: 7,
+    })).toBeUndefined();
+    // Nothing banked → nothing to ship.
+    expect(stagnantPolishShipReason({
+      attempt: 2,
+      browserQaOk: true,
+      currentSignatures: signatures,
+      previousSignatures: new Set(signatures),
+      bankedPenalty: undefined,
+    })).toBeUndefined();
+  });
+
   it("removes moment_static_frame from source retry feedback unless the film is blank", () => {
     const qa: DirectBrowserQaResult = {
       ...base,
@@ -1474,17 +1583,18 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
     const zoom = result.storyboard[0]!.camera!.path[0]!.zoom!;
     expect(zoom).toBeCloseTo(1.342, 2);
     expect(zoom).toBeGreaterThan(1.05);
+    expect(result.storyboard[0]!.camera!.path[0]!.framingCorrection).toBe("camera-sparse-zoom");
     // The input storyboard is never mutated in place.
     expect(storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
   });
 
-  it("clamps the zoom factor at 1.8 for an extremely sparse landing", () => {
+  it("clamps the zoom factor at the camera contract ceiling for an extremely sparse landing", () => {
     const result = correctSparseFraming(
       [cameraScene("tiny", "tiny")],
       qa([sparseIssue("tiny", 0.02, { region: "tiny" })]),
     );
-    // sqrt(0.18/0.02) = 3.0 → clamped to the 1.8 ceiling.
-    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeCloseTo(1.8, 5);
+    // sqrt(0.18/0.02) = 3.0 -> clamped to the camera contract's 2.8 ceiling.
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeCloseTo(2.8, 5);
   });
 
   it("bumps the last targeted full move for a scene-level [data-scene] finding", () => {

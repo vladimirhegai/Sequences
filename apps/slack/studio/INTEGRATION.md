@@ -62,7 +62,7 @@ engine — it reuses `applyDeterministicSourceRepairs` for ALL island injection.
 | `@sequences/platform` `PROVIDERS["openrouter-api"].complete` + `CompleteOptions.images` | `agents/openrouter.ts` (in-process critic; passes ref images to vision-capable models, degrades honestly otherwise) | prompt FILES are never forked — the studio composes a chat prompt from `agents/context.ts`. |
 | `PROVIDERS["claude-code-cli"]` / the `claude` binary on PATH | `agents/cli.ts` spawns `claude -p --output-format stream-json --permission-mode acceptEdits` (cwd = workspace, `--resume` per workspace) | the CLI agent's cwd is the (gitignored) workspace dir but claude can still see the parent repo — treat diff-scoping as a TODO before this is trusted unattended. |
 | `modelPolicy` model ids (`OPENROUTER_CREATIVE_MODEL` / `_LIGHT_MODEL`) | `agents/openrouter.ts` provider switcher | keep the studio's model choices reading from `modelPolicy`, never hard-coded. |
-| `validateDirectComposition` + commit + thumbnails | `agents/context.ts` `regateComposition` — re-gates an agent-edited composition after every CLI turn | the agent is refereed by the production gate; changing its signature breaks the re-gate. |
+| `validateDirectComposition` + commit + thumbnails | `agents/context.ts` `regateComposition` — re-gates an agent-edited CANVAS composition after every CLI turn; RECIPE workspaces re-gate through `gate.ts` `gateWorkspace` instead (2026-07-07 fix: edited `fragment.html` must be re-staged + re-proven, not re-committed as a composition), which also persists the workspace gate record itself | the agent is refereed by the production gate; changing either signature breaks the re-gate. |
 
 ## Environment variables
 

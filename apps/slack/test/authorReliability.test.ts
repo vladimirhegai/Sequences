@@ -780,6 +780,85 @@ describe("deterministic source repair ordering: camera world + component aliases
     expect(validateCameraContract(repaired.html, scenes).errors).toEqual([]);
     expect(validateComponentContract(repaired.html, scenes).errors).toEqual([]);
   });
+
+  it("normalizes the composition root start time without duplicating it", () => {
+    const scenes = storyboard();
+    const first = applyDeterministicSourceRepairs(
+      { html: sourceHtml(), storyboard: scenes },
+      tempDir(),
+      scenes,
+    );
+    expect(first.html).toMatch(/<main\b[^>]*\bdata-composition-id="c"[^>]*\bdata-start="0"/);
+
+    const second = applyDeterministicSourceRepairs(first, tempDir(), scenes);
+    const rootTag = second.html.match(/<main\b[^>]*>/)?.[0] ?? "";
+    expect(rootTag.match(/\bdata-start=/g)).toHaveLength(1);
+  });
+
+  it("injects the canonical ripple even when an authored tween selector names the ripple part", () => {
+    // The 2026-07-07 TraceKit probe replay: the author built a ripple element
+    // AND a tween addressing `[data-part='…-ripple']`. Retiring the element
+    // used to leave the selector string in the inline script, which the bare
+    // attribute-existence test mistook for a still-bound element — no
+    // canonical actor was injected and interaction_ripple_missing survived
+    // every paid attempt.
+    const scenes = storyboard().map((entry) =>
+      entry.id === "palette-ship"
+        ? {
+            ...entry,
+            interactions: [{
+              version: 1 as const,
+              id: "press-palette",
+              sceneId: "palette-ship",
+              cursorId: "pointer",
+              targetPart: "cmd-palette",
+              action: "click" as const,
+              startSec: 5,
+              arriveSec: 5.6,
+              pressSec: 5.7,
+              releaseSec: 5.85,
+              from: "frame:bottom-right" as const,
+              path: "human" as const,
+              aimX: 0.5,
+              aimY: 0.5,
+              feedback: "press-ripple" as const,
+              ripplePart: "palette-ripple",
+            }],
+          }
+        : entry
+    );
+    const html = sourceHtml()
+      .replace(
+        '<div class="cmp cmp-palette material" data-component="command-palette">',
+        '<span data-part="palette-ripple" style="position:absolute;width:0;height:0"></span>' +
+          '<div class="cmp cmp-palette material" data-component="command-palette">',
+      )
+      .replace(
+        'const tl = gsap.timeline({ paused: true });',
+        'const tl = gsap.timeline({ paused: true });\n' +
+          "tl.fromTo(\"#palette-ship [data-part='palette-ripple']\", " +
+          '{ width: 0 }, { width: 340, duration: 0.8 }, 5.7);',
+      );
+    const repaired = applyDeterministicSourceRepairs(
+      { html, storyboard: scenes },
+      tempDir(),
+      scenes,
+    );
+    // The canonical runtime actor exists and owns the data-part.
+    expect(repaired.html).toMatch(
+      /data-sequences-runtime-ripple[^>]*\bdata-part="palette-ripple"/,
+    );
+    // The authored element is retired, and the tween selector follows it with
+    // its original quote style intact (the script must still parse).
+    expect(repaired.html).toContain('data-sequences-retired-ripple="palette-ripple"');
+    expect(repaired.html).toContain(
+      "#palette-ship [data-sequences-retired-ripple='palette-ripple']",
+    );
+    expect(repaired.html).not.toContain("[data-part='palette-ripple']");
+    // Exactly one live binding remains — the canonical actor.
+    const liveBindings = repaired.html.match(/\bdata-part="palette-ripple"/g) ?? [];
+    expect(liveBindings).toHaveLength(1);
+  });
 });
 
 describe("unused host islands and liveness recovery", () => {

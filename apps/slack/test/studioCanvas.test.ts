@@ -30,14 +30,14 @@ describe("validateCanvasFilm", () => {
 
   it("rejects duplicate component ids (they are film-global data-parts)", () => {
     const film = starterCanvasFilm();
-    film.scenes[0].stations[0].components[0].id = "latency-stat"; // collides with proof
+    film.scenes[0]!.stations[0]!.components[0]!.id = "latency-stat"; // collides with proof
     expect(validateCanvasFilm(film).some((e) => /duplicate component id/.test(e))).toBe(true);
   });
 
   it("rejects an unknown component kind and a camera target outside the scene", () => {
     const film = starterCanvasFilm();
-    (film.scenes[0].stations[0].components[0] as { kind: string }).kind = "nope";
-    film.scenes[1].camera[1].toRegion = "does-not-exist";
+    (film.scenes[0]!.stations[0]!.components[0]! as { kind: string }).kind = "nope";
+    film.scenes[1]!.camera[1]!.toRegion = "does-not-exist";
     const errors = validateCanvasFilm(film);
     expect(errors.some((e) => /unknown kind/.test(e))).toBe(true);
     expect(errors.some((e) => /not in scene/.test(e))).toBe(true);
@@ -69,7 +69,7 @@ describe("compileCanvasFilm", () => {
       // The proof scene's camera move shifted by the scene start (4.2s).
       const proof = draft.storyboard.find((s) => s.id === "proof")!;
       expect(proof.camera).toBeDefined();
-      const holdStart = proof.camera!.path[0].startSec;
+      const holdStart = proof.camera!.path[0]!.startSec;
       expect(holdStart).toBeGreaterThanOrEqual(proof.startSec - 0.01);
       // resolveCameraPlan yields segments for the proof scene (empty if times were relative).
       const plan = resolveCameraPlan(draft.storyboard);
@@ -98,7 +98,7 @@ describe("compileCanvasFilm", () => {
 
   it("emits a single-station scene as a flat centered stage (no camera world)", () => {
     const film: CanvasFilm = starterCanvasFilm();
-    const draft = compileCanvasFilm(tempDir(), { ...film, scenes: [film.scenes[0]] });
+    const draft = compileCanvasFilm(tempDir(), { ...film, scenes: [film.scenes[0]!] });
     // Hook has one station and no camera → no data-camera-world for it.
     expect(draft.html).toContain("canvas-flat");
   });

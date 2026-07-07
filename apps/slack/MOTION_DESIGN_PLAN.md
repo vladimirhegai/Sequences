@@ -1,5 +1,28 @@
 # MOTION_DESIGN_PLAN — "produced, not just choreographed" (2026-07-05)
 
+> **Status: IMPLEMENTED (2026-07-06/07) — this is now a verification checklist,
+> not a build target.** All six workstreams shipped and are proven in code:
+> MD1 (`swipe`/`morph`/`match`/`hard` in `cutContract.ts` + `cameraContract.ts`),
+> MD5 `dive` (`cameraContract.ts`, `gradeShift`-style host-timed hold;
+> `test/cameraDive.test.ts`), MD2 the FX runtime (`engine/fxContract.ts` +
+> `templates/sequences-fx.v1.js`; `test/fxContract.test.ts`,
+> `test/fxRuntime.browser.test.ts`), MD3 the `headline` kind + letter machinery
+> (`componentContract.ts`; `test/textFx.browser.test.ts`,
+> `test/motionAutoStyle.test.ts`), MD4 grade shift (`engine/gradeShift.ts`), and
+> MD6 pops + `seqPop`/`seqStamp` eases (`cameraContract.ts` +
+> `sequences-components.v1.js`). Every feature is registered in the Sentinel
+> contract table (`src/engine/sentinel.ts`: `normalize.fx-plan`,
+> `normalize.dive-window`, `normalize.auto-headline-style`,
+> `normalize.assemble-cap`, `normalize.auto-grade-shift`, `normalize.grade-shift`,
+> `normalize.auto-pop-style`, `normalize.open-pop`) — see [SENTINEL.md](SENTINEL.md).
+>
+> **What remains is verification, not construction:** walk this doc's workstreams
+> against the code and the paid-probe checklist in §6, confirm nothing was
+> silently dropped or degraded, and eyeball the motion outputs for the "produced"
+> texture the plan promised (the operator's next step per the working plan). The
+> detailed spec below is preserved verbatim as the source of truth for what each
+> feature was supposed to do.
+
 **Mandate:** add real SaaS motion-design *texture* — light, trails, draws,
 letter energy, color moves — on top of the now-hardened choreography layer
 (the 2026-07-04/05 WS1–WS7 + fallback-elimination work is COMPLETE, audited,

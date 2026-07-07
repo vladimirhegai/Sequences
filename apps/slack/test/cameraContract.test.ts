@@ -271,6 +271,35 @@ describe("resolveCameraPlan", () => {
     expect(parsed.plan).toEqual(plan);
   });
 
+  it("carries host sparse-framing corrections through the island round-trip", () => {
+    const plan = resolveCameraPlan([
+      scene({
+        id: "hero",
+        startSec: 0,
+        durationSec: 4,
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "pan",
+            toRegion: "hero-card",
+            startSec: 0.4,
+            durationSec: 1,
+            zoom: 1.34,
+            framingCorrection: "camera-sparse-zoom",
+          }],
+        },
+      }),
+    ]);
+    const segment = plan.scenes[0]!.segments.find((entry) => entry.move === "pan")!;
+    expect(segment.framingCorrection).toBe("camera-sparse-zoom");
+    const parsed = parseCameraPlan(
+      `<script type="application/json" id="sequences-camera">${JSON.stringify(plan)}</script>`,
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.plan).toEqual(plan);
+  });
+
   it("carries depth3d through resolve and a byte-equal island round-trip", () => {
     const scenes = [
       scene({

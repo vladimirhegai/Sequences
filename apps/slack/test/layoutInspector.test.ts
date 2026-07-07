@@ -175,6 +175,56 @@ window.__timelines["camera-clip-test"]=tl;tl.seek(0);
   };
 }
 
+/**
+ * A declared focal subject that is invisible at the 58% hero sample. With
+ * `visibleLater` the shot resolves it at 2.2s (inside the same scene) — late
+ * choreography the re-sample pass must accept; without it the subject never
+ * appears and the finding must stand.
+ */
+function lateFocalDraft(visibleLater: boolean): DirectCompositionDraft {
+  return {
+    storyboard: [
+      {
+        id: "one",
+        title: "One",
+        purpose: "Reveal",
+        startSec: 0,
+        durationSec: 3,
+        spatialIntent: {
+          version: 1,
+          focalPart: "late-hero",
+          composition: "Hero metric resolves after the supporting copy",
+          relationships: ["hero lands after the claim settles"],
+        },
+      },
+      { id: "two", title: "Two", purpose: "Close", startSec: 3, durationSec: 3 },
+    ],
+    html: `<!doctype html>
+<html><head><script src="gsap.min.js"></script><style>
+html,body{margin:0;width:800px;height:600px;overflow:hidden;background:#10131a}
+#root{--space-safe:60px;position:relative;width:800px;height:600px;overflow:hidden;color:#fff}
+.scene{position:absolute;inset:0;opacity:0}
+h1{margin:0;font:700 40px/1.1 Arial}
+</style></head><body>
+<main id="root" data-composition-id="focal-test" data-width="800" data-height="600" data-duration="6">
+  <section id="one" class="scene clip" data-scene="one" data-start="0" data-duration="3" data-track-index="1">
+    <h1 style="position:absolute;left:200px;top:120px">Latency under control</h1>
+    <div id="late-hero" data-part="late-hero" style="position:absolute;left:250px;top:280px;width:300px;height:120px;background:#232936;opacity:0;font:700 48px/120px Arial;text-align:center">99.98%</div>
+  </section>
+  <section id="two" class="scene clip" data-scene="two" data-start="3" data-duration="3" data-track-index="1">
+    <h1 style="position:absolute;left:280px;top:260px">Done</h1>
+  </section>
+</main><script>
+window.__timelines=window.__timelines||{};
+const tl=gsap.timeline({paused:true});
+tl.set("#one",{opacity:1},0).set("#one",{opacity:0},2.99);
+tl.set("#two",{opacity:1},3).set("#two",{opacity:0},6);
+${visibleLater ? 'tl.set("#late-hero",{opacity:1},2.2);' : ""}
+window.__timelines["focal-test"]=tl;
+</script></body></html>`,
+  };
+}
+
 function titleCardDraft(): DirectCompositionDraft {
   const draft = unsafeDraft();
   // A minimalist title card: one centered headline on a dark ground must
@@ -366,6 +416,23 @@ describe("direct layout inspector", () => {
         .toBe(true);
     },
     30_000,
+  );
+
+  it.skipIf(!findBrowserExecutable())(
+    "accepts a focal subject that resolves late in its shot, keeps one that never appears",
+    async () => {
+      // Late choreography: invisible at the 58% hero sample, visible at 2.2s —
+      // the re-sample pass drops the finding (measurement honesty, the 2026-07-07
+      // attempt-economy sweep's focal-late-sample normalization).
+      const late = await inspectDirectComposition(projectDir(), lateFocalDraft(true));
+      expect(late.ok).toBe(true);
+      expect(late.issues.some((issue) => issue.code === "spatial_focal_invisible")).toBe(false);
+      // A subject visible at NO sample is a real absent focal and still fires.
+      const never = await inspectDirectComposition(projectDir(), lateFocalDraft(false));
+      expect(never.ok).toBe(true);
+      expect(never.issues.some((issue) => issue.code === "spatial_focal_invisible")).toBe(true);
+    },
+    120_000,
   );
 
   it.skipIf(!findBrowserExecutable())(

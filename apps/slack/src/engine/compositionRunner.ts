@@ -1237,6 +1237,25 @@ function normalizeInteractionActors(
       `\\bdata-part\\s*=\\s*(["'])${regexpEscape(interaction.ripplePart)}\\1`,
       "i",
     );
+    // The cursor precedent, applied per ripple id: authored CSS/JS selectors
+    // (`[data-part='the-ripple']` in a tween or stylesheet) must keep
+    // addressing the RETIRED decoration — both so they never grab the
+    // canonical actor injected below, and so the bare-attribute existence
+    // test cannot mistake a selector string inside an inline script for a
+    // still-bound element (the 2026-07-07 TraceKit probe shipped rippleless
+    // exactly this way: the authored tween's selector kept
+    // `interaction_ripple_missing` alive through every paid attempt).
+    const rippleSelector = new RegExp(
+      `\\[\\s*data-part\\s*=\\s*(["'])${regexpEscape(interaction.ripplePart)}\\1\\s*\\]`,
+      "gi",
+    );
+    // Keep the ORIGINAL quote character: the selector usually lives inside a
+    // quoted JS string, and swapping quote styles would break its parse.
+    html = html.replace(
+      rippleSelector,
+      (_match, quote: string) =>
+        `[data-sequences-retired-ripple=${quote}${interaction.ripplePart}${quote}]`,
+    );
     html = html.replace(/<[a-z][\w:-]*\b[^>]*>/gi, (tag) => {
       if (
         tag.includes("data-sequences-runtime-ripple") ||
@@ -2202,10 +2221,11 @@ export function repairContrastAaIssues(
 
 /** Coverage floor the sparse framing audit enforces (layoutInspector SPARSE_COVERAGE_MIN). */
 const SPARSE_FRAMING_TARGET_COVERAGE = 0.18;
-/** Never magnify a sparse landing past this fit multiplier (well under camera ZOOM_MAX 2.8). */
-const SPARSE_FRAMING_ZOOM_MAX = 1.8;
+/** Never magnify a sparse landing past the camera contract's own fit multiplier ceiling. */
+const SPARSE_FRAMING_ZOOM_MAX = 2.8;
 /** A correction must clear the audit's 1.05 zoom-skip threshold to actually take effect. */
 const SPARSE_FRAMING_ZOOM_FLOOR = 1.08;
+const SPARSE_FRAMING_KEY_SEPARATOR = "\u0000";
 
 /**
  * Choose the camera move a sparse finding should zoom in on. A finding that
@@ -2238,7 +2258,7 @@ function pickSparseMoveIndex(
  * `repairContrastAaIssues`): browser QA measured a camera landing — or a
  * camera-less mid-window — as a tiny subject adrift, so raise its coverage to
  * the audit floor with a bounded zoom-in on exactly the move that frames it.
- * The zoom factor `sqrt(0.18 / fraction)` (clamped 1.0..1.8) magnifies the
+ * The zoom factor `sqrt(0.18 / fraction)` (clamped 1.0..2.8) magnifies the
  * measured coverage back toward the 18% floor without ever cropping past it.
  * Pure: returns the mutated storyboard + the scene ids corrected. The caller
  * re-injects the camera island from the mutated storyboard (the
@@ -2256,7 +2276,7 @@ export function correctSparseFraming(
     if (issue.code !== "camera_framed_sparse" || !issue.framing) continue;
     const { sceneId, fraction, part, region } = issue.framing;
     if (!(fraction > 0)) continue;
-    const key = `${sceneId} ${part ?? ""} ${region ?? ""}`;
+    const key = [sceneId, part ?? "", region ?? ""].join(SPARSE_FRAMING_KEY_SEPARATOR);
     const existing = wanted.get(key);
     if (!existing || fraction < existing.fraction) {
       wanted.set(key, { fraction, part, region });
@@ -2269,7 +2289,7 @@ export function correctSparseFraming(
     const path = scene.camera?.path;
     if (!path?.length) return scene;
     const findings = [...wanted.entries()]
-      .filter(([key]) => key.startsWith(`${scene.id} `))
+      .filter(([key]) => key.startsWith(`${scene.id}${SPARSE_FRAMING_KEY_SEPARATOR}`))
       .map(([, value]) => value)
       .sort((a, b) => a.fraction - b.fraction);
     if (!findings.length) return scene;
@@ -2293,6 +2313,7 @@ export function correctSparseFraming(
       ) / 1000;
       if (nextZoom <= base + 0.0001) continue;
       move.zoom = nextZoom;
+      move.framingCorrection = "camera-sparse-zoom";
       changed = true;
     }
     if (!changed) return scene;
@@ -2672,12 +2693,31 @@ export function repairMalformedFromToCalls(
   return { html, repairs, fromRepairs, toRepairs, ambiguous };
 }
 
+function ensureRootDataStart(html: string): { html: string; repaired: boolean } {
+  const rootPattern = /<[a-z][\w:-]*\b(?=[^>]*\bdata-composition-id\s*=)[^>]*>/i;
+  let repaired = false;
+  const next = html.replace(rootPattern, (tag) => {
+    if (/\bdata-start\s*=/.test(tag)) return tag;
+    repaired = true;
+    return tag.replace(/\s*\/?>$/, (suffix) =>
+      suffix.includes("/") ? ` data-start="0" />` : ` data-start="0">`
+    );
+  });
+  return { html: next, repaired };
+}
+
 export function applyDeterministicSourceRepairs(
   draft: DirectCompositionDraft,
   projectDir: string,
   lockedStoryboard?: DirectScene[],
 ): DirectCompositionDraft {
   let html = draft.html;
+  const rootTiming = ensureRootDataStart(html);
+  if (rootTiming.repaired) {
+    html = rootTiming.html;
+    recordSentinelNormalization("root-data-start", 1);
+    process.stderr.write("[author] inserted root data-start=\"0\"\n");
+  }
   const visibilityTweens = normalizeGsapDisplayVisibilityTweens(html);
   if (visibilityTweens.repairs) {
     html = visibilityTweens.html;
@@ -6601,7 +6641,20 @@ const HIGH_VISIBILITY_ISSUE_WEIGHTS: Record<string, number> = {
   eye_trace_jump: 6,
 };
 
-function browserQualityPenalty(
+/**
+ * Findings that ask for a DECLARATION, not a visual change. A banked draft is
+ * not one pixel worse for lacking relational layout paperwork, so these must
+ * not steer the least-bad pick or hold the attempt-2 budget broker under its
+ * penalty ceiling (2026-07-07 ledger sweep: `layout_intent_missing` was the
+ * single most repeated browser-rejection line, repeated VERBATIM across paid
+ * patch attempts on every probe — the patch never declares the intent, and the
+ * film ships with the finding as an advisory at attempt 3 anyway).
+ */
+const PAPERWORK_ISSUE_WEIGHTS: Record<string, number> = {
+  layout_intent_missing: 0,
+};
+
+export function browserQualityPenalty(
   browserQa: DirectBrowserQaResult,
   staticRepairWarnings: string[] = [],
 ): number {
@@ -6612,6 +6665,7 @@ function browserQualityPenalty(
     browserQa.issues.reduce(
       (total, issue) =>
         total + (
+          PAPERWORK_ISSUE_WEIGHTS[issue.code] ??
           HIGH_VISIBILITY_ISSUE_WEIGHTS[issue.code] ??
           (issue.severity === "error" ? 4 : issue.severity === "warning" ? 1 : 0)
         ),
@@ -6710,6 +6764,52 @@ export function earlyLeastBadPublishReason(
   return `early-least-bad-pick:penalty=${candidate.qualityPenalty};findings=${
     codes.length ? codes.join(",") : "polish"
   }`;
+}
+
+/**
+ * Attempt-economy exit (2026-07-07 ledger sweep): a browser rejection whose
+ * finding-signature set is IDENTICAL to the previous rejected attempt's proves
+ * the paid patch between them changed nothing the gate can measure. Every
+ * recent probe showed this shape — the same polish findings, verbatim, on
+ * attempts 1 and 2 — after which attempt 3 shipped the banked least-bad draft
+ * with those findings as advisories anyway. When that happens, ship the banked
+ * draft NOW: the artifact is identical to what attempt 3 would publish, minus
+ * one paid patch call and one full browser-QA cycle. Gates unchanged — this is
+ * evidence-based demotion timing, not a new acceptance. Hard failures never
+ * qualify (`browserQaOk` is false on runtime/interaction/blank-film errors,
+ * which also never bank a least-bad candidate).
+ *
+ * Signatures compare DIGIT-STRIPPED (the storyboard commit-or-revert classKey
+ * precedent): measured values and time windows jitter between attempts
+ * (contrast 4.4→3.39 on the same element, a window shifting 0.89–1.60 →
+ * 0.90–1.90), and a patch that nudged a measurement without clearing the
+ * defect is still the same defect list. A patch that CLEARS or MINTS a
+ * finding changes the set and keeps the ladder running.
+ */
+export function stagnantPolishSignature(finding: string): string {
+  // The sampled-time parenthetical also changes SHAPE between attempts (a
+  // point `(t=7.74s)` vs a window `(t=7.74–8.35s)`), so it is removed whole
+  // before the digit strip.
+  return findingSignature(finding)
+    .replace(/\(t=[^)]*\)/g, "(t)")
+    .replace(/\d+(?:\.\d+)?/g, "#");
+}
+
+export function stagnantPolishShipReason(args: {
+  attempt: number;
+  browserQaOk: boolean;
+  currentSignatures: readonly string[];
+  previousSignatures: ReadonlySet<string>;
+  bankedPenalty: number | undefined;
+}): string | undefined {
+  if (args.attempt < 2 || !args.browserQaOk) return undefined;
+  if (args.bankedPenalty === undefined) return undefined;
+  const current = new Set(args.currentSignatures);
+  if (!current.size || current.size !== args.previousSignatures.size) return undefined;
+  for (const signature of current) {
+    if (!args.previousSignatures.has(signature)) return undefined;
+  }
+  return `stagnant-polish-early-ship:penalty=${args.bankedPenalty}`;
 }
 
 /**
@@ -8409,6 +8509,11 @@ async function authorCompositionLoop(
   // Signatures of the previous static rejection — a signature present in two
   // consecutive rejections survived a repair that was told to fix it.
   let previousStaticSignatures: ReadonlySet<string> = new Set();
+  // Signatures of the previous BROWSER rejection — an identical set on the
+  // next attempt proves the paid patch between them moved nothing the gate
+  // measures, so the banked least-bad draft ships early (see
+  // stagnantPolishShipReason).
+  let previousBrowserSignatures: ReadonlySet<string> = new Set();
   let lastBrowserValid:
     | (CompositionRunResult & { qualityPenalty: number })
     | undefined;
@@ -8954,6 +9059,7 @@ async function authorCompositionLoop(
               validation = candidateValidation;
               browserQa = candidateQa;
               staticRepairWarnings = afterStaticWarnings;
+              args = { ...args, lockedStoryboard: candidate.storyboard };
               persistUpgradedStoryboard(args.projectDir, candidate.storyboard);
             } else {
               process.stderr.write(
@@ -9043,6 +9149,18 @@ async function authorCompositionLoop(
         outcome: "browser-rejected",
         findingSignatures: validationFeedback.map(findingSignature).slice(0, 24),
       });
+      const stagnationKeys = validationFeedback.map(stagnantPolishSignature);
+      const stagnantReason = stagnantPolishShipReason({
+        attempt,
+        browserQaOk: browserQa.ok,
+        currentSignatures: stagnationKeys,
+        previousSignatures: previousBrowserSignatures,
+        bankedPenalty: lastBrowserValid?.qualityPenalty,
+      });
+      if (stagnantReason && lastBrowserValid) {
+        return publishBrowserValidCandidate(lastBrowserValid, attempt, stagnantReason);
+      }
+      previousBrowserSignatures = new Set(stagnationKeys);
       // A runtime bind exception means the compile aborted before the timeline
       // registered: the document's structure lied to static validation, so a
       // compact patch would repair blind against markup the DOM does not agree

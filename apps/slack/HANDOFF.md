@@ -1,171 +1,135 @@
-# HANDOFF — next session (updated 2026-07-05, WS audit pass)
+# HANDOFF — where we are, what's next (updated 2026-07-07)
 
-> **The 2026-07-04 motion-quality mandate is COMPLETE and audited.** All of
-> IMPROVEMENT_PLAN WS1–WS7, the WS_Improvements follow-ups, and the
-> LESS_FALLBACKS levers are built, live-probe-verified, and recorded in
-> ROADMAP's 2026-07-05 sections (those three planning docs are retired; the
-> "Full audit" section carries the parked follow-ups). The next mandate is
-> [MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md) — texture on top of the
-> hardened choreography.
+The lightweight "start here for the next session" pointer. The detailed
+inventories live in [ROADMAP.md](ROADMAP.md) (feature-by-feature current state),
+[SENTINEL.md](SENTINEL.md)/[SENTINEL_REPORT.md](SENTINEL_REPORT.md) (the
+correctness system + its shipped evidence), and [FALLBACKS.md](FALLBACKS.md)
+(fallback classes + the recoverable-paperwork catalog). This file is just the
+map + the ordered plan + the gotchas.
 
-Newest first: the `palette-input` production fallback (17:49 UTC) is closed —
-`PLAN_source_author_fallback_reliability.md` is retired; the shipped design
-lives in ROADMAP "Source-author fallback elimination (2026-07-04, latest)"
-and CLAUDE.md. Earlier the same day, both remaining HANDOFF goals (rendered
-temporal judge, camera depth level 2) and all three source-author reliability
-levers from the motion-quality diagnosis were **BUILT and verified**;
-`PLAN_camera_depth_level2.md` is retired. No plan docs survive — ROADMAP +
-CLAUDE.md are the inventory.
+## What is shipped (the three completed mandates)
 
-## What shipped this session (2026-07-04, fallback elimination)
-
-1. **Contract-binding reconciliation** — bridged-cut focal parts and camera
-   stations/parts reconcile deterministically (exact id / unique semantic /
-   exact-name station, scene-scoped, ambiguity stays blocking) in
-   `applyDeterministicSourceRepairs`, before any paid repair is spent.
-2. **Volunteered-cut degradation** — a brief-unrequested shape-match/
-   object-match whose endpoint signature survives a model repair degrades to
-   zoom-through atomically (`degradeVolunteeredBridgedCuts`); brief-required
-   styles never degrade. The mutated storyboard persists + flows downstream.
-3. **Non-convergence strategy switch** — `findingSignature` collapses regex
-   + kit-audit wordings of one defect to one signature; a survivor of the
-   patch asked to fix it switches the final attempt to full-context
-   re-authoring (`repairStrategyAfterStaticRejection`); `near_blank_film:`
-   browser findings escalate the same way (a blank scene is a missing
-   visual world — probe-cutfix-2's stall class).
-4. **Repair-prompt bindings discipline** — bridged-cut endpoint checklist
-   (both sides, present/MISSING) + never-delete-other-bindings warning.
-5. **Run diagnostics** — `planning/author-run.json` per run: attempt modes,
-   normalized finding signatures, strategy changes, terminal signatures.
-
-Proof: `test/authorReliability.test.ts` (16 cases incl. the minimized
-incident replay both ways). Live: `probe-cutfix-1` (incident-shaped RADAR
-brief) published `hyperframes-direct`, no fallback. Details in ROADMAP.
-
-## What shipped earlier this day (2026-07-04, reliability + judge + depth)
-
-1. **Author scratch persistence** — every rejected author attempt writes
-   document + findings to `planning/attempts/author-<n>-<outcome>.*`
-   (diagnostics only, never re-enters the pipeline).
-2. **Bind-exception escalation** — the opaque `Waiting failed: 12000ms` is now
-   `runtime_bind_exception: … — <real console error>`; on that class the
-   author loop abandons the scratch and re-authors with full context instead
-   of a compact patch (the patch-fixed-the-chart-and-broke-the-scene bug).
-3. **Static kit-markup completeness** (`engine/kitMarkupAudit.ts`, linkedom):
-   the runtimes' DOM bind queries re-run statically — chartless charts,
-   itemless rows/select, fill-less progress, absent morph twins, missing
-   camera worlds/stations, and scenes present to regex but absent to a
-   spec-parsed DOM are all named blocking findings before the browser.
-4. **Rendered temporal judge** (`judgeRenderedMoments` in
-   `layoutInspector.ts`): before/mid/after downscaled frame triples around
-   every evidence-bound moment, pixel-diffed in-page; invisible claimed
-   changes become `moment_static_frame` polish findings (strictOk-blocking,
-   never unpublishing). `SLACK_SEQUENCES_TEMPORAL_JUDGE=0` kills it;
-   QA_CACHE_VERSION → 3. The mid-frame exists because a highlight pulse
-   returns to rest by the settle frame — before/after alone reads it static.
-5. **Camera depth level 2** — whip blur relocated to a `.seq-whip-lens`
-   backdrop overlay (the world element never carries a CSS filter again),
-   then opt-in `"depth3d":true` on an orbit scene: preserve-3d world,
-   per-layer `translateZ` as a pure function of orbit deflection, flat at
-   rest. Storyboard cache contract → v7. Default-off; 1080p render-cost
-   benchmarking is still open before broader-than-hero use.
-
-Live-verified with one paid probe (`levers-live-1`, Pulseboard brief
-demanding the previous session's failure shape — chart + palette + orbit):
-**published `hyperframes-direct`, no fallback.** Attempt 1 repeated the old
-chart/camera-world mistakes and the kit audit named them statically (plus a
-DOM-level cut focal-part catch on attempt 2); attempt 3 passed; the critic
-applied 5 directives; the temporal judge measured 11/12 moments as real
-change and flagged one invisible tick as polish feedback; both rejected
-attempts persisted under `planning/attempts/`. Details in ROADMAP.
+1. **Choreography hardening (2026-07-04/05, WS1–WS7 + fallback elimination).**
+   Pacing/energy/eye-trace/exit/coherence gates, moment-visible thumbnails,
+   deterministic contract-binding reconciliation, the safe-fallback film. Record
+   in ROADMAP's 2026-07-05 sections; the IMPROVEMENT_PLAN / WS_Improvements /
+   LESS_FALLBACKS planning docs are retired (their surviving items are in
+   ROADMAP's "Full audit").
+2. **Sentinel — correctness by construction (2026-07-05/06, flags default ON).**
+   Every mechanically-decidable obligation moved to the lowest owning layer (L0
+   schema / L1 scaffold / L2 normalize), scene-scoped slot retries, the contract
+   registry + closed-world test, the prompt budget test, telemetry
+   (`sentinel:report`). System doc: [SENTINEL.md](SENTINEL.md); design contract:
+   [SENTINEL_PLAN.md](SENTINEL_PLAN.md); shipped evidence: [SENTINEL_REPORT.md](SENTINEL_REPORT.md).
+3. **Motion-design texture (2026-07-06/07, MD1–MD6).** The FX runtime
+   (sweep/glow/draw/echo), the `dive` camera move, the `headline` kind + letter
+   machinery, animated grade shifts, playful pops. IMPLEMENTED and registered in
+   the Sentinel table — see [MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md) (now a
+   verification checklist, not a build target).
+4. **Recipe Studio (2026-07-07, sessions 1–2).** RecipeV2 + Level-1 host
+   instantiation (the sixth host contract), the studio server/gate/export, the
+   canvas builder, and the agent chat. Golden `last-word-roulette` proven; the
+   paid live-create proof did NOT convert (the recipe-declaration gap). Plan:
+   [../../docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md); reports:
+   [RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md) +
+   [RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md); next-agent prompt:
+   [../../docs/RECIPE_STUDIO_HANDOFF.md](../../docs/RECIPE_STUDIO_HANDOFF.md).
 
 ## Read first
 
 1. [CLAUDE.md](CLAUDE.md) — two bots, isolation, determinism boundary,
    verification ladder, publish-vs-deploy.
-2. [ROADMAP.md](ROADMAP.md) — current state; the three 2026-07-04 sections
-   (motion-quality, performance, reliability+judge+depth) are the latest
-   inventory.
+2. [ROADMAP.md](ROADMAP.md) — current state; the 2026-07-05/06/07 sections are
+   the latest inventory.
 
-## Candidate next goals (in rough order of leverage)
+## The plan from here (the operator's ordered roadmap)
 
-1. **Recipe Studio M1–M2** (`docs/RECIPE_STUDIO_PLAN.md`, monorepo root) —
-   local cockpit over the engine + recipes-as-skills retrieval.
-2. **Temporal judge, vision half** — the deterministic frame-difference core
-   is live; the remaining half of the original breakthrough note is a vision
-   critic over the same moment frames (legibility, semantic "did the RIGHT
-   thing change"). Budget/caching machinery now exists to hang it on.
-3. **Depth3d render benchmark** — before teaching the prompt to use depth3d
-   more than once per film, benchmark software-rasterized 1080p render cost
-   of sustained preserve-3d layers.
-4. **Audio** — any soundtrack must be remapped through the same warp knots
-   (`sequences-time.v1.js` header note). Do not add audio without it.
+1. **Review Sentinel + the shipped Recipe Studio features.** Walk the past
+   fallbacks/attempts (`sentinel:report` over recent probe dirs + the
+   `planning/attempts/` + `author-run.json` artifacts), confirm Sentinel
+   actually captures each failure class at the right layer, and hunt for bugs /
+   places attempts can be cut further. Fewer paid attempts is the metric.
+2. **Complete the Recipe Studio** per [../../docs/RECIPE_STUDIO_HANDOFF.md](../../docs/RECIPE_STUDIO_HANDOFF.md)
+   — the #1 item there is closing the **recipe-declaration gap** (a host-side
+   auto-declare for high-confidence matches; today's retrieval *offer* doesn't
+   convert the planner). Then CLI diff-scoping, cursor paths + effect presets,
+   the export describe pass, library curation.
+3. **Verify MOTION_DESIGN_PLAN end-to-end** — walk MD1–MD6 against the code +
+   the §6 paid-probe checklist; confirm nothing was silently dropped/degraded.
+4. **Fix bugs in the live motion-design output** — eyeball real paid runs, fix
+   the "produced texture" misses, and keep watching fallbacks/attempts while you
+   do (every fix goes through the Sentinel placement tree, never a prompt patch).
+5. **Grow the library + minor features.** Author recipes in the studio; pull
+   small features from ROADMAP/ARCHITECTURE backlogs (SFX, **music** — see the
+   audio note below, an unbuilt hard constraint).
+6. **Finish the context bot ↔ Slack loop** — richer hosted-MCP retrieval:
+   images, past-thread context, and Slack-native UX polish
+   (`slackMcpContext.ts`, `thread.ts`).
 
-### Something next (large — deliberately deferred by the motion-quality pass)
+## Parked large goals (deliberately deferred — don't start ad hoc)
 
-These came out of the 2026-07-04 motion-quality diagnosis but are too big for
-the perfect-what-exists pass; park them here, do not start them ad hoc.
-(Smaller parked follow-ups — lever 11 frame-cache mirror, `stream`-beat
-top-up, WS5 occupancy grid, hint-less shape-match sanity — live in ROADMAP's
+These came out of the motion-quality diagnosis and are too big for a
+perfect-what-exists pass. (Smaller parked follow-ups live in ROADMAP's
 2026-07-05 "Full audit" section.)
 
-5. **Host-owned exit contract (a sixth typed contract)** — typed `exits` the
-   way cuts/camera/components/interactions/timeRamp are typed: the planner
-   declares when a surface retires, the host compiles the directional exit.
-   WS4 shipped the cheap version (`auditSurfaceExits` plan gate + advisory
-   `stale_asset_lingers` QA + prompt doctrine); build the full contract only
-   if that proves insufficient.
-6. **Content-aware station auto-fit** — when browser QA measures a framed
-   station whose content bbox is clipped or sparse, deterministically adjust
-   the station rect / fit zoom from the measured bounds instead of asking the
-   author to move markup. Powerful, but it makes the camera plan a function of
-   measured pixels — cache/determinism implications need real design.
-7. **Saliency-based eye-trace v2** — WS2's focal-part proxy, upgraded to
-   actual visual-saliency estimation over rendered frames (pairs naturally
-   with the vision half of the temporal judge, #2 above).
+1. **Temporal judge, vision half** — the deterministic frame-difference core is
+   live (`moment_static_frame`); the remaining half is a vision critic over the
+   same moment frames (legibility, "did the RIGHT thing change"). Budget/caching
+   machinery now exists to hang it on.
+2. **Host-owned exit contract (a typed `exits` contract)** — WS4 shipped the
+   cheap version (`auditSurfaceExits` + advisory `stale_asset_lingers` + prompt
+   doctrine); build the full typed contract only if that proves insufficient.
+3. **Content-aware station auto-fit** — deterministically adjust station rect /
+   fit zoom from measured content bounds instead of asking the author to move
+   markup. Powerful, but it makes the camera plan a function of measured pixels —
+   cache/determinism implications need real design.
+4. **Saliency-based eye-trace v2** — upgrade WS2's focal-part proxy to real
+   visual-saliency over rendered frames (pairs with the vision judge, #1).
+5. **Audio / music / SFX** — any soundtrack MUST be remapped through the same
+   `timeRamp` warp knots (`sequences-time.v1.js` header note) and stay a pure
+   function of timeline time. Do NOT add audio without honoring the warp seam.
+   This is the substrate rule for the operator's step-5 "music/SFX" work.
+6. **Depth3d render benchmark** — before teaching the prompt to use `depth3d`
+   more than once per film, benchmark software-rasterized 1080p render cost of
+   sustained preserve-3d layers.
 
-## Gotchas that will save you hours (inherited + new)
+## Gotchas that will save you hours
 
-1. **Injection anchors are load-bearing.** The time-wrap rewrite stays LAST
-   and `timelineRegistrationAnchor` must match plain + wrapped forms.
-   `test/timeRamp.test.ts` "all-five-contracts injection regression" guards it.
-2. **Time bases**: content time everywhere except enumerated viewer-time
+1. **Injection anchors are load-bearing.** The time-wrap rewrite stays LAST and
+   `timelineRegistrationAnchor` must match plain + wrapped forms
+   (`test/timeRamp.test.ts` "all-contracts injection regression" guards it).
+2. **Time bases:** content time everywhere except enumerated viewer-time
    consumers; physical seeks convert via `warpInverseOf` at the seek only.
-   The temporal judge follows this (it seeks through `seekContent`).
-3. **Bump the storyboard cache `contract`** (now v10) on storyboard shape
-   changes; bump `QA_CACHE_VERSION` (now 8) on inspector semantics changes.
-4. **Vitest root gotcha**: `npm run test --workspace @sequences/slack`, or
+3. **Bump the storyboard cache `contract`** on storyboard-shape changes; bump
+   `QA_CACHE_VERSION` on inspector-semantics changes.
+4. **Vitest root gotcha:** `npm run test --workspace @sequences/slack`, or
    `npx vitest run --root ../.. apps/slack/test/<file>` from `apps/slack`.
 5. **`sequence:check` job dirs are immutable** — retried live probes need a
    fresh `--job-id`.
-6. **Paid live probe recipe**: extract `OPENROUTER_API_KEY` from
-   `apps/slack/.env` with an ABSOLUTE path and confirm it is non-empty (a
-   `no OpenRouter API key` fallback is a harness error, never a code
-   regression), set `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0` so a
-   probe fails visibly, then
-   `npm run sequence:check --workspace @sequences/slack -- --product …
-   --what "…" --provider openrouter-api --job-id <id> --format both`; inspect
-   `.data/projects/<id>/planning/` (`attempts/` now covers BOTH the author
-   and storyboard stages, plus the per-run `author-run.json` signature
-   summary) and the report's `authoringMode`/`fallbackStage` — and LOOK at
-   `build/thumbs/*.png` with your own eyes.
-7. **Test styling via classes, not `data-part` attribute selectors** — bridge
-   clones strip `data-part`.
-8. Finish = commit → `bash scripts/publish-public.sh "<msg>"` → `railway up`
-   (publish does NOT deploy) → poll `railway deployment list`.
-9. **When a repair loop fails 3× on the same finding, suspect the finding.**
-10. **Post-authoring passes re-inject from the SHIPPED storyboard**
-    (`result.draft.storyboard`), never `args.lockedStoryboard`.
-11. **New plan-gate rules must not veto volunteered enhancements** — degrade,
-    don't block (`depth3d` on an orbit-less path is the newest example).
-12. **A pooled/unref'd child process must be re-`ref()`ed while awaited.**
-13. **Hedging must never replace the retry loop.**
-14. **The world element must NEVER carry a CSS filter** — whip blur lives on
-    the `.seq-whip-lens` backdrop overlay, rack focus on layers. A filter on
-    the world silently flattens preserve-3d children (depth3d dies, no error).
-15. **Pulse-shaped evidence needs the mid-frame** — any future rendered
-    comparison that only samples before/after will call highlights, presses,
-    and ripples "static". Sample the peak.
-16. **linkedom is the static DOM oracle** — if a bind query changes in a
-    runtime template, mirror it in `kitMarkupAudit.ts` or the completeness
-    check drifts from what the browser actually resolves.
+6. **Paid live probe recipe:** extract `OPENROUTER_API_KEY` from `.env` with an
+   ABSOLUTE path and confirm it is non-empty (a `no OpenRouter API key` fallback
+   is a harness error, not a code regression); set
+   `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0` so a probe fails visibly;
+   then `sequence:check … --provider openrouter-api --job-id <id> --format both`;
+   inspect `planning/` (`attempts/` covers author + storyboard stages,
+   `author-run.json` + `sentinel-run.json` the signatures) and **LOOK at
+   `build/thumbs/*.png` with your own eyes** (reports have said "pass" on films
+   the operator called a mess).
+7. **Style via classes, not `data-part` attribute selectors** — bridge clones
+   strip `data-part`.
+8. **When a repair loop fails 3× on the same finding, suspect the finding.**
+9. **Post-authoring passes re-inject from the SHIPPED storyboard**
+   (`result.draft.storyboard`), never `args.lockedStoryboard`.
+10. **New plan-gate rules must not veto volunteered enhancements** — degrade,
+    don't block (`depth3d` on an orbit-less path is the canonical example).
+11. **The world element must NEVER carry a CSS filter** — whip blur lives on the
+    `.seq-whip-lens` overlay, rack focus on layers, FX on transform/opacity
+    children. A filter on the world silently flattens preserve-3d (depth3d dies,
+    no error).
+12. **Pulse-shaped evidence needs the mid-frame** — any rendered comparison that
+    only samples before/after calls highlights, presses, and ripples "static".
+13. **linkedom is the static DOM oracle** — if a bind query changes in a runtime
+    template, mirror it in `kitMarkupAudit.ts` or the completeness check drifts
+    from what the browser resolves.
+14. **Finish = commit → `bash scripts/publish-public.sh "<msg>"` → `railway up`**
+    (publish does NOT deploy) → poll `railway deployment list` / `/healthz`.

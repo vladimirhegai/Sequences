@@ -176,6 +176,8 @@ export interface CameraMoveIntentV1 {
   outSec?: number;
   /** Optional rack-focus pull attached to this move's window. */
   focus?: CameraFocusIntentV1;
+  /** Host-applied correction that must remain browser-auditable after zoom. */
+  framingCorrection?: "camera-sparse-zoom";
   startSec: number;
   durationSec: number;
   ease?: string;
@@ -213,6 +215,8 @@ export interface CameraSegmentV1 {
   outSec?: number;
   /** Rack-focus pull bound to this segment's window. */
   focus?: CameraFocusIntentV1;
+  /** Host-applied correction that must remain browser-auditable after zoom. */
+  framingCorrection?: "camera-sparse-zoom";
 }
 
 export interface SceneCameraPlanV1 {
@@ -547,6 +551,9 @@ export function resolveCameraPlan(scenes: DirectScene[]): CameraPlanV1 {
           : {}),
         ...(legs ? { inSec: legs.inSec, outSec: legs.outSec } : {}),
         ...(entry.move.focus ? { focus: entry.move.focus } : {}),
+        ...(entry.move.framingCorrection === "camera-sparse-zoom"
+          ? { framingCorrection: "camera-sparse-zoom" as const }
+          : {}),
       });
       cursor = endSec;
     }
@@ -681,6 +688,9 @@ export function parseCameraPlan(html: string): { plan?: CameraPlanV1; errors: st
           ? { inSec: segment.inSec, outSec: segment.outSec }
           : {}),
         ...(focus ? { focus } : {}),
+        ...(segment.framingCorrection === "camera-sparse-zoom"
+          ? { framingCorrection: "camera-sparse-zoom" as const }
+          : {}),
       }];
     });
     return sceneId && segments.length

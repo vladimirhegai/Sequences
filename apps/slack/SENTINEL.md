@@ -125,7 +125,8 @@ rung) · **advisory** (never blocks).
 | interactions | `normalize.source-bindings` | L2 normalize | det-repair | — (reconciles near-miss data-part/region) | authorReliability |
 | normalize | `normalize.camera-budget-clamp` | L2 normalize | det-repair | — (prevents `pacing/camera-budget`) | pacingAudit |
 | normalize | `normalize.pacing-stretch` | L2 normalize | det-repair | — (prevents `pacing/reading`,`/outcome`) | pacingAudit |
-| normalize | `normalize.camera-move-delay` | L2 normalize | det-repair | — (prevents `pacing/outcome` "0.0s later") | pacingAudit |
+| normalize | `normalize.camera-move-delay` | L2 normalize | det-repair | — (prevents `pacing/outcome` "0.0s later"; 2026-07-07: a delayed move that overruns the scene's own cut also stretches the boundary by the overflow, ≤1.0s, cascade-shifting later scenes — the short-scene shape every probe re-rejected) | pacingAudit |
+| normalize | `normalize.root-data-start` | L2 normalize | det-repair | — (inserts `data-start="0"` on a model-authored composition root that omits it; idempotent) | authorReliability |
 | normalize | `normalize.timeramp-retime` | L2 normalize | det-repair | — (prevents ramp motivation/solvability vetoes) | directComposition |
 | normalize | `normalize.dive-window` | L2 normalize | det-repair | — (derives `dive` in/hold/out legs from the beats on its target; a beat-less dive degrades to push-in) | cameraDive |
 | normalize | `normalize.fx-plan` | L2 normalize | det-repair | — (host-derives the sequences-fx garnish plan; every runtime bind is enhancement-only) | fxContract |
@@ -138,7 +139,8 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.morph-twin-reconcile` | L2 normalize | det-repair | — (prevents morph-to-undeclared-twin vetoes) | directComposition |
 | normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites malformed `fromTo(t, vars, <number>)` to `.to` only after an earlier opposite-state initialization; entrance-looking, mixed, and cue-less direction stays blocking) | authorReliability |
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
-| normalize | `normalize.camera-sparse-zoom` | L2 normalize | det-repair | — (repairs `camera_framed_sparse`: bounded zoom-in `sqrt(0.18/fraction)` on the framing move; adopted only if the finding clears, no new `camera_framed_clipped`, penalty strictly drops) | framingCoverage.browser |
+| normalize | `normalize.camera-sparse-zoom` | L2 normalize | det-repair | — (repairs `camera_framed_sparse`: bounded zoom-in `sqrt(0.18/fraction)`, clamp 1.0..2.8, on the framing move, marked `framingCorrection` so browser QA keeps auditing the zoomed landing; adopted only if the finding clears, no new `camera_framed_clipped`, penalty strictly drops; the adopted storyboard replaces `lockedStoryboard`) | framingCoverage.browser |
+| layout | `normalize.focal-late-sample` | L2 normalize | det-repair | — (measurement honesty: `spatial_focal_invisible` re-samples ≤2 later instants in the same shot before reporting — a late-entering focal is choreography, not absence; a subject visible at NO sample still fires) | layoutInspector |
 | camera | `camera.energy` | L3 static | blocking | `camera/energy` | cameraContract |
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |
 | coherence | `cuts.coherence` | L3 static | advisory-late | `cuts/coherence` | cutContract |
@@ -330,6 +332,42 @@ The 2026-07-06 final audit made the instrument honest end-to-end:
 fail-loud runs (the old report excluded exactly the most expensive failures);
 a "Cost honesty" line carries failed calls, hedge duplicates, and shipped
 degradations.
+
+### Attempt economy at the author stage (2026-07-07 sweep)
+
+The 49-run ledger showed EVERY published run burning exactly 3 source-author
+attempts: polish findings (layout intent, contrast, overflow, focal, sparse)
+block attempts 1–2 by design, the compact patches demonstrably don't fix them
+(the same findings, verbatim, on consecutive attempts), and attempt 3 ships the
+banked least-bad draft with the findings as advisories anyway. Three seams now
+cut that cost without touching any gate:
+
+- **`stagnant-polish-early-ship`** (`stagnantPolishShipReason`): a browser
+  rejection whose finding-signature set is IDENTICAL to the previous attempt's
+  proves the paid patch between them changed nothing the gate measures — the
+  banked least-bad draft ships at attempt 2, saving one paid patch and one
+  browser-QA cycle for a byte-identical outcome. Signatures compare
+  digit-stripped (`stagnantPolishSignature`, the storyboard classKey
+  precedent), so measurement jitter on the same defect list — a contrast ratio
+  nudged from 4.4 to 3.39, a shifted time window — still reads as stagnation,
+  while a cleared or minted finding changes the set and keeps the ladder
+  running. Hard failures (`browserQa.ok` false) never qualify; recorded as a
+  degradation, never a clean publish.
+- **Paperwork weighs zero** (`PAPERWORK_ISSUE_WEIGHTS`):
+  `layout_intent_missing` asks for a declaration, not a visual change, so it no
+  longer inflates `browserQualityPenalty` — the attempt-2 budget broker's ≤4
+  penalty ceiling stops being held hostage by the single most repeated (and
+  never patched) paperwork line. The finding still blocks `strictOk` and still
+  feeds repair prompts.
+- **Measurement honesty at L4**: contrast findings dedupe to the worst ratio
+  per selector+text (an animated element sampled at 5 hero frames used to mint
+  5 findings), and `spatial_focal_invisible` re-samples ≤2 later instants in
+  the same shot before reporting (`focal-late-sample`). QA cache v12.
+
+At the storyboard stage, `normalize.camera-move-delay` gained the
+delay-then-stretch case (see the contract table) — the short-scene
+`pacing/outcome` shape that re-rejected on every 2026-07-07 probe is now host
+arithmetic.
 
 ---
 

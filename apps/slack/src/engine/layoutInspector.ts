@@ -307,7 +307,12 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // v11: MD3 split-style headline entrances (rise/pop/assemble) join the
 //     designed-motion suppression windows, so the transient letter scatter is
 //     not audited as a static-layout defect (the settled copy still is).
-const QA_CACHE_VERSION = 11;
+// v12: measurement honesty for the two loudest churn classes (2026-07-07
+//     attempt-economy sweep): spatial_focal_invisible re-samples bounded later
+//     instants before reporting (late entrance ≠ absent focal), and contrast_aa
+//     dedupes to the worst ratio per selector+text instead of one row per
+//     sampled hero frame.
+const QA_CACHE_VERSION = 12;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -2240,6 +2245,67 @@ export async function inspectDirectComposition(
       interactionEvidence.push(...interactionAudit.evidence);
     }
 
+    // A focal subject invisible at the single 58% hero sample may simply enter
+    // late — the shot resolves around it a beat after the sample instant (the
+    // WS7 thumbnail lesson applied to measurement: walk forward before
+    // reporting). Re-sample bounded alternates inside the same shot; a subject
+    // visible at any of them is late choreography, not an absent focal, and
+    // reporting it as invisible burned identical paid patch attempts on the
+    // 2026-07-07 probe set. A subject visible at NO sample stays a finding.
+    const focalInvisible = rawIssues.filter((issue) => issue.code === "spatial_focal_invisible");
+    if (focalInvisible.length) {
+      const lateVisible = new Set<DirectLayoutIssue>();
+      for (const issue of focalInvisible.slice(0, 4)) {
+        const scene = draft.storyboard.find((entry) =>
+          entry.spatialIntent?.focalPart &&
+          issue.time >= entry.startSec &&
+          issue.time <= entry.startSec + entry.durationSec
+        );
+        const focalPart = scene?.spatialIntent?.focalPart;
+        if (!scene || !focalPart) continue;
+        const sceneEnd = scene.startSec + scene.durationSec;
+        const recheckTimes = uniqueTimes(
+          [
+            Math.min(issue.time + 0.6, sceneEnd - 0.05),
+            scene.startSec + scene.durationSec * 0.82,
+          ],
+          duration,
+        ).filter((time) => time > issue.time + 0.05 && time < sceneEnd).slice(0, 2);
+        for (const time of recheckTimes) {
+          await seekContent(time);
+          const visibleNow = await page.evaluate((payload: { sceneId: string; part: string }) => {
+            const sceneElement = document.querySelector<HTMLElement>(
+              `[data-scene="${CSS.escape(payload.sceneId)}"]`,
+            );
+            const focal = sceneElement?.querySelector<HTMLElement>(
+              `[data-part="${CSS.escape(payload.part)}"]`,
+            );
+            if (!focal) return false;
+            const rect = focal.getBoundingClientRect();
+            let opacity = 1;
+            let node: Element | null = focal;
+            while (node) {
+              const style = getComputedStyle(node);
+              if (style.display === "none" || style.visibility === "hidden") opacity = 0;
+              opacity *= Number.parseFloat(style.opacity) || 0;
+              node = node.parentElement;
+            }
+            return rect.width >= 1 && rect.height >= 1 && opacity >= 0.15;
+          }, { sceneId: scene.id, part: focalPart });
+          if (visibleNow) {
+            lateVisible.add(issue);
+            break;
+          }
+        }
+      }
+      if (lateVisible.size) {
+        recordSentinelNormalization("focal-late-sample", lateVisible.size);
+        for (let index = rawIssues.length - 1; index >= 0; index -= 1) {
+          if (lateVisible.has(rawIssues[index]!)) rawIssues.splice(index, 1);
+        }
+      }
+    }
+
     // Reuse HyperFrames' screenshot-backed contrast audit at representative hero
     // frames. Contrast findings are repair feedback, not a hard geometry block.
     await page.addScriptTag({ content: loadBrowserAudit("contrast-audit.browser.js") });
@@ -2259,6 +2325,12 @@ export async function inspectDirectComposition(
       ],
       duration,
     ).slice(0, 5 + gradeShiftSettles.length);
+    // One real defect, one finding: an element sampled at several hero frames
+    // (or mid color animation) otherwise mints near-duplicate contrast rows
+    // whose count inflates the least-bad penalty (2026-07-07 ledgers: the same
+    // div at five ratios 4.23–4.46 in ONE attempt). Keep the worst ratio per
+    // selector+text.
+    const contrastWorst = new Map<string, DirectLayoutIssue>();
     for (const time of contrastTimes) {
       await seekContent(time);
       const screenshot = await page.screenshot({ encoding: "base64", type: "png" });
@@ -2284,7 +2356,7 @@ export async function inspectDirectComposition(
       for (const entry of contrast) {
         if (entry.wcagAA) continue;
         const required = entry.required ?? (entry.large ? 3 : 4.5);
-        rawIssues.push({
+        const issue: DirectLayoutIssue = {
           code: "contrast_aa",
           severity: "warning",
           time,
@@ -2300,9 +2372,15 @@ export async function inspectDirectComposition(
             ...(entry.bg ? { background: entry.bg } : {}),
             ...(entry.suggestedColor ? { suggestedColor: entry.suggestedColor } : {}),
           },
-        });
+        };
+        const key = `${entry.selector} ${entry.text ?? ""}`;
+        const existing = contrastWorst.get(key);
+        if (!existing || entry.ratio < (existing.contrast?.ratio ?? 999)) {
+          contrastWorst.set(key, issue);
+        }
       }
     }
+    rawIssues.push(...contrastWorst.values());
 
     // Rendering may seek frames out of order. Revisit each interaction arrival
     // after seeking forward and backward; a history-dependent cursor will not
@@ -2808,8 +2886,11 @@ export async function inspectDirectComposition(
       for (const segment of scenePlan.segments) {
         if (!CAMERA_FULL_MOVES.has(segment.move) || segment.blend < 1) continue;
         if (!segment.toRegion && !segment.toPart) continue;
-        // A zoom above fit crops the station deliberately; audit fit framings.
-        if (segment.zoom > 1.05) continue;
+        // A creative zoom above fit may crop the station deliberately, so the
+        // general audit stays on fit framings. Host-applied sparse corrections
+        // must prove themselves after zooming instead of clearing by skip.
+        const auditZoomedCorrection = segment.framingCorrection === "camera-sparse-zoom";
+        if (segment.zoom > 1.05 && !auditZoomedCorrection) continue;
         // A dive (MD5) lands twice: on the part when its push-in leg ends,
         // and back on the prior framing at endSec. The prior framing was
         // already sampled by its own segment, so audit the PART landing —
@@ -2918,7 +2999,7 @@ export async function inspectDirectComposition(
         CAMERA_FULL_MOVES.has(segment.move) &&
         segment.blend >= 1 &&
         (segment.toRegion || segment.toPart) &&
-        segment.zoom <= 1.05
+        (segment.zoom <= 1.05 || segment.framingCorrection === "camera-sparse-zoom")
       );
       const settledFramingAt = (atSec: number) =>
         fullSegments

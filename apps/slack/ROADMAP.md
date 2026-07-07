@@ -42,14 +42,15 @@ point an agent at the listed file.
 | Transition-language coherence | `src/engine/cutContract.ts` (`auditCutCoherence`) + `src/engine/cameraContract.ts` (`auditCameraEnergy`) | plan gate: a cut-style ZOO (≥5 distinct non-hard styles, scaled by length) → findings-retry; camera repeat-verb rule relaxed to fire only on a repeated HIGH-energy verb (whip/orbit); `browserQualityPenalty` weights make sparse/clipped/degraded/jump findings stick at the least-bad-draft pick (WS6) |
 | Static motion-density guard | `src/engine/motionDensity.ts` | blocking liveness errors (quiet gaps, slide scenes, front-loading) + advisory warnings (dense bursts, empty holds) |
 | Storyboard moment contract | `src/engine/storyboardMoments.ts` | typed reviewable moments: planned floor (≥7 for 12s+), evidence binding, interval gate, synthesis for legacy films |
-| Motion-native component system | `src/engine/componentContract.ts`, `src/engine/templates/sequences-components.v1.css` / `.v1.js` | 22-kind SaaS component catalog, typed beats (type/open/count/chart/stream/morph/…), FLIP twin morphs, kit CSS, markup contract retrieval |
+| Motion-native component system | `src/engine/componentContract.ts`, `src/engine/templates/sequences-components.v1.css` / `.v1.js` | 23-kind SaaS component catalog (incl. `headline`), typed beats (type/open/count/chart/stream/morph/…), FLIP twin morphs, kit CSS, markup contract retrieval |
+| Motion-design texture (MD1–MD6) | `src/engine/fxContract.ts`, `templates/sequences-fx.v1.js`, `src/engine/gradeShift.ts`, `cameraContract.ts` (`dive`, `seqPop`/`seqStamp`), `cutContract.ts` (`swipe`/`morph`/`match`) | host FX runtime (sweep/glow/draw/echo), `dive` camera move, `headline` letter machinery, animated grade shift, playful pops — all host-derived + Sentinel-registered ([MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md)) |
 | Staged GLM planning (concept → beats → critic) | `src/engine/compositionRunner.ts` | cached concept artifact, moment-bearing storyboard with bounded retry, post-authoring continuity critic + patch |
 | Explicit fallback stages | `src/orchestrator.ts` | named stage receipts, `fallback:{stage,reason}`, Slack-safe fallback labeling |
 | Temporal motion evidence | `src/engine/temporalInspector.ts` | development strips, cut triptychs, change curve, quiet-window review |
 | Zero-token revise ("shorter" / "warmer") | `src/engine/tweakRunner.ts` | deterministic tweak matcher |
 | Render + thumbnails | `src/engine/render.ts`, `src/engine/thumbs.ts`, `src/engine/directComposition.ts` (`generateDirectThumbnails`) | Chrome / FFmpeg pipeline, draft vs HD; WS7 moment-thumbnail walk-forward: a scene-start moment whose subject hasn't revealed (opacity check) or whose copy clip-reveals later (relative painted-pixel check) walks to the first frame that actually shows the moment |
 | Recipe library (Level-1 host instantiation) | `src/engine/recipeContract.ts`, `skills/sequences-recipes/`, `src/agent/skillContext.ts` | RecipeV2 format, typed param slots, verbatim fragment injection, retrieval scoring/budget, version fencing (`SLACK_SEQUENCES_RECIPES=0`) |
-| Recipe Studio (operator tool, never deployed) | `studio/server.ts`, `studio/gate.ts`, `studio/exportRecipe.ts`, `studio/scaffold.ts`, `studio/INTEGRATION.md` | workspace gate loop (real validators + browser QA), RecipeV2 export wizard mechanics, golden proof (`npm run studio:golden`) |
+| Recipe Studio (operator tool, never deployed) | `studio/server.ts`, `studio/gate.ts`, `studio/exportRecipe.ts`, `studio/scaffold.ts`, `studio/canvasModel.ts`, `studio/compileCanvas.ts`, `studio/agents/`, `studio/INTEGRATION.md` | workspace gate loop (real validators + browser QA), RecipeV2 export wizard, golden proof (`npm run studio:golden`); **canvas builder** (world view + live catalog + typed camera transitions → zero-token compile, `npm run studio:canvas`); **agent chat** (OpenRouter critic + Claude-CLI file-first agent, re-gated). Live-create recipe-declaration proof did NOT convert — see the 2026-07-07 section |
 | Curated model-free demo | `src/demo.ts` | the bulletproof preset reel |
 | Golden Slack ad film | `scripts/slackAdFilm.ts` | cinematic quality bar and end-to-end cut proof (`npm run film:demo`) |
 | Local `/sequences` simulator | `scripts/sequenceCheck.ts` | Slack-free create checks, model/provider receipts, validation, motion/artifact report |
@@ -1728,3 +1729,99 @@ morph runtime FLIPs onto visual boxes and owns the twin's entrance
 (open-after-morph dedupes). Full record: SENTINEL_REPORT.md "Auditor review +
 Sentinel COMPLETION". Owed before judging: Docker + sandbox ladder, and
 `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1` on Railway.
+
+## 2026-07-06/07 — Motion-design texture (MOTION_DESIGN_PLAN MD1–MD6)
+
+The "produced, not just choreographed" mandate is IMPLEMENTED — the garnish
+layer real motion designers add on top of choreography, all host-derived and
+seek-safe:
+
+- **MD1 — 3-transition language:** the planner-facing cut vocabulary collapsed
+  from ten styles to `swipe`/`morph`/`match`/`hard` (legacy names normalize at
+  parse; old cached plans + the fallback film replay byte-identically). `swipe`
+  cover variant + directional motion blur; `match` is object-match ∪ a hard cut
+  with a tightened eye-trace budget. `cutContract.ts`, `sequences-cuts.v1.js`.
+- **MD5 — `dive`:** one typed camera move for zoom-in→act→zoom-out; the host
+  derives the hold window from the overlapping beat and returns exactly to the
+  pre-dive state (`cameraContract.ts`; `test/cameraDive.test.ts`,
+  `normalize.dive-window`).
+- **MD2 — the FX runtime** (`engine/fxContract.ts` + `templates/sequences-fx.v1.js`,
+  a new injected runtime): sweep, glow-pulse, draw-on (generalized trim
+  path), and echo trails — mostly host-derived at payoff moments, one optional
+  `highlight.style` for the planner. `test/fxContract.test.ts`,
+  `test/fxRuntime.browser.test.ts`, `normalize.fx-plan`.
+- **MD3 — `headline` kind + letter machinery:** the 23rd catalog kind gives hero
+  copy a stable `data-part`; `type.style` gains `rise`/`pop`/`assemble` (the
+  seeded echo word-split, capped one per film on a primary moment).
+  `test/textFx.browser.test.ts`, `test/motionAutoStyle.test.ts`,
+  `normalize.auto-headline-style`/`assemble-cap`.
+- **MD4 — animated grade shift:** a mid-scene color-temperature turn expanding
+  from the causing element (`engine/gradeShift.ts`; `normalize.auto-grade-shift`/
+  `grade-shift`).
+- **MD6 — playful pops + two eases:** `seqPop`/`seqStamp`, `open.style:"pop"` on
+  compact kinds only (`normalize.auto-pop-style`/`open-pop`).
+
+Net planner-facing surface *shrank* (−6 cut styles) while texture grew;
+everything else (sweeps, glows, echo, swipe blur, connector draws) is
+host-automatic. Every feature is a Sentinel L2 normalizer or L1/L3 owner (see
+[SENTINEL.md](SENTINEL.md) contract table) and the fallback film + `film:demo`
+adopt the new runtimes as the deterministic proof path. **Owed:** end-to-end
+verification against the MD §6 paid-probe checklist + eyeballing live output for
+the promised texture (the operator's next step).
+
+## 2026-07-07 — Recipe Studio (sessions 1–2) + the recipe library
+
+The operator-local motion-design editor + recipe factory
+([../../docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md); reports
+[RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md) +
+[RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md)):
+
+- **Session 1 — foundation.** RecipeV2 + Level-1 host instantiation
+  (`src/engine/recipeContract.ts`, the sixth host-owned contract:
+  strip-and-reinject, typed param slots, version fences); retrieval + storyboard
+  schema + Sentinel L2 `reconcileRecipeDeclarations` + cache-key wiring; the
+  studio server/gate/export; the golden `last-word-roulette` recipe
+  (`npm run studio:golden`). Kill switch `SLACK_SEQUENCES_RECIPES=0`.
+- **Session 2 — canvas builder + agents.** A direct-manipulation film editor
+  (`studio/canvasModel.ts` + `compileCanvas.ts`: world view, live catalog, typed
+  camera transitions → zero-token compile through the real gate,
+  `npm run studio:canvas`); the agent chat (`studio/agents/`: OpenRouter critic +
+  Claude-CLI file-first agent, re-gated after every turn; ref-image attachments).
+  Two thumbnail-eyeballed bugs fixed (blank scene-start frames; scene-relative
+  camera times never traveling).
+- **The open gap.** The paid live-create proof did NOT convert: two creates whose
+  brief named the roulette **declined the offered recipe and re-derived it**. A
+  retrieval offer is too weak under gate pressure; the recommended fix (recorded,
+  not built — it changes live-create behavior) is a host-side **auto-declare** for
+  high-confidence matches. Next-agent prompt:
+  [../../docs/RECIPE_STUDIO_HANDOFF.md](../../docs/RECIPE_STUDIO_HANDOFF.md).
+- **Not built:** cursor paths + `clickAnchor`, effect presets (`studioKit.ts`),
+  timeRamp/holds UI, the export describe pass, library curation beyond the golden
+  recipe, CLI diff-scoping.
+
+## 2026-07-07 (later) — attempt-economy sweep (the final audit before recipe skills)
+
+Full record: SENTINEL_REPORT.md "attempt-economy sweep". The 49-run ledger
+proved every published run burns ~3 storyboard + ~3 source attempts on polish
+churn the paid patches provably never fix (verbatim-identical finding lists
+across consecutive attempts). Changes, all gates untouched:
+
+- **`stagnant-polish-early-ship`** (`compositionRunner.ts`): a browser
+  rejection whose finding-signature set equals the previous attempt's ships the
+  banked least-bad draft at attempt 2 — one paid patch + one browser-QA cycle
+  saved for a byte-identical artifact.
+- **Paperwork weighs 0** in `browserQualityPenalty` (`layout_intent_missing`),
+  un-blocking the attempt-2 budget broker's ≤4 penalty ceiling.
+- **`normalize.camera-move-delay` delay-then-stretch** (`pacingAudit.ts`): a
+  delayed move that overruns a short scene's cut stretches the boundary by the
+  overflow (≤1.0s) and cascade-shifts later scenes — the most-repeated
+  storyboard rejection shape becomes host arithmetic.
+- **L4 measurement honesty (QA cache v12, `layoutInspector.ts`):** contrast
+  findings dedupe to the worst ratio per selector+text (an animated element
+  used to mint 5 findings across hero samples); `spatial_focal_invisible`
+  re-samples ≤2 later instants before firing (`focal-late-sample`).
+- **Registry conformance:** `normalize.root-data-start` registered (the
+  2026-07-06 independent audit shipped it unregistered — telemetry tags are not
+  CI-scanned); `camera-sparse-zoom` row updated for the 2.8 clamp +
+  `framingCorrection` browser re-audit. All 2026-07-06 independent-audit code
+  changes verified correct.

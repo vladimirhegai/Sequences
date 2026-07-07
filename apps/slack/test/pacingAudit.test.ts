@@ -840,7 +840,7 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
     expect(result.storyboard[0]!.camera!.path[0]!.startSec).toBe(1.5);
   });
 
-  it("never delays a load-bearing move or one that would no longer fit the scene", () => {
+  it("never delays a load-bearing move", () => {
     const loadBearing = scene({
       id: "pinned",
       startSec: 0,
@@ -858,6 +858,13 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
       moments: [moment("pinned", "m-arrival", 2.6)],
     });
     expect(delayConflictingCameraMoves([loadBearing]).normalized).toEqual([]);
+  });
+
+  it("stretches the scene's own cut when the delayed move overruns it, cascade-shifting later scenes", () => {
+    // The 2026-07-07 probe shape: a payoff in a SHORT scene, the conflicting
+    // move delayed to 2.8s would end at 3.8s — 0.6s past the 3.2s scene. A
+    // delay alone used to skip here and the finding burned a paid retry; now
+    // the cut boundary stretches by the overflow.
     const cramped = scene({
       id: "cramped",
       startSec: 0,
@@ -871,10 +878,44 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
         durationSec: 0.8,
         toState: "success",
       })],
-      // Delayed to 2.8s the 1.0s pan would end at 3.8s — past the 3.2s scene.
       camera: { version: 1, path: [move({ move: "pan", startSec: 2.1, durationSec: 1.0 })] },
     });
-    expect(delayConflictingCameraMoves([cramped]).normalized).toEqual([]);
+    const later = scene({ id: "closer", startSec: 3.2, durationSec: 3 });
+    const before = auditPacing([cramped, later]);
+    expect(before.some((f) => f.startsWith("pacing/outcome:"))).toBe(true);
+
+    const result = delayConflictingCameraMoves([cramped, later]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain("cut boundary stretched");
+    const [stretched, shifted] = result.storyboard;
+    expect(stretched!.camera!.path[0]!.startSec).toBeCloseTo(2.8, 3);
+    expect(stretched!.durationSec).toBeCloseTo(3.8, 3);
+    // The cascade keeps the film contiguous and the later scene intact.
+    expect(shifted!.startSec).toBeCloseTo(stretched!.startSec + stretched!.durationSec, 5);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/outcome:"))).toBe(false);
+  });
+
+  it("still skips when the overflow exceeds the stretch cap", () => {
+    // Delayed to 2.8s a 2.6s pan would end at 5.4s in a 3.2s scene — a 2.2s
+    // overflow is past MAX_PACING_STRETCH_SEC, a genuine layout call for the
+    // model, not host arithmetic.
+    const hopeless = scene({
+      id: "hopeless",
+      startSec: 0,
+      durationSec: 3.2,
+      components: [{ version: 1 as const, id: "deploy-button", kind: "button" as const }],
+      beats: [beat("hopeless", {
+        id: "b-press",
+        component: "deploy-button",
+        kind: "set-state",
+        atSec: 1.2,
+        durationSec: 0.8,
+        toState: "success",
+      })],
+      camera: { version: 1, path: [move({ move: "pan", startSec: 2.1, durationSec: 2.6 })] },
+    });
+    expect(delayConflictingCameraMoves([hopeless]).normalized).toEqual([]);
+    expect(delayConflictingCameraMoves([hopeless]).storyboard[0]!.durationSec).toBe(3.2);
   });
 });
 

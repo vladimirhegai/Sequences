@@ -526,9 +526,14 @@ export function normalizeCameraBudget(
  *  - the move starts AT/after the beat settles (a move already in flight when
  *    the beat lands is the model's own arrival choreography — left alone),
  *  - the delay is <= MAX_PACING_STRETCH_SEC,
- *  - the delayed move still fits inside the scene and does not pass the next
- *    full move, and
+ *  - the delayed move does not pass the next full move, and
  *  - the move is not load-bearing (no declared moment binds to its window).
+ * When the delayed move no longer fits before the scene's own cut, the scene
+ * boundary stretches by the overflow (<= MAX_PACING_STRETCH_SEC, 15s scene
+ * cap) and every later scene cascade-shifts — the short-scene shape the
+ * 2026-07-07 probe set kept re-rejecting ("payoff at Ns, framing changes 0.0s
+ * later" in a 1.3s scene, where a delay alone overflows the cut and a stretch
+ * alone can't move the internal conflict). Still pure arithmetic.
  * Runs inside the same parse-side atomic commit-or-revert as the clamp/stretch.
  */
 export function delayConflictingCameraMoves(
@@ -539,70 +544,95 @@ export function delayConflictingCameraMoves(
   const resolvedBeatsByScene = new Map<string, ResolvedComponentBeatV1[]>(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
-  const scenes = storyboard.map((scene) => {
-    if (rampSceneIds.has(scene.id)) return scene;
+  const out: DirectScene[] = [];
+  let cumulativeShift = 0;
+  // Detection runs in each scene's ORIGINAL frame (where the resolved beats
+  // live); the cascade shift from earlier boundary stretches preserves every
+  // within-scene distance and is applied only when emitting the output scene.
+  for (const scene of storyboard) {
+    let result = scene;
+    let stretch = 0;
     const path = scene.camera?.path;
-    if (!path?.length) return scene;
-    const sceneEnd = scene.startSec + scene.durationSec;
-    const fullMoves = path
-      .map((move, index) => ({ move, index }))
-      .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move));
-    if (!fullMoves.length) return scene;
-    const componentKinds = new Map(
-      (scene.components ?? []).map((component) => [component.id, component.kind]),
-    );
-    const beats = resolvedBeatsByScene.get(scene.id) ?? [];
-    // The latest hold each too-early move must clear, from every beat it cuts.
-    const requiredStart = new Map<number, number>();
-    for (const beat of beats) {
-      let needed = 0;
-      if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
-        needed = Math.min(
-          READING_MAX_SEC,
-          Math.max(READING_MIN_SEC, READING_SEC_PER_WORD * words(beat.text)),
-        );
+    if (!rampSceneIds.has(scene.id) && path?.length) {
+      const sceneEnd = scene.startSec + scene.durationSec;
+      const fullMoves = path
+        .map((move, index) => ({ move, index }))
+        .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move));
+      const componentKinds = new Map(
+        (scene.components ?? []).map((component) => [component.id, component.kind]),
+      );
+      const beats = fullMoves.length ? resolvedBeatsByScene.get(scene.id) ?? [] : [];
+      // The latest hold each too-early move must clear, from every beat it cuts.
+      const requiredStart = new Map<number, number>();
+      for (const beat of beats) {
+        let needed = 0;
+        if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
+          needed = Math.min(
+            READING_MAX_SEC,
+            Math.max(READING_MIN_SEC, READING_SEC_PER_WORD * words(beat.text)),
+          );
+        }
+        const isToastOpen = beat.kind === "open" && componentKinds.get(beat.component) === "toast";
+        if (PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen) {
+          needed = Math.max(needed, OUTCOME_HOLD_SEC);
+        }
+        if (!needed) continue;
+        for (const entry of fullMoves) {
+          const start = entry.move.startSec;
+          if (start < beat.endSec - 0.05) continue;
+          if (start + PACING_TOLERANCE_SEC >= beat.endSec + needed) continue;
+          requiredStart.set(
+            entry.index,
+            Math.max(requiredStart.get(entry.index) ?? 0, round(beat.endSec + needed)),
+          );
+        }
       }
-      const isToastOpen = beat.kind === "open" && componentKinds.get(beat.component) === "toast";
-      if (PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen) {
-        needed = Math.max(needed, OUTCOME_HOLD_SEC);
-      }
-      if (!needed) continue;
-      for (const entry of fullMoves) {
-        const start = entry.move.startSec;
-        if (start < beat.endSec - 0.05) continue;
-        if (start + PACING_TOLERANCE_SEC >= beat.endSec + needed) continue;
-        requiredStart.set(
-          entry.index,
-          Math.max(requiredStart.get(entry.index) ?? 0, round(beat.endSec + needed)),
-        );
+      if (requiredStart.size) {
+        const newPath = [...path];
+        const notes: string[] = [];
+        for (const entry of fullMoves) {
+          const target = requiredStart.get(entry.index);
+          if (target === undefined) continue;
+          const delay = target - entry.move.startSec;
+          if (delay <= 0 || delay > MAX_PACING_STRETCH_SEC + 1e-9) continue;
+          if (isLoadBearingMove(scene, entry.move)) continue;
+          const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
+          if (next && target + entry.move.durationSec > next.move.startSec + 1e-6) continue;
+          const overflow = target + entry.move.durationSec - sceneEnd;
+          if (overflow > 1e-6) {
+            // The delayed move overruns the scene's own cut: stretch that cut
+            // by the overflow instead of leaving the finding to a paid retry.
+            if (overflow > MAX_PACING_STRETCH_SEC + 1e-9) continue;
+            if (scene.durationSec + overflow > 15 + 1e-9) continue;
+            stretch = Math.max(stretch, round(overflow));
+          }
+          newPath[entry.index] = { ...entry.move, startSec: round(target) };
+          const note =
+            `delayed the ${entry.move.move} from ${entry.move.startSec.toFixed(2)}s to ` +
+            `${target.toFixed(2)}s so the payoff/copy before it holds` +
+            (overflow > 1e-6 ? ` (cut boundary stretched ${overflow.toFixed(2)}s to fit it)` : "");
+          notes.push(note);
+          normalized.push(`scene "${scene.id}": ${note}`);
+        }
+        if (notes.length) {
+          result = withNormalizationNotes(
+            { ...scene, camera: { ...scene.camera!, path: newPath } },
+            notes,
+          );
+        } else {
+          stretch = 0;
+        }
       }
     }
-    if (!requiredStart.size) return scene;
-    const newPath = [...path];
-    const notes: string[] = [];
-    for (const entry of fullMoves) {
-      const target = requiredStart.get(entry.index);
-      if (target === undefined) continue;
-      const delay = target - entry.move.startSec;
-      if (delay <= 0 || delay > MAX_PACING_STRETCH_SEC + 1e-9) continue;
-      if (isLoadBearingMove(scene, entry.move)) continue;
-      if (target + entry.move.durationSec > sceneEnd + 1e-6) continue;
-      const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
-      if (next && target + entry.move.durationSec > next.move.startSec + 1e-6) continue;
-      newPath[entry.index] = { ...entry.move, startSec: round(target) };
-      const note =
-        `delayed the ${entry.move.move} from ${entry.move.startSec.toFixed(2)}s to ` +
-        `${target.toFixed(2)}s so the payoff/copy before it holds`;
-      notes.push(note);
-      normalized.push(`scene "${scene.id}": ${note}`);
+    const shifted = withShiftedSceneTimes(result, cumulativeShift);
+    if (stretch > 0) {
+      out.push({ ...shifted, durationSec: round(shifted.durationSec + stretch) });
+      cumulativeShift = round(cumulativeShift + stretch);
+    } else {
+      out.push(shifted);
     }
-    if (!notes.length) return scene;
-    return withNormalizationNotes(
-      { ...scene, camera: { ...scene.camera!, path: newPath } },
-      notes,
-    );
-  });
-  return { storyboard: scenes, normalized };
+  }
+  return { storyboard: out, normalized };
 }
 
 /** Shift a scene's own start and every nested absolute time by `delta` seconds. */

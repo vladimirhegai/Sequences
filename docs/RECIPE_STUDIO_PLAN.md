@@ -1,8 +1,49 @@
 # Recipe Studio — operator motion-design editor + recipe factory (full plan)
 
-Status: PLAN v2 (2026-07-05). Supersedes the v1 seed plan. Ready for
-implementation by the next agent. Owner-facing internal tool — **never
-deployed, never part of the hackathon submission surface, never on Railway.**
+Status: PLAN v2 (2026-07-05), **partially built** (M0–M3 core landed 2026-07-07).
+This remains the authoritative spec — it still governs the parts not yet built
+and the invariants everything must obey. For *what is actually shipped* read the
+build status below and the two build reports it links. Owner-facing internal
+tool — **never deployed, never part of the hackathon submission surface, never
+on Railway.**
+
+---
+
+## Build status (2026-07-07) — read before using this plan
+
+Two build sessions landed against this plan; both reports are in `apps/slack/`
+and were verified against the code. The one-line map from milestones (§9) to
+reality:
+
+| milestone | state | evidence |
+|---|---|---|
+| **M0** referee cockpit | ✅ done | server, workspace store, gate-on-demand, preview scrubber (`studio/server.ts`, `workspaces.ts`, `gate.ts`) |
+| **M1** deterministic builder | ✅ core done | canvas world view + live catalog + place/retime + typed camera transitions + zero-token compiler (`studio/canvasModel.ts`, `compileCanvas.ts`; `npm run studio:canvas` gates green) |
+| **M2** cursor paths + effects | ⛔ **not built** | no `clickAnchor` metadata, no cursor-path editor, no `studioKit.ts` text/backdrop presets, no holds/timeRamp UI |
+| **M3** agents | ✅ core done | provider abstraction, OpenRouter **critic** (GLM/DeepSeek-Flash), Claude-CLI file-first agent + re-gate, image attach (`studio/agents/`) — see caveats below |
+| **M4** recipes | ✅ mechanics done, ❌ **live proof failed** | RecipeV2 + Level-1 host instantiation (`src/engine/recipeContract.ts`, the sixth host contract), retrieval, export wizard, golden `last-word-roulette` — but the paid live-create proof did NOT convert (§ the gap, below) |
+| **M5** library + stretch | ⛔ barely started | library still holds only `last-word-roulette` |
+
+**The one load-bearing open problem — the recipe-declaration gap.** Two paid
+`/sequences` creates whose brief named the roulette pattern **declined the
+offered recipe and re-derived the pattern themselves** (sparse/messy output —
+exactly what the recipe exists to replace). Retrieval offered it (score 17,
+declare-by-default teaching); the model overrode the offer under camera/energy
+gate pressure. A retrieval *offer* is too weak to reliably convert a capable
+planner. The recommended fix (recorded, not built — it changes live-create
+behavior and must not land in the hackathon window unilaterally): a **host-side
+auto-declare** — when a recipe scores above a high threshold AND the brief
+clearly names its pattern, Sentinel L1/L2 injects the declaration into the
+best-matching scene rather than merely offering it. Full detail:
+`apps/slack/RECIPE_STUDIO_REPORT_2.md` §1.
+
+**Also not yet built / caveats** (see REPORT_2 §2.4, §3.3): cursor paths +
+`clickAnchor`, effect presets, timeRamp/holds UI, custom ease-graph editor,
+scene→recipe promotion (visible disabled stub); the OpenRouter agent is a
+**critic only** (no file authoring/patching — that is the CLI agent's job);
+Codex CLI; storyboard-frame ordering UI; the export **describe pass**; and CLI
+**diff-scoping** (the `claude -p` agent can currently see the parent monorepo
+from the workspace cwd — flagged as a TODO before unattended use).
 
 ---
 
@@ -656,30 +697,42 @@ ROADMAP.md when M1 lands.
 ## 9. Milestones
 
 Ordered so every milestone is independently useful; sizes assume one agent.
+Status tags reflect the 2026-07-07 build (see the build-status table up top).
 
-- **M0 — Referee cockpit (1 day).** Server, workspace store, viewer +
+- **M0 — Referee cockpit (1 day). ✅ DONE.** Server, workspace store, viewer +
   scrubber + timeline (read-only) over an imported past job dir, gate-on-
   demand, thumbnails. *Proves: serve/seek/gate loop.*
-- **M1 — Deterministic builder (2–3 days).** Canvas world view, component
-  browser (catalog-live), place/drag/retime, camera transitions with ease
-  picker, scaffold generator, undo checkpoints. Zero tokens end-to-end.
-  *Proves: click-together valid films.*
-- **M2 — Cursor paths + effects (2 days).** Cursor path editor with
-  clickAnchor snapping (catalog metadata addition), text presets, backdrop
-  presets, holds/timeRamp placement. *Proves: the template vocabulary.*
-- **M3 — Agents (1–2 days).** Provider abstraction; OpenRouter chat
-  (author/patch/critic against workspace); CLI agents (Claude Code first,
-  Codex second) with AGENT.md generation, file watch, auto-re-gate; image
-  attachments + storyboard-frame mode (§6.4). *Proves: steps 1–4 of the
-  core workflow, including "describe with a series of images".*
-- **M4 — Recipes (2–3 days).** RecipeV2 export wizard with the agent-drafted
-  describe pass + retrieval sanity check (§7.5), `recipeContract.ts` Level 1
+- **M1 — Deterministic builder (2–3 days). ✅ CORE DONE.** Canvas world view,
+  component browser (catalog-live), place/drag/retime, camera transitions with
+  ease picker, scaffold generator, undo checkpoints. Zero tokens end-to-end.
+  *Proves: click-together valid films.* (Done: `canvasModel.ts` +
+  `compileCanvas.ts`; two real bugs found by eyeballing thumbnails — blank
+  scene-start frames, camera-never-travels-because-times-were-scene-relative —
+  fixed with regression tests.)
+- **M2 — Cursor paths + effects (2 days). ⛔ NOT BUILT.** Cursor path editor
+  with clickAnchor snapping (catalog metadata addition), text presets, backdrop
+  presets, holds/timeRamp placement. *Proves: the template vocabulary.* — this
+  is the largest remaining builder gap.
+- **M3 — Agents (1–2 days). ✅ CORE DONE (with caveats).** Provider abstraction;
+  OpenRouter chat (**critic only** — author/patch not wired); CLI agent (Claude
+  Code; **Codex not built**) with AGENT.md generation, **post-turn** re-gate (a
+  bounded `claude -p` turn, not a live `fs.watch` loop); image attachments
+  (**storyboard-frame ordering UI not built**). *Proves: steps 1–4 of the core
+  workflow.* Open caveat: **CLI diff-scoping** — the agent can see the parent
+  repo from the workspace cwd; add `--add-dir` restriction + a post-turn
+  out-of-workspace edit check before unattended use.
+- **M4 — Recipes (2–3 days). ✅ MECHANICS DONE / ❌ LIVE PROOF FAILED.** RecipeV2
+  export wizard + retrieval sanity check (§7.5), `recipeContract.ts` Level 1
   host instantiation, `skillContext` retrieval + cache-key bump,
-  `last-word-roulette` golden recipe, one paid live-create proof.
-  *Proves: the whole thesis (steps 5–6 of the core workflow).*
-- **M5 — Library + stretch.** Curate the §5.6 backlog; audition grid (render
-  2–3 param variants side by side); Level 2 tunables; custom ease graph
-  editor; `via` cursor waypoints; screenshot-to-station import.
+  `last-word-roulette` golden recipe are all built and green. The **agent-drafted
+  describe pass** (§7.5 step 2) is NOT built. The paid live-create proof did
+  **not** convert — the planner declined the offer both runs (the recipe-
+  declaration gap; see build status + REPORT_2 §1). *Thesis validated, live
+  loop unproven.*
+- **M5 — Library + stretch. ⛔ BARELY STARTED.** Curate the §5.6 backlog;
+  audition grid (render 2–3 param variants side by side); Level 2 tunables;
+  custom ease graph editor; `via` cursor waypoints; screenshot-to-station
+  import. (Library still holds only `last-word-roulette`.)
 
 M0–M2 touch **zero** live-pipeline code (pure additive studio + tiny catalog
 metadata). M4 is the only milestone that changes live-create behavior; it

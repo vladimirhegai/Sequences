@@ -1777,3 +1777,203 @@ completing MOTION_DESIGN_PLAN with another agent before the next live run). The
 efficiency targets (attempts ≤1.5, ≤5 physical requests, ≤8 min tier-1, ≤45k live
 prompt) remain **unmet** on hard briefs and are the real open work — unchanged by
 this pass.
+
+---
+
+## 2026-07-07 — MOTION_DESIGN Sentinel rows, slot persistence, camera-sparse repair, honesty sweep
+
+One day of work landed after the 2026-07-06 independent audit; this section
+records the Sentinel-relevant slice (the MOTION_DESIGN_PLAN feature work itself
+is documented in that plan's own record). Commits `b20acf6`…`f662d4a`.
+
+### What changed (Sentinel scope)
+
+1. **MOTION_DESIGN normalizers registered per protocol** (`b20acf6`…`ac72800`).
+   The MD1–MD6 features (dive camera move, sequences-fx substrate, headline text
+   FX, animated grade shift, playful pops) entered through the placement tree as
+   L2 rows: `normalize.dive-window`, `normalize.fx-plan`,
+   `normalize.auto-pop-style` / `normalize.open-pop`,
+   `normalize.auto-headline-style` / `normalize.assemble-cap`,
+   `normalize.auto-grade-shift` / `normalize.grade-shift` — all in
+   `sentinel.ts` + the SENTINEL.md contract table, all closed-world-tested.
+2. **Sentinel audit fixes + the slot persistence retry rung** (`e39a78f`, 5
+   bugs): `cursor_near_miss` registered + counted; contrast-repair injection
+   hardened; layout-intent injector tolerance/anchor fixes; a `strictOk` publish
+   that still ships static-verdict moments records a `moment_static_frame:<n>`
+   degradation (never reports clean); `deriveGradeShifts` no longer matches bare
+   "cool". And the **scene-slot retry rung**: the slot map now persists across
+   paid attempts, so a rejected attempt whose findings name scenes first runs
+   `repairSlotDraftForFindings` (one bounded ≤8k-token call,
+   `strategyChanges: slot-retry:<scenes>`) before any whole-doc patch. Proof:
+   `test/slotRetry.test.ts`; SENTINEL.md "Slots persist across paid attempts".
+3. **`normalize.camera-sparse-zoom`** (`cd7b0d1`) — the first L2-at-L4 repair:
+   a measured `camera_framed_sparse` landing gets a bounded zoom-in
+   (`sqrt(0.18/fraction)`, clamped 1.0–1.8) on exactly the framing move, adopted
+   only when the finding clears, no new `camera_framed_clipped` appears, and
+   `browserQualityPenalty` strictly drops (enhancement-never-veto). Registered;
+   proven by `framingCoverage.browser.test.ts`.
+4. **Storyboard-aware safe fallback film** (`2a4768d`) — when source authoring
+   fails with a locked storyboard in hand, the fallback skins the proven 3-shot
+   film's three copy slots with the plan's own words (skin, never compile);
+   no plan → byte-identical generic reel. Label stays `fallback:{stage,reason}`.
+5. **Honesty sweep** (`f662d4a`, docs): `moment_static_frame` is advisory
+   everywhere it is described; OPERATIONS.md warns that local paid probes must
+   pass `--provider openrouter-api` (the `claude-code-cli` default stalls
+   headless runs — see the infra fail-louds below).
+
+### Probe record (2026-07-07, all fail-loud, immutable job dirs)
+
+| Probe | Purpose | Disposition |
+| --- | --- | --- |
+| `md-audit-probe-1` | MD live audit | fail-loud (pre-fix `beat.style` round-trip loss, fixed in `563940f`) |
+| `md-audit-probe-2`, `-3` | MD live audit | fail-loud — **infra, not authoring**: missing OpenRouter key in headless `sequence:check` (fixed by `0e3d97b` .env loading) |
+| `md-audit-probe-3b`, `-4` | MD live audit re-runs | **published-degraded** (least-bad-pick + honest storyboard-polish advisories) |
+| `md-autoderive-probe-1`, `-2` | MD3/4/6 auto-derive live | **published-degraded** (least-bad / one interaction quarantine) |
+| `sentinel-live-budget-broker-1`, `sentinel-live-broker-polish-2` | fresh-brief battery on the full tree | **published-degraded** (least-bad penalties 17 / 9; `timeramp-retime` committed live) |
+| `sequence-check-1783428429260` | local probe | fail-loud — **infra**: `claude.exe` local provider timed out 360s (the OPERATIONS.md provider warning) |
+| `sequence-check-1783428882649`, `-1783435156225` | latest full-tree runs | **published-degraded** |
+
+What the latest run (`sequence-check-1783435156225`) proved live:
+**`camera-sparse-zoom` committed ×2** (item 3, live-proven same day), the
+scene-scoped **validation repair fired** (slotCalls: 4 calls / 6 scenes;
+2 calls / 2 scenes in the prior run), and the MD auto-derive normalizers
+committed (`auto-headline-style` 3, `auto-grade-shift` 3, `auto-pop-style` 2,
+`dive-window` 2) alongside `pacing-stretch`. Every publish carried an honest
+ledger (`least-bad-pick`, `rows-neutral-children-shipped`, storyboard-polish
+advisories) — zero clean-but-degraded misreports, zero authoring fail-louds,
+zero fallbacks across the day's published runs.
+
+### State
+
+Defaults unchanged (SKELETON / SLOTS / CRITIC_SKIP_CLEAN ON). Open work
+unchanged: the efficiency targets (attempts ≤1.5, ≤5 physical requests, ≤8 min
+tier-1, ≤45k live prompt) remain unmet on hard briefs; the pre-judging ladder
+(Docker → `railway up` → sandbox smoke, `ALLOW_DETERMINISTIC_FALLBACK=1` on
+Railway) is still owed.
+
+---
+
+## 2026-07-07 (later) — attempt-economy sweep: the churn ledger, three loop seams, two L4 honesty fixes
+
+Final audit pass over the 2026-07-06 independent-audit changes plus a targeted
+attack on the efficiency targets. Method: aggregated every rejected attempt's
+findings across the 49-run `.data` set (`planning/attempts/*.json`) by stage and
+class, then read the eight most recent runs attempt-by-attempt.
+
+### What the ledger proved
+
+1. **Every published run burns exactly 3 source-author attempts.** Polish
+   findings block attempts 1–2 by design (`advisory-late`), and the rejected
+   attempts' finding lists are **identical, verbatim, across consecutive
+   attempts** on every recent probe — the paid patches never fix
+   `layout_intent_missing` (121 occurrences historically, the #1 class),
+   `contrast_aa` (49), overflow (45), or focal (28) findings. Attempt 3 then
+   ships the banked least-bad draft with the same findings as advisories. Two
+   paid patch calls + two browser-QA cycles per run bought a byte-identical
+   artifact.
+2. **The attempt-2 budget broker never fires** — its penalty ceiling is 4 and
+   real films carry 9–17, much of it inflated: 6× `layout_intent_missing`
+   paperwork = 6 penalty; ONE animated element sampled at five hero frames = 5
+   `contrast_aa` findings.
+3. **Storyboard retries thrash the same way** (avg 3.08): the dominant
+   rejection is the short-scene `pacing/outcome` shape — a payoff whose
+   conflicting camera move can't be delayed because the delayed move overruns
+   the scene's own cut (`delayConflictingCameraMoves` skipped; `stretch` alone
+   can't move an internal conflict) — plus `camera/energy`, framing-floor, and
+   `components/complexity`, several of which the GLM retry "fixes" by minting a
+   different class.
+
+### What changed (gates untouched — WHERE, not WHETHER)
+
+1. **`stagnant-polish-early-ship`** (`stagnantPolishShipReason`,
+   compositionRunner): a browser rejection whose finding-signature set equals
+   the previous attempt's ships the banked least-bad draft at attempt 2 —
+   recorded as a degradation. Hard failures (`browserQa.ok` false) never
+   qualify. Expected effect: source attempts 3 → 2 on the dominant path.
+2. **Paperwork weighs zero** (`PAPERWORK_ISSUE_WEIGHTS`):
+   `layout_intent_missing` no longer inflates `browserQualityPenalty` (it asks
+   for a declaration, not a visual change), un-blocking the attempt-2 broker's
+   ≤4 ceiling for otherwise-clean films. Still blocks `strictOk`, still feeds
+   repair prompts.
+3. **`normalize.camera-move-delay` delay-then-stretch**: when the delayed move
+   overruns the scene end, the cut boundary stretches by the overflow (≤1.0s,
+   15s scene cap) and later scenes cascade-shift — the same atomic
+   commit-or-revert. Kills the most-repeated storyboard rejection shape.
+4. **L4 measurement honesty (QA cache v12)**: `contrast_aa` dedupes to the
+   worst ratio per selector+text; `spatial_focal_invisible` re-samples ≤2
+   bounded later instants in the same shot before firing
+   (`focal-late-sample` — a late-entering focal is choreography, not absence;
+   a subject visible at NO sample still fires; proof:
+   `test/layoutInspector.test.ts` both directions).
+5. **Ripple churn root-caused and fixed live** (the post-sweep TraceKit probe
+   reproduced it in real time): `normalizeInteractionActors` retires an
+   authored ripple element and injects the canonical runtime actor — but its
+   bare attribute-existence test scanned the WHOLE document, so an authored
+   tween selector (`[data-part='…-ripple']` inside the inline script) read as
+   a still-bound element and the injection was skipped: the scene shipped
+   rippleless and `interaction_ripple_missing` (a BLOCKING interactions-class
+   error — the draft can't even bank as least-bad) survived every paid
+   attempt. Fix: the cursor precedent applied per ripple id — bracketed
+   selectors rewrite to `[data-sequences-retired-ripple=…]` (original quote
+   style preserved so the script still parses) BEFORE the existence test, so
+   the canonical actor always lands. Minimized replay:
+   `test/authorReliability.test.ts`.
+6. **Registry conformance for the 2026-07-06 independent-audit changes:**
+   `normalize.root-data-start` registered (the audit's deterministic root-timing
+   repair shipped unregistered — the closed-world literal scan only covers
+   finding codes, not telemetry tags, so CI stayed green; the registry row is
+   the protocol); `normalize.camera-sparse-zoom` row text corrected to the
+   raised 2.8 clamp + `framingCorrection` re-audit + lockedStoryboard adoption.
+
+### Probe record (2026-07-07, post-sweep)
+
+`sequence-check-1783463306190` (TraceKit incident-triage brief, 16s,
+openrouter): **published `hyperframes-direct`, no fallback,
+`published-degraded` with a single honest `rows-neutral-children-shipped`** —
+zero least-bad penalty. Storyboard **2** attempts (attempt 1 rejected on a
+genuine `components/complexity` + `pacing/holds` density deficit — the retry
+class deterministic arithmetic should NOT absorb), tier-1 **13.6 min**, 11
+logical / 13 physical calls, 10 content-rich thumbnails, 12 bound moments, MD
+texture live (`dive-window` ×2, `auto-pop-style` ×2, `auto-headline-style`,
+plus `root-data-start` ×4 — the 2026-07-06 audit's repair firing in
+production). Source still took 3 attempts: the run reproduced the ripple bug
+in real time (item 5 — the probe process predates the fix), with
+`interaction_ripple_missing` blocking least-bad banking on attempts 1–2 and
+the interaction finally quarantining. That was this probe's ONLY hard retry
+cause; with the ripple fix the same run banks attempt 1 and the stagnation /
+broker exits get their shot.
+
+### Audit verdict on the 2026-07-06 independent-audit (Codex) changes
+
+All verified correct: the sparse-zoom 2.8 ceiling + browser re-audit of
+corrected landings (honest, not clearing-by-skip), the stale-`lockedStoryboard`
+fix after sparse adoption (this exact bug burned attempt 2 of
+`sequence-check-1783435156225` — "sequences-camera island differs"), the root
+`data-start` repair + scaffold/golden parity, and the studio re-gate split
+(recipe workspaces through `gateWorkspace`, which persists the gate record;
+canvas keeps `regateComposition` + a real SHA-256). The one gap was the missing
+registry row (item 5 above). MOTION_DESIGN integration re-verified: all MD1–MD6
+rows registered, the authoring prompt teaches the vocabulary, and the latest
+live ledger shows the auto-derive normalizers committing.
+
+### State
+
+`stagnant-polish-early-ship` and the broker changes alter WHEN a
+published-degraded run ships, never WHAT ships. Fresh live probe(s) after this
+sweep should show: fewer verbatim-repeat rejections, source attempts ≤2 with a
+`stagnant-polish-early-ship` or `early-least-bad-pick` ledger line where
+polish stagnates, and the short-scene `pacing/outcome` shape absorbed as
+`camera-move-delay` normalizations. The efficiency targets remain the open
+work; the pre-judging ladder (Docker → `railway up` → sandbox smoke,
+`ALLOW_DETERMINISTIC_FALLBACK=1` on Railway) is still owed.
+
+Next normalization candidates, analyzed but deliberately NOT built this pass
+(each drops/changes creative content, so each needs the camera-budget-clamp
+treatment — load-bearing guards + atomic commit-or-revert — and its own
+session's care): **component-budget trim** (`components/complexity` over-count
+→ drop the fewest-beat surface that binds no moment, no interaction, no camera
+target; 4 recent rejections + the post-sweep probe's attempt 1),
+**camera/energy lift** (a peak-less plan with a push-in at zoom 1.15–1.29 →
+raise to 1.3; 3 recent rejections), and **framing-floor top-up** (one short
+push-in on the longest held scene when the count is exactly one short). The
+ripple churn is DIAGNOSED AND FIXED (item 5 above).
