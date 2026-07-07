@@ -266,6 +266,36 @@ describe("MD3 text FX browser contract (assemble / rise / underline / pop)", () 
           }) as Array<[number, number]>;
         }, time);
 
+      // Echo-ghost visibility discipline: the ghosts exist from compile time,
+      // so BEFORE the assemble beat they must be fully invisible — on the
+      // fresh forward render (the first seek this test makes) AND after
+      // seeking back from beyond the flight. Without the css+t=0 pin, stray
+      // duplicate letters float at rest before the reveal.
+      const ghostOpacities = async (time: number): Promise<number[]> =>
+        page.evaluate((at: number) => {
+          const timelines = (window as unknown as {
+            __timelines: Record<string, { pause: () => void; seek: (t: number, s?: boolean) => void }>;
+          }).__timelines;
+          for (const timeline of Object.values(timelines)) {
+            timeline.pause();
+            timeline.seek(at, false);
+          }
+          return Array.prototype.map.call(
+            document.querySelectorAll('[data-sequences-fx="echo"]'),
+            (ghost: Element) => Number.parseFloat(getComputedStyle(ghost).opacity),
+          ) as number[];
+        }, time);
+      const freshPreBeat = await ghostOpacities(0.2);
+      expect(freshPreBeat).toHaveLength(6); // 3 echoed letters x 2 ghosts
+      expect(freshPreBeat.every((opacity) => opacity === 0)).toBe(true);
+      // Mid-flight at least one ghost is actually painting the trail.
+      const midFlight = await ghostOpacities(0.85);
+      expect(midFlight.some((opacity) => opacity > 0.02)).toBe(true);
+      // Round trip through the flight and back: still invisible pre-beat.
+      await ghostOpacities(5.5);
+      const revisitedPreBeat = await ghostOpacities(0.2);
+      expect(revisitedPreBeat.every((opacity) => opacity === 0)).toBe(true);
+
       // The copy is split into one span per letter (SHIPFAST = 8).
       const midA = await letterRects(0.9);
       expect(midA.length).toBe(8);

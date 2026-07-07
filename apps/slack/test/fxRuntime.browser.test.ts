@@ -253,4 +253,113 @@ describe("sequences-fx runtime browser contract (MD2)", () => {
       await server.close();
     }
   }, 45_000);
+
+  it("swaps the grade class at full cover and restores it under backward seek (MD4)", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath, "a Chromium/Chrome/Edge executable is required").toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-grade-smoke-"));
+    roots.push(dir);
+    const fxPlan: FxPlanV1 = {
+      version: 1,
+      effects: [
+        { kind: "grade-shift", sceneId: "turn", toGrade: "warm", atSec: 2, durationSec: 0.9 },
+      ],
+    };
+    const html = `<!doctype html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>Grade shift smoke</title><script src="gsap.min.js"></script>
+<script src="${CAMERA_RUNTIME_FILE}"></script>
+<script src="${FX_RUNTIME_FILE}"></script><style>
+*{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#101622}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden;--cinema-panel-warm:rgba(255,180,80,0.14)}
+.scene{position:absolute;inset:0;display:grid;place-items:center;opacity:0}
+.claim{color:#eef2f8;font:800 96px Arial}
+</style></head><body>
+<main id="root" data-composition-id="grade-smoke" data-width="1920" data-height="1080" data-duration="6">
+<section id="turn" class="scene clip grade-cold" data-scene="turn" data-start="0" data-duration="6" data-track-index="1">
+<div class="claim" data-part="turn-claim">Problem becomes solution</div>
+</section>
+</main>
+<script type="application/json" id="sequences-fx">${JSON.stringify(fxPlan)}</script>
+<script>
+window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
+tl.set("#turn",{opacity:1},0).set("#turn",{opacity:0},6);
+SequencesFx.compile(tl,document.getElementById("root"));
+window.__timelines["grade-smoke"]=tl;tl.seek(0);
+</script></body></html>`;
+    fs.writeFileSync(path.join(dir, "index.html"), html, "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, FX_RUNTIME_FILE), fxRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const puppeteer = (await import("puppeteer-core")).default;
+    const browser = await puppeteer.launch({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      const consoleErrors: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" && !message.text().startsWith("Failed to load resource")) {
+          consoleErrors.push(message.text());
+        }
+      });
+      page.on("pageerror", (error) => consoleErrors.push(String(error)));
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      await page.waitForFunction(
+        () => Object.keys((window as unknown as { __timelines?: object }).__timelines ?? {}).length > 0,
+        { timeout: 10_000 },
+      );
+      const stateAt = async (time: number): Promise<{ classes: string; panelOpacity: number; panelScale: string }> =>
+        page.evaluate((at: number) => {
+          const timelines = (window as unknown as {
+            __timelines: Record<string, { pause: () => void; seek: (t: number, s?: boolean) => void }>;
+          }).__timelines;
+          for (const timeline of Object.values(timelines)) {
+            timeline.pause();
+            timeline.seek(at, false);
+          }
+          const scene = document.querySelector<HTMLElement>("#turn")!;
+          const panel = document.querySelector<HTMLElement>('[data-sequences-fx="grade"]')!;
+          return {
+            classes: scene.className,
+            panelOpacity: Number.parseFloat(getComputedStyle(panel).opacity),
+            panelScale: panel.style.transform,
+          };
+        }, time);
+
+      // Before the shift: the authored cold grade, panel hidden.
+      const before = await stateAt(1.0);
+      expect(before.classes).toContain("grade-cold");
+      expect(before.classes).not.toContain("grade-warm");
+      expect(before.panelOpacity).toBe(0);
+      // Mid-expand: the panel is covering; the class has NOT swapped yet.
+      const expanding = await stateAt(2.5);
+      expect(expanding.panelOpacity).toBe(1);
+      expect(expanding.classes).toContain("grade-cold");
+      // After cover + fade: warm grade active, panel gone.
+      const after = await stateAt(3.6);
+      expect(after.classes).toContain("grade-warm");
+      expect(after.classes).not.toContain("grade-cold");
+      expect(after.panelOpacity).toBe(0);
+      // THE seek-safety promise: seeking backward past the cover restores the
+      // authored grade exactly — QA samples frames out of order, so a class
+      // swap that sticks would tint every earlier re-sampled frame warm.
+      const restored = await stateAt(1.0);
+      expect(restored.classes).toContain("grade-cold");
+      expect(restored.classes).not.toContain("grade-warm");
+      expect(restored.panelOpacity).toBe(0);
+      // And forward again lands warm deterministically.
+      const replay = await stateAt(3.6);
+      expect(replay.classes).toContain("grade-warm");
+      expect(consoleErrors).toEqual([]);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 45_000);
 });

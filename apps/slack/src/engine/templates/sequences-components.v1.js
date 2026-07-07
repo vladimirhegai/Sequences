@@ -202,6 +202,12 @@
 
   // Two decaying ghost clones trail a fast-moving letter along its own axis,
   // lagged so they always sit where the letter just was (the AE Echo idiom).
+  // Visibility discipline: the ghost is CSS-hidden at rest AND pinned hidden by
+  // a t=0 set, because its flight is a `move` (immediateRender:false) whose
+  // from-state carries a visible opacity — without the pin, a fresh forward
+  // render shows stray duplicate letters before the assemble, and a backward
+  // seek re-renders the flight's from-state. GSAP renders children in reverse
+  // order on backward seeks, so the t=0 set wins for every pre-flight frame.
   function addEchoTrail(timeline, slot, travel, at, unitDur) {
     var restX = travel.span.offsetLeft;
     var restY = travel.span.offsetTop;
@@ -215,8 +221,9 @@
       ghost.textContent = travel.span.textContent;
       ghost.style.cssText =
         "position:absolute;display:inline-block;white-space:pre;pointer-events:none;" +
-        "margin:0;left:" + restX + "px;top:" + restY + "px";
+        "margin:0;opacity:0;left:" + restX + "px;top:" + restY + "px";
       slot.appendChild(ghost);
+      timeline.set(ghost, { opacity: 0 }, 0);
       var lag = (k + 1) * 0.05;
       var from = { opacity: opacities[k] };
       var to = { opacity: 0, duration: unitDur, ease: "seqSettle" };

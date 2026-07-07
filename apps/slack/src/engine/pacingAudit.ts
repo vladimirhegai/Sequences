@@ -613,6 +613,9 @@ function withShiftedSceneTimes(scene: DirectScene, delta: number): DirectScene {
     ...scene,
     startSec: shift(scene.startSec),
     ...(scene.timeRamp ? { timeRamp: { ...scene.timeRamp, atSec: shift(scene.timeRamp.atSec) } } : {}),
+    ...(scene.gradeShift
+      ? { gradeShift: { ...scene.gradeShift, atSec: shift(scene.gradeShift.atSec) } }
+      : {}),
     ...(scene.camera
       ? {
           camera: {

@@ -908,6 +908,32 @@ describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-ret
     expect(stretchedOpener!.sentinelNormalizations?.length).toBe(1);
   });
 
+  it("cascade-shifts a later scene's gradeShift with its scene (MD4 desync guard)", () => {
+    // Same stretchable opener as above; the later scene carries a mid-scene
+    // grade shift whose atSec must ride the cascade — a shift left behind
+    // would fire before its scene, breaking the moment coincidence and the
+    // AA sample alignment.
+    const early = scene({
+      id: "opener",
+      startSec: 0,
+      durationSec: 2.5,
+      components: [{ version: 1 as const, id: "query", kind: "search" as const }],
+      beats: [beat("opener", { id: "b1", component: "query", kind: "type", atSec: 1.5, text: "ship it" })],
+    });
+    const later = scene({
+      id: "closer",
+      startSec: 2.5,
+      durationSec: 4,
+      gradeShift: { version: 1, atSec: 3.5, toGrade: "warm" },
+    });
+    const result = stretchMarginalPacingMisses([early, later]);
+    expect(result.normalized).toHaveLength(1);
+    const shifted = result.storyboard[1]!;
+    const delta = shifted.startSec - 2.5;
+    expect(delta).toBeGreaterThan(0);
+    expect(shifted.gradeShift!.atSec).toBeCloseTo(3.5 + delta, 5);
+  });
+
   it("never stretches by more than MAX_PACING_STRETCH_SEC — a larger deficit stays a real finding", () => {
     // The typed line needs ~2.4s (8 words) but the scene gives it none at
     // all (beat ends exactly at the cut) — shortfall exceeds the cap, so the
