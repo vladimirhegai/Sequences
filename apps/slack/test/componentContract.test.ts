@@ -237,6 +237,39 @@ describe("validateComponentContract", () => {
     expect(result.errors.some((error) => error.includes("differs from the storyboard"))).toBe(true);
   });
 
+  it("round-trips a beat's style so a styled film's island stays byte-equal (md-audit-probe-1)", () => {
+    // resolveComponentPlan emits the MD3/MD6 `style` variant and the runtime
+    // reads it; parseComponentPlan MUST parse it back or the island-equality
+    // check rejects every styled film — the exact defect md-audit-probe-1 hit
+    // (wordmark-slam pop, subline rise, cta pop, cta underline all dropped).
+    const styledScene = scene({
+      id: "hero",
+      startSec: 0,
+      durationSec: 6,
+      components: declared(["hero-copy", "headline"], ["cta", "button"]),
+      beats: [
+        { version: 1, id: "name", sceneId: "hero", component: "hero-copy", kind: "type", atSec: 0.6, durationSec: 1.6, text: "SHIPFAST", style: "assemble" },
+        { version: 1, id: "cta-pop", sceneId: "hero", component: "cta", kind: "open", atSec: 3.5, style: "pop" },
+      ],
+    });
+    const resolved = resolveComponentPlan([styledScene]);
+    expect(resolved.scenes[0]?.beats.map((entry) => entry.style)).toEqual(["assemble", "pop"]);
+    const island = JSON.stringify(resolved);
+    const parsed = parseComponentPlan(
+      `<script type="application/json" id="sequences-components">${island}</script>`,
+    );
+    expect(parsed.errors).toEqual([]);
+    expect(JSON.stringify(parsed.plan)).toBe(island);
+    const html =
+      `<main data-composition-id="x"><section data-scene="hero">` +
+      `<h1 class="cmp cmp-headline" data-component="headline" data-part="hero-copy"><span class="cmp-text" data-cmp-text>SHIPFAST</span></h1>` +
+      `<button class="cmp cmp-button" data-component="button" data-part="cta"><span class="cmp-label">Go</span></button></section>` +
+      `<script src="${COMPONENT_RUNTIME_FILE}"></script>` +
+      `<script type="application/json" id="sequences-components">${island}</script>` +
+      `<script>SequencesComponents.compile(tl, root);</script></main>`;
+    expect(validateComponentContract(html, [styledScene]).errors).toEqual([]);
+  });
+
   it("requires every declared component to bind to exactly one kind-marked element", () => {
     const scenes = [componentScene()];
     const missingPart = validateComponentContract(

@@ -1238,6 +1238,11 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
         ...(finite(beat.item) ? { item: beat.item } : {}),
         ...(toState ? { toState } : {}),
         ...(morphTo ? { morphTo } : {}),
+        // The resolved plan carries the optional `style` variant (MD3/MD6:
+        // type→rise/pop/assemble, open→pop, highlight→sweep/underline), and the
+        // runtime reads it. It MUST round-trip here or the island-equality check
+        // in validateComponentContract rejects every styled film (md-audit-probe-1).
+        ...(typeof beat.style === "string" && beat.style ? { style: beat.style } : {}),
       }];
     });
     return sceneId && beats.length ? [{ sceneId, beats }] : [];
