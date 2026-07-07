@@ -235,6 +235,20 @@ ladder count ever changes, that boundary and all attempt accounting move with it
   projects the create-skills context to 5,000 chars. Creative posture, layout,
   typography, motion, camera, components, cinematography, color, and anti-pattern
   guidance remain. Whole-document/revision paths retain the full prompt.
+- **Frame-as-artifact, capsule-to-author.** The full per-job `frame.md` stays the
+  on-disk artifact and the **sole `frameValidation.ts` source** (the `frame` gate
+  is unchanged — same L3 `frame/` findings). But the concept, storyboard, and
+  author model calls receive `frameCapsule(frameMd)` (`engine/frameDesign.ts`), a
+  ~45% smaller projection of just the design decisions: thesis, semantic tokens,
+  type, the spatial scaffold the author must define, restraints, forbidden
+  defaults, exceptions. It drops what the model already gets elsewhere or should
+  never re-author — the cinematography-kit description (host-injected + taught in
+  `planning-director.md`; its presence made authors redundantly re-declare
+  `.material`), the verbose spatial/attribute prose, and the tool report. This is
+  the same principle as `slotDirectorPrompt`: prose the model doesn't need to
+  internalize is projected out of the prompt, WHERE the obligation is enforced is
+  unchanged. No new finding class; `frameCapsule` round-trips under
+  `test/frameDesign.test.ts`.
 
 ### Wall-clock targets (from the mission table; measured by `sentinel:report`)
 

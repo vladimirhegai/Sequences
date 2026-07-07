@@ -115,7 +115,7 @@ import {
   stretchMarginalPacingMisses,
   withNormalizationNotes,
 } from "./pacingAudit.ts";
-import { readFrameMeta } from "./frameDesign.ts";
+import { frameCapsule, readFrameMeta } from "./frameDesign.ts";
 import {
   claimSentinelHedge,
   recordSentinelDegradation,
@@ -4763,7 +4763,7 @@ async function requestConceptDirectionUncached(
     args.brief,
     "",
     args.frameMd
-      ? `## Job frame.md (art direction system)\n${args.frameMd.slice(0, 4_000)}`
+      ? `## Job frame capsule (art direction system)\n${frameCapsule(args.frameMd)}`
       : "",
     "",
     "## Response contract",
@@ -5429,7 +5429,7 @@ export async function requestStoryboardPlan(
     args.brief,
     "",
     args.frameMd
-      ? `## Job frame.md\nUse its visual thesis, palette/type constraints, and spatial character without constraining motion.\n<frame_md>\n${args.frameMd}\n</frame_md>`
+      ? `## Job frame capsule\nUse its visual thesis, palette/type constraints, and spatial character without constraining motion.\n<frame_capsule>\n${frameCapsule(args.frameMd)}\n</frame_capsule>`
       : "",
     "",
     "## Available project-local assets",
@@ -6984,14 +6984,14 @@ export function creationPrompt(args: {
     : "";
   const frame = args.frameMd
     ? [
-        "## Frame design system (art direction + deterministic constraints)",
-        "Start from this system. Preserve its committed brand hue/font families,",
+        "## Frame design capsule (art direction + deterministic constraints)",
+        "Start from this capsule. Preserve its committed brand hue/font families,",
         "embedded-font requirement, contrast thresholds, and one-accent hierarchy.",
         "Its recommended tints and spatial tokens may be adjusted deliberately as",
         "the document allows; your motion, composition, and rhythm stay free.",
-        "<frame_md>",
-        args.frameMd,
-        "</frame_md>",
+        "<frame_capsule>",
+        frameCapsule(args.frameMd),
+        "</frame_capsule>",
       ].join("\n")
     : "";
   const componentReference = componentReferenceFor(
