@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPACT_POP_KINDS,
   COMPONENT_CATALOG,
   COMPONENT_KIT_STYLE_ID,
   COMPONENT_RUNTIME_FILE,
+  MAX_POP_OPENS_PER_SCENE,
   auditComponentComplexity,
   auditSurfaceExits,
   componentAuthoringReference,
   dedupeRedundantBeats,
+  degradeOpenPopStyles,
   componentKitSource,
   componentMotionWindows,
   componentPlanningVocabulary,
@@ -561,6 +564,78 @@ describe("dedupeRedundantBeats", () => {
     const result = dedupeRedundantBeats(input);
     expect(result.scenes[0]).toBe(input[0]);
     expect(result.dropped).toEqual([]);
+  });
+
+  it("keeps a popped open under a cursor press — press ≠ open (MD6)", () => {
+    // A compact surface pops IN (open) at the same time a cursor presses it.
+    // The pop is the entrance; the press is the acknowledgment — they are
+    // different gestures on different frames, so the open must survive dedupe.
+    const interaction = {
+      version: 1 as const,
+      id: "tap-toast",
+      sceneId: "s1",
+      cursorId: "cursor",
+      targetPart: "toast",
+      action: "click" as const,
+      startSec: 1,
+      arriveSec: 1.8,
+      pressSec: 2,
+      releaseSec: 2.2,
+      from: "frame:center" as const,
+      path: "direct" as const,
+      aimX: 0.5,
+      aimY: 0.5,
+      feedback: "press" as const,
+    };
+    const result = dedupeRedundantBeats([scene({
+      id: "s1",
+      startSec: 0,
+      durationSec: 5,
+      components: declared(["toast", "toast"]),
+      beats: [beat("toast-open", "toast", "open", 2, { style: "pop" })],
+      interactions: [interaction],
+    })]);
+    expect(result.scenes[0]?.beats).toHaveLength(1);
+    expect(result.scenes[0]?.beats?.[0]).toMatchObject({ kind: "open", style: "pop" });
+    expect(result.dropped).toEqual([]);
+  });
+});
+
+describe("degradeOpenPopStyles (MD6 compact-pop governor)", () => {
+  const popBeat = (id: string, component: string, atSec: number): ComponentBeatIntentV1 => ({
+    version: 1, id, sceneId: "s1", component, kind: "open", atSec, style: "pop",
+  });
+
+  it("targets exactly the compact acknowledgment kinds", () => {
+    expect([...COMPACT_POP_KINDS].sort()).toEqual(
+      ["avatar-stack", "button", "progress", "progress-ring", "stat-card", "toast", "toggle"].sort(),
+    );
+  });
+
+  it("drops a pop on a non-compact kind to the default open", () => {
+    const result = degradeOpenPopStyles([scene({
+      id: "s1",
+      startSec: 0,
+      durationSec: 5,
+      components: declared(["hero-modal", "modal"]),
+      beats: [popBeat("modal-open", "hero-modal", 1)],
+    })]);
+    expect(result.scenes[0]?.beats?.[0]?.style).toBeUndefined();
+    expect(result.dropped[0]).toContain("compact-surface only");
+  });
+
+  it("caps pop opens at two per scene and degrades the excess", () => {
+    const result = degradeOpenPopStyles([scene({
+      id: "s1",
+      startSec: 0,
+      durationSec: 6,
+      components: declared(["a", "toast"], ["b", "button"], ["c", "stat-card"]),
+      beats: [popBeat("p1", "a", 1), popBeat("p2", "b", 2), popBeat("p3", "c", 3)],
+    })]);
+    const styles = result.scenes[0]?.beats?.map((entry) => entry.style);
+    expect(styles).toEqual(["pop", "pop", undefined]);
+    expect(MAX_POP_OPENS_PER_SCENE).toBe(2);
+    expect(result.dropped).toHaveLength(1);
   });
 });
 

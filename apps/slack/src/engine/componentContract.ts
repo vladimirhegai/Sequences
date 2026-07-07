@@ -70,7 +70,8 @@ export type ComponentKind =
   | "progress"
   | "terminal"
   | "tabs"
-  | "avatar-stack";
+  | "avatar-stack"
+  | "headline";
 
 export type ComponentBeatKind =
   | "type"
@@ -182,7 +183,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "button",
     className: "cmp-button",
     purpose: "Primary action button; presses, loads, succeeds",
-    beats: ["press"],
+    beats: ["press", "open"],
     markup:
       `<button class="cmp cmp-button" data-component="button" data-part="deploy-cta" data-state="idle">` +
       `<span class="cmp-label">Deploy</span><span class="cmp-spinner"></span><span class="cmp-check">✓</span></button>`,
@@ -191,7 +192,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "toggle",
     className: "cmp-toggle",
     purpose: "On/off switch",
-    beats: [],
+    beats: ["open"],
     markup:
       `<div class="cmp cmp-toggle" data-component="toggle" data-part="alerts-toggle" data-state="off"><i class="cmp-knob"></i></div>`,
   },
@@ -219,7 +220,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "stat-card",
     className: "cmp-stat",
     purpose: "Metric tile: label, big value (counts up), delta chip",
-    beats: ["count"],
+    beats: ["count", "open"],
     morphsWith: ["modal"],
     markup:
       `<div class="cmp cmp-stat material" data-component="stat-card" data-part="latency-stat">` +
@@ -292,7 +293,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "progress-ring",
     className: "cmp-ring",
     purpose: "Circular progress with a center value",
-    beats: ["progress", "count"],
+    beats: ["progress", "count", "open"],
     markup:
       `<div class="cmp cmp-ring" data-component="progress-ring" data-part="uptime">` +
       `<svg viewBox="0 0 120 120"><circle class="cmp-ring-bg" cx="60" cy="60" r="52"/>` +
@@ -302,7 +303,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "progress",
     className: "cmp-progress",
     purpose: "Horizontal progress/loading bar",
-    beats: ["progress"],
+    beats: ["progress", "open"],
     markup:
       `<div class="cmp cmp-progress" data-component="progress" data-part="build">` +
       `<i data-cmp-fill></i></div>`,
@@ -330,10 +331,24 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     kind: "avatar-stack",
     className: "cmp-avatars",
     purpose: "Overlapping avatar circles that pop in",
-    beats: ["rows"],
+    beats: ["rows", "open"],
     markup:
       `<div class="cmp cmp-avatars" data-component="avatar-stack" data-part="team">` +
       `<i>AL</i><i>KD</i><i>MR</i><span class="cmp-more">+9</span></div>`,
+  },
+  {
+    kind: "headline",
+    className: "cmp-headline",
+    purpose:
+      "Hero copy as a first-class object (camera/cut/moment addressable); the " +
+      "runtime splits its text for kinetic reveals",
+    // type carries the kinetic-reveal style (typewriter|rise|pop|assemble);
+    // swap re-fills the whole line. The letter split runs on the wrapper, so a
+    // swap MUST target the wrapper's text slot, never the split spans.
+    beats: ["type", "swap"],
+    markup:
+      `<h1 class="cmp cmp-headline" data-component="headline" data-part="hero-copy">` +
+      `<span class="cmp-text" data-cmp-text>Final copy</span></h1>`,
   },
 ];
 
@@ -487,6 +502,21 @@ const BEAT_STYLE_OPTIONS: Partial<Record<ComponentBeatKind, readonly string[]>> 
   open: ["default", "pop"],
   highlight: ["ring", "sweep", "underline"],
 };
+
+/**
+ * Compact acknowledgment surfaces the MD6 `open` pop is allowed on — the
+ * "energetic cascade" register that earns overshoot. Everything else (windows,
+ * tables, text blocks, panels) keeps the smooth default open. The taste rule is
+ * enforced DETERMINISTICALLY (`degradeOpenPopStyles`), not in prose.
+ */
+export const COMPACT_POP_KINDS: ReadonlySet<ComponentKind> = new Set<ComponentKind>([
+  "toast", "button", "stat-card", "toggle", "progress", "progress-ring", "avatar-stack",
+]);
+/** Per-scene ceiling on pop-styled opens — beyond it the pop is noise, not accent. */
+export const MAX_POP_OPENS_PER_SCENE = 2;
+
+/** Type styles that split the copy into per-letter/word spans at compile time. */
+export const HEADLINE_SPLIT_STYLES: ReadonlySet<string> = new Set(["rise", "pop", "assemble"]);
 
 /** Normalize a beat's optional style: unknown/unsupported/default → absent. */
 function beatStyle(kind: ComponentBeatKind, value: unknown): string | undefined {
@@ -824,6 +854,104 @@ export function dedupeRedundantBeats(storyboard: DirectScene[]): BeatDedupeResul
     }
     if (!changed) return scene;
     return { ...scene, beats: kept };
+  });
+  return { scenes, dropped };
+}
+
+/* --------------------------------------------- typed-style taste governors */
+
+export interface StyleDegradeResult {
+  scenes: DirectScene[];
+  /** Human-readable log lines, one per degraded beat style. */
+  dropped: string[];
+}
+
+/**
+ * MD6 deterministic cap: `open` style "pop" is the typed overshoot exception,
+ * allowed ONLY on compact acknowledgment surfaces ([[COMPACT_POP_KINDS]]) and
+ * at most twice per scene. A pop on a non-compact kind drops to the smooth
+ * default open; a third+ pop in a scene drops to default too. Degrade, never
+ * veto — the parse already strips unknown styles; this enforces the compact-
+ * kind + density rule in code, not prose (SENTINEL L2).
+ */
+export function degradeOpenPopStyles(storyboard: DirectScene[]): StyleDegradeResult {
+  const dropped: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const beats = scene.beats ?? [];
+    if (!beats.some((beat) => beat.kind === "open" && beat.style === "pop")) return scene;
+    const kinds = new Map((scene.components ?? []).map((component) => [component.id, component.kind]));
+    let popCount = 0;
+    let changed = false;
+    const next = beats.map((beat) => {
+      if (beat.kind !== "open" || beat.style !== "pop") return beat;
+      const kind = kinds.get(beat.component);
+      if (!kind || !COMPACT_POP_KINDS.has(kind)) {
+        changed = true;
+        dropped.push(
+          `scene "${scene.id}": open "${beat.id}" style:pop on ${kind ?? "unknown"} ` +
+            `"${beat.component}" — pop is compact-surface only; using the default open`,
+        );
+        const { style: _s, ...rest } = beat;
+        return rest;
+      }
+      popCount += 1;
+      if (popCount > MAX_POP_OPENS_PER_SCENE) {
+        changed = true;
+        dropped.push(
+          `scene "${scene.id}": open "${beat.id}" is pop #${popCount} — at most ` +
+            `${MAX_POP_OPENS_PER_SCENE} pop opens per scene; using the default open`,
+        );
+        const { style: _s, ...rest } = beat;
+        return rest;
+      }
+      return beat;
+    });
+    return changed ? { ...scene, beats: next } : scene;
+  });
+  return { scenes, dropped };
+}
+
+/**
+ * MD3 deterministic cap for the loudest text gesture. `assemble` (scattered
+ * letters converging into the word) is allowed exactly ONCE per film, only on a
+ * `headline` component, and only when it coincides with a `primary` moment — it
+ * is a thesis/logo resolve, and twice is kitsch. Every other `assemble` degrades
+ * to `rise` (a refined per-word/letter reveal), so a paid attempt is never
+ * vetoed for over-ordering the gesture (SENTINEL L2, degrade-never-veto).
+ */
+export function degradeExcessAssembles(storyboard: DirectScene[]): StyleDegradeResult {
+  const dropped: string[] = [];
+  let claimed = false;
+  const scenes = storyboard.map((scene) => {
+    const beats = scene.beats ?? [];
+    if (!beats.some((beat) => beat.kind === "type" && beat.style === "assemble")) return scene;
+    const kinds = new Map((scene.components ?? []).map((component) => [component.id, component.kind]));
+    const primaryMoments = (scene.moments ?? []).filter((moment) => moment.importance === "primary");
+    let changed = false;
+    const next = beats.map((beat) => {
+      if (beat.kind !== "type" || beat.style !== "assemble") return beat;
+      const kind = kinds.get(beat.component);
+      const start = beat.atSec;
+      const end = beat.atSec + beatDuration(beat);
+      const onPrimary = primaryMoments.some((moment) =>
+        moment.atSec >= start - 0.6 && moment.atSec <= end + 0.6
+      );
+      let reason = "";
+      if (kind !== "headline") reason = `assemble is headline-only (got ${kind ?? "unknown"})`;
+      else if (!onPrimary) reason = "assemble must coincide with a primary moment";
+      else if (claimed) reason = "one assemble per film — this is a second";
+      if (!reason) {
+        claimed = true;
+        return beat;
+      }
+      changed = true;
+      dropped.push(
+        `scene "${scene.id}": type "${beat.id}" on "${beat.component}" — ${reason}; ` +
+          `degraded to a rise reveal`,
+      );
+      return { ...beat, style: "rise" };
+    });
+    return changed ? { ...scene, beats: next } : scene;
   });
   return { scenes, dropped };
 }

@@ -30,6 +30,14 @@
     }
   }
 
+  function swooshEase() {
+    try {
+      return global.gsap.parseEase("seqSwoosh") ? "seqSwoosh" : "power2.inOut";
+    } catch (error) {
+      return "power2.inOut";
+    }
+  }
+
   // ------------------------------------------------------------------ sweep
   // A masked specular band travels across the target — the CC Light Sweep
   // idiom in pure transform/opacity. The mask wrapper honors the target's
@@ -159,6 +167,73 @@
     return drawn ? { kind: "draw", target: effect.target, strokes: drawn } : null;
   }
 
+  // --------------------------------------------------------- grade shift (MD4)
+  // The scene's temperature turns at a payoff. An oversized border-radius:50%
+  // kit panel scales from fromPart's center (default frame center) to cover the
+  // frame over ~0.9s; at full cover the scene's grade CLASS swaps under the
+  // panel (CSS custom props snap the key light + bloom tint) and the panel fades
+  // out into the incoming grade's steady ::after wash. Transform + opacity only
+  // — the world element never gains a filter, and the panel (not a pseudo)
+  // avoids the double-wash trap during the crossover.
+  var GRADE_CLASSES = ["grade-cold", "grade-neutral", "grade-warm", "grade-noir"];
+  function gradeClassString(current, toGrade) {
+    var tokens = String(current || "").split(/\s+/).filter(function (token) {
+      return token && GRADE_CLASSES.indexOf(token) < 0;
+    });
+    tokens.push("grade-" + toGrade);
+    return tokens.join(" ");
+  }
+  function bindGradeShift(timeline, scene, effect) {
+    var origin = { x: scene.offsetWidth / 2, y: scene.offsetHeight / 2 };
+    if (effect.target) {
+      var part = scene.querySelector('[data-part="' + CSS.escape(effect.target) + '"]');
+      if (part) {
+        var x = 0;
+        var y = 0;
+        var node = part;
+        while (node && node !== scene && node !== document.body) {
+          x += node.offsetLeft || 0;
+          y += node.offsetTop || 0;
+          node = node.offsetParent;
+        }
+        origin = { x: x + (part.offsetWidth || 0) / 2, y: y + (part.offsetHeight || 0) / 2 };
+      }
+    }
+    var size = 2.4 * Math.hypot(scene.offsetWidth || 1920, scene.offsetHeight || 1080);
+    if (getComputedStyle(scene).position === "static") scene.style.position = "relative";
+    var panel = document.createElement("div");
+    panel.setAttribute("data-sequences-fx", "grade");
+    panel.setAttribute("data-layout-ignore", "");
+    panel.setAttribute("aria-hidden", "true");
+    panel.style.cssText =
+      "position:absolute;border-radius:50%;pointer-events:none;z-index:55;opacity:0;" +
+      "width:" + size + "px;height:" + size + "px;" +
+      "left:" + (origin.x - size / 2) + "px;top:" + (origin.y - size / 2) + "px;" +
+      "background:var(--cinema-panel-" + effect.toGrade + ",rgba(255,255,255,0.12))";
+    scene.appendChild(panel);
+    var coverAt = effect.atSec + effect.durationSec;
+    var startClass = scene.className;
+    timeline.set(scene, { className: startClass }, 0);
+    timeline.set(panel, { opacity: 0, scale: 0 }, 0);
+    timeline.set(panel, { opacity: 1 }, effect.atSec);
+    tween(timeline, panel, { scale: 0 }, {
+      scale: 1,
+      duration: effect.durationSec,
+      ease: swooshEase(),
+    }, effect.atSec);
+    // At full cover: swap the grade class under the panel, then fade the panel
+    // out so the new grade's static ::after wash is the steady state (no double
+    // wash — the panel never lingers over the ::after).
+    timeline.set(scene, { className: gradeClassString(startClass, effect.toGrade) }, coverAt);
+    tween(timeline, panel, { opacity: 1 }, {
+      opacity: 0,
+      duration: 0.4,
+      ease: "power2.out",
+    }, coverAt);
+    timeline.set(panel, { opacity: 0 }, coverAt + 0.4);
+    return { kind: "grade-shift", sceneId: effect.sceneId, toGrade: effect.toGrade };
+  }
+
   function compile(timeline, root) {
     if (!timeline || !root) throw new Error("SequencesFx.compile requires timeline + root");
     var island = document.getElementById("sequences-fx");
@@ -176,6 +251,7 @@
       else if (effect.kind === "glow-pulse") binding = bindGlowPulse(timeline, scene, effect);
       else if (effect.kind === "connector") binding = bindConnector(timeline, scene, effect);
       else if (effect.kind === "draw") binding = bindDraw(timeline, scene, effect);
+      else if (effect.kind === "grade-shift") binding = bindGradeShift(timeline, scene, effect);
       if (binding) bindings.push(binding);
     });
     global.__sequencesFxBindings = bindings;

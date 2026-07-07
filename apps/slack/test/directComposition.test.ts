@@ -32,7 +32,11 @@ import {
   validateDirectComposition,
   type DirectCompositionDraft,
 } from "../src/engine/directComposition.ts";
-import type { StoryboardMomentV1 } from "../src/engine/storyboardMoments.ts";
+import { resolveMomentContract, type StoryboardMomentV1 } from "../src/engine/storyboardMoments.ts";
+import {
+  dropUnusableGradeShifts,
+  normalizeStoryboardGradeShift,
+} from "../src/engine/gradeShift.ts";
 import { inspectDirectComposition, type DirectBrowserQaResult } from "../src/engine/layoutInspector.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
 import { buildJobFrame } from "../src/engine/frameDesign.ts";
@@ -576,32 +580,32 @@ describe("unsupported component beats degrade at parse (fallback-elimination)", 
   });
 
   it("keeps a load-bearing NON-text unsupported beat blocking (a moment anchors on it)", () => {
-    // A non-text analog (highlight) changes the visual channel, so evidence a
-    // declared moment binds to is never silently rewritten — the findings-retry
-    // stays the delivery mechanism there.
+    // A non-text/non-numeric analog (highlight) changes the visual channel, so
+    // evidence a declared moment binds to is never silently rewritten — the
+    // findings-retry stays the delivery mechanism there.
     expect(() =>
       planWith(
         [{
           version: 1,
-          id: "bad-open",
+          id: "bad-chart",
           sceneId: "product-proof",
           component: "latency-stat",
-          kind: "open",
+          kind: "chart",
           atSec: 3.5,
         }],
         [{
           version: 1,
-          id: "m-opened",
+          id: "m-charted",
           sceneId: "product-proof",
           atSec: 3.8,
-          title: "Panel opens",
-          visualState: "panel visible",
-          change: "the panel opens",
+          title: "Chart grows",
+          visualState: "bars visible",
+          change: "the chart draws",
           motionIntent: "ui-state",
           importance: "primary",
         }],
       )
-    ).toThrow(/uses "open" on a stat-card component/);
+    ).toThrow(/uses "chart" on a stat-card component/);
   });
 
   it("accepts a plan clean except for pacing on late attempts (degrade-never-veto)", () => {
@@ -751,6 +755,70 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     // new boundary — the plan stays contiguous.
     expect(middle.durationSec).toBeGreaterThan(3);
     expect(closer.startSec).toBeCloseTo(middle.startSec + middle.durationSec, 3);
+  });
+});
+
+describe("MD4 grade shift — normalization, discipline governor, moment evidence", () => {
+  const primaryMoment = (id: string, sceneId: string, atSec: number): StoryboardMomentV1 => ({
+    version: 1, id, sceneId, atSec, title: id, visualState: "x", change: "y",
+    motionIntent: "resolve", importance: "primary",
+  });
+  const gradeScene = (
+    id: string,
+    startSec: number,
+    shift: { atSec: number; toGrade: "cold" | "neutral" | "warm" | "noir" } | undefined,
+    momentAt: number | undefined,
+  ): DirectCompositionDraft["storyboard"][number] => ({
+    id, title: id, purpose: "test", startSec, durationSec: 4,
+    ...(shift ? { gradeShift: { version: 1 as const, ...shift } } : {}),
+    ...(momentAt !== undefined ? { moments: [primaryMoment(`${id}-m`, id, momentAt)] } : {}),
+  });
+
+  it("shape-normalizes toGrade/atSec and drops unknown grades", () => {
+    expect(normalizeStoryboardGradeShift(
+      { atSec: 1.4, toGrade: "WARM", fromPart: "hero" }, { startSec: 0, durationSec: 4 },
+    )).toEqual({ version: 1, atSec: 1.4, toGrade: "warm", fromPart: "hero" });
+    expect(normalizeStoryboardGradeShift(
+      { atSec: 1, toGrade: "teal" }, { startSec: 0, durationSec: 4 },
+    )).toBeUndefined();
+    // A scene-relative atSec authored from zero lifts into composition time.
+    expect(normalizeStoryboardGradeShift(
+      { atSec: 1, toGrade: "cold" }, { startSec: 5, durationSec: 4 },
+    )?.atSec).toBe(6);
+  });
+
+  it("keeps a disciplined shift and drops the undisciplined cases", () => {
+    const good = dropUnusableGradeShifts([gradeScene("s1", 0, { atSec: 1.2, toGrade: "warm" }, 1.2)]);
+    expect(good.storyboard[0]?.gradeShift?.toGrade).toBe("warm");
+    expect(good.dropped).toEqual([]);
+
+    // <1.2s of aftermath (atSec 3.2 in a 4s scene) → dropped.
+    expect(dropUnusableGradeShifts([gradeScene("s1", 0, { atSec: 3.2, toGrade: "warm" }, 3.2)])
+      .storyboard[0]?.gradeShift).toBeUndefined();
+    // No declared moment within ±0.5s → dropped.
+    expect(dropUnusableGradeShifts([gradeScene("s1", 0, { atSec: 1.2, toGrade: "warm" }, undefined)])
+      .storyboard[0]?.gradeShift).toBeUndefined();
+    // Outside the scene window → dropped.
+    expect(dropUnusableGradeShifts([gradeScene("s1", 0, { atSec: 9, toGrade: "warm" }, 1.2)])
+      .storyboard[0]?.gradeShift).toBeUndefined();
+  });
+
+  it("caps grade shifts at two per film", () => {
+    const board = [
+      gradeScene("s1", 0, { atSec: 1, toGrade: "cold" }, 1),
+      gradeScene("s2", 4, { atSec: 5, toGrade: "neutral" }, 5),
+      gradeScene("s3", 8, { atSec: 9, toGrade: "warm" }, 9),
+    ];
+    const result = dropUnusableGradeShifts(board);
+    expect(result.storyboard.filter((scene) => scene.gradeShift)).toHaveLength(2);
+    expect(result.dropped.some((line) => line.includes("per-film cap"))).toBe(true);
+  });
+
+  it("binds a moment to grade-shift evidence", () => {
+    const scenes = [gradeScene("hero", 0, { atSec: 1.6, toGrade: "warm" }, 1.6)];
+    const contract = resolveMomentContract("<main></main>", scenes, 4);
+    const moment = contract.moments.find((entry) => entry.id === "hero-m");
+    expect(moment?.evidence?.kind).toBe("grade-shift");
   });
 });
 

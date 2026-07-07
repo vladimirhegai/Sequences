@@ -81,6 +81,8 @@ import {
   componentSkeletonMarkup,
   componentSupportsBeat,
   dedupeRedundantBeats,
+  degradeExcessAssembles,
+  degradeOpenPopStyles,
   injectComponentKit,
   injectComponentRuntimeTag,
   morphPartnerKinds,
@@ -90,6 +92,10 @@ import {
   type ComponentBeatKind,
   type ComponentKind,
 } from "./componentContract.ts";
+import {
+  dropUnusableGradeShifts,
+  normalizeStoryboardGradeShift,
+} from "./gradeShift.ts";
 import {
   normalizeStoryboardMoments,
   plannedMomentFloor,
@@ -1079,6 +1085,14 @@ export function reconcileContractBindings(
     if (cut.focalPartOut) partBindings.push({ sceneId: cut.fromScene, part: cut.focalPartOut });
     if (cut.focalPartIn) partBindings.push({ sceneId: cut.toScene, part: cut.focalPartIn });
   }
+  // MD4: a gradeShift's fromPart is locked-storyboard paperwork like a cut focal
+  // part — reconcile a near-miss id deterministically so a paid repair is never
+  // spent on it (an absent/ambiguous fromPart just centers the wash — harmless).
+  for (const scene of scenes) {
+    if (scene.gradeShift?.fromPart) {
+      partBindings.push({ sceneId: scene.id, part: scene.gradeShift.fromPart });
+    }
+  }
   const regionBindings: ScenePartBinding[] = [];
   for (const scenePlan of resolveCameraPlan(scenes).scenes) {
     for (const segment of scenePlan.segments) {
@@ -1508,6 +1522,69 @@ export function topUpRowsMarkup(
     if (REVEALABLE_CHILD_CLASS.test(content)) continue;
     const rows = [1, 2, 3].map((index) => rowsChildMarkup(kind, index)).join("\n");
     html = `${html.slice(0, contentEnd)}\n${rows}\n${html.slice(contentEnd)}`;
+    repaired.push(component);
+  }
+  return { html, repaired };
+}
+
+/** The kit `.fx-underline` SVG the MD3 draw effect animates (a trim-path rule). */
+const FX_UNDERLINE_MARKUP =
+  `<span class="fx-underline" data-sequences-fx="underline" data-layout-ignore aria-hidden="true" ` +
+  `style="display:block;height:0.14em;margin-top:0.12em;pointer-events:none">` +
+  `<svg viewBox="0 0 100 4" preserveAspectRatio="none" ` +
+  `style="display:block;width:100%;height:100%;overflow:visible">` +
+  `<line x1="0" y1="2" x2="100" y2="2" stroke="var(--accent,#6ea8ff)" stroke-width="3" ` +
+  `stroke-linecap="round"/></svg></span>`;
+
+/**
+ * MD3 deterministic underline top-up: a `highlight` beat with style "underline"
+ * draws a trim-path rule under its target through the fx runtime's `.fx-underline`
+ * SVG. When the author placed no such markup, inject the kit pattern host-side —
+ * exactly the rows-style philosophy (a paid attempt must never die on fx
+ * paperwork, and the effect is enhancement-only so a stray inject is harmless).
+ * Only the mechanically certain case is repaired: exactly one target root with
+ * no existing `.fx-underline` inside it.
+ */
+export function topUpUnderlineMarkup(
+  html: string,
+  scenes: DirectScene[],
+): { html: string; repaired: string[] } {
+  const repaired: string[] = [];
+  const targets = new Set<string>();
+  for (const scene of scenes) {
+    for (const beat of scene.beats ?? []) {
+      if (beat.kind === "highlight" && beat.style === "underline") targets.add(beat.component);
+    }
+  }
+  for (const component of targets) {
+    const openPattern = new RegExp(
+      `<([a-z][\\w-]*)\\b[^>]*\\bdata-part\\s*=\\s*(["'])${regexpEscape(component)}\\2[^>]*>`,
+      "gi",
+    );
+    const opens = [...html.matchAll(openPattern)];
+    if (opens.length !== 1) continue;
+    const open = opens[0]!;
+    const tag = open[1]!.toLowerCase();
+    const contentStart = (open.index ?? 0) + open[0].length;
+    const walker = new RegExp(`<${tag}\\b[^>]*>|</${tag}\\s*>`, "gi");
+    walker.lastIndex = contentStart;
+    let depth = 1;
+    let contentEnd = -1;
+    for (let step = walker.exec(html); step; step = walker.exec(html)) {
+      if (step[0].startsWith("</")) {
+        depth -= 1;
+        if (depth === 0) {
+          contentEnd = step.index;
+          break;
+        }
+      } else if (!/\/>$/.test(step[0])) {
+        depth += 1;
+      }
+    }
+    if (contentEnd < 0) continue;
+    const content = html.slice(contentStart, contentEnd);
+    if (/\bclass\s*=\s*(["'])[^"']*\bfx-underline\b/i.test(content)) continue;
+    html = `${html.slice(0, contentEnd)}${FX_UNDERLINE_MARKUP}${html.slice(contentEnd)}`;
     repaired.push(component);
   }
   return { html, repaired };
@@ -2588,6 +2665,19 @@ export function applyDeterministicSourceRepairs(
       );
     }
   }
+  // MD3 underline paperwork: a style:"underline" highlight draws the kit
+  // `.fx-underline` SVG; inject it when the author left the slot empty so the
+  // paid attempt never dies on fx markup (enhancement-only, like rows).
+  {
+    const underlineTopUp = topUpUnderlineMarkup(html, lockedStoryboard ?? draft.storyboard);
+    if (underlineTopUp.repaired.length) {
+      html = underlineTopUp.html;
+      process.stderr.write(
+        `[author] injected kit fx-underline markup for highlight underline target(s): ` +
+          `${underlineTopUp.repaired.join(", ")}\n`,
+      );
+    }
+  }
   // Typed cuts are compiled by a host-owned runtime, so their bindings are
   // injected deterministically from the storyboard: the author never spends
   // output budget on boundary mechanics and can never silently drop a cut.
@@ -3376,6 +3466,7 @@ function parseStoryboard(raw: string): DirectScene[] {
     // silently re-times the choreography inside it.
     const authoredFrame = { startSec: authoredStart, durationSec };
     const timeRamp = normalizeStoryboardTimeRamp(scene.timeRamp, authoredFrame);
+    const gradeShift = normalizeStoryboardGradeShift(scene.gradeShift, authoredFrame);
     const camera = normalizeStoryboardCameraIntent(scene.camera, authoredFrame);
     const worldLayout = normalizeWorldLayout(scene.worldLayout, Boolean(camera?.path.length));
     const components = normalizeStoryboardComponents(scene.components);
@@ -3400,6 +3491,7 @@ function parseStoryboard(raw: string): DirectScene[] {
       const shift = (value: number): number =>
         Math.round((value + rebaseDelta) * 1000) / 1000;
       if (timeRamp) timeRamp.atSec = shift(timeRamp.atSec);
+      if (gradeShift) gradeShift.atSec = shift(gradeShift.atSec);
       for (const move of camera?.path ?? []) move.startSec = shift(move.startSec);
       for (const beat of beats) beat.atSec = shift(beat.atSec);
       for (const interaction of interactions) {
@@ -3451,6 +3543,7 @@ function parseStoryboard(raw: string): DirectScene[] {
       ...(typeof scene.outgoingCut === "string" ? { outgoingCut: scene.outgoingCut } : {}),
       ...(cut ? { cut } : {}),
       ...(timeRamp ? { timeRamp } : {}),
+      ...(gradeShift ? { gradeShift } : {}),
       ...(camera ? { camera } : {}),
       ...(worldLayout.length ? { worldLayout } : {}),
       ...(components.length ? { components } : {}),
@@ -3488,7 +3581,27 @@ function parseStoryboard(raw: string): DirectScene[] {
   if (dives.normalized.length) {
     recordSentinelNormalization("dive-window", dives.normalized.length);
   }
-  return dives.storyboard;
+  // MD6 + MD3 typed-style taste governors, and the MD4 grade-shift discipline
+  // — all deterministic degrade-never-veto normalizers (SENTINEL L2), run last
+  // at parse so the shipped plan already obeys the caps.
+  const pops = degradeOpenPopStyles(dives.storyboard);
+  for (const line of pops.dropped) {
+    process.stderr.write(`[storyboard] open-pop degraded: ${line}\n`);
+  }
+  if (pops.dropped.length) recordSentinelNormalization("open-pop", pops.dropped.length);
+  const assembles = degradeExcessAssembles(pops.scenes);
+  for (const line of assembles.dropped) {
+    process.stderr.write(`[storyboard] assemble degraded: ${line}\n`);
+  }
+  if (assembles.dropped.length) {
+    recordSentinelNormalization("assemble-cap", assembles.dropped.length);
+  }
+  const grades = dropUnusableGradeShifts(assembles.scenes);
+  for (const line of grades.dropped) {
+    process.stderr.write(`[storyboard] ${line}\n`);
+  }
+  if (grades.dropped.length) recordSentinelNormalization("grade-shift", grades.dropped.length);
+  return grades.storyboard;
 }
 
 /** Content time at which the viewer has experienced `span` seconds past `fromSec`
@@ -5342,6 +5455,11 @@ export async function requestStoryboardPlan(
     '"timeRamp":{"version":1,"atSec":17.2,"slowTo":0.35,"holdSec":0.6,"recoverSec":0.9} for the',
     'one motivated slow-motion dip; use "timeRamp":{"version":1} for no ramp (the default).',
     "timeRamp atSec is absolute composition seconds where the dip begins.",
+    '"gradeShift":{"version":1,"atSec":12.4,"toGrade":"cold|neutral|warm|noir","fromPart":"optional"}',
+    "for one mid-scene temperature turn — the story warming/cooling AT a payoff.",
+    "atSec is absolute composition seconds; it needs >=1.2s of scene after it and",
+    "must coincide with a declared moment. fromPart is the element the wash expands",
+    "from (default: frame center). At most one per scene, two per film; omit it otherwise.",
     '"camera":{"version":1,"depth3d":true,"path":[{"version":1,"move":"hold|drift|pan|whip|push-in|pull-back|track-to-anchor|parallax-pass|orbit-lite|orbit|dive",',
     '"toRegion":"region name (or toPart for track-to-anchor)","zoom":1,"startSec":0,"durationSec":1.2,',
     '"arcDeg":28,"focus":{"part":"data-part to pull focus onto","depth":0.35,"blurMaxPx":6},',
@@ -5361,7 +5479,8 @@ export async function requestStoryboardPlan(
     '"region":"optional camera region it lives at","role":"hero|support"}],',
     '"beats":[{"version":1,"id":"kebab-case","component":"declared component id","kind":"type|open|close|select|press|set-state|count|progress|chart|rows|stream|highlight|morph|swap",',
     '"atSec":2.4,"durationSec":1.1,"text":"for type/stream/swap","value":40,"item":2,',
-    '"toState":"for set-state/press","morphTo":"for morph","ease":"optional"}],',
+    '"toState":"for set-state/press","morphTo":"for morph","ease":"optional",',
+    '"style":"optional: type→typewriter|rise|pop|assemble, open→pop (compact kinds), highlight→ring|sweep|underline"}],',
     "Beat atSec values are absolute composition seconds inside the shot window.",
     'Use "components":[] and "beats":[] when a shot has no product surface.',
     "A component id doubles as its data-part: cameras can track-to-anchor it,",

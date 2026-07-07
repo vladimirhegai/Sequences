@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { CAMERA_FULL_MOVES, resolveCameraPlan } from "./cameraContract.ts";
 import { resolveComponentPlan } from "./componentContract.ts";
 import { EVIDENCE_AFTER_SEC, EVIDENCE_BEFORE_SEC } from "./storyboardMoments.ts";
+import { GRADE_SHIFT_DURATION_SEC, type GradeTone } from "./gradeShift.ts";
 import type { DirectScene } from "./directComposition.ts";
 
 export const FX_RUNTIME_VERSION = 1;
@@ -54,15 +55,18 @@ const PAYOFF_EVIDENCE_KINDS: ReadonlySet<string> = new Set([
   "chart",
 ]);
 
-export type FxEffectKind = "sweep" | "glow-pulse" | "draw" | "connector";
+export type FxEffectKind = "sweep" | "glow-pulse" | "draw" | "connector" | "grade-shift";
 
 export interface FxEffectV1 {
   kind: FxEffectKind;
   sceneId: string;
-  /** sweep / glow-pulse / draw: the data-part the effect answers. */
+  /** sweep / glow-pulse / draw: the data-part the effect answers.
+   *  grade-shift: the optional data-part the wash expands from. */
   target?: string;
   /** connector: the data-region whose camera arrival ends the draw. */
   region?: string;
+  /** grade-shift: the grade class the scene turns to at full cover. */
+  toGrade?: GradeTone;
   atSec: number;
   durationSec: number;
 }
@@ -103,6 +107,37 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
     const sceneEnd = scene.startSec + scene.durationSec;
     const beats = beatsByScene.get(scene.id) ?? [];
     let sceneSweeps = 0;
+
+    // MD4 grade shift: the scene's temperature turns at a payoff. The panel
+    // expands from fromPart (default center) and the runtime swaps the grade
+    // class at full cover. Discipline (window, aftermath, 1/scene, 2/film,
+    // moment coincidence) is enforced at parse (`dropUnusableGradeShifts`), so a
+    // surviving gradeShift always compiles.
+    if (scene.gradeShift) {
+      effects.push({
+        kind: "grade-shift",
+        sceneId: scene.id,
+        ...(scene.gradeShift.fromPart ? { target: scene.gradeShift.fromPart } : {}),
+        toGrade: scene.gradeShift.toGrade,
+        atSec: round(scene.gradeShift.atSec),
+        durationSec: GRADE_SHIFT_DURATION_SEC,
+      });
+    }
+
+    // MD3 underline draw: a highlight beat with style:"underline" draws a
+    // trim-path rule under its target (the kit `.fx-underline` SVG is topped up
+    // deterministically when absent). The default ring is skipped in the
+    // component runtime whenever the style is non-ring, so there is one owner.
+    for (const beat of beats) {
+      if (beat.kind !== "highlight" || beat.style !== "underline") continue;
+      effects.push({
+        kind: "draw",
+        sceneId: scene.id,
+        target: beat.component,
+        atSec: round(beat.startSec),
+        durationSec: round(Math.max(0.2, beat.endSec - beat.startSec)),
+      });
+    }
 
     // Rung 2 first: an explicit style:"sweep" highlight is the planner's own
     // call and wins the scene's sweep slot over the automatic rung.

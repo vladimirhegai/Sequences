@@ -199,6 +199,15 @@ export function buildFallbackComposition(
               holdSec: 0.45,
               recoverSec: 0.8,
             },
+            // MD4 deterministic proof path: the story's temperature turns from
+            // cold context to warm payoff exactly as the shipped value reads
+            // (coincides with the proof-reveal primary moment). The scene opens
+            // grade-cold; the fx runtime swaps to grade-warm at full cover.
+            gradeShift: {
+              version: 1 as const,
+              atSec: r2(proofPanel + 0.2),
+              toGrade: "warm" as const,
+            },
           }
         : {}),
       components: [
@@ -364,7 +373,7 @@ h1{max-width:11ch;font-size:150px;line-height:.88}h2{max-width:15ch;font-size:92
 <div class="keylight keylight-tl" data-layout-ignore></div>
 <div class="zone stack" data-layout-important><div class="eyebrow">Now shipping</div><h1 data-part="release-headline">${product}</h1><div class="tools" id="hook-tools">Live in your workspace today</div><div class="rule" id="hook-rule"></div></div><div class="mark zone" aria-hidden="true" id="hook-mark">${product.slice(0, 1)}</div>
 </section>
-<section id="fallback-proof" class="scene clip" style="padding:0" data-scene="fallback-proof" data-start="${starts[1]}" data-duration="${second}" data-track-index="1">
+<section id="fallback-proof" class="scene clip${duration >= 12 ? " grade-cold" : ""}" style="padding:0" data-scene="fallback-proof" data-start="${starts[1]}" data-duration="${second}" data-track-index="1">
 <div class="keylight keylight-c" data-layout-ignore></div>
 <div class="world" data-camera-world>
 <div class="region" data-region="proof-context" style="left:0;width:1800px">

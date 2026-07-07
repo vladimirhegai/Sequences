@@ -58,6 +58,23 @@
       var u = t - 1;
       return 1 + c3 * u * u * u + c1 * u * u;
     },
+    // Playful pop (MD6): back-out family, fast attack, ~10% single overshoot —
+    // the typed exception for scale-from-small on compact acknowledgment
+    // surfaces. Louder than seqMicrobounce; never for cameras or text blocks.
+    seqPop: function (t) {
+      var c1 = 1.70158;
+      var c3 = c1 + 1;
+      var u = t - 1;
+      return 1 + c3 * u * u * u + c1 * u * u;
+    },
+    // Stamp landing (MD6): arrives ~4% oversized and settles down — a seal/badge
+    // that presses into place. Smaller overshoot than seqPop, same family.
+    seqStamp: function (t) {
+      var c1 = 1.05;
+      var c3 = c1 + 1;
+      var u = t - 1;
+      return 1 + c3 * u * u * u + c1 * u * u;
+    },
   };
 
   function registerEases() {

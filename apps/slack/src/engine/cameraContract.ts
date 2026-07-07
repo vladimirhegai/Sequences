@@ -131,6 +131,8 @@ export const SEQUENCES_EASES = [
   "seqDrift", //      near-linear connective motion with softened ends
   "seqAnticipate", // small backward dip, then commit
   "seqMicrobounce", // ~3% single overshoot settle for UI beats (not cameras)
+  "seqPop", //        back-out ~10% overshoot, fast attack — typed compact-pop exception
+  "seqStamp", //      arrive ~4% oversized and settle down — seals/badges landing
 ] as const;
 
 const EASE_PATTERN = new RegExp(

@@ -59,6 +59,7 @@ import {
   warpInverseOf,
   type SceneTimeRampIntentV1,
 } from "./timeRamp.ts";
+import type { SceneGradeShiftV1 } from "./gradeShift.ts";
 import {
   COMPONENT_RUNTIME_FILE,
   COMPONENT_RUNTIME_VERSION,
@@ -118,6 +119,8 @@ export interface DirectScene {
   camera?: SceneCameraIntentV1;
   /** Typed net-zero speed-ramp dip inside this scene (time remapping). */
   timeRamp?: SceneTimeRampIntentV1;
+  /** Typed mid-scene animated grade shift (background temperature turn). */
+  gradeShift?: SceneGradeShiftV1;
   /** Optional station map: which data-region sits in which world grid cell. */
   worldLayout?: WorldLayoutCellV1[];
   /** Declared motion-native components (each authored as one data-part element). */
@@ -337,6 +340,7 @@ function normalizeStoryboard(
       ...(proposed?.cut ? { cut: proposed.cut } : {}),
       ...(proposed?.camera ? { camera: proposed.camera } : {}),
       ...(proposed?.timeRamp ? { timeRamp: proposed.timeRamp } : {}),
+      ...(proposed?.gradeShift ? { gradeShift: proposed.gradeShift } : {}),
       ...(proposed?.components?.length ? { components: proposed.components } : {}),
       ...(proposed?.beats?.length ? { beats: proposed.beats } : {}),
       ...(proposed?.spatialIntent ? { spatialIntent: proposed.spatialIntent } : {}),

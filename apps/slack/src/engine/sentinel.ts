@@ -238,6 +238,58 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "enhancement-only (missing target compiles to nothing).",
   },
   {
+    id: "normalize.open-pop",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/componentContract.test.ts",
+    addedBecause:
+      "MD6 (2026-07-06): overshoot is banned as a house style; the `open` pop is " +
+      "the typed exception, and taste is host-owned, not prose-hoped. " +
+      "degradeOpenPopStyles (parseStoryboard) drops the pop to the smooth default " +
+      "open on any non-compact kind (COMPACT_POP_KINDS) and beyond the second pop " +
+      "in a scene — degrade-never-veto, the parse already strips unknown styles. " +
+      "Telemetry tag: open-pop.",
+  },
+  {
+    id: "normalize.assemble-cap",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/textFx.browser.test.ts",
+    addedBecause:
+      "MD3 (2026-07-06): `assemble` (scattered letters converging into the word) " +
+      "is the film's loudest text gesture — a thesis/logo resolve, and twice is " +
+      "kitsch. degradeExcessAssembles (parseStoryboard) keeps exactly ONE per " +
+      "film, headline-kind only, coinciding with a primary moment, and degrades " +
+      "every other assemble to a `rise` reveal (SENTINEL L2 over an L3 " +
+      "findings-retry: the degrade is unambiguous, so it costs zero paid " +
+      "attempts). Telemetry tag: assemble-cap.",
+  },
+  {
+    id: "normalize.grade-shift",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "MD4 (2026-07-06): a scene `gradeShift` (animated background temperature " +
+      "turn) is a volunteered garnish, so dropUnusableGradeShifts " +
+      "(parseStoryboard) drops one that breaks the discipline — atSec outside the " +
+      "scene, <1.2s aftermath, over 1/scene or 2/film, or with no declared moment " +
+      "within +/-0.5s to motivate it — with a note instead of vetoing a paid " +
+      "attempt (the dropUnusableVolunteeredTimeRamps precedent). A surviving " +
+      "shift compiles in the fx runtime as an expanding kit panel + grade-class " +
+      "swap, and is bindable `grade-shift` moment evidence. Telemetry tag: " +
+      "grade-shift.",
+  },
+  {
     id: "normalize.timeramp-retime",
     group: "normalize",
     layer: "normalize",

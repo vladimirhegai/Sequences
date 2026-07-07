@@ -47,6 +47,7 @@ import {
   warpInverseOf,
 } from "./timeRamp.ts";
 import { FX_RUNTIME_FILE, fxRuntimeSource } from "./fxContract.ts";
+import { GRADE_SHIFT_DURATION_SEC } from "./gradeShift.ts";
 import { resolveMomentContract } from "./storyboardMoments.ts";
 import {
   pingPongCandidates,
@@ -278,7 +279,10 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 //     eye-trace budget, degraded morphs retarget to an axis-derived swipe
 //     (cut_degraded messages carry the executed target), and swipes gain a
 //     directional blur lens + optional cover panel in the overlay layer.
-const QA_CACHE_VERSION = 9;
+// v10: MD4 animated grade shift — the contrast (AA) sample scheduler adds each
+//     grade shift's post-cover settle instant, so text AA is re-measured under
+//     the new wash a mid-scene temperature turn lands on.
+const QA_CACHE_VERSION = 10;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -2206,10 +2210,22 @@ export async function inspectDirectComposition(
     // Reuse HyperFrames' screenshot-backed contrast audit at representative hero
     // frames. Contrast findings are repair feedback, not a hard geometry block.
     await page.addScriptTag({ content: loadBrowserAudit("contrast-audit.browser.js") });
+    // MD4: re-measure text AA under a mid-scene grade shift's NEW wash. Sample
+    // at the post-cover settle (panel faded, grade class active) — never during
+    // the expand, which would measure the transient decoration panel.
+    const gradeShiftSettles = draft.storyboard
+      .filter((scene) => scene.gradeShift)
+      .map((scene) => {
+        const sceneEnd = scene.startSec + scene.durationSec;
+        return Math.min(scene.gradeShift!.atSec + GRADE_SHIFT_DURATION_SEC + 0.45, sceneEnd - 0.05);
+      });
     const contrastTimes = uniqueTimes(
-      draft.storyboard.map((scene) => scene.startSec + scene.durationSec * 0.58),
+      [
+        ...gradeShiftSettles,
+        ...draft.storyboard.map((scene) => scene.startSec + scene.durationSec * 0.58),
+      ],
       duration,
-    ).slice(0, 5);
+    ).slice(0, 5 + gradeShiftSettles.length);
     for (const time of contrastTimes) {
       await seekContent(time);
       const screenshot = await page.screenshot({ encoding: "base64", type: "png" });

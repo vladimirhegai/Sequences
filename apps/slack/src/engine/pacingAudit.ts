@@ -62,6 +62,8 @@ export const READING_MIN_SEC = 1.2;
 export const READING_MAX_SEC = 4;
 /** Minimum hold after a payoff beat before the next framing change. */
 export const OUTCOME_HOLD_SEC = 0.8;
+/** An `assemble` headline is a resolve gesture — its lock holds at least this. */
+export const ASSEMBLE_HOLD_SEC = 1.2;
 /** Full camera moves allowed per scene: 1 + floor(duration / this). */
 export const CAMERA_BUDGET_WINDOW_SEC = 3.5;
 /** Whips allowed per film. */
@@ -283,6 +285,21 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
               `reading time. Type it earlier, shorten the copy, or push the next ` +
               `cut/camera move later (hold ≠ freeze: a count/progress beat may develop the ` +
               `frame while the text stays readable)`,
+          );
+        }
+      }
+      // 2c. Assemble lock hold (MD3): the film's loudest text gesture is a
+      // resolve, not a drive-by — its word must hold on screen >=1.2s after the
+      // letters lock before the frame reframes or cuts (judged in viewer time).
+      if (beat.kind === "type" && beat.style === "assemble") {
+        const holdUntil = nextFramingChange(beat.endSec);
+        const hold = viewerSpan(beat.endSec, holdUntil);
+        if (hold + PACING_TOLERANCE_SEC < ASSEMBLE_HOLD_SEC) {
+          findings.push(
+            `pacing/assemble: scene "${scene.id}" beat "${beat.id}" assembles "${beat.component}" ` +
+              `at ${beat.endSec.toFixed(1)}s but the framing changes ${hold.toFixed(1)}s later — ` +
+              `an assemble is a thesis resolve; leave >=${ASSEMBLE_HOLD_SEC}s after the lock ` +
+              `before the next cut or camera move (land it earlier or push the reframe later)`,
           );
         }
       }

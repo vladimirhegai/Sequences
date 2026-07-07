@@ -32,6 +32,7 @@ function payoffScene(id: string, startSec: number): DirectScene {
     moments: [{
       version: 1,
       id: `${id}-payoff`,
+      sceneId: id,
       atSec: startSec + 2.5,
       title: "Metric lands",
       visualState: "The number hits",
@@ -118,6 +119,47 @@ describe("resolveFxPlan (the taste ladder)", () => {
       scene({ id: "a", startSec: 0, durationSec: 4 }),
       scene({ id: "b", startSec: 4, durationSec: 4 }),
     ]).effects).toEqual([]);
+  });
+
+  it("emits a grade-shift effect for a scene gradeShift (MD4)", () => {
+    const plan = resolveFxPlan([scene({
+      id: "turn",
+      startSec: 0,
+      durationSec: 6,
+      gradeShift: { version: 1, atSec: 3, toGrade: "warm", fromPart: "hero-stat" },
+    })]);
+    const grade = plan.effects.find((effect) => effect.kind === "grade-shift");
+    expect(grade).toMatchObject({ sceneId: "turn", toGrade: "warm", target: "hero-stat", atSec: 3 });
+    expect(grade!.durationSec).toBeCloseTo(0.9);
+  });
+
+  it("emits an underline draw for a highlight beat with style underline (MD3)", () => {
+    const plan = resolveFxPlan([scene({
+      id: "hero",
+      startSec: 0,
+      durationSec: 6,
+      components: [{ version: 1, id: "hero-copy", kind: "headline" }],
+      beats: [{
+        version: 1,
+        id: "underline",
+        sceneId: "hero",
+        component: "hero-copy",
+        kind: "highlight",
+        atSec: 2,
+        durationSec: 0.8,
+        style: "underline",
+      }],
+    })]);
+    const draw = plan.effects.find((effect) => effect.kind === "draw");
+    expect(draw).toMatchObject({ sceneId: "hero", target: "hero-copy", atSec: 2 });
+    // A style:"ring" highlight emits no draw (the component runtime owns it).
+    expect(resolveFxPlan([scene({
+      id: "hero",
+      startSec: 0,
+      durationSec: 6,
+      components: [{ version: 1, id: "hero-copy", kind: "headline" }],
+      beats: [{ version: 1, id: "ring", sceneId: "hero", component: "hero-copy", kind: "highlight", atSec: 2 }],
+    })]).effects.some((effect) => effect.kind === "draw")).toBe(false);
   });
 });
 

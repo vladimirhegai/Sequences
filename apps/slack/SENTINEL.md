@@ -119,6 +119,9 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.timeramp-retime` | L2 normalize | det-repair | — (prevents ramp motivation/solvability vetoes) | directComposition |
 | normalize | `normalize.dive-window` | L2 normalize | det-repair | — (derives `dive` in/hold/out legs from the beats on its target; a beat-less dive degrades to push-in) | cameraDive |
 | normalize | `normalize.fx-plan` | L2 normalize | det-repair | — (host-derives the sequences-fx garnish plan; every runtime bind is enhancement-only) | fxContract |
+| normalize | `normalize.open-pop` | L2 normalize | det-repair | — (drops MD6 `open` style:pop to the default open on non-compact kinds / beyond 2/scene) | componentContract |
+| normalize | `normalize.assemble-cap` | L2 normalize | det-repair | — (keeps ONE headline `assemble` per film on a primary moment; degrades the rest to `rise`) | textFx.browser |
+| normalize | `normalize.grade-shift` | L2 normalize | det-repair | — (drops an undisciplined MD4 scene `gradeShift`; a surviving one is `grade-shift` moment evidence) | directComposition |
 | normalize | `normalize.morph-twin-reconcile` | L2 normalize | det-repair | — (prevents morph-to-undeclared-twin vetoes) | directComposition |
 | normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites malformed `fromTo(t, vars, <number>)` to `.to` only after an earlier opposite-state initialization; entrance-looking, mixed, and cue-less direction stays blocking) | authorReliability |
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
