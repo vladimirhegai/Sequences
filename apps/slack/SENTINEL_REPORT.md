@@ -2168,3 +2168,94 @@ byte-stable (`lint: clean · 3 static warning(s) · 48 samples · 6 warning(s)`)
 gate loosened; no prompt/QA threshold touched; no high-visibility class demoted.
 Commits: `112d915` (three normalizers), `06561bc` (scene-repair rung), `6901a5a`
 (attribution fix + framing-floor hardening).
+
+## 2026-07-08 — Author / critic-stage attempt economy (the second half)
+
+Agent 1 delivered the storyboard stage (above). This half cuts author/critic
+waste and (task 5) will re-measure the whole system. Same doctrine: gates never
+loosened — WHERE an obligation is enforced, not WHETHER.
+
+### 1. Critic economy (landed `01e45eb`)
+
+Live evidence (`sequence-check-1783463306190`): the continuity critic's
+whole-doc critique patch failed static validation and the pre-critique draft
+shipped — 2 paid calls for a byte-identical film. Two changes, gates untouched:
+
+- **Scene-scoped critique patches** (`SLACK_SEQUENCES_CRITIC_SLOT_REPAIR`):
+  critic directives that name a shot route through the scene-scoped slot repair
+  (`repairSlotDraftForFindings`, `slotCalls.critic-scene-repair`) instead of a
+  whole-document find/replace patch — small per-scene re-authors validate far
+  more often than a patch against a large document. Fires only when the shipped
+  draft came from the slot path and EVERY directive names a shot; film-level
+  directives keep the whole-document path. Adopted on a strict non-regression
+  guard (locked scene graph intact, static + browser clean, penalty never
+  rises), so a stale slot map can only MISS the optimization, never ship a worse
+  film. The critic prompt now asks for an `<id>: …` prefix so a shot-scoped
+  directive attributes reliably.
+- **Skip the critic after a stagnant ship**: a run that shipped under
+  `stagnant-polish-early-ship` (two consecutive browser rejections with an
+  identical finding-signature set) skips the critic — a draft that provably
+  resisted two targeted patches will not absorb a third. Extended the existing
+  `criticSkippableCleanDraft` predicate (kept deliberately narrow: only the
+  stagnation reason qualifies, not the ordinary attempt-3 least-bad or the
+  budget-broker exit), under the existing `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN`.
+
+Status: code + unit tests landed (colon-prefixed attribution, stagnation skip
+cases); **not yet live-probe-confirmed** — folded into the task-5 battery.
+
+### 2. kit_markup_incomplete absorption (landed `08ee588`)
+
+`kit_markup_incomplete` was the top static-rejection class (64 historical). The
+existing host completion (`topUpRowsMarkup`, childless `rows`/`select`) gained
+two siblings for the other mechanical bind gaps the kit exemplar
+(`componentContract.ts`) fully defines: `topUpChartMarkup` (a chart beat's sole
+root with no bars and no svg stroke gets direct `<i>` bars, or an svg polyline
+for a `chart-line`) and `topUpProgressMarkup` (a progress beat's sole root with
+no fill gets `<i data-cmp-fill>`, or an svg arc for an empty `progress-ring`).
+All three share one spine (`injectIntoComponentRoots` →
+`locateSoleComponentContent`), so the rows/underline top-ups were refactored onto
+it with byte-identical behavior. Host-invented placeholder SHAPE marked
+`data-sequences-neutral="chart|progress"`, so a shipped placeholder records
+`chart-neutral-bars-shipped` / `progress-neutral-fill-shipped` and the run is
+`published-degraded`, never clean. Recoverable recovers, ambiguous blocks: a
+stray nested `<i>` icon or a partial svg ring declines and stays the markup-audit
+finding. No audit behavior changed → no QA cache bump (injecting markup changes
+the content hash that already keys the browser-QA cache). Registered
+`normalize.kit-chart-complete` + `normalize.kit-progress-complete`;
+`test/authorReliability.test.ts` proves injection, idempotency, both decline
+paths, and a round-trip against the live audit.
+
+### 3. Second scene-scoped author repair — MEASURED, evidence does not support, SKIPPED
+
+The question: allow the slot validation-repair to fire a SECOND time (only when
+the first strictly improved the penalty), converting an attempt-3 full patch into
+one bounded small call. Measured across the **50** `planning/author-run.json`
+ledgers before writing any code:
+
+| Signal | Count |
+| --- | --- |
+| Source-author runs recorded | 50 |
+| Runs where the scene-browser-repair fired at all | **4** |
+| Runs that reached attempt ≥ 3 (the cost this targets) | 25 |
+| Runs where scene-repair fired AND reached attempt ≥ 3 | **1** |
+
+The precondition for a second firing to pay off — the first fired and adopted,
+and the run still reached a later attempt carrying a scene-attributable residual
+a bounded re-author could converge on — holds in **0 of 25** attempt-3 runs. In
+the single run where the scene-repair fired and the run still reached attempt 3
+(`sequence-check-1783463306190`), attempt 3 was a `full-reauthor-final-attempt`
+that dropped a binding on a **different** scene (`noise-open`:
+`component_root_missing`) — nothing the original `rollback-action` scene-repair
+could re-target. The residual finding codes on attempt-3 finals are dominated by
+`layout_intent_missing` (19, paperwork, already weighs zero), `moment_static_frame`
+(17, advisory), `interaction_not_visible` (14), `important_safe_area` (12),
+`camera_framed_sparse` (7), and `contrast_aa` (5) — cross-cutting polish and
+advisories, not the scene-structural defects the scene-scoped re-author is built
+to converge on. A second firing would burn another paid inner call against
+findings the first re-author already failed to clear, working directly against
+the ≤ 5 physical-requests target. **Skipped by design.** The data instead
+re-confirms Agent 1's handoff levers as the real author-stage cost centers:
+`contrast_aa` whack-a-mole (a whole-doc semantic-token problem the model re-fails
+by hand every attempt — wants a deterministic AA recolor) and `camera_framed_sparse`
+on drift/hold-only scenes (wants a coverage-keyed establishing zoom). Those are
+scoped for the task-5 window if probes leave room.
