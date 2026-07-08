@@ -11,7 +11,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentProvider } from "@sequences/platform/providers";
 import type { DirectScene } from "../src/engine/directComposition.ts";
-import { repairStoryboardScenesForFindings } from "../src/engine/compositionRunner.ts";
+import {
+  StoryboardValidationError,
+  repairStoryboardScenesForFindings,
+} from "../src/engine/compositionRunner.ts";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -58,6 +61,15 @@ const LOCKED = (): DirectScene[] => [
   shot("brand-close", 6),
 ];
 const REJECTED_FINDING = 'shot "product-proof" is missing foreground';
+
+describe("StoryboardValidationError", () => {
+  it("carries the raw finding array so a finding with '; ' stays one element", () => {
+    const finding = 'components/complexity: scene "x" declares 3 components; keep <= 2';
+    const error = new StoryboardValidationError([finding, 'shot "y" is missing foreground'], []);
+    expect(error.findings).toEqual([finding, 'shot "y" is missing foreground']);
+    expect(error.message).toContain(finding); // still joined into the message
+  });
+});
 
 describe("repairStoryboardScenesForFindings — gating", () => {
   it("defers to the full ladder when any finding is film-level (never calls the model)", async () => {
@@ -162,6 +174,33 @@ describe("repairStoryboardScenesForFindings — convergence", () => {
     );
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result).toBeUndefined();
+  });
+
+  it("attributes a finding that itself contains '; ' to its named shot (not __film__)", async () => {
+    // `components/complexity` findings carry "; " INSIDE ("… build them; keep
+    // <= 2 (…)"). Splitting the joined message fragments the finding into a
+    // scene-less "keep <= 2" piece that routes to __film__ and wrongly cancels
+    // the repair (the reprobe-econ-1 defect). The raw finding array must not.
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(
+        subsetResponse({ ...rawScene(shot("product-proof", 3)), foreground: "leaner product hero" }),
+      );
+    const result = await repairStoryboardScenesForFindings(
+      makeProvider(complete),
+      { brief: "b", requirements: {} },
+      LOCKED(),
+      [
+        'components/complexity: scene "product-proof" (3.0s) declares 3 components — a viewer ' +
+          "cannot read more than 2 product surfaces in that window and the author cannot build " +
+          "them; keep <= 2 (drop the set dressing)",
+      ],
+    );
+    // The model WAS consulted → the "; " finding attributed to the shot, not __film__.
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result?.find((scene) => scene.id === "product-proof")?.foreground).toBe(
+      "leaner product hero",
+    );
   });
 
   it("falls back when the merged plan still fails the gate (duration-change out of scope)", async () => {

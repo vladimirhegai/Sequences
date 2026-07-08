@@ -583,14 +583,17 @@ export function topUpFramingFloor(
 
   const pushDuration = (scene: DirectScene): number =>
     round(Math.min(1.0, Math.max(0.5, scene.durationSec * 0.4)));
-  // A scene "holds a single framing" when it has NO full camera move. Candidates
-  // must also frame real content and have no beat inside the opening push window
-  // (so the push never steals a beat's hold and mints a pacing finding).
+  // A candidate "holds a single framing" with NO declared camera path at all —
+  // a fresh single-move push-in can be created without colliding with an
+  // existing hold/drift segment at the scene start (a scene that already owns a
+  // path is left for the model). It must frame real content (else the push
+  // frames a void → camera_framed_sparse) and have no beat inside the opening
+  // push window (else the push steals a beat's hold → a pacing finding).
   const candidates = storyboard
     .map((scene, index) => ({ scene, index }))
     .filter(
       ({ scene }) =>
-        (scene.camera?.path.filter((move) => CAMERA_FULL_MOVES.has(move.move)).length ?? 0) === 0 &&
+        (scene.camera?.path.length ?? 0) === 0 &&
         hasFramingSubject(scene) &&
         !(scene.beats ?? []).some(
           (beat) => beat.atSec <= scene.startSec + pushDuration(scene) + 0.05,
@@ -609,15 +612,14 @@ export function topUpFramingFloor(
       startSec: round(scene.startSec),
       durationSec: pushDuration(scene),
     };
-    // Prepend the establishing push; any existing hold/drift keeps its place
-    // (a single-framing scene has no full move to reorder against).
-    const path = [push, ...(scene.camera?.path ?? [])];
     const note =
       `added a gentle establishing push-in (zoom ${FRAMING_TOPUP_ZOOM}) to meet the ` +
       `${requiredFramingCount(totalSec)}-framing floor for a ${totalSec.toFixed(0)}s film`;
     normalized.push(`scene "${scene.id}": ${note}`);
+    // The candidate had no camera path, so the fresh single-move path can't
+    // collide; the host wraps its data-camera-world plane at author time.
     return withNormalizationNotes(
-      { ...scene, camera: { version: 1, ...(scene.camera ?? {}), path } },
+      { ...scene, camera: { version: 1, path: [push] } },
       [note],
     );
   });

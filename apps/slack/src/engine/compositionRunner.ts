@@ -4909,10 +4909,21 @@ export function dropUnusableVolunteeredTimeRamps(storyboard: DirectScene[]): Dir
  */
 export class StoryboardValidationError extends Error {
   readonly storyboard: DirectScene[];
+  /**
+   * The raw finding list — the SAME array the message joins with "; ". Consumers
+   * that need per-finding attribution (the scene-scoped repair rung) must read
+   * this and NOT re-split the message: individual findings can themselves
+   * contain "; " (e.g. `components/complexity: … build them; keep <= 2 (…)`), so
+   * splitting the joined message over-fragments a finding into scene-less pieces
+   * that poison scene attribution (the piece lands in the `__film__` bucket and
+   * wrongly cancels the repair).
+   */
+  readonly findings: string[];
   constructor(errors: string[], storyboard: DirectScene[]) {
     super(`invalid storyboard plan: ${errors.join("; ")}`);
     this.name = "StoryboardValidationError";
     this.storyboard = storyboard;
+    this.findings = errors;
   }
 }
 
@@ -6495,9 +6506,13 @@ export async function requestStoryboardPlan(
           // findings-only from-scratch retries whack-a-mole.
           lastRejectedPlan =
             error instanceof StoryboardValidationError ? error.storyboard : undefined;
-          const rejectionFindings = error.message
-            .replace(/^invalid storyboard plan:\s*/i, "")
-            .split("; ");
+          // Prefer the raw finding array (findings can contain "; " — see
+          // StoryboardValidationError.findings). Splitting the message
+          // over-fragments them and poisons the scene-repair's attribution.
+          const rejectionFindings =
+            error instanceof StoryboardValidationError
+              ? error.findings
+              : error.message.replace(/^invalid storyboard plan:\s*/i, "").split("; ");
           persistStoryboardAttempt(args.projectDir, totalAttempts, "rejected", {
             rung: rung.label,
             raw,
