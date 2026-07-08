@@ -41,6 +41,25 @@ export function criticSkipCleanEnabled(): boolean {
 }
 
 /**
+ * Route continuity-critic directives that name a shot through the scene-scoped
+ * slot repair (`repairSlotDraftForFindings`) instead of a whole-document patch.
+ * A small per-scene re-author validates far more often than a find/replace
+ * patch against a large document — the sequence-check-1783463306190 probe
+ * showed the whole-doc critique patch failing static validation and the
+ * pre-critique draft shipping (two paid calls for nothing). Only fires when the
+ * shipped draft came from the slot path (so a slot map exists) and EVERY
+ * directive names a shot; film-level directives keep the whole-document path.
+ * Adopted only on a strict non-regression guard (static + browser clean, the
+ * quality penalty never rises), so a stale slot map can only miss the
+ * optimization, never ship a worse film. Default ON;
+ * `SLACK_SEQUENCES_CRITIC_SLOT_REPAIR=0` reverts to the whole-document critique
+ * patch in one env var.
+ */
+export function criticSlotRepairEnabled(): boolean {
+  return process.env.SLACK_SEQUENCES_CRITIC_SLOT_REPAIR !== "0";
+}
+
+/**
  * Storyboard scene-scoped findings repair — the storyboard analogue of the
  * author-stage slot retry (`repairSlotDraftForFindings`). When a rejected
  * storyboard's EVERY blocking finding maps to a named scene, re-plan ONLY those

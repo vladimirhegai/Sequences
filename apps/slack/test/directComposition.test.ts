@@ -1209,6 +1209,50 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     expect(criticSkippableCleanDraft(base, ["frame: hero contrast repaired"])).toBe(false);
   });
 
+  it("skips the critic when the run shipped stagnant (critic-economy 2026-07-08)", () => {
+    // A non-pristine draft that shipped under stagnant-polish-early-ship
+    // resisted two identical-signature patches; a third won't help either.
+    const stuck: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "contrast_aa",
+        severity: "warning",
+        time: 4,
+        selector: ".cmp-label",
+        message: "contrast 3.9",
+        source: "sequences",
+      }],
+    };
+    expect(criticSkippableCleanDraft(stuck, [], "stagnant-polish-early-ship:penalty=4")).toBe(true);
+  });
+
+  it("still runs the critic on an ordinary least-bad or early-least-bad ship", () => {
+    // Only the stagnation reason qualifies — the ordinary attempt-3 least-bad
+    // pick never proved two-patch resistance, and the early budget-broker exit
+    // ships a LOW-penalty draft the critic may still improve.
+    const stuck: DirectBrowserQaResult = {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "contrast_aa",
+        severity: "warning",
+        time: 4,
+        selector: ".cmp-label",
+        message: "contrast 3.9",
+        source: "sequences",
+      }],
+    };
+    expect(criticSkippableCleanDraft(stuck, [], "least-bad-pick:penalty=7")).toBe(false);
+    expect(criticSkippableCleanDraft(stuck, [], "early-least-bad-pick:penalty=3;findings=polish"))
+      .toBe(false);
+    expect(criticSkippableCleanDraft(stuck, [], undefined)).toBe(false);
+  });
+
+  it("skips a pristine draft regardless of ship reason", () => {
+    expect(criticSkippableCleanDraft(base, [], "least-bad-pick:penalty=0")).toBe(true);
+  });
+
   it("allows the attempt-2 broker to publish low-penalty advisory layout polish", () => {
     const browserQa: DirectBrowserQaResult = {
       ...base,

@@ -138,9 +138,11 @@ import {
   recordSentinelScaffold,
   recordSentinelScaffoldRestoration,
   recordSentinelSlotCall,
+  type SentinelSlotCallKind,
 } from "./sentinelTelemetry.ts";
 import {
   criticSkipCleanEnabled,
+  criticSlotRepairEnabled,
   recipesEnabled,
   sentinelSkeletonEnabled,
   sentinelSlotsEnabled,
@@ -192,6 +194,23 @@ export interface CompositionRunResult {
    * repaired-but-pixel-pristine draft is exactly a draft the critic can help).
    */
   staticRepairWarnings?: string[];
+  /**
+   * The scene-slot map that assembled the returned draft, present only when the
+   * draft came straight from the slot path (Sentinel Phase 2) and no post-author
+   * mutation replaced it. The continuity critic reuses it to route scene-named
+   * directives through the scene-scoped repair instead of a whole-document
+   * patch. A `Map`, so it is never serialized — the orchestrator reads only
+   * `.draft`.
+   */
+  slots?: ParsedSceneSlots;
+  /**
+   * The economy-exit reason the run shipped a banked least-bad draft under
+   * (`publishBrowserValidCandidate`), when it did. The critic reads it to skip a
+   * run that already proved it resists targeted patches
+   * (`stagnant-polish-early-ship`) — a third patch will not absorb what two
+   * identical-signature rejections already left untouched.
+   */
+  earlyShipReason?: string;
 }
 
 const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
@@ -7101,22 +7120,40 @@ export function stagnantPolishShipReason(args: {
 }
 
 /**
- * Sentinel Phase 3 critic gating: a draft the deterministic gates already
- * love has nothing for the continuity critic to repair, so its 1-2 paid
- * calls (~1-2 min) are pure latency. "Already loved" = a browser-QA pass ran
- * (not an infra outage), it is `strictOk` (no polish finding requested a
- * repair), and its quality penalty is zero (no weighted issue, no browser
- * console warning). Every declared moment is necessarily bound too — an
- * unbound moment fails `validateDirectComposition` upstream, so any draft that
- * reaches the critic has already cleared the moment contract. Conservative by
- * construction: anything less than pristine still runs the critic.
+ * Sentinel Phase 3 critic gating: a draft the continuity critic cannot help is
+ * pure latency (its 1-2 paid calls, ~1-2 min). Two disjoint cases skip it, both
+ * behind `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN`:
+ *
+ * 1. **Pristine** — a browser-QA pass ran (not an infra outage), it is
+ *    `strictOk` (no polish finding requested a repair), and its quality penalty
+ *    is zero (no weighted issue, no browser console warning). Every declared
+ *    moment is necessarily bound too — an unbound moment fails
+ *    `validateDirectComposition` upstream — so a pristine draft has nothing left
+ *    to repair.
+ *
+ * 2. **Stagnant** (2026-07-08 critic-economy) — the run shipped a banked
+ *    least-bad draft under `stagnant-polish-early-ship`, meaning two consecutive
+ *    browser rejections carried an IDENTICAL finding-signature set: the paid
+ *    patch between them moved nothing the gate measures. A draft that provably
+ *    resisted two targeted patches will not absorb a third, and the critic's
+ *    repair IS a third patch of the same shape (a compact/scene re-author under
+ *    full QA). Running it would spend 1-2 paid calls to re-derive the same
+ *    banked draft. This is deliberately narrow: ONLY the stagnation reason
+ *    qualifies — NOT the ordinary attempt-3 `least-bad-pick` (which never proved
+ *    two-patch resistance) and NOT `early-least-bad-pick` (a low-penalty draft
+ *    the critic may still improve). Conservative by construction: any draft that
+ *    is not provably stuck still runs the critic.
  */
 export function criticSkippableCleanDraft(
   browserQa: DirectBrowserQaResult | undefined,
   staticRepairWarnings: string[] = [],
+  shipReason?: string,
 ): boolean {
   if (!browserQa || browserQa.infraError) return false;
-  return browserQa.strictOk && browserQualityPenalty(browserQa, staticRepairWarnings) === 0;
+  if (browserQa.strictOk && browserQualityPenalty(browserQa, staticRepairWarnings) === 0) {
+    return true;
+  }
+  return shipReason?.startsWith("stagnant-polish-early-ship") ?? false;
 }
 
 function availableAssets(projectDir: string): string {
@@ -8371,8 +8408,14 @@ function slotContinuationPrompt(
   missing: DirectScene[],
   repairNotes?: Map<string, string[]>,
   previousSlots?: ParsedSceneSlots,
-  repairPurpose: "scaffold" | "validation" = "scaffold",
+  repairPurpose: "scaffold" | "validation" | "critique" = "scaffold",
 ): string {
+  const noteHeader = (sceneId: string): string =>
+    repairPurpose === "scaffold"
+      ? `Host-contract findings for scene "${sceneId}" (restore these bindings):`
+      : repairPurpose === "critique"
+        ? `Creative critique notes for scene "${sceneId}" (apply as the smallest local edit):`
+        : `Validation findings for scene "${sceneId}" (make the smallest correction):`;
   const interiors = buildSceneSlotInteriors(args.lockedStoryboard ?? []);
   const templates = missing.flatMap((scene) => {
     const notes = repairNotes?.get(scene.id) ?? [];
@@ -8381,9 +8424,7 @@ function slotContinuationPrompt(
       "",
       ...(notes.length
         ? [
-            repairPurpose === "scaffold"
-              ? `Host-contract findings for scene "${scene.id}" (restore these bindings):`
-              : `Validation findings for scene "${scene.id}" (make the smallest correction):`,
+            noteHeader(scene.id),
             ...notes.map((note) => `- ${note}`),
           ]
         : []),
@@ -8415,10 +8456,15 @@ function slotContinuationPrompt(
         "\nother scenes are kept; re-author ONLY the scenes below, keeping each template's" +
         "\ndata-camera-world plane, data-region stations, and component roots" +
         "\n(data-part/data-component) exactly as given."
-      : "The assembled film has scene-local validation findings. Every unlisted scene is" +
-        "\nlocked and kept byte-for-byte. Re-author ONLY the listed scenes as minimal edits;" +
-        "\npreserve their copy, visual thesis, host bindings, and motion unless a finding" +
-        "\nexplicitly requires a change."
+      : repairPurpose === "critique"
+        ? "The film shipped, but the continuity critic asked for small local improvements." +
+          "\nEvery unlisted scene is locked and kept byte-for-byte. Re-author ONLY the listed" +
+          "\nscenes as minimal edits; preserve their copy, visual thesis, host bindings, and" +
+          "\nmotion unless a critique note calls for a change."
+        : "The assembled film has scene-local validation findings. Every unlisted scene is" +
+          "\nlocked and kept byte-for-byte. Re-author ONLY the listed scenes as minimal edits;" +
+          "\npreserve their copy, visual thesis, host bindings, and motion unless a finding" +
+          "\nexplicitly requires a change."
     : "The previous response was cut off. The completed scenes are kept; author ONLY" +
       "\nthe missing scenes below, matching the established film style exactly.";
   return [
@@ -8648,6 +8694,10 @@ export async function repairSlotDraftForFindings(
   slots: ParsedSceneSlots,
   findings: string[],
   completeOptions: CompleteOptions,
+  options?: {
+    callKind?: SentinelSlotCallKind;
+    repairPurpose?: "scaffold" | "validation" | "critique";
+  },
 ): Promise<
   | {
       draft: DirectCompositionDraft;
@@ -8673,7 +8723,7 @@ export async function repairSlotDraftForFindings(
     .filter((id) => attributed.has(id));
   if (!sceneIds.length) return undefined;
   const scenes = storyboard.filter((scene) => sceneIds.includes(scene.id));
-  recordSentinelSlotCall("validation-repair", scenes.length);
+  recordSentinelSlotCall(options?.callKind ?? "validation-repair", scenes.length);
   const raw = await completeSourceWithContinuation(
     provider,
     slotContinuationPrompt(
@@ -8682,7 +8732,7 @@ export async function repairSlotDraftForFindings(
       scenes,
       attributed,
       slots,
-      "validation",
+      options?.repairPurpose ?? "validation",
     ),
     { ...completeOptions, maxTokens: Math.min(authorMaxTokens(), 8_192) },
   );
@@ -8826,7 +8876,9 @@ async function authorCompositionLoop(
     summary.strategyChanges.push(reason);
     recordSentinelDegradation(reason);
     const { qualityPenalty: _qualityPenalty, ...best } = candidate;
-    return { ...best, attempts };
+    // Carry the exit reason so the critic can skip a run that shipped because
+    // two targeted patches provably moved nothing (stagnant-polish-early-ship).
+    return { ...best, attempts, earlyShipReason: reason };
   };
   // The most recent draft whose ONLY static blockers were declared-moment
   // paperwork (`storyboard/moments:` findings) — the last-resort salvage
@@ -9379,6 +9431,13 @@ async function authorCompositionLoop(
             browserQa,
             qualityPenalty,
             staticRepairWarnings,
+            // Bank the slot map that assembled this draft (when it came from the
+            // slot path) so the continuity critic can route scene-named
+            // directives through the scene-scoped repair. The map may be stale
+            // vs contrast/sparse repairs applied to `draft` this attempt (those
+            // mutate the html, not the slots) — harmless, because the critic
+            // adopts a slot re-author only on a strict non-regression guard.
+            slots: draftFromSlots ? activeSlots : undefined,
           };
         }
       }
@@ -9838,7 +9897,10 @@ async function requestContinuityCritique(
     "and executable as a source patch: retime one beat, strengthen one weak",
     "reveal, remove one competing tween, shift a camera arrival, sharpen the",
     "resolve. Never restructure scenes, ids, or timing windows; never demand",
-    'new scenes or assets. If the film ships as-is, return {"verdict":"ship","directives":[]}.',
+    "new scenes or assets. Prefix every directive that targets ONE shot with its",
+    'exact id and a colon, e.g. "hero-cta: sharpen the logo lock at 11.2s"; a',
+    'film-wide note needs no prefix. If the film ships as-is, return',
+    '{"verdict":"ship","directives":[]}.',
     "",
     ...(concept
       ? ["## Locked creative direction", `<concept_json>${JSON.stringify(concept)}</concept_json>`, ""]
@@ -9869,6 +9931,107 @@ async function requestContinuityCritique(
   return parseCritique(raw);
 }
 
+/**
+ * Apply continuity-critic directives through the scene-scoped slot repair
+ * (critic-economy, 2026-07-08). Every directive names a shot, so re-author only
+ * those shots in one bounded call (`critic-scene-repair` telemetry) and adopt
+ * the result ONLY on a strict non-regression guard: the merged draft must keep
+ * the locked scene graph, pass static validation and browser QA, and never
+ * RAISE the browser quality penalty vs the pre-critique draft. The guard is
+ * what makes a possibly-stale slot map safe — a re-assembly that dropped a
+ * post-author contrast/sparse repair would raise the penalty and be rejected,
+ * keeping the pre-critique draft (the same outcome a failed whole-doc patch
+ * has). Returns undefined on any miss.
+ */
+async function applyCriticSlotRepair(
+  provider: AgentProvider,
+  args: DirectCompositionArgs & { lockedStoryboard: DirectScene[] },
+  result: CompositionRunResult,
+  slots: ParsedSceneSlots,
+  directives: string[],
+): Promise<CompositionRunResult | undefined> {
+  if (!result.browserQa) return undefined;
+  const productionTier = productionModel(provider);
+  const completeOptions: CompleteOptions = {
+    ...args.options,
+    timeoutMs: 240_000,
+    maxTokens: authorMaxTokens(),
+    thinkingMode: "none",
+    ...(productionTier ? { model: productionTier } : {}),
+  };
+  let slotResult;
+  try {
+    slotResult = await repairSlotDraftForFindings(
+      provider,
+      args,
+      slots,
+      directives,
+      completeOptions,
+      { callKind: "critic-scene-repair", repairPurpose: "critique" },
+    );
+  } catch (error) {
+    process.stderr.write(
+      `[critic] scene-scoped repair failed (${
+        error instanceof Error ? error.message : String(error)
+      }); keeping pre-critique draft\n`,
+    );
+    return undefined;
+  }
+  if (!slotResult) return undefined;
+  // Re-inject against the storyboard that actually SHIPPED (a sparse-zoom or an
+  // interaction quarantine may have mutated it), exactly as the whole-document
+  // critique path does.
+  const candidate = applyDeterministicSourceRepairs(
+    { storyboard: result.draft.storyboard, html: slotResult.draft.html },
+    args.projectDir,
+    result.draft.storyboard,
+  );
+  const graphError = lockedSceneGraphError(candidate.html, args.lockedStoryboard);
+  if (graphError) {
+    process.stderr.write(
+      `[critic] scene-scoped repair changed the locked storyboard (${graphError}); keeping pre-critique draft\n`,
+    );
+    return undefined;
+  }
+  const validation = await validateDirectComposition(args.projectDir, candidate);
+  if (!validation.ok) {
+    process.stderr.write(
+      "[critic] scene-scoped repair failed static validation; keeping pre-critique draft\n",
+    );
+    return undefined;
+  }
+  const browserQa = await inspectDirectComposition(args.projectDir, candidate, {
+    captureGuide: false,
+  });
+  if (browserQa.infraError || !browserQa.ok) {
+    process.stderr.write(
+      "[critic] scene-scoped repair failed browser QA; keeping pre-critique draft\n",
+    );
+    return undefined;
+  }
+  const afterStaticWarnings = [...validation.frameWarnings, ...validation.motionWarnings];
+  const beforePenalty = browserQualityPenalty(result.browserQa, result.staticRepairWarnings ?? []);
+  const afterPenalty = browserQualityPenalty(browserQa, afterStaticWarnings);
+  if (afterPenalty > beforePenalty) {
+    process.stderr.write(
+      `[critic] scene-scoped repair regressed quality (penalty ${beforePenalty} -> ${afterPenalty}); ` +
+        "keeping pre-critique draft\n",
+    );
+    return undefined;
+  }
+  process.stderr.write(
+    `[critic] scene-scoped repair applied to ${slotResult.sceneIds.join(", ")} ` +
+      `(penalty ${beforePenalty} -> ${afterPenalty})\n`,
+  );
+  return {
+    ...result,
+    draft: candidate,
+    browserQa,
+    staticRepairWarnings: afterStaticWarnings,
+    slots: slotResult.slots,
+  };
+}
+
 async function applyContinuityCritique(
   provider: AgentProvider,
   args: DirectCompositionArgs,
@@ -9880,16 +10043,24 @@ async function applyContinuityCritique(
   const last = lockedStoryboard[lockedStoryboard.length - 1]!;
   const durationSec = last.startSec + last.durationSec;
   if (durationSec < 10) return result;
-  // Sentinel Phase 3: skip the critic on a pristine draft (kill switch
-  // `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` restores always-run). Always run it
-  // when any polish finding shipped — that is exactly the draft the critic
-  // exists to improve.
+  // Sentinel Phase 3 + critic-economy (2026-07-08): skip the critic when it
+  // can't help (kill switch `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` restores
+  // always-run) — a pristine draft (nothing to repair) OR a run that shipped
+  // under `stagnant-polish-early-ship` (a draft that resisted two targeted
+  // patches will not absorb a third). Any other non-pristine draft still runs
+  // the critic — that is exactly the draft it exists to improve.
   if (
     criticSkipCleanEnabled() &&
-    criticSkippableCleanDraft(result.browserQa, result.staticRepairWarnings ?? [])
+    criticSkippableCleanDraft(
+      result.browserQa,
+      result.staticRepairWarnings ?? [],
+      result.earlyShipReason,
+    )
   ) {
     process.stderr.write(
-      "[critic] skipped: draft is already clean (strictOk, zero quality penalty)\n",
+      result.earlyShipReason?.startsWith("stagnant-polish-early-ship")
+        ? "[critic] skipped: run shipped stagnant (two patches moved nothing; a third won't either)\n"
+        : "[critic] skipped: draft is already clean (strictOk, zero quality penalty)\n",
     );
     return result;
   }
@@ -9914,6 +10085,35 @@ async function applyContinuityCritique(
   process.stderr.write(
     `[critic] ${directives.length} repair directive(s): ${directives.join(" | ").slice(0, 600)}\n`,
   );
+  // Critic-economy (2026-07-08): when the shipped draft came from the slot path
+  // and EVERY directive names a shot, re-author only those shots (one bounded
+  // scene-scoped call) instead of a whole-document patch. Small per-scene
+  // re-authors validate far more often than a find/replace patch against a
+  // large document — the sequence-check-1783463306190 probe watched the
+  // whole-doc critique patch fail static validation and 2 paid calls buy a
+  // byte-identical pre-critique draft. Film-level directives keep the
+  // whole-document path below.
+  if (criticSlotRepairEnabled() && result.slots) {
+    const attributed = attributeFindingsToScenes(
+      directives,
+      lockedStoryboard.map((scene) => scene.id),
+    );
+    const filmLevel = attributed.get("__film__") ?? [];
+    if (!filmLevel.length) {
+      const slotResult = await applyCriticSlotRepair(
+        provider,
+        { ...args, lockedStoryboard },
+        result,
+        result.slots,
+        directives,
+      );
+      // Either a guarded improvement or the pre-critique draft — never a second
+      // (whole-document) paid call. A shot the scene author couldn't improve
+      // will not yield to a find/replace patch either, and the whole point is
+      // to stop paying twice for the same non-result.
+      return slotResult ?? result;
+    }
+  }
   try {
     const structuredPatches = supportsStructuredOutputs(provider);
     const productionTier = productionModel(provider);
@@ -10063,7 +10263,10 @@ async function applyShapeMatchUpgrade(
     }
     persistUpgradedStoryboard(args.projectDir, storyboard);
     process.stderr.write("[cut-discovery] upgrade validated; shipping the morph boundary\n");
-    return { result: { ...result, draft, browserQa }, storyboard };
+    // Drop any banked slot map: this draft's html was rebuilt around the morph
+    // boundary and no longer matches the slots, so the critic must not re-author
+    // from a stale map — it falls back to the whole-document patch instead.
+    return { result: { ...result, draft, browserQa, slots: undefined }, storyboard };
   } catch (error) {
     process.stderr.write(
       `[cut-discovery] upgrade rejected (${

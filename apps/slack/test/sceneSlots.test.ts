@@ -476,4 +476,32 @@ describe("attributeFindingsToScenes", () => {
     expect(byScene.get("dashboard-overwhelm")).toHaveLength(1);
     expect(byScene.has("__film__")).toBe(false);
   });
+
+  it("attributes colon-prefixed critic directives (the critic-economy routing shape)", () => {
+    // The continuity critic prefixes a shot-scoped directive with "<id>: …"; the
+    // critic-economy slot routing only fires when EVERY directive names a shot
+    // (no __film__ remainder), so this partition is the load-bearing contract.
+    const scoped = attributeFindingsToScenes(
+      [
+        "hero-cta: sharpen the logo lock at 11.2s",
+        "deploy-stream: hold the toast 0.3s longer before the cut",
+      ],
+      ["hero-cta", "deploy-stream", "palette-open"],
+    );
+    expect(scoped.get("hero-cta")).toHaveLength(1);
+    expect(scoped.get("deploy-stream")).toHaveLength(1);
+    expect(scoped.has("__film__")).toBe(false);
+
+    // A film-wide directive (no id prefix) lands in __film__, which cancels the
+    // slot routing and keeps the whole-document critique patch.
+    const mixed = attributeFindingsToScenes(
+      [
+        "hero-cta: sharpen the logo lock",
+        "the energy curve stays flat across the whole film",
+      ],
+      ["hero-cta", "deploy-stream"],
+    );
+    expect(mixed.get("hero-cta")).toHaveLength(1);
+    expect(mixed.get("__film__")).toHaveLength(1);
+  });
 });
