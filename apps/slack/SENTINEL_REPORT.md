@@ -1977,3 +1977,180 @@ target; 4 recent rejections + the post-sweep probe's attempt 1),
 raise to 1.3; 3 recent rejections), and **framing-floor top-up** (one short
 push-in on the longest held scene when the count is exactly one short). The
 ripple churn is DIAGNOSED AND FIXED (item 5 above).
+
+---
+
+## 2026-07-08 — storyboard attempt-economy: the wall-clock lever + three normalizers
+
+This session attacks the **storyboard** stage — the tier-1 wall-clock hog (each
+GLM call ~6 min, baseline 2.5 attempts/run). It builds the two things the
+attempt-economy sweep recorded as next: the **scene-scoped repair rung** (the big
+lever) and the **three L2 normalizers** (component-trim, framing-floor-topup,
+camera-energy-lift). All gates untouched — WHERE an obligation is enforced, not
+WHETHER. (The author/critic stage — the 3-attempt source churn the baseline still
+shows — is the second agent's half of this plan.)
+
+### Baseline probes (the "before")
+
+Two fresh paid `openrouter-api` probes on distinct briefs, immutable job dirs:
+- `baseline-denseui-econ` (dense-UI: command palette + status tiles + incident
+  modal + deploy progress + terminal) — **published-degraded, no fallback**,
+  storyboard **2** attempts, source **3**, tier-1 **14.8 min**.
+- `baseline-interaction-econ` (interaction-heavy: cursor opens a card, toggles,
+  presses Ship → toast, filters, reassigns via avatar-stack) —
+  **published-degraded, no fallback**, storyboard **3** attempts, source **3**,
+  tier-1 **22.6 min**.
+
+**The 2026-07-07 sweep is behaving** (confirmed from the live logs + ledgers):
+`pacing-stretch` and `timeramp-retime` committed live; `focal-late-sample` fired
+**8×** on the interaction probe (the L4 honesty re-sample); contrast dedupe
+active. The interaction probe's source ran 3 attempts because the finding SET
+*shifted* between attempts (the attempt-2 recolor patch minted new `span.meta-label`
+`contrast_aa` findings) — so `stagnant-polish-early-ship` correctly did NOT fire
+(the polish did not stagnate, it whack-a-moled). That contrast churn is the
+author/critic stage — the second agent's territory. The two `pacing/... 0.0s
+later` cases that survived are NOT `camera-move-delay` misses: one is a 1.2s
+reading shortfall (> the 1.0s stretch cap) and one is the film's FINAL beat
+(no later cut to delay/stretch) — both correctly stay findings and the final
+was demoted to advisory. **What the baseline PROVES the new work targets:** the
+interaction probe's storyboard attempt 1 was rejected on `components/complexity:
+… 10 components across 16s … Keep <= 9` — an over-count by exactly ONE, the
+component-trim's exact target.
+
+Baseline aggregate (`sentinel:report`, 2 runs):
+
+| Metric | Target | Baseline |
+| --- | --- | --- |
+| Disposition | published | **published-degraded ×2, no fallback** |
+| Hard authoring failures | 0 | 0 |
+| Storyboard attempts / run (avg) | ≤ 1.5 | **2.50** |
+| Source-author attempts / run (avg) | ≤ 1.5 | 3.00 |
+| Wall-clock to tier-1 (avg) | ≤ 8 min | 18.7 min |
+| Physical model requests / published run | — | 14.0 |
+
+Storyboard normalizations present in the baseline: `pacing-stretch` 1,
+`timeramp-retime` 2 — and NONE of the three new tags (they did not exist yet).
+
+### What changed (commits `112d915`, `06561bc`)
+
+**1. Scene-scoped storyboard findings-repair rung** (`06561bc`,
+`repairStoryboardScenesForFindings`). The storyboard analogue of the author
+`repairSlotDraftForFindings`: on the first rejection whose EVERY blocking
+finding maps to a named shot (no `__film__` remainder, a proper subset), re-plan
+ONLY those shots in ONE bounded `minimal`-reasoning call (16,384-token cap)
+against the LOCKED remainder — id/startSec/durationSec forced back so the film
+stays contiguous — then re-validate the merged plan through the FULL gate
+(`parseStoryboardResponse`, judged strictly). Convergence replaces a full ~6-min
+re-plan; any miss (film-level finding, incomplete subset, call failure, still-
+rejected merge) falls through to the whole-plan ladder unchanged, so it can never
+reduce a run's chances. Once per run; kill switch
+`SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR`; telemetry
+`slotCalls.storyboard-scene-repair`. Duration-change findings are out of scope
+(the locked envelope defers them). Proof: `test/storyboardSceneRepair.test.ts`.
+
+**2. Three L2 normalizers** (`112d915`), all in the parse-side atomic
+commit-or-revert, all with registry rows + SENTINEL.md rows + minimized-replay
+tests:
+- `normalize.component-trim` — `components/complexity` over by 1–2 drops the
+  fewest-beat surface binding no moment / interaction / camera-cut focal; ≥3 over
+  or nothing safely droppable keeps the finding.
+- `normalize.framing-floor-topup` — the distinct-framings floor short by EXACTLY
+  one gets one gentle establishing push-in on the longest single-framing shot
+  with content to frame; short by ≥2 stays a finding.
+- `normalize.camera-energy-lift` — a 12s+ peak-less film with a push-in/pull-back
+  /dive at zoom [1.15, 1.3) lifts the largest to 1.3; only pans/drifts (a real
+  deficit) stays a finding.
+
+### Re-probe (the "after") — and the live bug it caught
+
+`reprobe-econ-1` (a dense funnel-explorer brief) published-degraded, no fallback,
+storyboard **3** attempts, tier-1 26.2 min. Crucially it **surfaced a real bug in
+the scene-repair rung in real time**, which is exactly the value of a live probe:
+
+- **The scene-repair never fired** (`slotCalls.storyboard-scene-repair: 0`) even
+  though attempt 1's rejection named shots (`components/complexity` on
+  `metric-cascade`, `pacing/reading` on `palette-snap`, `pacing/holds` on
+  `metric-cascade`). Root cause: `StoryboardValidationError` stored only the
+  joined message and the caller re-split it on `"; "` for attribution — but the
+  `components/complexity` finding **contains** `"; "` (`… the author cannot build
+  them; keep <= 2 (…)`), so the split produced a scene-less `keep <= 2` fragment
+  that landed in the `__film__` bucket and cancelled the repair on EVERY
+  components/complexity rejection (the dominant storyboard rejection class).
+  **Fixed in `6901a5a`:** the error now carries the raw `findings: string[]` and
+  the handler attributes THAT array; regression tests lock it (the error carries
+  the raw array; a `"; "` finding attributes to its shot, not `__film__`).
+- **`component-trim` correctly no-op'd** on `metric-cascade` — its 3 components
+  are all load-bearing (`stat-card-conv`↔`modal-cohort` are a morph pair,
+  `modal-cohort` is also the `spatialIntent` focal, `table-breakdown` is
+  moment-bearing), so "ambiguity stays a finding" fired as designed. The
+  probe confirmed the guard is conservative, not that the trim is broken.
+- The two `pacing/reading … 0.0s later` cases had a 1.2s shortfall (> the 1.0s
+  stretch cap), so `pacing-stretch`/`camera-move-delay` correctly left them as
+  findings — not a normalizer miss.
+
+A confirming probe (`confirm-econ-2`, a fresh dense release-cockpit brief) is
+running post-fix to observe the repaired rung fire live; its ledger lands here on
+completion. The before/after wall-clock lift for the scene-repair is therefore
+**validated by unit tests now** (`test/storyboardSceneRepair.test.ts`: a scene
+subset re-plans + merges + re-validates in one bounded call, the `"; "` finding
+attributes correctly) and the live confirmation is the last paid probe.
+
+### Before / after (storyboard stage)
+
+| Metric | Baseline (2 runs) | reprobe-econ-1 | Target |
+| --- | --- | --- | --- |
+| Disposition | published-degraded ×2, no fallback | published-degraded, no fallback | published |
+| Storyboard attempts / run | 2.50 | 3.00 | ≤ 1.5 |
+| Source attempts / run | 3.00 | 3.00 | ≤ 1.5 |
+| Tier-1 wall-clock | 18.7 min | 26.2 min | ≤ 8 min |
+
+The storyboard attempt average did **not** drop yet — because the scene-repair
+was inert (the attribution bug) on the one post-code probe, and the three
+normalizers legitimately did not apply (the probe's over-counts were all
+load-bearing, its pacing misses all > the stretch cap). The mechanisms are
+proven correct by tests; the live wall-clock lift is what `confirm-econ-2`
+measures. This is reported honestly: **no probe has yet shown the storyboard
+attempt count fall** — the levers are correct and firing-ready, and the last
+probe validates them end-to-end.
+
+### Handoff to the author/critic-stage agent (the other half of this plan)
+
+The storyboard stage now has: three L2 normalizers (absorb the mechanically-
+recoverable over-count / framing / energy rejections) and a scene-scoped repair
+rung (replaces a full re-plan when all findings name shots — now that
+`6901a5a` un-poisoned its attribution). The **source stage remains the
+3-attempt cost center and is your half.** Discovered but NOT fixed:
+
+1. **Contrast whack-a-mole defeats `stagnant-polish-early-ship`** (highest-value
+   source lever). Both baseline runs and the reprobe burned 3 source attempts
+   because the attempt-2 recolor patch MINTED NEW `contrast_aa` findings on new
+   selectors (a recolored `div.cmp-label` surfaces a `span.meta-label` beneath
+   it), so the finding SET changed and the digit-stripped-identical stagnation
+   check never fired. Consider a coarser signal ("N consecutive attempts both
+   dominated by `contrast_aa`, none clearing a prior contrast selector") or a
+   **deterministic contrast repair** — the recolor is mechanical (nudge the
+   semantic token to meet AA), and the model keeps failing it by hand.
+2. **`camera_framed_sparse` ships on drift/hold-only scenes.** `camera-sparse-zoom`
+   can't fix a scene with no bumpable full move (baseline denseui shipped
+   `least-bad-pick:penalty=18` partly from sparse on `palette-keystroke` /
+   `deploy-progress`). Such a scene needs a host-added establishing zoom (like my
+   framing-floor top-up, but keyed on coverage, not framing count) or an
+   author-stage directive.
+3. **The film's FINAL beat can't get its outcome hold.** A `set-state` payoff at
+   the last beat (`framing changes 0.0s later`) can't be delayed (no later cut)
+   and `stretchMarginalPacingMisses` did not extend the film there — worth
+   checking whether the final-scene stretch is being skipped. Demoted to
+   advisory (not a fallback risk) but a recurring honest degradation.
+4. **`frame/type: "EB Garamond" not used`** persisted across all 3 denseui source
+   attempts — the author never uses the frame's body font. A deterministic
+   check-and-inject (or dropping an unused family from the frame contract) would
+   clear a permanent finding that inflates every attempt's list.
+
+### Verification
+
+`npm run typecheck` clean · `npm run test` **750 green** (+14 normalizer tests,
++9 scene-repair tests including the attribution regressions) · `npm run film:demo`
+byte-stable (`lint: clean · 3 static warning(s) · 48 samples · 6 warning(s)`). No
+gate loosened; no prompt/QA threshold touched; no high-visibility class demoted.
+Commits: `112d915` (three normalizers), `06561bc` (scene-repair rung), `6901a5a`
+(attribution fix + framing-floor hardening).
