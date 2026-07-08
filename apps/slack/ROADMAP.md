@@ -1854,3 +1854,25 @@ stays blocking). Baseline probes (`baseline-denseui-econ`,
 `baseline-interaction-econ`) both published-degraded with no fallback and each
 hit the target rejections live (`components/complexity` over-by-1). Verified:
 typecheck, full suite (741→ green), `film:demo` byte-stable.
+
+### Scene-scoped storyboard findings-repair rung (the wall-clock lever)
+
+`repairStoryboardScenesForFindings` (`compositionRunner.ts`) — the storyboard
+analogue of the author slot retry. A rejected storyboard's dominant cost is a
+whole re-plan (~6 min of GLM reasoning), yet most rejections name specific
+shots. On the first rejection whose EVERY blocking finding maps to a named shot
+(`attributeFindingsToScenes`, no `__film__` remainder, a proper subset), the host
+re-plans ONLY those shots in ONE bounded `minimal`-reasoning call
+(`STORYBOARD_SCENE_REPAIR_MAX_TOKENS` = 16,384) against the LOCKED remainder —
+each repaired shot's id/startSec/durationSec forced back to the locked value so
+the film stays contiguous — then re-validates the merged plan through the FULL
+gate (`parseStoryboardResponse`, judged strictly). Convergence adopts + caches
+the plan, replacing the cost of a full attempt; a film-level finding, an
+incomplete subset, a call failure, or a still-rejected merge falls through to the
+whole-plan ladder unchanged (never reduces a run's chances). Once per run; gated
+by `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR` (default ON) — the structural
+live-create change one env var can revert. Telemetry mirrors the author slot
+retry: `slotCalls.storyboard-scene-repair`. Duration-change findings are
+out of scope (the locked envelope sends them to the full ladder). Proof:
+`test/storyboardSceneRepair.test.ts` (7 tests). Full suite 748 green,
+`film:demo` byte-stable.

@@ -139,7 +139,13 @@ import {
   recordSentinelScaffoldRestoration,
   recordSentinelSlotCall,
 } from "./sentinelTelemetry.ts";
-import { criticSkipCleanEnabled, recipesEnabled, sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./sentinelFlags.ts";
+import {
+  criticSkipCleanEnabled,
+  recipesEnabled,
+  sentinelSkeletonEnabled,
+  sentinelSlotsEnabled,
+  storyboardSceneRepairEnabled,
+} from "./sentinelFlags.ts";
 import {
   MAX_RECIPES_PER_FILM,
   injectRecipeContract,
@@ -201,6 +207,11 @@ const STORYBOARD_MAX_TOKENS = 6_144;
 // reserving almost all of it prevents a good long think from truncating the
 // actual storyboard at the old 16K application cap.
 const REASONING_STORYBOARD_MAX_TOKENS = 30_720;
+// The scene-scoped storyboard repair rewrites only a few shots against a locked
+// remainder, so it needs far less than the full artifact budget — capping it
+// (plus low reasoning) is what makes it a CHEAPER substitute for a whole re-plan
+// rather than an equally slow one.
+const STORYBOARD_SCENE_REPAIR_MAX_TOKENS = 16_384;
 const MAX_AUTHOR_SEGMENTS = 3;
 
 function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat"]> {
@@ -624,6 +635,18 @@ function storyboardThinkingMode(
  */
 function storyboardRescueThinkingMode(): CompleteOptions["thinkingMode"] {
   return thinkingOverride("SLACK_SEQUENCES_STORYBOARD_RESCUE_THINKING") ?? "medium";
+}
+
+/**
+ * The scene-scoped repair's reasoning effort. It edits a few shots against a
+ * locked remainder with each finding naming its own fix, so it earns a *lower*
+ * effort than a from-scratch storyboard pass — that is the wall-clock lever
+ * (minimal reasoning + a small artifact + a compact prompt). If minimal effort
+ * fails to converge, the repair returns undefined and the full-reasoning ladder
+ * takes over, so quality is never traded for the latency win.
+ */
+function storyboardSceneRepairThinkingMode(): CompleteOptions["thinkingMode"] {
+  return thinkingOverride("SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR_THINKING") ?? "minimal";
 }
 
 /**
@@ -5633,6 +5656,179 @@ function persistStoryboardAttempt(
   }
 }
 
+/**
+ * Scene-scoped storyboard findings repair — the storyboard analogue of the
+ * author-stage `repairSlotDraftForFindings`. The dominant wall-clock cost of a
+ * rejected storyboard is a whole re-plan (~6 min of GLM reasoning), yet most
+ * rejections name specific shots. When EVERY blocking finding maps to a named
+ * shot, re-plan ONLY those shots (one bounded, low-reasoning call) against the
+ * LOCKED remainder — every other shot, and every repaired shot's id / startSec /
+ * durationSec, is fixed so the merged film stays contiguous — then re-validate
+ * the merged plan through the FULL gate (`parseStoryboardResponse`, so every
+ * normalizer, audit, and moment check runs exactly as on a normal attempt). On
+ * convergence it replaces the cost of a full attempt; on ANY miss (a film-level
+ * finding, an incomplete subset, a call failure, or a merge the gate still
+ * rejects) it returns undefined and the caller falls through to the existing
+ * whole-plan ladder unchanged — it can never reduce a run's chances.
+ *
+ * Structural live-create change → gated by `storyboardSceneRepairEnabled()`
+ * (`SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR=0` reverts). Telemetry mirrors the
+ * author slot repair (`recordSentinelSlotCall("storyboard-scene-repair", n)`).
+ */
+export async function repairStoryboardScenesForFindings(
+  provider: AgentProvider,
+  args: {
+    brief: string;
+    frameMd?: string;
+    options?: CompleteOptions;
+    requirements: StoryboardPlanRequirements;
+    model?: string;
+  },
+  lockedPlan: DirectScene[],
+  findings: string[],
+): Promise<DirectScene[] | undefined> {
+  if (!storyboardSceneRepairEnabled()) return undefined;
+  if (lockedPlan.length < 2 || !findings.length) return undefined;
+  const attributed = attributeFindingsToScenes(findings, lockedPlan.map((scene) => scene.id));
+  // A film-level finding (total duration, distinct-framings floor, whip cap,
+  // film component cap, camera/energy) cannot be fixed by editing a shot subset
+  // — the whole plan must move — so defer entirely to the full ladder.
+  if (attributed.has("__film__")) return undefined;
+  const repairIds = lockedPlan.map((scene) => scene.id).filter((id) => attributed.has(id));
+  // Need a genuine locked remainder: repairing every shot IS a whole re-plan, so
+  // there is no cheaper substitute to make.
+  if (!repairIds.length || repairIds.length >= lockedPlan.length) return undefined;
+  const repairSet = new Set(repairIds);
+
+  const rawScene = (scene: DirectScene): Record<string, unknown> => {
+    const { sentinelNormalizations: _notes, ...rest } = scene;
+    return rest as unknown as Record<string, unknown>;
+  };
+  const prompt = [
+    "SYSTEM: You are repairing a SMALL SUBSET of an already-approved storyboard.",
+    "Deterministic validation rejected ONLY the shots listed below; every other",
+    "shot is locked and correct. Return corrected versions of ONLY the listed",
+    "shots, in the same JSON scene shape, fixing each finding with the SMALLEST",
+    "edit and changing nothing a finding does not name.",
+    "",
+    "HARD CONSTRAINTS:",
+    "- Keep each listed shot's \"id\", \"startSec\", and \"durationSec\" EXACTLY as",
+    "  given. The film's timing is LOCKED — you may not retime or resize a shot.",
+    "  If a finding can only be fixed by changing a shot's duration, it is out of",
+    "  scope: return that shot unchanged (the full planner will handle it).",
+    "- Reproduce every field a finding does not name, byte-for-byte (a dropped",
+    "  camera target or beat text creates NEW violations).",
+    "- Fix each finding with the edit it names (drop a set-dressing surface, type",
+    "  the copy earlier, move a payoff earlier, retarget a camera move, …).",
+    "",
+    "## Brief and trusted evidence",
+    args.brief,
+    "",
+    args.frameMd
+      ? `## Job frame capsule\n<frame_capsule>\n${frameCapsule(args.frameMd)}\n</frame_capsule>\n`
+      : "",
+    "## Locked storyboard (the full film, for context — do NOT return locked shots)",
+    "<locked_storyboard_json>",
+    JSON.stringify(lockedPlan.map(rawScene)),
+    "</locked_storyboard_json>",
+    "",
+    "## Shots to repair (return corrected versions of EXACTLY these ids)",
+    ...repairIds.flatMap((id) => {
+      const scene = lockedPlan.find((candidate) => candidate.id === id)!;
+      const sceneFindings = attributed.get(id) ?? [];
+      return [
+        `### shot "${id}"`,
+        JSON.stringify(rawScene(scene)),
+        "Findings to fix (each names its own fix):",
+        ...sceneFindings.map((finding) => `- ${finding}`),
+        "",
+      ];
+    }),
+    "## Response",
+    `Return only <storyboard_json> containing a JSON ARRAY of exactly these ${repairIds.length} ` +
+      "corrected shot object(s) — no other shots, no Markdown, no prose.",
+  ].filter(Boolean).join("\n");
+
+  recordSentinelSlotCall("storyboard-scene-repair", repairIds.length);
+  let raw: string;
+  try {
+    raw = await completeReasoningWithRetry(provider, prompt, {
+      ...args.options,
+      timeoutMs: 240_000,
+      maxTokens: STORYBOARD_SCENE_REPAIR_MAX_TOKENS,
+      thinkingMode: storyboardSceneRepairThinkingMode(),
+      ...(args.model ? { model: args.model } : {}),
+    }, "storyboard");
+  } catch (error) {
+    process.stderr.write(
+      `[storyboard] scene-repair call failed (${
+        error instanceof Error ? error.message.slice(0, 200) : String(error)
+      }); falling back to the full re-plan\n`,
+    );
+    return undefined;
+  }
+
+  let subset: unknown;
+  try {
+    subset = JSON.parse(extractStoryboardSource(raw));
+  } catch {
+    process.stderr.write("[storyboard] scene-repair returned no parseable subset; full re-plan\n");
+    return undefined;
+  }
+  if (!Array.isArray(subset)) return undefined;
+  const repairedById = new Map<string, Record<string, unknown>>();
+  for (const entry of subset) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      const id = (entry as Record<string, unknown>).id;
+      if (typeof id === "string" && repairSet.has(id)) {
+        repairedById.set(id, entry as Record<string, unknown>);
+      }
+    }
+  }
+  // Every requested shot must come back; a partial response must not look like a
+  // success merely because the merge kept the locked half.
+  if (repairIds.some((id) => !repairedById.has(id))) {
+    process.stderr.write(
+      "[storyboard] scene-repair returned an incomplete subset; falling back to the full re-plan\n",
+    );
+    return undefined;
+  }
+
+  // Merge: locked shots verbatim; repaired shots with their timing envelope
+  // forced back to the locked values so the film stays contiguous.
+  const mergedRaw = lockedPlan.map((scene) => {
+    if (!repairSet.has(scene.id)) return rawScene(scene);
+    return {
+      ...repairedById.get(scene.id)!,
+      id: scene.id,
+      startSec: scene.startSec,
+      durationSec: scene.durationSec,
+    };
+  });
+  const mergedText = `<storyboard_json>${JSON.stringify(mergedRaw)}</storyboard_json>`;
+  let merged: DirectScene[];
+  try {
+    // Judge strictly — the repair must genuinely FIX the findings, not have them
+    // demoted (it fires early, before the ladder's late-attempt demotions).
+    merged = parseStoryboardResponse(mergedText, args.requirements, {
+      degradeShapeHintMismatches: false,
+      degradePacingFindings: false,
+    });
+  } catch (error) {
+    process.stderr.write(
+      `[storyboard] scene-repair did not converge (${
+        error instanceof Error ? error.message.slice(0, 200) : String(error)
+      }); falling back to the full re-plan\n`,
+    );
+    return undefined;
+  }
+  process.stderr.write(
+    `[storyboard] scene-repair converged: re-planned ${repairIds.length}/${lockedPlan.length} ` +
+      `shot(s) (${repairIds.join(", ")}) in one bounded call — saved a full re-plan\n`,
+  );
+  return merged;
+}
+
 export async function requestStoryboardPlan(
   provider: AgentProvider,
   args: {
@@ -6115,6 +6311,10 @@ export async function requestStoryboardPlan(
   // model's FINAL attempt returned prose with no <storyboard_json> and the
   // whole run fell through to the fallback path).
   let artifactGraceUsed = false;
+  // One scene-scoped repair per run: the first rejection whose findings ALL map
+  // to named shots re-plans only those shots in a bounded low-reasoning call
+  // (repairStoryboardScenesForFindings) before spending a full re-plan attempt.
+  let sceneRepairUsed = false;
   for (const rung of rungs) {
     let recoveringFromTruncation = false;
     let reasoningFloor: CompleteOptions["thinkingMode"] | undefined;
@@ -6295,13 +6495,53 @@ export async function requestStoryboardPlan(
           // findings-only from-scratch retries whack-a-mole.
           lastRejectedPlan =
             error instanceof StoryboardValidationError ? error.storyboard : undefined;
+          const rejectionFindings = error.message
+            .replace(/^invalid storyboard plan:\s*/i, "")
+            .split("; ");
           persistStoryboardAttempt(args.projectDir, totalAttempts, "rejected", {
             rung: rung.label,
             raw,
-            findings: error.message
-              .replace(/^invalid storyboard plan:\s*/i, "")
-              .split("; "),
+            findings: rejectionFindings,
           });
+          // Scene-scoped repair rung (once per run): if EVERY blocking finding
+          // maps to a named shot, re-plan ONLY those shots against the locked
+          // remainder in one bounded low-reasoning call instead of gambling the
+          // whole ~6-min re-plan. On convergence, adopt + cache and return; on
+          // any miss it returns undefined and the full ladder continues below.
+          if (!sceneRepairUsed && lastRejectedPlan) {
+            sceneRepairUsed = true;
+            const repaired = await repairStoryboardScenesForFindings(
+              provider,
+              {
+                brief: args.brief,
+                ...(args.frameMd ? { frameMd: args.frameMd } : {}),
+                ...(args.options ? { options: args.options } : {}),
+                requirements,
+                ...(rung.model ? { model: rung.model } : {}),
+              },
+              lastRejectedPlan,
+              rejectionFindings,
+            );
+            if (repaired) {
+              const repairDegradations = acceptedStoryboardDegradations.get(repaired) ?? [];
+              for (const degradation of repairDegradations) {
+                recordSentinelDegradation(degradation);
+              }
+              writePlanningArtifact(cacheFile, {
+                version: 1,
+                key: cacheKey,
+                storyboard: repaired,
+                degradations: repairDegradations,
+              });
+              writePlanningArtifact(sharedFile, {
+                version: 1,
+                key: cacheKey,
+                storyboard: repaired,
+                degradations: repairDegradations,
+              });
+              return repaired;
+            }
+          }
           process.stderr.write(
             `[storyboard] ${rung.label} attempt ${attempt} rejected: ` +
               `${error.message.slice(0, 600)} — ${

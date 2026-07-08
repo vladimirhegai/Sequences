@@ -216,6 +216,27 @@ scratch each attempt and mint fresh violations (4/5 probes exhausted all five
 rungs that way). The rescue rung gets the same baseline — a different model on
 the same convergence seam, not a fresh draw.
 
+### Scene-scoped storyboard repair (the storyboard slot-retry analogue, 2026-07-07)
+
+A rejected storyboard's dominant cost is a whole re-plan (~6 min of GLM
+reasoning), yet most rejections name specific shots. `repairStoryboardScenesForFindings`
+is the storyboard analogue of the author-stage `repairSlotDraftForFindings`: on
+the **first** rejection whose EVERY blocking finding maps to a named shot
+(`attributeFindingsToScenes`, no `__film__` remainder), it re-plans ONLY those
+shots in one bounded `minimal`-reasoning call against the LOCKED remainder — each
+repaired shot's `id`/`startSec`/`durationSec` is forced back to the locked value
+so the merged film stays contiguous — then re-validates the merged plan through
+the FULL gate (`parseStoryboardResponse`, so every normalizer, audit, and moment
+check runs exactly as on a normal attempt, judged strictly with no late-attempt
+demotion). On convergence it adopts + caches the plan, replacing the cost of a
+full attempt. A film-level finding, an incomplete subset, a call failure, or a
+merge the gate still rejects returns undefined and the whole-plan ladder
+continues unchanged — it can never reduce a run's chances, only make one cheaper.
+Once per run; gated by `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR`; counted in
+`slotCalls.storyboard-scene-repair` so `sentinel:report` sees it. Duration-change
+findings (a shot needs more time) are deliberately out of scope — the locked
+envelope sends them to the full ladder. Proof: `test/storyboardSceneRepair.test.ts`.
+
 ---
 
 ## Budgets
@@ -224,7 +245,7 @@ the same convergence seam, not a fresh draw.
 
 | Stage | Ladder | Where |
 | --- | --- | --- |
-| Storyboard | primary rung **3** attempts → rescue rung **2** attempts (independent model) | `compositionRunner.ts` `requestStoryboardPlan` |
+| Storyboard | primary rung **3** attempts → rescue rung **2** attempts (independent model); one scene-scoped repair replaces a full attempt when all findings name shots | `compositionRunner.ts` `requestStoryboardPlan` |
 | Source author | **3** attempts (slot retries make them cheap) → source rescue rung | `authorCompositionLoop` |
 | Repair patch | ≤ **16** edits/patch (`MAX_REPAIR_PATCHES`) | `creationPrompt` scratch path |
 | Truncation (whole-doc) | ≤ **3** segments (`MAX_AUTHOR_SEGMENTS`); slots recover the tail instead | `authorSlotDraft` / segment loop |
@@ -390,6 +411,7 @@ the existing kill-switch culture.
 | `SLACK_SEQUENCES_SENTINEL_SLOTS` | **ON** (flipped 2026-07-06; `=0` reverts for one release) | Scene-addressable authoring (`film_style` + per-scene `scene_html`/`scene_script`). Truncation is script-aware; scaffold omissions get one scene repair; static/browser findings get one bounded validation repair over their scene-attributable subset (carrying previous HTML + script) whenever at least one finding maps to a named scene. Any film-level remainder retains the whole-doc ladder. The director prompt is anchor-rewritten and slot-compacted. `=0` force-reverts to whole-doc. |
 | `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN` | **ON** | Skip the continuity critic when the banked draft is already pristine (`strictOk` + `browserQualityPenalty == 0`). `=0` restores always-run. |
 | `SLACK_SEQUENCES_RECIPES` | **ON** (2026-07-07) | Recipe Studio Level-1 consumption: retrieval offers proven library recipes, storyboards may declare `recipes:[{id,params}]` per scene, and the host strips + re-injects the proven fragment verbatim every pass (`recipeContract.ts`; the L2 governor `reconcileRecipeDeclarations` is degrade-never-veto, so a bad declaration never vetoes a film). `=0` reverts to the recipe-free pipeline. `SLACK_SEQUENCES_RECIPES_DIR` overrides the library root for the studio gate ONLY — never in production. |
+| `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR` | **ON** (2026-07-07) | Scene-scoped storyboard findings repair — the storyboard analogue of the author slot retry. On the first rejection whose EVERY blocking finding maps to a named shot, re-plan ONLY those shots (one bounded, `minimal`-reasoning call, `STORYBOARD_SCENE_REPAIR_MAX_TOKENS` = 16,384) against the locked timing envelope, re-validate the merged plan through the full gate (`parseStoryboardResponse`), and adopt it if it converges — replacing the ~6-min whole-plan re-plan an attempt would cost. Film-level findings, an incomplete subset, a call failure, or a still-rejected merge fall back to the whole-plan ladder unchanged (never reduces a run's chances). Telemetry: `slotCalls.storyboard-scene-repair`. `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR_THINKING` overrides the effort. `=0` reverts to the whole-plan-only ladder. |
 
 ### The kill-switch family it joins
 

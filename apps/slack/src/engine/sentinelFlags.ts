@@ -41,6 +41,23 @@ export function criticSkipCleanEnabled(): boolean {
 }
 
 /**
+ * Storyboard scene-scoped findings repair — the storyboard analogue of the
+ * author-stage slot retry (`repairSlotDraftForFindings`). When a rejected
+ * storyboard's EVERY blocking finding maps to a named scene, re-plan ONLY those
+ * scenes (one bounded, low-reasoning call) against the locked timing envelope,
+ * re-validate the merged plan through the full gate, and adopt it if it
+ * converges — replacing the ~6-min whole-plan re-plan an attempt would cost.
+ * Default ON; `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR=0` reverts to the
+ * whole-plan-only ladder in one env var (it only ever REPLACES a paid attempt
+ * with a cheaper one and falls back to that same attempt on any miss, so it can
+ * never reduce a run's chances — but the kill switch keeps the structural
+ * change one flag from reverting).
+ */
+export function storyboardSceneRepairEnabled(): boolean {
+  return process.env.SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR !== "0";
+}
+
+/**
  * Recipe Studio Level-1 consumption — retrieval offers proven library recipes
  * to the planner and the host instantiates declared ones verbatim
  * (`recipeContract.ts`). Default ON: the operator wants recipes to be a

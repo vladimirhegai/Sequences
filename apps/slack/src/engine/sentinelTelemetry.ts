@@ -77,7 +77,11 @@ interface SentinelRunState {
   slotsEnabled?: boolean;
 }
 
-export type SentinelSlotCallKind = "truncation-continuation" | "scaffold-repair" | "validation-repair";
+export type SentinelSlotCallKind =
+  | "truncation-continuation"
+  | "scaffold-repair"
+  | "validation-repair"
+  | "storyboard-scene-repair";
 export type SentinelScaffoldRestorationSource = "scene-repair" | "l2-normalize";
 
 const storage = new AsyncLocalStorage<SentinelRunState>();
@@ -118,6 +122,7 @@ export function beginSentinelRun(
       "truncation-continuation": { calls: 0, scenes: 0 },
       "scaffold-repair": { calls: 0, scenes: 0 },
       "validation-repair": { calls: 0, scenes: 0 },
+      "storyboard-scene-repair": { calls: 0, scenes: 0 },
     },
     degradations: [],
     layerFindings: emptyLayers(),
