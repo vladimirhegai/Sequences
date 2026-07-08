@@ -21,6 +21,7 @@ import {
   normalizeStoryboardComponents,
   parseComponentPlan,
   resolveComponentPlan,
+  trimOverBudgetComponents,
   validateComponentContract,
   type ComponentBeatIntentV1,
   type SceneComponentSpecV1,
@@ -739,6 +740,137 @@ describe("auditComponentComplexity", () => {
         components: declared(["metric", "stat-card"], ["chart", "chart-line"]),
       }),
     ])).toEqual([]);
+  });
+});
+
+describe("Sentinel — trimOverBudgetComponents (normalize-before-retry)", () => {
+  const beat = (
+    spec: Partial<ComponentBeatIntentV1> &
+      Pick<ComponentBeatIntentV1, "id" | "sceneId" | "component" | "kind" | "atSec">,
+  ): ComponentBeatIntentV1 => ({ version: 1, ...spec });
+
+  it("trims a per-scene over-count by one, keeping the bound focal surface", () => {
+    // 2.7s scene → cap = min(4, floor(2.7/1.2)) = 2; 3 components → over by 1.
+    const s = scene({
+      id: "dense",
+      startSec: 0,
+      durationSec: 2.7,
+      components: declared(["hero", "app-window"], ["deco1", "stat-card"], ["deco2", "toast"]),
+      spatialIntent: { version: 1, focalPart: "hero", composition: "hero centered", relationships: [] },
+    });
+    expect(auditComponentComplexity([s]).some((f) => f.includes('"dense"'))).toBe(true);
+    const result = trimOverBudgetComponents([s]);
+    expect(result.normalized).toHaveLength(1);
+    const kept = result.storyboard[0]!.components!.map((c) => c.id);
+    expect(kept).toContain("hero"); // the declared focal is load-bearing — never trimmed
+    expect(kept).toHaveLength(2);
+    expect(auditComponentComplexity(result.storyboard).some((f) => f.startsWith("components/complexity"))).toBe(
+      false,
+    );
+  });
+
+  it("drops the fewest-beat surface and carries its (absent) beats out", () => {
+    const s = scene({
+      id: "dense",
+      startSec: 0,
+      durationSec: 2.7,
+      components: declared(["hero", "app-window"], ["busy", "table"], ["idle", "toast"]),
+      spatialIntent: { version: 1, focalPart: "hero", composition: "x", relationships: [] },
+      beats: [
+        beat({ id: "b1", sceneId: "dense", component: "busy", kind: "rows", atSec: 0.5 }),
+        beat({ id: "b2", sceneId: "dense", component: "busy", kind: "highlight", atSec: 1.2 }),
+      ],
+    });
+    const result = trimOverBudgetComponents([s]);
+    const kept = result.storyboard[0]!.components!.map((c) => c.id);
+    expect(kept).toEqual(["hero", "busy"]); // "idle" (0 beats) dropped, "busy" (2 beats) kept
+    // "busy"'s beats survive; no orphaned beat references a dropped component.
+    const beatComponents = new Set((result.storyboard[0]!.beats ?? []).map((b) => b.component));
+    expect(beatComponents.has("idle")).toBe(false);
+    expect(result.storyboard[0]!.beats).toHaveLength(2);
+  });
+
+  it("keeps the finding when nothing is safely droppable (ambiguity stays a finding)", () => {
+    // Every extra surface is load-bearing: focal, camera target, cut focal.
+    const s = scene({
+      id: "dense",
+      startSec: 0,
+      durationSec: 2.7,
+      components: declared(["a", "app-window"], ["b", "stat-card"], ["c", "button"]),
+      spatialIntent: { version: 1, focalPart: "a", composition: "x", relationships: [] },
+      camera: {
+        version: 1,
+        path: [{ version: 1, move: "track-to-anchor", toPart: "b", startSec: 0.5, durationSec: 1 }],
+      },
+      cut: { version: 1, style: "match", focalPartOut: "c", focalPartIn: "next-hero" },
+    });
+    const result = trimOverBudgetComponents([s]);
+    expect(result.normalized).toEqual([]);
+    expect(auditComponentComplexity(result.storyboard).some((f) => f.includes('"dense"'))).toBe(true);
+  });
+
+  it("never trims a surface a declared moment binds to", () => {
+    const s = scene({
+      id: "dense",
+      startSec: 0,
+      durationSec: 2.7,
+      components: declared(["hero", "app-window"], ["metric", "stat-card"], ["idle", "toast"]),
+      spatialIntent: { version: 1, focalPart: "hero", composition: "x", relationships: [] },
+      beats: [beat({ id: "m1", sceneId: "dense", component: "metric", kind: "count", atSec: 1.0, value: 9 })],
+      moments: [
+        {
+          version: 1,
+          id: "count-lands",
+          sceneId: "dense",
+          atSec: 1.0,
+          title: "metric counts up",
+          visualState: "9",
+          change: "count",
+          motionIntent: "count",
+          importance: "primary",
+        },
+      ],
+    });
+    const result = trimOverBudgetComponents([s]);
+    const kept = result.storyboard[0]!.components!.map((c) => c.id);
+    expect(kept).toContain("metric"); // moment-bearing beat protects it
+    expect(kept).not.toContain("idle"); // the unbound toast is trimmed instead
+  });
+
+  it("trims a film-wide over-count by one across scenes", () => {
+    // 3 shots × 5s = 15s; filmCap = ceil(15/2) = 8; 9 components → over by 1.
+    // Each shot's per-scene cap is floor(5/1.2)=4, so only the FILM finding fires.
+    const shot = (id: string, startSec: number): DirectScene =>
+      scene({
+        id,
+        startSec,
+        durationSec: 5,
+        components: declared([`${id}-a`, "app-window"], [`${id}-b`, "stat-card"], [`${id}-c`, "toast"]),
+        spatialIntent: { version: 1, focalPart: `${id}-a`, composition: "x", relationships: [] },
+      });
+    const storyboard = [shot("s0", 0), shot("s1", 5), shot("s2", 10)];
+    expect(auditComponentComplexity(storyboard).some((f) => f.includes("across"))).toBe(true);
+    const result = trimOverBudgetComponents(storyboard);
+    expect(result.normalized).toHaveLength(1);
+    const total = result.storyboard.reduce((n, s) => n + (s.components?.length ?? 0), 0);
+    expect(total).toBe(8);
+    expect(auditComponentComplexity(result.storyboard).some((f) => f.includes("across"))).toBe(false);
+  });
+
+  it("leaves a large over-count (>= 3) as a finding — a real over-reach", () => {
+    const s = scene({
+      id: "dense",
+      startSec: 0,
+      durationSec: 2.7, // cap 2
+      components: declared(
+        ["a", "app-window"],
+        ["b", "stat-card"],
+        ["c", "toast"],
+        ["d", "button"],
+        ["e", "chart-line"],
+      ), // 5 → over by 3
+    });
+    expect(trimOverBudgetComponents([s]).normalized).toEqual([]);
   });
 });
 

@@ -4,11 +4,15 @@ import {
   sceneIntroductionTimes,
   delayConflictingCameraMoves,
   normalizeCameraBudget,
+  requiredFramingCount,
   stretchMarginalPacingMisses,
+  topUpFramingFloor,
+  FRAMING_TOPUP_ZOOM,
   LAST_INTRODUCTION_MAX_FRACTION,
   PACING_TOLERANCE_SEC,
   MAX_PACING_STRETCH_SEC,
 } from "../src/engine/pacingAudit.ts";
+import { CAMERA_FULL_MOVES } from "../src/engine/cameraContract.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 import { resolveTimeRampPlan, warpInverseOf } from "../src/engine/timeRamp.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
@@ -1016,5 +1020,76 @@ describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-ret
     const result = stretchMarginalPacingMisses([opener, ramped]);
     expect(result.normalized).toEqual([]);
     expect(result.storyboard.find((s) => s.id === "ramped")!.durationSec).toBe(8);
+  });
+});
+
+describe("Sentinel — topUpFramingFloor (normalize-before-retry)", () => {
+  const held = (id: string, startSec: number, durationSec: number): DirectScene =>
+    scene({
+      id,
+      startSec,
+      durationSec,
+      components: [{ version: 1, id: `${id}-card`, kind: "stat-card" }],
+    });
+  const fullMoveCount = (storyboard: DirectScene[]): number =>
+    storyboard.reduce(
+      (n, s) => n + (s.camera?.path.filter((m) => CAMERA_FULL_MOVES.has(m.move)).length ?? 0),
+      0,
+    );
+
+  it("adds one establishing push-in to the longest single-framing shot when short by exactly one", () => {
+    // 3 shots, 14s, zero full moves → 3 framings; required = round(14/3.5) = 4.
+    const storyboard = [held("a", 0, 4), held("b", 4, 4), held("c", 8, 6)];
+    expect(requiredFramingCount(14)).toBe(4);
+    const result = topUpFramingFloor(storyboard);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain('"c"'); // the longest single-framing shot
+    const chosen = result.storyboard.find((s) => s.id === "c")!;
+    const added = chosen.camera!.path.filter((m) => CAMERA_FULL_MOVES.has(m.move));
+    expect(added).toHaveLength(1);
+    expect(added[0]!.move).toBe("push-in");
+    expect(added[0]!.zoom).toBe(FRAMING_TOPUP_ZOOM);
+    // The floor is now met.
+    expect(result.storyboard.length + fullMoveCount(result.storyboard)).toBe(requiredFramingCount(14));
+  });
+
+  it("leaves a film short by two as a finding (a real content deficit)", () => {
+    // total 17.5 → required round(17.5/3.5) = 5; 3 shots, no moves → short by 2.
+    const storyboard = [held("a", 0, 5.5), held("b", 5.5, 6), held("c", 11.5, 6)];
+    expect(requiredFramingCount(17.5)).toBe(5);
+    expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
+  });
+
+  it("does not push into a bare title card with no content to frame", () => {
+    const bare = (id: string, startSec: number, durationSec: number): DirectScene =>
+      scene({ id, startSec, durationSec });
+    const storyboard = [bare("a", 0, 4), bare("b", 4, 4), bare("c", 8, 6)];
+    expect(requiredFramingCount(14)).toBe(4);
+    expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
+  });
+
+  it("skips a shot whose opening beat would collide with the push, choosing another", () => {
+    const collide = scene({
+      id: "c",
+      startSec: 8,
+      durationSec: 6,
+      components: [{ version: 1, id: "c-card", kind: "stat-card" }],
+      beats: [beat("c", { id: "c-count", component: "c-card", kind: "count", atSec: 8.2, value: 3 })],
+    });
+    const storyboard = [held("a", 0, 3), held("b", 3, 5), collide];
+    const result = topUpFramingFloor(storyboard);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain('"b"'); // c (longest) skipped for its early beat
+  });
+
+  it("does not touch a film already at the framing floor", () => {
+    const storyboard = [held("a", 0, 4), held("b", 4, 4), held("c", 8, 4)];
+    expect(requiredFramingCount(12)).toBe(3); // 3 shots meet it exactly
+    expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
+  });
+
+  it("does not touch a short (<10s) film", () => {
+    const storyboard = [held("a", 0, 3), held("b", 3, 3), held("c", 6, 3)];
+    expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
   });
 });

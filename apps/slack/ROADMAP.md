@@ -1825,3 +1825,32 @@ across consecutive attempts). Changes, all gates untouched:
   CI-scanned); `camera-sparse-zoom` row updated for the 2.8 clamp +
   `framingCorrection` browser re-audit. All 2026-07-06 independent-audit code
   changes verified correct.
+
+## 2026-07-07 (later still) — storyboard attempt-economy: three L2 normalizers
+
+Full record: SENTINEL_REPORT.md "storyboard attempt-economy". Building the three
+next candidates the attempt-economy sweep recorded, all inside the existing
+parse-side atomic commit-or-revert (`parseStoryboardResponse`), all gates
+untouched — WHERE an obligation is enforced, not WHETHER:
+
+- **`normalize.component-trim`** (`componentContract.ts`
+  `trimOverBudgetComponents`): a `components/complexity` over-count by 1–2 drops
+  the fewest-beat surface(s) binding no declared moment, no interaction target,
+  and no camera/cut focal (the finding's own "drop the set dressing" fix). Over
+  by ≥3 or nothing safely droppable keeps the finding.
+- **`normalize.framing-floor-topup`** (`pacingAudit.ts` `topUpFramingFloor`):
+  the distinct-framings floor short by EXACTLY one gets one gentle establishing
+  push-in on the longest single-framing shot with content to frame; short by ≥2
+  stays a finding. Floor arithmetic unified into `requiredFramingCount` (shared
+  with `validateStoryboardPlan`).
+- **`normalize.camera-energy-lift`** (`cameraContract.ts` `liftCameraEnergyPeak`):
+  a 12s+ peak-less film with a push-in/pull-back/dive at zoom [1.15, 1.3) lifts
+  the largest to 1.3 (the audit's own "zoom:1.35" advice); a peak-less film with
+  only pans/drifts stays a finding.
+
+Each has a `sentinel.ts` registry row, a SENTINEL.md contract-table row, and
+minimized-replay tests (recoverable case recovers; ambiguous/load-bearing case
+stays blocking). Baseline probes (`baseline-denseui-econ`,
+`baseline-interaction-econ`) both published-degraded with no fallback and each
+hit the target rejections live (`components/complexity` over-by-1). Verified:
+typecheck, full suite (741→ green), `film:demo` byte-stable.

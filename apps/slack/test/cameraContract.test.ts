@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   CAMERA_FULL_MOVES,
   CAMERA_RUNTIME_FILE,
+  HIGH_ENERGY_PUSH_ZOOM,
   SEQUENCES_EASES,
   auditCameraEnergy,
   cameraMotionWindows,
   cameraRuntimeSource,
+  liftCameraEnergyPeak,
   normalizeStoryboardCameraIntent,
   parseCameraPlan,
   resolveCameraPlan,
@@ -441,6 +443,93 @@ describe("auditCameraEnergy", () => {
     ]);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatch(/all 4 full camera moves are "whip"/);
+  });
+});
+
+describe("Sentinel — liftCameraEnergyPeak (normalize-before-retry)", () => {
+  const push = (region: string, zoom?: number): NonNullable<DirectScene["camera"]> => ({
+    version: 1,
+    path: [
+      {
+        version: 1,
+        move: "push-in",
+        toRegion: region,
+        ...(zoom !== undefined ? { zoom } : {}),
+        startSec: 1,
+        durationSec: 1,
+      },
+    ],
+  });
+
+  it("lifts a mild push-in to the peak so a 12s+ peak-less film clears camera/energy", () => {
+    // A default push-in resolves to zoom 1.22 (in [1.15, 1.3)).
+    const storyboard = [
+      scene({ id: "a", startSec: 0, durationSec: 6, camera: push("hero") }),
+      scene({ id: "b", startSec: 6, durationSec: 7 }),
+    ];
+    expect(auditCameraEnergy(storyboard).some((f) => f.startsWith("camera/energy"))).toBe(true);
+    const result = liftCameraEnergyPeak(storyboard);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBe(HIGH_ENERGY_PUSH_ZOOM);
+    expect(auditCameraEnergy(result.storyboard).some((f) => f.startsWith("camera/energy"))).toBe(false);
+  });
+
+  it("is a no-op when the film already has a high-energy peak (a whip)", () => {
+    const whip: NonNullable<DirectScene["camera"]> = {
+      version: 1,
+      path: [{ version: 1, move: "whip", toRegion: "m", startSec: 1, durationSec: 0.5 }],
+    };
+    const storyboard = [
+      scene({ id: "a", startSec: 0, durationSec: 6, camera: whip }),
+      scene({ id: "b", startSec: 6, durationSec: 7, camera: push("hero") }),
+    ];
+    expect(liftCameraEnergyPeak(storyboard).normalized).toEqual([]);
+  });
+
+  it("never lifts when an energetic cut already carries the peak", () => {
+    const storyboard = [
+      scene({
+        id: "a",
+        startSec: 0,
+        durationSec: 6,
+        camera: push("hero"),
+        cut: { version: 1, style: "zoom-through" },
+      }),
+      scene({ id: "b", startSec: 6, durationSec: 7 }),
+    ];
+    expect(liftCameraEnergyPeak(storyboard).normalized).toEqual([]);
+  });
+
+  it("leaves a genuine energy deficit as a finding (only pans/drifts — nothing liftable)", () => {
+    const pan: NonNullable<DirectScene["camera"]> = {
+      version: 1,
+      path: [{ version: 1, move: "pan", toRegion: "m", startSec: 1, durationSec: 1 }],
+    };
+    const storyboard = [
+      scene({ id: "a", startSec: 0, durationSec: 6, camera: pan }),
+      scene({ id: "b", startSec: 6, durationSec: 7 }),
+    ];
+    const result = liftCameraEnergyPeak(storyboard);
+    expect(result.normalized).toEqual([]);
+    expect(auditCameraEnergy(result.storyboard).some((f) => f.startsWith("camera/energy"))).toBe(true);
+  });
+
+  it("does not touch a short (<12s) film", () => {
+    const storyboard = [
+      scene({ id: "a", startSec: 0, durationSec: 4, camera: push("hero") }),
+      scene({ id: "b", startSec: 4, durationSec: 4 }),
+    ];
+    expect(liftCameraEnergyPeak(storyboard).normalized).toEqual([]);
+  });
+
+  it("lifts the largest-zoom candidate — the smallest nudge that reaches the peak", () => {
+    const storyboard = [
+      scene({ id: "a", startSec: 0, durationSec: 6, camera: push("hero", 1.18) }),
+      scene({ id: "b", startSec: 6, durationSec: 7, camera: push("metrics", 1.25) }),
+    ];
+    const result = liftCameraEnergyPeak(storyboard);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBe(1.18); // untouched
+    expect(result.storyboard[1]!.camera!.path[0]!.zoom).toBe(HIGH_ENERGY_PUSH_ZOOM); // lifted
   });
 });
 

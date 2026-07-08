@@ -68,6 +68,19 @@ export const ASSEMBLE_HOLD_SEC = 1.2;
 export const CAMERA_BUDGET_WINDOW_SEC = 3.5;
 /** Whips allowed per film. */
 export const MAX_WHIPS_PER_FILM = 2;
+/** Films shorter than this are exempt from the distinct-framings floor. */
+export const FRAMING_FLOOR_MIN_FILM_SEC = 10;
+/**
+ * Distinct framings a film of this length needs: a new framing (a cut into a
+ * shot, or a full typed camera move) roughly every `CAMERA_BUDGET_WINDOW_SEC`.
+ * The single source of truth for the floor `validateStoryboardPlan` enforces
+ * and `topUpFramingFloor` closes.
+ */
+export function requiredFramingCount(totalDurationSec: number): number {
+  return Math.min(12, Math.max(3, Math.round(totalDurationSec / CAMERA_BUDGET_WINDOW_SEC)));
+}
+/** Gentle establishing zoom for a host-added framing top-up push-in. */
+export const FRAMING_TOPUP_ZOOM = 1.15;
 /**
  * Shortfall below which a time-window finding stays silent. A paid storyboard
  * attempt must never be vetoed over a marginal miss (live probe
@@ -513,6 +526,101 @@ export function normalizeCameraBudget(
     }
   }
 
+  return { storyboard: scenes, normalized };
+}
+
+/**
+ * The concrete framing target for a host-added establishing push-in: a declared
+ * focal part, else a station-bearing component's region, else any declared
+ * component (its id is its data-part). A scene with none of these is a bare
+ * title card — pushing into it would frame a void (`camera_framed_sparse`), so
+ * it is skipped. Returned only to decide the scene HAS content to frame; the
+ * added push-in is targetless (a gentle centre zoom over whatever the scene
+ * already frames), so it never depends on a station lookup that could miss.
+ */
+function hasFramingSubject(scene: DirectScene): boolean {
+  if (scene.spatialIntent?.focalPart?.trim()) return true;
+  if ((scene.components ?? []).length > 0) return true;
+  return false;
+}
+
+/**
+ * Sentinel L2 normalize-before-retry: when the distinct-framings floor
+ * (`validateStoryboardPlan`) is short by EXACTLY one, add a single gentle
+ * establishing push-in to the longest shot that currently holds a single
+ * framing (no full camera move) and has real content to frame. This is the
+ * mechanical half of the floor's own fix hint ("add shots or give scenes camera
+ * paths"): the host cannot invent a shot, but it CAN give one held shot the
+ * establishing push a longer film needs — a full move that lifts the framing
+ * count by one. Short by >= 2 is a genuine content deficit (the film wants more
+ * shots or motion the model must author) and stays a finding.
+ *
+ * Safety: the push-in opens the scene (startSec == scene start, <= 1s) so it
+ * finishes before the shot's content beats and never cuts short a beat's
+ * reading/outcome hold (a scene with a beat inside the push window is skipped);
+ * it is targetless, so it needs no station; zoom is a gentle
+ * FRAMING_TOPUP_ZOOM. Adding one move to a zero-move scene can never breach that
+ * scene's own per-scene budget (cap >= 1). The parse-side atomic commit-or-revert
+ * reverts if the added move somehow minted any finding.
+ */
+export function topUpFramingFloor(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const totalSec = storyboard.reduce(
+    (end, scene) => Math.max(end, scene.startSec + scene.durationSec),
+    0,
+  );
+  if (totalSec < FRAMING_FLOOR_MIN_FILM_SEC) return { storyboard, normalized };
+  const fullMoveCount = storyboard.reduce(
+    (count, scene) =>
+      count + (scene.camera?.path.filter((move) => CAMERA_FULL_MOVES.has(move.move)).length ?? 0),
+    0,
+  );
+  const framings = storyboard.length + fullMoveCount;
+  // Short by EXACTLY one; anything larger is a real content deficit.
+  if (requiredFramingCount(totalSec) - framings !== 1) return { storyboard, normalized };
+
+  const pushDuration = (scene: DirectScene): number =>
+    round(Math.min(1.0, Math.max(0.5, scene.durationSec * 0.4)));
+  // A scene "holds a single framing" when it has NO full camera move. Candidates
+  // must also frame real content and have no beat inside the opening push window
+  // (so the push never steals a beat's hold and mints a pacing finding).
+  const candidates = storyboard
+    .map((scene, index) => ({ scene, index }))
+    .filter(
+      ({ scene }) =>
+        (scene.camera?.path.filter((move) => CAMERA_FULL_MOVES.has(move.move)).length ?? 0) === 0 &&
+        hasFramingSubject(scene) &&
+        !(scene.beats ?? []).some(
+          (beat) => beat.atSec <= scene.startSec + pushDuration(scene) + 0.05,
+        ),
+    )
+    .sort((a, b) => b.scene.durationSec - a.scene.durationSec || a.index - b.index);
+  const chosen = candidates[0];
+  if (!chosen) return { storyboard, normalized };
+
+  const scenes = storyboard.map((scene, index) => {
+    if (index !== chosen.index) return scene;
+    const push: CameraMoveIntentV1 = {
+      version: 1,
+      move: "push-in",
+      zoom: FRAMING_TOPUP_ZOOM,
+      startSec: round(scene.startSec),
+      durationSec: pushDuration(scene),
+    };
+    // Prepend the establishing push; any existing hold/drift keeps its place
+    // (a single-framing scene has no full move to reorder against).
+    const path = [push, ...(scene.camera?.path ?? [])];
+    const note =
+      `added a gentle establishing push-in (zoom ${FRAMING_TOPUP_ZOOM}) to meet the ` +
+      `${requiredFramingCount(totalSec)}-framing floor for a ${totalSec.toFixed(0)}s film`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return withNormalizationNotes(
+      { ...scene, camera: { version: 1, ...(scene.camera ?? {}), path } },
+      [note],
+    );
+  });
   return { storyboard: scenes, normalized };
 }
 

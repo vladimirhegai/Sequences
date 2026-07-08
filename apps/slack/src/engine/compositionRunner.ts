@@ -50,6 +50,7 @@ import {
   SEQUENCES_EASES,
   auditCameraEnergy,
   injectCameraRuntimeTag,
+  liftCameraEnergyPeak,
   normalizeStoryboardCameraIntent,
   resolveCameraPlan,
   sceneScopes,
@@ -91,6 +92,7 @@ import {
   normalizeStoryboardComponentBeats,
   normalizeStoryboardComponents,
   resolveComponentPlan,
+  trimOverBudgetComponents,
   type ComponentBeatKind,
   type ComponentKind,
 } from "./componentContract.ts";
@@ -110,6 +112,7 @@ import {
 import { analyzeMotionDensity } from "./motionDensity.ts";
 import {
   ASSEMBLE_HOLD_SEC,
+  FRAMING_FLOOR_MIN_FILM_SEC,
   PACING_TOLERANCE_SEC,
   READING_MAX_SEC,
   READING_MIN_SEC,
@@ -119,7 +122,9 @@ import {
   framingChangeEvents,
   nextFramingChangeAfter,
   normalizeCameraBudget,
+  requiredFramingCount,
   stretchMarginalPacingMisses,
+  topUpFramingFloor,
   withNormalizationNotes,
 } from "./pacingAudit.ts";
 import { frameCapsule, readFrameMeta } from "./frameDesign.ts";
@@ -4353,8 +4358,8 @@ export function validateStoryboardPlan(
     0,
   );
   const framings = storyboard.length + cameraMoves;
-  const requiredFramings = Math.min(12, Math.max(3, Math.round(expectedStart / 3.5)));
-  if (expectedStart >= 10 && framings < requiredFramings) {
+  const requiredFramings = requiredFramingCount(expectedStart);
+  if (expectedStart >= FRAMING_FLOOR_MIN_FILM_SEC && framings < requiredFramings) {
     errors.push(
       `a ${expectedStart.toFixed(0)}s film needs at least ${requiredFramings} distinct framings ` +
         `(shots plus typed camera moves); it has ${framings} — add shots or give scenes ` +
@@ -4971,13 +4976,20 @@ export function parseStoryboardResponse(
       degradations.push(`storyboard-redundant-beat-dropped:${findingSignature(line)}`);
     }
   }
-  // Sentinel Phase 3: mechanical pacing fixes (delete/degrade/retime, never
-  // invent content) run before the pacing gate sees the plan, so arithmetic
-  // the host can already do never burns a paid storyboard retry. Camera
-  // budget first (drops moves, which changes which beats even hit the
-  // reading/outcome checks), then the marginal-miss stretch. They run BEFORE
-  // the moment top-up so topped-up moments anchor only on surviving camera
-  // moves and final (post-stretch) timing, and they commit ATOMICALLY below:
+  // Sentinel Phase 3: mechanical fixes (delete/degrade/retime/nudge, never
+  // invent content) run before the plan gate sees the storyboard, so arithmetic
+  // the host can already do never burns a paid storyboard retry: trim an
+  // over-count set-dressing component, clamp an over-budget camera scene, top up
+  // the framing floor when short by exactly one move, lift a mild zoom to the
+  // energy-peak threshold, delay a hold-cutting move, and stretch a marginal
+  // pacing miss. They run BEFORE the moment top-up so topped-up moments anchor
+  // only on surviving/added camera moves and final timing, and commit ATOMICALLY
+  // below: the normalized plan is kept only when it validates clean — a fix that
+  // mints a DIFFERENT blocking finding (the framing-density floor, an explicit
+  // brief requirement like minCameraMoves, moment spacing, the 60s film cap)
+  // reverts to the model's own artifact so the findings-retry describes what the
+  // model actually wrote (the degradeVolunteeredBridgedCuts precedent). Kept in
+  // one atomic group:
   // the normalized plan is kept only when it validates clean — a fix for the
   // pacing arithmetic that mints a DIFFERENT blocking finding (the
   // framing-density floor, an explicit brief requirement like minCameraMoves,
@@ -4986,12 +4998,24 @@ export function parseStoryboardResponse(
   // degradeVolunteeredBridgedCuts commit-only-if-clean precedent).
   const preNormalization = storyboard;
   const morphFix = reconcileUndeclaredMorphTargets(storyboard);
-  const cameraBudget = normalizeCameraBudget(morphFix.scenes);
-  const moveDelay = delayConflictingCameraMoves(cameraBudget.storyboard);
+  // Component trim first — dropping a set-dressing surface changes both the
+  // component-complexity count and the pacing introduction ratio the camera
+  // normalizers see. Camera budget next (it drops moves, changing which beats
+  // even reach the reading/outcome checks); then the framing-floor top-up (add
+  // a move only after any over-budget drops) and the energy lift (see the final
+  // move set); finally the delay + marginal-miss stretch.
+  const componentTrim = trimOverBudgetComponents(morphFix.scenes);
+  const cameraBudget = normalizeCameraBudget(componentTrim.storyboard);
+  const framingTopUp = topUpFramingFloor(cameraBudget.storyboard);
+  const energyLift = liftCameraEnergyPeak(framingTopUp.storyboard);
+  const moveDelay = delayConflictingCameraMoves(energyLift.storyboard);
   const pacingStretch = stretchMarginalPacingMisses(moveDelay.storyboard);
   const normalizationLines = [
     ...morphFix.changed,
+    ...componentTrim.normalized,
     ...cameraBudget.normalized,
+    ...framingTopUp.normalized,
+    ...energyLift.normalized,
     ...moveDelay.normalized,
     ...pacingStretch.normalized,
   ];
@@ -5081,8 +5105,17 @@ export function parseStoryboardResponse(
     if (morphFix.changed.length) {
       recordSentinelNormalization("morph-twin-reconcile", morphFix.changed.length);
     }
+    if (componentTrim.normalized.length) {
+      recordSentinelNormalization("component-trim", componentTrim.normalized.length);
+    }
     if (cameraBudget.normalized.length) {
       recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
+    }
+    if (framingTopUp.normalized.length) {
+      recordSentinelNormalization("framing-floor-topup", framingTopUp.normalized.length);
+    }
+    if (energyLift.normalized.length) {
+      recordSentinelNormalization("camera-energy-lift", energyLift.normalized.length);
     }
     if (moveDelay.normalized.length) {
       recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);

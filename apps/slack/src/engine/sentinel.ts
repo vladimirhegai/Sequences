@@ -205,6 +205,67 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "commit-or-revert. Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
   },
   {
+    id: "normalize.component-trim",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/componentContract.test.ts",
+    addedBecause:
+      "2026-07-07 attempt-economy sweep (recorded next candidate): a " +
+      "components/complexity over-count by 1-2 is the arithmetic the host can do " +
+      "without inventing anything. trimOverBudgetComponents (parseStoryboard, in " +
+      "the atomic commit-or-revert) drops the fewest-beat surface(s) that bind NO " +
+      "declared moment (a beat inside a moment's evidence window), NO interaction " +
+      "targetPart, and NO camera toPart/focus.part or cut focalPartOut/In — the " +
+      "finding's own 'drop the set dressing' fix. Over-count >= 3 or nothing " +
+      "safely droppable keeps the blocking finding (ambiguity stays a finding). " +
+      "It PREVENTS the components.complexity row's components/complexity. " +
+      "Telemetry tag: component-trim. Visible in STORYBOARD.md.",
+  },
+  {
+    id: "normalize.framing-floor-topup",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/pacingAudit.test.ts",
+    addedBecause:
+      "2026-07-07 attempt-economy sweep (recorded next candidate): the " +
+      "distinct-framings floor (validateStoryboardPlan) short by EXACTLY one is " +
+      "the mechanical half of its own fix hint. topUpFramingFloor (parseStoryboard, " +
+      "in the atomic commit-or-revert) adds ONE gentle establishing push-in " +
+      "(FRAMING_TOPUP_ZOOM 1.15, <= 1s, opening the shot so it never steals a " +
+      "beat's hold) to the longest single-framing shot that has real content to " +
+      "frame — lifting the framing count by one without inventing a shot. Short by " +
+      ">= 2 is a real content deficit and stays a finding. It PREVENTS the " +
+      "framing-density floor error. Telemetry tag: framing-floor-topup. Visible in " +
+      "STORYBOARD.md.",
+  },
+  {
+    id: "normalize.camera-energy-lift",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-07 attempt-economy sweep (recorded next candidate): a 12s+ film " +
+      "with no high-energy peak (auditCameraEnergy's camera/energy) that ALREADY " +
+      "commits to a mild zoom-in. liftCameraEnergyPeak (parseStoryboard, in the " +
+      "atomic commit-or-revert) raises the single largest push-in/pull-back/dive " +
+      "whose effective zoom is in [MILD_ENERGY_ZOOM_MIN 1.15, HIGH_ENERGY_PUSH_ZOOM " +
+      "1.3) up to 1.3 — the audit's own remediation advice ('a push-in with " +
+      "zoom:1.35'), never inventing a move or verb. Fires only with no energetic " +
+      "cut and a liftable candidate; a peak-less film with only pans/drifts is a " +
+      "real energy deficit that stays a finding. It PREVENTS the camera.energy " +
+      "row's camera/energy. Telemetry tag: camera-energy-lift. Visible in " +
+      "STORYBOARD.md.",
+  },
+  {
     id: "normalize.root-data-start",
     group: "normalize",
     layer: "normalize",

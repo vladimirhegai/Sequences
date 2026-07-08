@@ -1077,6 +1077,163 @@ export function auditComponentComplexity(
 }
 
 /**
+ * Evidence-search half-windows mirroring `storyboardMoments.ts`
+ * (EVIDENCE_BEFORE_SEC / EVIDENCE_AFTER_SEC). Kept local to avoid an import
+ * cycle — a beat inside a declared moment's window may bind that moment at
+ * publication, so its component must never be trimmed.
+ */
+const MOMENT_EVIDENCE_BEFORE_SEC = 0.45;
+const MOMENT_EVIDENCE_AFTER_SEC = 0.75;
+
+/**
+ * Component ids that are LOAD-BEARING — never trimmed — because dropping one
+ * would orphan declared choreography or a reviewable moment:
+ *  - a cursor interaction targets it (`targetPart`),
+ *  - a camera move frames it (`toPart`) or racks focus on it (`focus.part`),
+ *  - a cut carries it across a boundary (`focalPartOut`/`focalPartIn`),
+ *  - it is a declared focal subject (`spatialIntent.focalPart`),
+ *  - it is a morph twin (a beat morphs TO it) or a morph source (it has a beat
+ *    that morphs to another),
+ *  - one of its beats lands inside a declared moment's evidence-search window
+ *    (publication may bind that moment to the beat — the `isLoadBearingMove`
+ *    rule, applied to component beats).
+ * Matched across the WHOLE storyboard by id (kebab ids are effectively unique),
+ * so the predicate is deliberately over-conservative: an ambiguous surface is
+ * kept, which is exactly the "ambiguity stays a finding" rule.
+ */
+function boundComponentIds(storyboard: DirectScene[]): Set<string> {
+  const bound = new Set<string>();
+  const add = (value: string | undefined | null): void => {
+    const id = typeof value === "string" ? value.trim() : "";
+    if (id) bound.add(id);
+  };
+  for (const scene of storyboard) {
+    for (const interaction of scene.interactions ?? []) add(interaction.targetPart);
+    for (const move of scene.camera?.path ?? []) {
+      add(move.toPart);
+      add(move.focus?.part);
+    }
+    if (scene.cut) {
+      add(scene.cut.focalPartOut);
+      add(scene.cut.focalPartIn);
+    }
+    add(scene.spatialIntent?.focalPart);
+    for (const beat of scene.beats ?? []) {
+      if (beat.morphTo) {
+        add(beat.morphTo);
+        add(beat.component);
+      }
+    }
+    for (const moment of scene.moments ?? []) {
+      for (const beat of scene.beats ?? []) {
+        if (
+          beat.atSec >= moment.atSec - MOMENT_EVIDENCE_BEFORE_SEC &&
+          beat.atSec <= moment.atSec + MOMENT_EVIDENCE_AFTER_SEC
+        ) {
+          add(beat.component);
+        }
+      }
+    }
+  }
+  return bound;
+}
+
+/**
+ * Sentinel L2 normalize-before-retry: a `components/complexity` over-count by 1
+ * or 2 is arithmetic the host can do without inventing anything — drop the
+ * fewest-beat surface(s) that bind NO declared moment, NO interaction target,
+ * and NO camera/cut focal (the finding's own fix hint: "drop the surfaces that
+ * are set dressing"). It only DELETES a declared surface the plan can spare, so
+ * it is a normalization (L2), not a creative rewrite. An over-count of >= 3 is a
+ * genuine over-reach the model must resolve, and a scene/film with nothing
+ * safely droppable keeps its blocking finding (ambiguity stays a finding). It
+ * runs inside the parse-side atomic commit-or-revert, so a trim that minted a
+ * new finding class (e.g. a dropped beat opening a liveness gap) reverts.
+ */
+export function trimOverBudgetComponents(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const bound = boundComponentIds(storyboard);
+  const beatCountOf = (scene: DirectScene, id: string): number =>
+    (scene.beats ?? []).filter((beat) => beat.component === id).length;
+  // Safely-droppable components in a scene, fewest-beat first (then declaration
+  // order) — set dressing goes before a surface carrying real state changes.
+  const droppableInScene = (scene: DirectScene): SceneComponentSpecV1[] => {
+    const components = scene.components ?? [];
+    return components
+      .filter((component) => !bound.has(component.id))
+      .sort(
+        (a, b) =>
+          beatCountOf(scene, a.id) - beatCountOf(scene, b.id) ||
+          components.indexOf(a) - components.indexOf(b),
+      );
+  };
+  const applyTrim = (scene: DirectScene, dropIds: Set<string>, note: string): DirectScene => ({
+    ...scene,
+    components: (scene.components ?? []).filter((component) => !dropIds.has(component.id)),
+    beats: (scene.beats ?? []).filter((beat) => !dropIds.has(beat.component)),
+    sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+  });
+
+  // (1) Per-scene over-cap: trim the offending scene only, over by 1-2.
+  let scenes = storyboard.map((scene) => {
+    const components = scene.components ?? [];
+    if (!components.length) return scene;
+    const cap = Math.min(
+      MAX_COMPONENTS_PER_SCENE,
+      Math.max(1, Math.floor(scene.durationSec / SEC_PER_COMPONENT)),
+    );
+    const overBy = components.length - cap;
+    if (overBy < 1 || overBy > 2) return scene;
+    const picks = droppableInScene(scene).slice(0, overBy);
+    if (picks.length < overBy) return scene; // cannot safely reach the cap → keep the finding
+    const dropIds = new Set(picks.map((component) => component.id));
+    const note =
+      `trimmed ${dropIds.size} unbound component(s) (${[...dropIds].join(", ")}) to fit the ` +
+      `${cap}-surface budget for a ${scene.durationSec.toFixed(1)}s window`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return applyTrim(scene, dropIds, note);
+  });
+
+  // (2) Film-wide over-cap (recomputed after per-scene trims), over by 1-2.
+  const total = scenes.reduce((count, scene) => count + (scene.components?.length ?? 0), 0);
+  const filmSec = scenes.reduce((sec, scene) => sec + scene.durationSec, 0);
+  const filmCap = Math.max(2, Math.ceil(filmSec / FILM_SEC_PER_COMPONENT));
+  const filmOver = total - filmCap;
+  if (filmOver >= 1 && filmOver <= 2) {
+    const flat = scenes.flatMap((scene, sceneIndex) =>
+      droppableInScene(scene).map((component) => ({
+        sceneIndex,
+        id: component.id,
+        beats: beatCountOf(scene, component.id),
+      })),
+    );
+    const picks = flat
+      .sort((a, b) => a.beats - b.beats || a.sceneIndex - b.sceneIndex)
+      .slice(0, filmOver);
+    if (picks.length >= filmOver) {
+      const dropByScene = new Map<number, Set<string>>();
+      for (const pick of picks) {
+        if (!dropByScene.has(pick.sceneIndex)) dropByScene.set(pick.sceneIndex, new Set());
+        dropByScene.get(pick.sceneIndex)!.add(pick.id);
+      }
+      scenes = scenes.map((scene, sceneIndex) => {
+        const dropIds = dropByScene.get(sceneIndex);
+        if (!dropIds) return scene;
+        const note =
+          `trimmed ${dropIds.size} unbound component(s) (${[...dropIds].join(", ")}) to fit the ` +
+          `${filmCap}-surface film budget`;
+        normalized.push(`scene "${scene.id}": ${note}`);
+        return applyTrim(scene, dropIds, note);
+      });
+    }
+  }
+
+  return { storyboard: scenes, normalized };
+}
+
+/**
  * Exit discipline (WS4), plan stage. Ownership was "the author owns entrances
  * and final states"; exits were nobody's job, so a scene could OPEN a second
  * overlay into a station already holding a live one and both just sat there

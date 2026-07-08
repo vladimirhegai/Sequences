@@ -927,6 +927,91 @@ export function auditCameraEnergy(storyboard: DirectScene[]): string[] {
 }
 
 /**
+ * Zoom below `HIGH_ENERGY_PUSH_ZOOM` but committed enough that nudging it up to
+ * the peak threshold is a normalization (the model already chose a mild zoom),
+ * not an invention. The energy lift only touches a move already in this band.
+ */
+export const MILD_ENERGY_ZOOM_MIN = 1.15;
+
+/** Full moves whose zoom carries their energy — the only kinds the lift bumps. */
+const ZOOM_ENERGY_MOVES: ReadonlySet<CameraMoveStyle> = new Set<CameraMoveStyle>([
+  "push-in",
+  "pull-back",
+  "dive",
+]);
+
+/**
+ * Sentinel L2 normalize-before-retry: a 12s+ film with no high-energy peak is
+ * the exact `camera/energy` shape `auditCameraEnergy` blocks. When the film
+ * ALREADY commits to a mild zoom-in — a push-in/pull-back/dive whose effective
+ * zoom sits in [MILD_ENERGY_ZOOM_MIN, HIGH_ENERGY_PUSH_ZOOM) — raise the single
+ * largest such move to HIGH_ENERGY_PUSH_ZOOM so the film earns its required
+ * peak. This DEGRADES a value the model already declared by a bounded amount
+ * (the audit's OWN remediation advice is "a push-in with zoom:1.35"); it never
+ * invents a move, a target, or a verb, and it adds no move, so the per-scene
+ * camera budget and framing-density floor are untouched — a normalization (L2),
+ * not a creative rewrite.
+ *
+ * It fires ONLY when there is also no energetic cut (matching
+ * `auditCameraEnergy`'s own peak test), so it can never fight a film whose peak
+ * already lives on a boundary, and only when a liftable candidate exists (a
+ * peak-less film with only pans/drifts is a genuine energy deficit that stays a
+ * model finding). It runs inside the parse-side atomic commit-or-revert, so if
+ * the nudge somehow minted a finding the plan reverts to the model's artifact.
+ */
+export function liftCameraEnergyPeak(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const durationSec = storyboard.reduce(
+    (end, scene) => Math.max(end, scene.startSec + scene.durationSec),
+    0,
+  );
+  if (durationSec < 12) return { storyboard, normalized };
+  const fullMoves = storyboard.flatMap((scene) =>
+    (scene.camera?.path ?? []).filter((move) => CAMERA_FULL_MOVES.has(move.move))
+  );
+  const hasHighEnergyMove = fullMoves.some(
+    (move) =>
+      move.move === "whip" || move.move === "orbit" || cameraMoveZoom(move) >= HIGH_ENERGY_PUSH_ZOOM,
+  );
+  const hasEnergeticCut = storyboard.some((scene) => scene.cut && energeticCut(scene.cut));
+  if (hasHighEnergyMove || hasEnergeticCut) return { storyboard, normalized };
+
+  // The liftable candidate with the largest effective zoom (closest to the
+  // threshold — the smallest, least-visible nudge that reaches the peak).
+  let best: { sceneIndex: number; moveIndex: number; zoom: number } | undefined;
+  storyboard.forEach((scene, sceneIndex) => {
+    (scene.camera?.path ?? []).forEach((move, moveIndex) => {
+      if (!ZOOM_ENERGY_MOVES.has(move.move)) return;
+      const zoom = cameraMoveZoom(move);
+      if (zoom < MILD_ENERGY_ZOOM_MIN || zoom >= HIGH_ENERGY_PUSH_ZOOM) return;
+      if (!best || zoom > best.zoom) best = { sceneIndex, moveIndex, zoom };
+    });
+  });
+  if (!best) return { storyboard, normalized };
+  const target = best;
+
+  const scenes = storyboard.map((scene, sceneIndex) => {
+    if (sceneIndex !== target.sceneIndex || !scene.camera) return scene;
+    const move = scene.camera.path[target.moveIndex]!;
+    const path = scene.camera.path.map((entry, moveIndex) =>
+      moveIndex === target.moveIndex ? { ...entry, zoom: HIGH_ENERGY_PUSH_ZOOM } : entry,
+    );
+    const note =
+      `lifted the ${move.move} zoom from ${target.zoom.toFixed(2)} to ${HIGH_ENERGY_PUSH_ZOOM} ` +
+      `to give the ${durationSec.toFixed(0)}s film its required high-energy peak`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera, path },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+/**
  * Windows (start, end) during which the camera is visibly re-framing the shot
  * (full moves only — hold/drift are gentle enough for layout heuristics).
  */

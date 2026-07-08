@@ -126,6 +126,9 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.camera-budget-clamp` | L2 normalize | det-repair | — (prevents `pacing/camera-budget`) | pacingAudit |
 | normalize | `normalize.pacing-stretch` | L2 normalize | det-repair | — (prevents `pacing/reading`,`/outcome`) | pacingAudit |
 | normalize | `normalize.camera-move-delay` | L2 normalize | det-repair | — (prevents `pacing/outcome` "0.0s later"; 2026-07-07: a delayed move that overruns the scene's own cut also stretches the boundary by the overflow, ≤1.0s, cascade-shifting later scenes — the short-scene shape every probe re-rejected) | pacingAudit |
+| normalize | `normalize.component-trim` | L2 normalize | det-repair | — (prevents `components/complexity`: an over-count by 1–2 drops the fewest-beat surface binding no moment/interaction/camera-cut focal; ≥3 over or nothing safely droppable stays a finding) | componentContract |
+| normalize | `normalize.framing-floor-topup` | L2 normalize | det-repair | — (prevents the framing-density floor error when short by EXACTLY one: adds one gentle establishing push-in on the longest single-framing shot with content to frame; short by ≥2 stays a finding) | pacingAudit |
+| normalize | `normalize.camera-energy-lift` | L2 normalize | det-repair | — (prevents `camera/energy`: a 12s+ peak-less film with a push-in/pull-back/dive at zoom [1.15,1.3) lifts the largest to 1.3; a peak-less film with only pans/drifts stays a finding) | cameraContract |
 | normalize | `normalize.root-data-start` | L2 normalize | det-repair | — (inserts `data-start="0"` on a model-authored composition root that omits it; idempotent) | authorReliability |
 | normalize | `normalize.timeramp-retime` | L2 normalize | det-repair | — (prevents ramp motivation/solvability vetoes) | directComposition |
 | normalize | `normalize.dive-window` | L2 normalize | det-repair | — (derives `dive` in/hold/out legs from the beats on its target; a beat-less dive degrades to push-in) | cameraDive |
@@ -175,7 +178,8 @@ recorded `published-degraded`, never clean.
 
 ### The storyboard normalizers are atomic
 
-`reconcileUndeclaredMorphTargets`, `normalizeCameraBudget`,
+`reconcileUndeclaredMorphTargets`, `trimOverBudgetComponents`,
+`normalizeCameraBudget`, `topUpFramingFloor`, `liftCameraEnergyPeak`,
 `delayConflictingCameraMoves`, and `stretchMarginalPacingMisses` run in
 `parseStoryboardResponse` **before** `validateStoryboardPlan` and commit
 **atomically**: the normalized plan is kept when it re-validates clean OR when
@@ -196,7 +200,8 @@ overlaps a declared moment's evidence search (the load-bearing guard).
 with its own per-scene convergence check: a retime commits only when the ramp
 provably resolves AND covers a declared moment. Every normalization is logged
 `[storyboard] sentinel-normalized: …`, recorded in telemetry
-(`morph-twin-reconcile` / `camera-budget-clamp` / `camera-move-delay` /
+(`morph-twin-reconcile` / `component-trim` / `camera-budget-clamp` /
+`framing-floor-topup` / `camera-energy-lift` / `camera-move-delay` /
 `pacing-stretch` / `timeramp-retime` tags), and rendered into STORYBOARD.md as
 `- Sentinel normalized: …` lines.
 
