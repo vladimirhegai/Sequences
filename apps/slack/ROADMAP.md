@@ -1874,5 +1874,16 @@ by `SLACK_SEQUENCES_STORYBOARD_SCENE_REPAIR` (default ON) — the structural
 live-create change one env var can revert. Telemetry mirrors the author slot
 retry: `slotCalls.storyboard-scene-repair`. Duration-change findings are
 out of scope (the locked envelope sends them to the full ladder). Proof:
-`test/storyboardSceneRepair.test.ts` (7 tests). Full suite 748 green,
+`test/storyboardSceneRepair.test.ts` (9 tests). Full suite 750 green,
 `film:demo` byte-stable.
+
+**Live-validated (`confirm-econ-2`, post attribution-fix `6901a5a`):** both new
+levers fired on a fresh dense brief — `component-trim` trimmed one unbound
+surface, and the scene-repair converged (`re-planned 1/5 shot(s) (rollout-peak)
+in one bounded call`), dropping **storyboard attempts 2.50 → 1.00** (≤ 1.5 target
+met). The attribution bug (`components/complexity` findings contain `"; "`, which
+the caller re-split into a scene-less `__film__` fragment that cancelled the
+repair) was CAUGHT by the pre-fix probe `reprobe-econ-1` and fixed in `6901a5a`
+(`StoryboardValidationError` now carries the raw `findings[]`; attribution reads
+that array). Source-author remains 3 attempts on contrast churn — the
+author/critic-stage agent's half (handoff in SENTINEL_REPORT).

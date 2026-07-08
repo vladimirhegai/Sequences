@@ -2089,29 +2089,43 @@ the scene-repair rung in real time**, which is exactly the value of a live probe
   findings — not a normalizer miss.
 
 A confirming probe (`confirm-econ-2`, a fresh dense release-cockpit brief) is
-running post-fix to observe the repaired rung fire live; its ledger lands here on
-completion. The before/after wall-clock lift for the scene-repair is therefore
-**validated by unit tests now** (`test/storyboardSceneRepair.test.ts`: a scene
-subset re-plans + merges + re-validates in one bounded call, the `"; "` finding
-attributes correctly) and the live confirmation is the last paid probe.
+run post-fix to observe the repaired rung fire live.
+
+**`confirm-econ-2` (post-fix) validated BOTH new levers live** — a fresh dense
+release-cockpit brief, published-degraded, no fallback:
+- **`component-trim` fired**: `sentinel-normalized: scene "pipeline-tick":
+  trimmed 1 unbound component(s) (cockpit-window) to fit the 10-surface film
+  budget` (normalization tag `component-trim: 1`) — a film-wide over-count
+  absorbed deterministically, no paid retry.
+- **The scene-repair fired AND converged**: `scene-repair converged: re-planned
+  1/5 shot(s) (rollout-peak) in one bounded call — saved a full re-plan`
+  (`slotCalls.storyboard-scene-repair: 1 call / 1 scene`). The attribution fix
+  works end-to-end: attempt 1's rejection named shots, the repair re-planned only
+  `rollout-peak` against the locked remainder, the merged plan passed the full
+  gate, and it was adopted.
+- **Storyboard-plan converged in 1 attempt** — the scene-repair replaced the 2
+  full ~6-min re-plans the baseline spent, so `storyboard attempts / run` = 1.00
+  (≤ 1.5 target MET, down from 2.50 baseline).
 
 ### Before / after (storyboard stage)
 
-| Metric | Baseline (2 runs) | reprobe-econ-1 | Target |
-| --- | --- | --- | --- |
-| Disposition | published-degraded ×2, no fallback | published-degraded, no fallback | published |
-| Storyboard attempts / run | 2.50 | 3.00 | ≤ 1.5 |
-| Source attempts / run | 3.00 | 3.00 | ≤ 1.5 |
-| Tier-1 wall-clock | 18.7 min | 26.2 min | ≤ 8 min |
+| Metric | Baseline (2 runs) | reprobe-econ-1 (pre-fix) | confirm-econ-2 (post-fix) | Target |
+| --- | --- | --- | --- | --- |
+| Disposition | published-degraded ×2 | published-degraded | published-degraded | published |
+| Visible fallbacks | 0 | 0 | 0 | 0 |
+| **Storyboard attempts / run** | **2.50** | 3.00 | **1.00** ✅ | ≤ 1.5 |
+| Source attempts / run | 3.00 | 3.00 | 3.00 | ≤ 1.5 |
+| Tier-1 wall-clock | 18.7 min | 26.2 min | 27.0 min | ≤ 8 min |
 
-The storyboard attempt average did **not** drop yet — because the scene-repair
-was inert (the attribution bug) on the one post-code probe, and the three
-normalizers legitimately did not apply (the probe's over-counts were all
-load-bearing, its pacing misses all > the stretch cap). The mechanisms are
-proven correct by tests; the live wall-clock lift is what `confirm-econ-2`
-measures. This is reported honestly: **no probe has yet shown the storyboard
-attempt count fall** — the levers are correct and firing-ready, and the last
-probe validates them end-to-end.
+**Storyboard attempts fell 2.50 → 1.00 with both levers firing live** — the
+storyboard stage's cost lever is delivered and probe-confirmed. Tier-1 did NOT
+fall because (a) `confirm-econ-2`'s attempt 1 ate a transient OpenRouter
+streaming timeout (extra wall-clock inside one attempt, not extra attempts), and
+(b) the stage that now dominates tier-1 is **source-author**, still 3.00
+attempts on contrast churn — the second agent's half of this plan (handoff
+below). reprobe-econ-1 is retained as the honest record of the attribution bug
+the live probe caught (scene-repair inert pre-fix); `6901a5a` fixed it and
+`confirm-econ-2` proves the fix.
 
 ### Handoff to the author/critic-stage agent (the other half of this plan)
 
