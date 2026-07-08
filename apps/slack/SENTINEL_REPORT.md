@@ -2259,3 +2259,96 @@ re-confirms Agent 1's handoff levers as the real author-stage cost centers:
 by hand every attempt — wants a deterministic AA recolor) and `camera_framed_sparse`
 on drift/hold-only scenes (wants a coverage-keyed establishing zoom). Those are
 scoped for the task-5 window if probes leave room.
+
+### 4. Final proof battery (3 fresh paid probes, 2026-07-08)
+
+Three fresh `sequence:check` probes on distinct brief classes, live provider
+`openrouter-api`, prep-mode `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0`
+(fail-loud — the current live-bot posture, so the measurement is honest about
+real failures). Aggregated with `sentinel:report`.
+
+| Metric | Target | Observed (3-run avg) |
+| --- | --- | --- |
+| Hard authoring failures (fail-loud) | 0 | **0** ✅ |
+| Visible fallbacks | 0 | **0** ✅ |
+| Storyboard attempts / run | ≤ 1.5 | 2.33 ❌ |
+| Source-author attempts / run | ≤ 1.5 | 3.00 ❌ |
+| Wall-clock to tier-1 | ≤ 8 min | 23.9 min ❌ |
+| Author prompt size (max) | ≤ 45,000 | 93,391 ❌ |
+| Physical requests / clean run | ≤ 5 | 14.0 ❌ |
+| L1 scaffold present / planned | — | **100%** (42/42) ✅ |
+
+Per-run:
+
+| Run (class) | Disposition | Fallback | SB att | Src att | Phys req | Author chars | Tier-1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| proof-denseui-1 (dense-UI) | published-degraded | none | 3 | 3 | 16 | 93,391 | 32.1 min |
+| proof-interaction-1 (interaction) | **published (clean)** | none | **1** | 3 | 14 | 89,240 | 14.6 min |
+| proof-longcopy-1 (long-copy) | published-degraded | none | 3 | 3 | 22 | 74,585 | 24.8 min |
+
+**What the battery proves.** The system ships a real `hyperframes-direct` film
+across all three brief classes with **zero fallbacks and zero fail-loud** — my
+changes did not regress robustness (full suite 780 green, `film:demo`
+byte-stable). One run (interaction) published **fully clean** (no degradations)
+with the storyboard converging in **1 attempt** — Agent 1's `storyboard-scene-repair`
+firing and converging live (`slotCalls.storyboard-scene-repair: 1/1`), re-confirming
+that lever. L1 scaffold coverage was **100%** on every run (every host-guaranteed
+binding present in the shipped document).
+
+**Honest scope — my levers did NOT get a live trigger in these three probes.**
+Their triggering conditions simply didn't arise:
+
+- `kit_markup_incomplete` chart/progress absorption — **not fired**: no run
+  produced a chartless chart or fill-less progress (no `kit_markup_incomplete`
+  finding at all; the authors built proper kit markup). Code + `authorReliability`
+  round-trip tests prove it; a live trigger needs an author to leave a declared
+  chart/progress structurally empty, which none of these three did.
+- `critic-scene-repair` (scene-scoped critique) — **not fired**: on the one run
+  whose critic ran (dense-UI) the directive set included a film-level directive,
+  so the conservative guard correctly kept the whole-document path
+  (`slotCalls.critic-scene-repair: 0`). This is the design (route scene-scoped
+  ONLY when every directive names a shot), observed working, not a defect.
+- critic skip-after-stagnant — **not fired**: no run shipped via
+  `stagnant-polish-early-ship`.
+
+So the battery is honest confirmation of **no regression + Agent 1's storyboard
+lever live**, not of my three sub-levers live. They stand on their unit +
+round-trip tests until a brief exercises them.
+
+**Why the cost targets remain unmet (unchanged by this half, by design).**
+
+- **Prompt size (93k vs 45k)** — the prompt-size diet (task 4) was the lever, and
+  it was **deliberately skipped** (operator decision, 2026-07-08): it is the
+  riskiest lever (prompt content IS quality) and not worth destabilizing quality
+  in the last days before Jul 13. Untouched.
+- **Source attempts 3.00** — the unaddressed cost center is exactly Agent 1's
+  handoff: `contrast_aa` whack-a-mole (a whole-doc semantic-token problem the
+  model re-fails by hand every attempt — every terminal finding set here is
+  contrast-dominated) and `camera_framed_sparse` on drift/hold scenes. The right
+  fixes are a deterministic AA recolor and a coverage-keyed establishing zoom,
+  both scoped-but-deferred. The critic/kit levers this half added are *downstream*
+  of source-author, so they cannot move this number.
+- **Storyboard 2.33** — the scene-repair converges it to 1 when every finding
+  names a shot (interaction), but a film-level storyboard finding (dense-UI,
+  long-copy) sends the plan to the full ladder. The lever helps when applicable,
+  not universally.
+- **Physical requests / tier-1** — inflated by transport-level faults: **11
+  failed model calls + 6 hedge duplicates** across 3 runs (OpenRouter
+  truncations/stalls), plus the 3-attempt stages. These are largely provider
+  latency/faults, not authoring logic.
+
+**Operator ladder (not run here — your call).** Docker build check, `railway up`,
+sandbox smoke, and setting `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1` on
+Railway before judging remain the operator's steps. This session ran local
+probes only; it did not deploy.
+
+### Verification (this half)
+
+`npm run typecheck` clean · `npm run test` **780 green** (+11 chart/progress
+top-up tests incl. audit round-trips; critic-economy unit tests from `01e45eb`) ·
+`npm run film:demo` byte-stable (`lint: clean · 3 static warning(s) · 48 samples
+· 6 warning(s)`). No gate loosened; no QA threshold or reasoning-effort changed;
+no high-visibility class demoted; QA cache untouched (no audit behavior changed).
+Commits: `01e45eb` (critic economy), `08ee588` (kit chart/progress absorption),
+plus the docs commits. Probes: `proof-denseui-1`, `proof-interaction-1`,
+`proof-longcopy-1` under `.data/projects/`.

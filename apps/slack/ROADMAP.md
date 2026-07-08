@@ -1887,3 +1887,50 @@ repair) was CAUGHT by the pre-fix probe `reprobe-econ-1` and fixed in `6901a5a`
 (`StoryboardValidationError` now carries the raw `findings[]`; attribution reads
 that array). Source-author remains 3 attempts on contrast churn — the
 author/critic-stage agent's half (handoff in SENTINEL_REPORT).
+
+## 2026-07-08 — Author/critic-stage attempt economy (the second half)
+
+Full record: SENTINEL_REPORT.md "Author / critic-stage attempt economy". The
+second half of the two-agent attempt-economy plan — cut author/critic waste and
+re-measure the whole system. Gates untouched (WHERE, not WHETHER).
+
+- **Critic economy** (`01e45eb`): route shot-named continuity-critic directives
+  through the scene-scoped slot repair (`SLACK_SEQUENCES_CRITIC_SLOT_REPAIR`,
+  `slotCalls.critic-scene-repair`) instead of a whole-doc patch — but only when
+  the shipped draft came from the slot path AND every directive names a shot;
+  film-level directives keep the whole-document path. And skip the critic when a
+  run shipped via `stagnant-polish-early-ship` (a draft that resisted two
+  targeted patches won't absorb a third), under `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN`.
+  Adopted on a strict non-regression guard, so a stale slot map can only miss the
+  optimization, never ship a worse film.
+- **`kit_markup_incomplete` absorption** (`08ee588`): extended the host-side
+  neutral-completion pattern (`topUpRowsMarkup`) to the top static-rejection
+  class — `topUpChartMarkup` (chartless charts → kit `<i>` bars / an svg
+  polyline) and `topUpProgressMarkup` (fill-less progress → `<i data-cmp-fill>` /
+  an svg ring arc). All three share `injectIntoComponentRoots` →
+  `locateSoleComponentContent`. Recoverable recovers, ambiguous blocks (a stray
+  nested `<i>` or a partial svg ring stays a finding); shipped placeholders
+  record `chart-neutral-bars-shipped` / `progress-neutral-fill-shipped`. Registry
+  rows `normalize.kit-chart-complete` / `normalize.kit-progress-complete`.
+- **Second scene-scoped author repair — measured, SKIPPED.** Across 50
+  author-run ledgers the author scene-browser-repair fired in 4 runs; of the 25
+  that reached attempt ≥3, it had fired in 1 — whose attempt-3 was a fresh
+  full-reauthor on a *different* scene. Attempt-3 residuals are contrast/pacing
+  churn, not scene-structural. A second firing would burn a paid inner call
+  against the wrong class. Not implemented.
+- **Prompt-size diet — SKIPPED** (operator decision): the riskiest lever
+  (prompt content IS quality), deferred to avoid destabilizing quality before
+  Jul 13.
+
+**Proof battery (3 fresh paid probes: dense-UI, interaction-heavy, long-copy):**
+all three published `hyperframes-direct` with **0 fallbacks, 0 fail-loud**;
+one (interaction) published **fully clean** with the storyboard converging in
+**1 attempt** (Agent 1's `storyboard-scene-repair` live); L1 scaffold coverage
+100%. Honest: my three sub-levers did NOT get a live trigger in these three
+(no `kit_markup_incomplete`, no shot-only critique set, no stagnant ship) — they
+stand on unit + round-trip tests. The mission cost targets remain unmet
+(storyboard 2.33, source 3.00, tier-1 23.9 min, prompt 93k, phys/clean 14) — the
+remaining levers are the deferred prompt diet and the still-open deterministic
+contrast repair + sparse establishing zoom (Agent 1's handoff, unchanged).
+Operator ladder (Docker/`railway up`/sandbox/`ALLOW_DETERMINISTIC_FALLBACK=1`)
+not run here — flagged for the operator.
