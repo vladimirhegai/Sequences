@@ -144,6 +144,8 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
 | normalize | `normalize.camera-sparse-zoom` | L2 normalize | det-repair | — (repairs `camera_framed_sparse`: bounded zoom-in `sqrt(0.18/fraction)`, clamp 1.0..2.8, on the framing move, marked `framingCorrection` so browser QA keeps auditing the zoomed landing; adopted only if the finding clears, no new `camera_framed_clipped`, penalty strictly drops; the adopted storyboard replaces `lockedStoryboard`) | framingCoverage.browser |
 | layout | `normalize.focal-late-sample` | L2 normalize | det-repair | — (measurement honesty: `spatial_focal_invisible` re-samples ≤2 later instants in the same shot before reporting — a late-entering focal is choreography, not absence; a subject visible at NO sample still fires) | layoutInspector |
+| markup-audit | `normalize.kit-chart-complete` | L2 normalize | det-repair | — (prevents `kit_markup_incomplete` for a chartless chart: `topUpChartMarkup` injects the kit exemplar's structure host-side — direct `<i>` bars / an svg polyline — on the SOLE root with no stroke/children/stray-`<i>`; marked `data-sequences-neutral="chart"`, records `chart-neutral-bars-shipped` on ship; content-bearing stays a finding) | authorReliability |
+| markup-audit | `normalize.kit-progress-complete` | L2 normalize | det-repair | — (prevents `kit_markup_incomplete` for a fill-less progress: `topUpProgressMarkup` injects `<i data-cmp-fill>` for a bar / an svg arc for an empty ring; marked `data-sequences-neutral="progress"`, records `progress-neutral-fill-shipped` on ship; a partial svg ring stays a finding) | authorReliability |
 | camera | `camera.energy` | L3 static | blocking | `camera/energy` | cameraContract |
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |
 | coherence | `cuts.coherence` | L3 static | advisory-late | `cuts/coherence` | cutContract |
@@ -318,7 +320,9 @@ The 2026-07-06 final audit made the instrument honest end-to-end:
   `moment-demote-last-resort`, `least-bad-pick` (browser-valid with open polish
   findings; BOTH least-bad seams), `interaction-quarantine-shipped`,
   `rows-neutral-children-shipped` (host placeholder "Item 1…" copy on frame),
-  `degraded-volunteered-cut`, `cut-degraded-shipped`,
+  `chart-neutral-bars-shipped` / `progress-neutral-fill-shipped` (host-completed
+  kit chart bars / progress fill on frame — `topUpChartMarkup` /
+  `topUpProgressMarkup`), `degraded-volunteered-cut`, `cut-degraded-shipped`,
   storyboard time-ramp/beat/shape/polish demotions,
   `rescue-published-with-polish-findings`, `browser-qa-infra-bypass`, and a
   slot-director runtime precedence fallback — is
@@ -396,6 +400,27 @@ At the storyboard stage, `normalize.camera-move-delay` gained the
 delay-then-stretch case (see the contract table) — the short-scene
 `pacing/outcome` shape that re-rejected on every 2026-07-07 probe is now host
 arithmetic.
+
+### kit_markup_incomplete absorption at the author stage (2026-07-08)
+
+`kit_markup_incomplete` was the top static-rejection class (64 historical). The
+existing host completion (`topUpRowsMarkup`, childless `rows`/`select` targets)
+now has two siblings for the other mechanical bind gaps where the kit exemplar
+(`componentContract.ts`) fully defines the required internal structure:
+`topUpChartMarkup` (a `chart` beat's sole root with no bars and no svg stroke
+gets direct `<i>` bars, or an svg polyline for a `chart-line` kind) and
+`topUpProgressMarkup` (a `progress` beat's sole root with no fill gets
+`<i data-cmp-fill>`, or an svg ring arc for an empty `progress-ring`). All three
+share one spine (`injectIntoComponentRoots` → `locateSoleComponentContent`):
+exactly one candidate root, a depth-balanced close scan, inject just inside it.
+The completion is host-invented placeholder SHAPE (`data-sequences-neutral="chart|progress"`),
+so a shipped placeholder records `chart-neutral-bars-shipped` /
+`progress-neutral-fill-shipped` and the run is `published-degraded`, never clean.
+Anything ambiguous or content-bearing — a stray nested `<i>` icon, a partial svg
+ring (background track, no fg arc) — declines and stays the markup-audit finding
+(recoverable recovers, ambiguous blocks; `test/authorReliability.test.ts`). No
+audit behavior changed, so no QA cache bump: injecting markup changes the
+content hash, which already keys the browser-QA cache.
 
 ---
 

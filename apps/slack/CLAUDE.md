@@ -277,7 +277,9 @@ source rescue rung on an independent model
 (`SLACK_SEQUENCES_SOURCE_RESCUE_MODEL`, default `tencent/hy3-preview`)
 before any deterministic fallback; the patch applier reverts only the
 individual edit that breaks an inline script's parse; childless `rows`
-targets get neutral kit children injected host-side; storyboard parse
+targets (and, 2026-07-08, chartless charts and fill-less progress) get the
+kit's neutral internal structure injected host-side so the top
+`kit_markup_incomplete` bind gaps never burn a paid attempt; storyboard parse
 re-bases shot timing sequentially and degrades support-map beat violations
 to supported analogs (load-bearing beats stay blocking); truncation recovery
 keeps reasoning and demands a smaller artifact; planning artifacts mirror

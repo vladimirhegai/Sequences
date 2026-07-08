@@ -1573,6 +1573,72 @@ function rowsChildMarkup(kind: string | undefined, index: number): string {
 }
 
 /**
+ * Locate the SOLE component root carrying `data-part`=`component` and return
+ * the span of its inner content. The shared spine of every host-side kit
+ * top-up: exactly one candidate root (ambiguity stays a finding), a
+ * depth-balanced close scan so nested same-tag children don't fool it, and a
+ * self-closing or unbalanced root falls through (contentEnd stays -1). Returns
+ * null when the target is absent, duplicated, or unbalanced — the finding stays
+ * for the gate.
+ */
+function locateSoleComponentContent(
+  html: string,
+  component: string,
+): { contentEnd: number; content: string } | null {
+  const openPattern = new RegExp(
+    `<([a-z][\\w-]*)\\b[^>]*\\bdata-part\\s*=\\s*(["'])${regexpEscape(component)}\\2[^>]*>`,
+    "gi",
+  );
+  const opens = [...html.matchAll(openPattern)];
+  if (opens.length !== 1) return null;
+  const open = opens[0]!;
+  const tag = open[1]!.toLowerCase();
+  const contentStart = (open.index ?? 0) + open[0].length;
+  const walker = new RegExp(`<${tag}\\b[^>]*>|</${tag}\\s*>`, "gi");
+  walker.lastIndex = contentStart;
+  let depth = 1;
+  let contentEnd = -1;
+  for (let step = walker.exec(html); step; step = walker.exec(html)) {
+    if (step[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        contentEnd = step.index;
+        break;
+      }
+    } else if (!/\/>$/.test(step[0])) {
+      depth += 1;
+    }
+  }
+  if (contentEnd < 0) return null;
+  return { contentEnd, content: html.slice(contentStart, contentEnd) };
+}
+
+/**
+ * The shared body of every host-side kit top-up: for each candidate component
+ * id, locate its sole root and hand the inner content to `build`. Whatever
+ * markup `build` returns is injected just before the root's close tag; `build`
+ * returns null to decline (the target is already complete, or ambiguous /
+ * content-bearing — the finding stays for markup-audit). Injecting for one
+ * component re-scans the mutated html for the next, so indices never drift.
+ */
+function injectIntoComponentRoots(
+  html: string,
+  components: Iterable<string>,
+  build: (component: string, content: string) => string | null,
+): { html: string; repaired: string[] } {
+  const repaired: string[] = [];
+  for (const component of components) {
+    const located = locateSoleComponentContent(html, component);
+    if (!located) continue;
+    const markup = build(component, located.content);
+    if (markup == null) continue;
+    html = `${html.slice(0, located.contentEnd)}${markup}${html.slice(located.contentEnd)}`;
+    repaired.push(component);
+  }
+  return { html, repaired };
+}
+
+/**
  * Deterministic rows-markup top-up (fallback-elimination lever): a `rows`
  * beat whose target root exists but has NO revealable children was the
  * single biggest waster of paid author attempts (3 of 5 recorded live runs)
@@ -1592,50 +1658,20 @@ export function topUpRowsMarkup(
   html: string,
   scenes: DirectScene[],
 ): { html: string; repaired: string[] } {
-  const repaired: string[] = [];
-  const targets = new Map<string, string | undefined>();
+  const kindByTarget = new Map<string, string | undefined>();
   for (const scene of scenes) {
     const kinds = new Map((scene.components ?? []).map((entry) => [entry.id, entry.kind]));
     for (const beat of scene.beats ?? []) {
       if (beat.kind === "rows" || beat.kind === "select") {
-        targets.set(beat.component, kinds.get(beat.component));
+        kindByTarget.set(beat.component, kinds.get(beat.component));
       }
     }
   }
-  for (const [component, kind] of targets) {
-    const openPattern = new RegExp(
-      `<([a-z][\\w-]*)\\b[^>]*\\bdata-part\\s*=\\s*(["'])${regexpEscape(component)}\\2[^>]*>`,
-      "gi",
-    );
-    const opens = [...html.matchAll(openPattern)];
-    if (opens.length !== 1) continue;
-    const open = opens[0]!;
-    const tag = open[1]!.toLowerCase();
-    const contentStart = (open.index ?? 0) + open[0].length;
-    // Depth-scan for the matching close tag of the root element.
-    const walker = new RegExp(`<${tag}\\b[^>]*>|</${tag}\\s*>`, "gi");
-    walker.lastIndex = contentStart;
-    let depth = 1;
-    let contentEnd = -1;
-    for (let step = walker.exec(html); step; step = walker.exec(html)) {
-      if (step[0].startsWith("</")) {
-        depth -= 1;
-        if (depth === 0) {
-          contentEnd = step.index;
-          break;
-        }
-      } else if (!/\/>$/.test(step[0])) {
-        depth += 1;
-      }
-    }
-    if (contentEnd < 0) continue;
-    const content = html.slice(contentStart, contentEnd);
-    if (REVEALABLE_CHILD_CLASS.test(content)) continue;
-    const rows = [1, 2, 3].map((index) => rowsChildMarkup(kind, index)).join("\n");
-    html = `${html.slice(0, contentEnd)}\n${rows}\n${html.slice(contentEnd)}`;
-    repaired.push(component);
-  }
-  return { html, repaired };
+  return injectIntoComponentRoots(html, kindByTarget.keys(), (component, content) => {
+    if (REVEALABLE_CHILD_CLASS.test(content)) return null;
+    const rows = [1, 2, 3].map((index) => rowsChildMarkup(kindByTarget.get(component), index));
+    return `\n${rows.join("\n")}\n`;
+  });
 }
 
 /** The kit `.fx-underline` SVG the MD3 draw effect animates (a trim-path rule). */
@@ -1660,45 +1696,112 @@ export function topUpUnderlineMarkup(
   html: string,
   scenes: DirectScene[],
 ): { html: string; repaired: string[] } {
-  const repaired: string[] = [];
   const targets = new Set<string>();
   for (const scene of scenes) {
     for (const beat of scene.beats ?? []) {
       if (beat.kind === "highlight" && beat.style === "underline") targets.add(beat.component);
     }
   }
-  for (const component of targets) {
-    const openPattern = new RegExp(
-      `<([a-z][\\w-]*)\\b[^>]*\\bdata-part\\s*=\\s*(["'])${regexpEscape(component)}\\2[^>]*>`,
-      "gi",
-    );
-    const opens = [...html.matchAll(openPattern)];
-    if (opens.length !== 1) continue;
-    const open = opens[0]!;
-    const tag = open[1]!.toLowerCase();
-    const contentStart = (open.index ?? 0) + open[0].length;
-    const walker = new RegExp(`<${tag}\\b[^>]*>|</${tag}\\s*>`, "gi");
-    walker.lastIndex = contentStart;
-    let depth = 1;
-    let contentEnd = -1;
-    for (let step = walker.exec(html); step; step = walker.exec(html)) {
-      if (step[0].startsWith("</")) {
-        depth -= 1;
-        if (depth === 0) {
-          contentEnd = step.index;
-          break;
-        }
-      } else if (!/\/>$/.test(step[0])) {
-        depth += 1;
-      }
+  return injectIntoComponentRoots(html, targets, (_component, content) =>
+    /\bclass\s*=\s*(["'])[^"']*\bfx-underline\b/i.test(content) ? null : FX_UNDERLINE_MARKUP,
+  );
+}
+
+/** An svg stroke the chart runtime draws on (`svg polyline, svg path`). */
+const CHART_STROKE_MARKUP = /<(?:polyline|path)\b/i;
+/**
+ * Any `<i>` element already inside a root. childItems() treats a DIRECT `<i>`
+ * as a bar/fill, so a stray nested `<i>` icon makes the target ambiguous — we
+ * decline and leave the finding rather than double-inject or mis-bind an icon.
+ */
+const ANY_ITALIC = /<i[\s/>]/i;
+
+/** The kit's neutral bar set (direct `<i>`, revealed scaleY) for a bars/generic chart. */
+const NEUTRAL_CHART_BARS =
+  `<i style="height:42%" data-sequences-neutral="chart"></i>` +
+  `<i style="height:63%" data-sequences-neutral="chart"></i>` +
+  `<i style="height:84%" data-sequences-neutral="chart"></i>` +
+  `<i class="cmp-hero" style="height:100%" data-sequences-neutral="chart"></i>`;
+/** The kit's neutral line stroke (an svg polyline the runtime draws on) for a line chart. */
+const NEUTRAL_CHART_LINE =
+  `<svg viewBox="0 0 400 160" preserveAspectRatio="none" data-sequences-neutral="chart">` +
+  `<polyline class="cmp-stroke" points="0,140 80,120 160,124 240,70 320,52 400,18"/></svg>`;
+
+/**
+ * Deterministic chart-markup top-up — the `kit_markup_incomplete` absorption
+ * for the top static-rejection class (64 historical). A `chart` beat whose sole
+ * target root has NEITHER an svg stroke NOR bar children aborts the component
+ * compile, exactly the mechanical bind gap topUpRowsMarkup fixes, and the kit
+ * exemplar (componentContract.ts) defines the required structure precisely:
+ * chart-bars = direct `<i>` bars, chart-line = an svg polyline. Inject that
+ * host-side so a paid attempt never dies on it. The bar heights / stroke points
+ * are host-invented placeholder SHAPE (`data-sequences-neutral="chart"`), so a
+ * shipped placeholder records the `chart-neutral-bars-shipped` degradation and
+ * a salvaged film is never reported clean. Only the mechanically certain case
+ * is repaired: exactly one root with no stroke, no revealable children, and no
+ * stray `<i>` — anything content-bearing stays the markup-audit finding.
+ */
+export function topUpChartMarkup(
+  html: string,
+  scenes: DirectScene[],
+): { html: string; repaired: string[] } {
+  const kindByTarget = new Map<string, string | undefined>();
+  for (const scene of scenes) {
+    const kinds = new Map((scene.components ?? []).map((entry) => [entry.id, entry.kind]));
+    for (const beat of scene.beats ?? []) {
+      if (beat.kind === "chart") kindByTarget.set(beat.component, kinds.get(beat.component));
     }
-    if (contentEnd < 0) continue;
-    const content = html.slice(contentStart, contentEnd);
-    if (/\bclass\s*=\s*(["'])[^"']*\bfx-underline\b/i.test(content)) continue;
-    html = `${html.slice(0, contentEnd)}${FX_UNDERLINE_MARKUP}${html.slice(contentEnd)}`;
-    repaired.push(component);
   }
-  return { html, repaired };
+  return injectIntoComponentRoots(html, kindByTarget.keys(), (component, content) => {
+    if (
+      CHART_STROKE_MARKUP.test(content) ||
+      REVEALABLE_CHILD_CLASS.test(content) ||
+      ANY_ITALIC.test(content)
+    ) {
+      return null;
+    }
+    return /line/i.test(kindByTarget.get(component) ?? "") ? NEUTRAL_CHART_LINE : NEUTRAL_CHART_BARS;
+  });
+}
+
+/** The kit's neutral horizontal-bar fill (scaleX) — `<i data-cmp-fill>`. */
+const NEUTRAL_PROGRESS_FILL = `<i data-cmp-fill data-sequences-neutral="progress"></i>`;
+/** The kit's neutral ring track + fg arc (strokeDashoffset), for a progress-ring. */
+const NEUTRAL_PROGRESS_RING =
+  `<svg viewBox="0 0 120 120" data-sequences-neutral="progress">` +
+  `<circle class="cmp-ring-bg" cx="60" cy="60" r="52"/>` +
+  `<circle class="cmp-ring-fg" cx="60" cy="60" r="52"/></svg>`;
+/** Progress bind evidence the runtime animates: a ring fg arc or a bar fill. */
+const PROGRESS_FILL_MARKUP = /\b(?:cmp-ring-fg|data-cmp-fill)\b/i;
+
+/**
+ * Deterministic progress-markup top-up (kit_markup_incomplete absorption): a
+ * `progress` beat whose sole target root has no `.cmp-ring-fg`,
+ * `[data-cmp-fill]`, or direct `<i>` fill aborts the compile. The kit exemplar
+ * defines the structure — a horizontal bar wants one `<i data-cmp-fill>`, a
+ * ring wants an svg arc — so inject it host-side (neutral, recorded on ship via
+ * `progress-neutral-fill-shipped`, like the chart top-up). A ring is completed
+ * ONLY when the root has no `<svg>` at all: a partial svg (a background track
+ * but no fg arc) is ambiguous and stays a finding for markup-audit.
+ */
+export function topUpProgressMarkup(
+  html: string,
+  scenes: DirectScene[],
+): { html: string; repaired: string[] } {
+  const kindByTarget = new Map<string, string | undefined>();
+  for (const scene of scenes) {
+    const kinds = new Map((scene.components ?? []).map((entry) => [entry.id, entry.kind]));
+    for (const beat of scene.beats ?? []) {
+      if (beat.kind === "progress") kindByTarget.set(beat.component, kinds.get(beat.component));
+    }
+  }
+  return injectIntoComponentRoots(html, kindByTarget.keys(), (component, content) => {
+    if (PROGRESS_FILL_MARKUP.test(content) || ANY_ITALIC.test(content)) return null;
+    if (/ring/i.test(kindByTarget.get(component) ?? "")) {
+      return /<svg\b/i.test(content) ? null : NEUTRAL_PROGRESS_RING;
+    }
+    return NEUTRAL_PROGRESS_FILL;
+  });
 }
 
 function normalizeJsonIsland(
@@ -3083,6 +3186,30 @@ export function applyDeterministicSourceRepairs(
       process.stderr.write(
         `[author] injected kit fx-underline markup for highlight underline target(s): ` +
           `${underlineTopUp.repaired.join(", ")}\n`,
+      );
+    }
+  }
+  // kit_markup_incomplete absorption (the top static-rejection class): a chart
+  // beat with no bars/stroke or a progress beat with no fill aborts the
+  // component compile the same way a childless rows target does. The kit
+  // exemplar defines the required internal structure, so inject it host-side
+  // (neutral, recorded on ship) instead of burning a paid attempt; anything
+  // ambiguous or content-bearing stays a finding for kitMarkupAudit.
+  {
+    const chartTopUp = topUpChartMarkup(html, lockedStoryboard ?? draft.storyboard);
+    if (chartTopUp.repaired.length) {
+      html = chartTopUp.html;
+      process.stderr.write(
+        `[author] injected kit chart bars/stroke for chartless chart target(s): ` +
+          `${chartTopUp.repaired.join(", ")}\n`,
+      );
+    }
+    const progressTopUp = topUpProgressMarkup(html, lockedStoryboard ?? draft.storyboard);
+    if (progressTopUp.repaired.length) {
+      html = progressTopUp.html;
+      process.stderr.write(
+        `[author] injected kit progress fill for fill-less progress target(s): ` +
+          `${progressTopUp.repaired.join(", ")}\n`,
       );
     }
   }
@@ -10420,13 +10547,22 @@ export async function requestDirectComposition(
       countScaffoldedBindings(final.draft.storyboard),
     );
   }
-  // Publish-time honesty scan: host-invented neutral placeholder children
-  // (`topUpRowsMarkup`) that survived into the SHIPPING document mean the
-  // film shows literal "Item 1…" copy (the s5-slotrepair probe's terminal did,
-  // on frame). Detected here — not at injection — because an earlier attempt's
-  // injection may be superseded by a real re-author.
+  // Publish-time honesty scan: host-invented neutral placeholder structure
+  // (`topUpRowsMarkup`/`topUpChartMarkup`/`topUpProgressMarkup`) that survived
+  // into the SHIPPING document is host truth standing in for author content —
+  // literal "Item 1…" rows copy (the s5-slotrepair probe's terminal did, on
+  // frame), a placeholder bar set, or a placeholder progress fill. Each kind
+  // records its own degradation so a salvaged film is never reported clean.
+  // Detected here — not at injection — because an earlier attempt's injection
+  // may be superseded by a real re-author.
   if (/\bdata-sequences-neutral\s*=\s*["']1["']/i.test(final.draft.html)) {
     recordSentinelDegradation("rows-neutral-children-shipped");
+  }
+  if (/\bdata-sequences-neutral\s*=\s*["']chart["']/i.test(final.draft.html)) {
+    recordSentinelDegradation("chart-neutral-bars-shipped");
+  }
+  if (/\bdata-sequences-neutral\s*=\s*["']progress["']/i.test(final.draft.html)) {
+    recordSentinelDegradation("progress-neutral-fill-shipped");
   }
   // Quarantined interactions likewise leave a detectable style tag; scanning
   // the shipping document (not the quarantine helpers, which also run on

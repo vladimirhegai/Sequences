@@ -23,10 +23,13 @@ import {
   stripAllHostPlanIslands,
   stripHostKitAssetReferences,
   stripUnusedHostPlanIslands,
+  topUpChartMarkup,
+  topUpProgressMarkup,
   topUpRowsMarkup,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
 import { hasPausedTimeline } from "../src/engine/directComposition.ts";
+import { auditKitMarkupCompleteness } from "../src/engine/kitMarkupAudit.ts";
 import { validateCameraContract } from "../src/engine/cameraContract.ts";
 import { validateComponentContract } from "../src/engine/componentContract.ts";
 import { resolveCutPlan, validateCutContract } from "../src/engine/cutContract.ts";
@@ -454,6 +457,148 @@ describe("deterministic rows-markup top-up (fallback-elimination lever 1)", () =
     expect(result.repaired).toEqual(["trace-palette"]);
     expect(result.html.match(/class="cmp-item"/g)).toHaveLength(3);
     expect(topUpRowsMarkup(result.html, selectScene).repaired).toEqual([]);
+  });
+});
+
+function compositionDoc(body: string): string {
+  return `<!doctype html><html><head></head><body>
+<main data-composition-id="c" data-width="1920" data-height="1080" data-duration="4">
+${body}
+</main></body></html>`;
+}
+
+describe("deterministic chart-markup top-up (kit_markup_incomplete absorption)", () => {
+  const chartScene = (kind: "chart-bars" | "chart-line"): DirectScene[] => [
+    scene("metrics", 0, {
+      components: [{ version: 1, id: "growth", kind }],
+      beats: [{
+        version: 1,
+        id: "grow",
+        sceneId: "metrics",
+        component: "growth",
+        kind: "chart",
+        atSec: 1.5,
+      }],
+    }),
+  ];
+
+  it("injects four neutral kit bars into a chartless bar chart", () => {
+    const html =
+      '<section data-scene="metrics"><div data-part="growth" data-component="chart-bars" ' +
+      'class="cmp cmp-chart-bars material"></div></section>';
+    const result = topUpChartMarkup(html, chartScene("chart-bars"));
+    expect(result.repaired).toEqual(["growth"]);
+    expect(result.html.match(/<i[^>]*data-sequences-neutral="chart"/g)).toHaveLength(4);
+    expect(result.html).toContain('class="cmp-hero"');
+    // Idempotent: bars now present, a second pass stays out.
+    expect(topUpChartMarkup(result.html, chartScene("chart-bars")).repaired).toEqual([]);
+  });
+
+  it("injects an svg polyline stroke for a line chart", () => {
+    const html =
+      '<div data-part="growth" data-component="chart-line" class="cmp cmp-chart-line"></div>';
+    const result = topUpChartMarkup(html, chartScene("chart-line"));
+    expect(result.repaired).toEqual(["growth"]);
+    expect(result.html).toContain('class="cmp-stroke"');
+    expect(result.html).toContain('data-sequences-neutral="chart"');
+    expect(topUpChartMarkup(result.html, chartScene("chart-line")).repaired).toEqual([]);
+  });
+
+  it("leaves charts that already have bars or a stroke alone", () => {
+    const bars =
+      '<div data-part="growth" data-component="chart-bars" class="cmp cmp-chart-bars">' +
+      '<i style="height:40%"></i></div>';
+    expect(topUpChartMarkup(bars, chartScene("chart-bars")).repaired).toEqual([]);
+    const stroke =
+      '<div data-part="growth" data-component="chart-line" class="cmp cmp-chart-line">' +
+      '<svg><polyline points="0,10 10,0"/></svg></div>';
+    expect(topUpChartMarkup(stroke, chartScene("chart-line")).repaired).toEqual([]);
+  });
+
+  it("declines a content-bearing root — a stray nested <i> icon stays a finding", () => {
+    const html =
+      '<div data-part="growth" data-component="chart-bars" class="cmp cmp-chart-bars">' +
+      '<div class="cmp-head"><i class="icon-trend"></i> Revenue</div></div>';
+    expect(topUpChartMarkup(html, chartScene("chart-bars")).repaired).toEqual([]);
+  });
+
+  it("declines an ambiguous (duplicated) root", () => {
+    const html =
+      '<div data-part="growth" class="cmp"></div><div data-part="growth" class="cmp"></div>';
+    expect(topUpChartMarkup(html, chartScene("chart-bars")).repaired).toEqual([]);
+  });
+
+  it("clears the exact kit_markup_incomplete finding it targets (round-trip vs the audit)", () => {
+    const scenes = chartScene("chart-bars");
+    const before = compositionDoc(
+      '<section data-scene="metrics" data-start="0" data-duration="4">' +
+        '<div data-part="growth" class="cmp cmp-chart-bars"></div></section>',
+    );
+    expect(auditKitMarkupCompleteness(before, scenes).errors.some((error) =>
+      error.includes("kit_markup_incomplete") && error.includes("chart"))).toBe(true);
+    const after = topUpChartMarkup(before, scenes).html;
+    expect(auditKitMarkupCompleteness(after, scenes).errors).toEqual([]);
+  });
+});
+
+describe("deterministic progress-markup top-up (kit_markup_incomplete absorption)", () => {
+  const progressScene = (kind: "progress" | "progress-ring"): DirectScene[] => [
+    scene("deploy", 0, {
+      components: [{ version: 1, id: "build", kind }],
+      beats: [{
+        version: 1,
+        id: "fill",
+        sceneId: "deploy",
+        component: "build",
+        kind: "progress",
+        atSec: 1.5,
+      }],
+    }),
+  ];
+
+  it("injects a data-cmp-fill bar into a fill-less horizontal progress", () => {
+    const html =
+      '<div data-part="build" data-component="progress" class="cmp cmp-progress"></div>';
+    const result = topUpProgressMarkup(html, progressScene("progress"));
+    expect(result.repaired).toEqual(["build"]);
+    expect(result.html).toContain("data-cmp-fill");
+    expect(result.html).toContain('data-sequences-neutral="progress"');
+    expect(topUpProgressMarkup(result.html, progressScene("progress")).repaired).toEqual([]);
+  });
+
+  it("injects an svg ring arc into an empty progress-ring", () => {
+    const html =
+      '<div data-part="build" data-component="progress-ring" class="cmp cmp-ring"></div>';
+    const result = topUpProgressMarkup(html, progressScene("progress-ring"));
+    expect(result.repaired).toEqual(["build"]);
+    expect(result.html).toContain('class="cmp-ring-fg"');
+    expect(topUpProgressMarkup(result.html, progressScene("progress-ring")).repaired).toEqual([]);
+  });
+
+  it("declines a partial ring — a background track but no fg arc stays a finding", () => {
+    const html =
+      '<div data-part="build" data-component="progress-ring" class="cmp cmp-ring">' +
+      '<svg viewBox="0 0 120 120"><circle class="cmp-ring-bg" cx="60" cy="60" r="52"/></svg></div>';
+    expect(topUpProgressMarkup(html, progressScene("progress-ring")).repaired).toEqual([]);
+  });
+
+  it("leaves an already-filled progress alone", () => {
+    const html =
+      '<div data-part="build" data-component="progress" class="cmp cmp-progress">' +
+      "<i data-cmp-fill></i></div>";
+    expect(topUpProgressMarkup(html, progressScene("progress")).repaired).toEqual([]);
+  });
+
+  it("clears the exact kit_markup_incomplete finding it targets (round-trip vs the audit)", () => {
+    const scenes = progressScene("progress");
+    const before = compositionDoc(
+      '<section data-scene="deploy" data-start="0" data-duration="4">' +
+        '<div data-part="build" class="cmp cmp-progress"></div></section>',
+    );
+    expect(auditKitMarkupCompleteness(before, scenes).errors.some((error) =>
+      error.includes("kit_markup_incomplete") && error.includes("progress"))).toBe(true);
+    const after = topUpProgressMarkup(before, scenes).html;
+    expect(auditKitMarkupCompleteness(after, scenes).errors).toEqual([]);
   });
 });
 

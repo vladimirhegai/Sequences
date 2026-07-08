@@ -572,6 +572,47 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "so a dropped declaration costs influence, never a paid attempt. " +
       "Telemetry tags: recipe-reconcile, recipe-inject.",
   },
+  {
+    id: "normalize.kit-chart-complete",
+    group: "markup-audit",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-08 attempt-economy (kit_markup_incomplete absorption — the top " +
+      "static-rejection class, 64 historical): a chart beat whose SOLE root has " +
+      "neither an svg stroke nor bar children aborts the component compile, the " +
+      "same mechanical bind gap topUpRowsMarkup fixes. topUpChartMarkup " +
+      "(applyDeterministicSourceRepairs) injects the kit exemplar's required " +
+      "structure host-side — direct <i> bars for a bars/generic chart, an svg " +
+      "polyline for a line chart — marked data-sequences-neutral=\"chart\" so a " +
+      "SHIPPED placeholder records the chart-neutral-bars-shipped degradation " +
+      "(never a clean publish). Fires only on the mechanically certain case: " +
+      "exactly one root with no stroke, no revealable children, and no stray " +
+      "<i>. Anything content-bearing stays the markup-audit finding. It PREVENTS " +
+      "the markup-audit row's kit_markup_incomplete for chartless charts.",
+  },
+  {
+    id: "normalize.kit-progress-complete",
+    group: "markup-audit",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-08 attempt-economy (kit_markup_incomplete absorption): a progress " +
+      "beat whose SOLE root has no .cmp-ring-fg, [data-cmp-fill], or direct <i> " +
+      "fill aborts the compile. topUpProgressMarkup injects the kit exemplar's " +
+      "fill host-side — <i data-cmp-fill> for a horizontal bar, an svg arc for a " +
+      "ring (ONLY into a root with no <svg>; a partial svg is ambiguous and " +
+      "stays a finding) — marked data-sequences-neutral=\"progress\" " +
+      "(progress-neutral-fill-shipped on ship). Same host-completion pattern as " +
+      "topUpRowsMarkup. It PREVENTS the markup-audit row's kit_markup_incomplete " +
+      "for fill-less progress.",
+  },
 
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {
