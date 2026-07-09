@@ -230,5 +230,6 @@ the markup's final state declare `preBeat:"from"`.
 
 ## Flag state
 
-`SLACK_SEQUENCES_ASSETS` — see SENTINEL.md's flag table for the current
-default and the probe record in PROBE_LOG.md.
+`SLACK_SEQUENCES_ASSETS` is default **ON** after asset-probe-2 published clean.
+Set `SLACK_SEQUENCES_ASSETS=0` to revert one process to the asset-free path;
+see SENTINEL.md's flag table and PROBE_LOG.md for the probe record.

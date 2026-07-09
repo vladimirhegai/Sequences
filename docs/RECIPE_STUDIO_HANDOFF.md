@@ -15,9 +15,9 @@ already built, then write a full report. Read, in this order:
    build a recipe animation on a canvas (direct manipulation first, chat
    second), click Export, and the live Slack Sequences agents can and WILL use
    it.
-2. `apps/slack/RECIPE_STUDIO_REPORT.md` (session 1 — the recipe format + host
+2. `apps/slack/docs/history/RECIPE_STUDIO_REPORT.md` (session 1 — the recipe format + host
    instantiation + gate/export foundation) and
-   `apps/slack/RECIPE_STUDIO_REPORT_2.md` (session 2 — canvas builder + agents +
+   `apps/slack/docs/history/RECIPE_STUDIO_REPORT_2.md` (session 2 — canvas builder + agents +
    the honest paid-proof result). Their "what is NOT built" sections are your
    scope; do not rebuild what they built.
 3. `apps/slack/studio/INTEGRATION.md` — the seam table you MUST keep true.

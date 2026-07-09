@@ -995,6 +995,25 @@ describe("deterministic source repair ordering: camera world + component aliases
     expect(rootTag.match(/\bdata-start=/g)).toHaveLength(1);
   });
 
+  it("strips dead literal GSAP tweens while preserving live and dynamic calls", () => {
+    const scenes = storyboard();
+    const html = sourceHtml().replace(
+      'const tl = gsap.timeline({ paused: true });',
+      'const tl = gsap.timeline({ paused: true });\n' +
+        'tl.to("#missing-panel", { opacity: 1, duration: 0.4 }, 1);\n' +
+        'tl.to("#dashboard-overwhelm", { opacity: 1, duration: 0.4 }, 1.5);\n' +
+        'tl.to(selectorFromState, { opacity: 1, duration: 0.4 }, 2);',
+    );
+    const repaired = applyDeterministicSourceRepairs(
+      { html, storyboard: scenes },
+      tempDir(),
+      scenes,
+    );
+    expect(repaired.html).not.toContain('#missing-panel');
+    expect(repaired.html).toContain('#dashboard-overwhelm');
+    expect(repaired.html).toContain('selectorFromState');
+  });
+
   it("injects the canonical ripple even when an authored tween selector names the ripple part", () => {
     // The 2026-07-07 TraceKit probe replay: the author built a ripple element
     // AND a tween addressing `[data-part='…-ripple']`. Retiring the element

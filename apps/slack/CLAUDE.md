@@ -30,8 +30,8 @@ contract registry, budgets, and EVERY Sentinel flag) ·
 
 ## Sentinel — correctness by construction
 
-Authoring reliability is governed by **Sentinel** (SENTINEL_PLAN.md → shipped per
-SENTINEL_REPORT.md; the system is documented in [SENTINEL.md](SENTINEL.md)). The
+Authoring reliability is governed by **Sentinel** (the living system is documented
+in [SENTINEL.md](SENTINEL.md)). The
 thesis: move every mechanically-decidable obligation OFF the model so whole
 classes become *unrepresentable* (L0 schema / L1 host scaffold) or
 *deterministically repaired* (L2 normalize) instead of detected-and-retried.
@@ -71,9 +71,8 @@ retrieval, sentinel registry) requires updating
 [studio/INTEGRATION.md](studio/INTEGRATION.md)'s seam table** — bumping a
 runtime/kit version marks every exported recipe stale until re-proven. Plan:
 [docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md) (in the private
-monorepo); build reports: [RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md)
-(foundation) + [RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md) (canvas +
-agents).
+monorepo). Historical build reports live under `docs/history/`; the seam table
+above is the current Recipe Studio contract.
 
 ## Host plugins (2026-07-08 — the seventh contract)
 
@@ -157,8 +156,8 @@ spring physics from `src/engine/motionSpring.ts`; silhouette rhyme families
 aligned with the cut contract) + the 13-asset library in `src/engine/assets/`
 (one `defineAsset` file per asset, all five silhouette families). **Decision:
 assets are tweaked-prebuilt, never model-generated** — models may declare
-`asset-<id>` kinds on the plugin rails (flag `SLACK_SEQUENCES_ASSETS` — see
-SENTINEL.md's flag table for the default) but can never author or edit asset
+`asset-<id>` kinds on the plugin rails (flag `SLACK_SEQUENCES_ASSETS`, default
+ON after asset-probe-2; set `=0` for the asset-free rollback) but can never author or edit asset
 internals. The **in-film animation runtime SHIPPED 2026-07-09**
 (`assetRuntime.ts` + `templates/sequences-assets.v1.js`, the 8th host-owned
 island): each declared asset lowers to one internal `asset`-kind component +
@@ -597,7 +596,7 @@ and the planning prompt teaches the vocabulary. Pure static CSS — no timeline
 ownership, enhancement-only, deterministic under seek.
 **Motion-design texture (MOTION_DESIGN_PLAN MD1–MD6, 2026-07-06/07)** adds the
 "produced, not just choreographed" garnish layer on top — all host-derived,
-seek-safe, and Sentinel-registered (see [MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md)
+seek-safe, and Sentinel-registered (the completed motion-design plan is archived under `docs/history/`)
 + the SENTINEL.md contract table): a host **FX runtime** (`engine/fxContract.ts` +
 `templates/sequences-fx.v1.js`) applies sweep / glow-pulse / draw-on / echo mostly
 automatically at payoff moments (planner opt-in is one `highlight.style` field);

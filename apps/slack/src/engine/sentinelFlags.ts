@@ -109,11 +109,11 @@ export function pluginsEnabled(): boolean {
  * (`assetContract.ts` + `src/engine/assets/`, ASSETS.md) exposed to the
  * planner as `asset-<id>` plugin kinds riding the plugin rails
  * (strip-and-reinject, default/clamp/drop governance, shared per-film
- * budget). Default OFF until a paid live probe proves the vocabulary earns
- * its prompt bytes; `SLACK_SEQUENCES_ASSETS=1` opts in. The Asset Lab
+ * budget). Default ON after asset-probe-2 published clean;
+ * `SLACK_SEQUENCES_ASSETS=0` reverts to the asset-free path. The Asset Lab
  * (`npm run assets`) works regardless of this flag — it reads the library
  * directly.
  */
 export function assetsEnabled(): boolean {
-  return process.env.SLACK_SEQUENCES_ASSETS === "1";
+  return process.env.SLACK_SEQUENCES_ASSETS !== "0";
 }

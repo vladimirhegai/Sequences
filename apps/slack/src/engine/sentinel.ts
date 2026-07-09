@@ -802,6 +802,22 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "warning class becomes unrepresentable and the first frame carries the " +
       "tinted canvas (no white flash). Telemetry tag brand-base.",
   },
+  {
+    id: "normalize.dead-tween-strip",
+    group: "runtime-invariants",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-09 asset-probe-2: the author emitted literal-selector GSAP tweens " +
+      "against markup it did not ship. GSAP reports a browser warning but executes " +
+      "a no-op, so stripDeadGsapTweens queries the parsed final document and removes " +
+      "only standalone literal calls with invalid/missing selectors after host markup " +
+      "injection. Dynamic and chained calls remain untouched; moment/motion gates " +
+      "still catch any load-bearing missing animation. Telemetry tag dead-tween-strip.",
+  },
 
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {

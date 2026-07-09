@@ -35,7 +35,7 @@ point an agent at the listed file.
 | Spatial / layout placement ("spacing" tool) | `frame.md` flow compositions + relational `data-layout-*` + `src/engine/layoutInspector.ts` | flow-first placement, safe-area / anchor / align / gap / optical audit |
 | Cursor interactions | `src/engine/interactionContract.ts`, `src/engine/templates/sequences-interactions.v1.js` | hotspot / target / ripple geometry, interaction QA |
 | Host plugins (generated set-pieces: dashboard-grid / notification-stack / lockup) | `src/engine/pluginContract.ts` + foundations `src/engine/pluginKernel.ts` (distribution/spacing/PRNG), `src/engine/seedContent.ts` (believable seeded SaaS content) | plugin catalog + params, lowering into typed components/beats (`pluginUid` one-unit budgeting), seeded markup generation, injection seam, planner vocabulary (`pluginPlanningVocabulary`), kill switch `SLACK_SEQUENCES_PLUGINS` |
-| Pre-built asset library (13 designer-grade parametric assets, spring motion, in-film runtime, Asset Lab) | `src/engine/assetContract.ts`, `src/engine/motionSpring.ts`, `src/engine/assets/` (13 `defineAsset` files), `src/engine/assetRuntime.ts`, `templates/sequences-assets.v1.js`, `studio/assetLab.ts` ([ASSETS.md](ASSETS.md)) | asset definitions (typed params as root custom props), spring presets + physics, invokable animations with `trigger` (enter/payoff/manual) + `preBeat:"from"`, silhouette rhyme families, `asset-<id>` plugin-rail bridge LOWERING to internal `asset` components + typed `animate` beats (Sentinel rows `normalize.asset-lower`/`assets.contract`), the 8th host-owned island (`sequences-assets`), brief auto-offer (`assetBriefPlanningOffer`), flag `SLACK_SEQUENCES_ASSETS`, operator webview `npm run assets` → 4322 (trigger badges, morph spring/duration tweaks) |
+| Pre-built asset library (13 designer-grade parametric assets, spring motion, in-film runtime, Asset Lab) | `src/engine/assetContract.ts`, `src/engine/motionSpring.ts`, `src/engine/assets/` (13 `defineAsset` files), `src/engine/assetRuntime.ts`, `templates/sequences-assets.v1.js`, `studio/assetLab.ts` ([ASSETS.md](ASSETS.md)) | asset definitions (typed params as root custom props), spring presets + physics, invokable animations with `trigger` (enter/payoff/manual) + `preBeat:"from"`, silhouette rhyme families, `asset-<id>` plugin-rail bridge LOWERING to internal `asset` components + typed `animate` beats (Sentinel rows `normalize.asset-lower`/`assets.contract`), the 8th host-owned island (`sequences-assets`), brief auto-offer (`assetBriefPlanningOffer`), default-ON flag `SLACK_SEQUENCES_ASSETS` (`=0` reverts), operator webview `npm run assets` → 4322 (trigger badges, morph spring/duration tweaks) |
 | Executable boundary cuts | `src/engine/cutContract.ts`, `src/engine/templates/sequences-cuts.v1.js`, `src/engine/compositionRunner.ts` | typed cut styles, wrapper ownership, object/shape-match bindings, plan-time silhouette-family sanity (`auditShapeMatchHints`), repairable+honest degradation (`cut_degraded` finding, `reconcileDegradedCutPaperwork`) |
 | Framing coverage audit | `src/engine/layoutInspector.ts` | `camera_framed_sparse` — whole-scene on-frame content coverage floor at camera landings + static mid-windows (WS5) |
 | Hold-what-matters pacing audits | `src/engine/pacingAudit.ts` (called from `validateStoryboardPlan`) | plan-stage findings: introduction→development ratio, typed-copy reading floor, outcome holds after press/set-state/toast, camera-move budget per scene + whip cap per film (WS3) |
@@ -45,7 +45,7 @@ point an agent at the listed file.
 | Static motion-density guard | `src/engine/motionDensity.ts` | blocking liveness errors (quiet gaps, slide scenes, front-loading) + advisory warnings (dense bursts, empty holds) |
 | Storyboard moment contract | `src/engine/storyboardMoments.ts` | typed reviewable moments: planned floor (≥7 for 12s+), evidence binding, interval gate, synthesis for legacy films |
 | Motion-native component system | `src/engine/componentContract.ts`, `src/engine/templates/sequences-components.v1.css` / `.v1.js` | 23-kind SaaS component catalog (incl. `headline`), typed beats (type/open/count/chart/stream/morph/…), FLIP twin morphs, kit CSS, markup contract retrieval |
-| Motion-design texture (MD1–MD6) | `src/engine/fxContract.ts`, `templates/sequences-fx.v1.js`, `src/engine/gradeShift.ts`, `cameraContract.ts` (`dive`, `seqPop`/`seqStamp`), `cutContract.ts` (`swipe`/`morph`/`match`) | host FX runtime (sweep/glow/draw/echo), `dive` camera move, `headline` letter machinery, animated grade shift, playful pops — all host-derived + Sentinel-registered ([MOTION_DESIGN_PLAN.md](MOTION_DESIGN_PLAN.md)) |
+| Motion-design texture (MD1–MD6) | `src/engine/fxContract.ts`, `templates/sequences-fx.v1.js`, `src/engine/gradeShift.ts`, `cameraContract.ts` (`dive`, `seqPop`/`seqStamp`), `cutContract.ts` (`swipe`/`morph`/`match`) | host FX runtime (sweep/glow/draw/echo), `dive` camera move, `headline` letter machinery, animated grade shift, playful pops — all host-derived + Sentinel-registered (historical plan archived under `docs/history/`) |
 | Staged GLM planning (concept → beats → critic) | `src/engine/compositionRunner.ts` | cached concept artifact, moment-bearing storyboard with bounded retry, post-authoring continuity critic + patch |
 | Explicit fallback stages | `src/orchestrator.ts` | named stage receipts, `fallback:{stage,reason}`, Slack-safe fallback labeling |
 | Temporal motion evidence | `src/engine/temporalInspector.ts` | development strips, cut triptychs, change curve, quiet-window review |
@@ -1420,8 +1420,8 @@ Follow-up audit — closed the parked seam and made every authoring failure legi
 The reliability rework that turns "model writes everything → host validates →
 host repairs → model retries the whole artifact" into *move every
 mechanically-decidable obligation OFF the model.* Full design in
-[SENTINEL_PLAN.md](SENTINEL_PLAN.md), shipped-state ledger in
-[SENTINEL_REPORT.md](SENTINEL_REPORT.md), the auditable system in
+[docs/history/SENTINEL_PLAN.md](docs/history/SENTINEL_PLAN.md), shipped-state ledger in
+[docs/history/SENTINEL_REPORT.md](docs/history/SENTINEL_REPORT.md), the auditable system in
 [SENTINEL.md](SENTINEL.md). **Gates are never loosened — Sentinel changes WHERE
 an obligation is enforced, not WHETHER.**
 
@@ -1774,9 +1774,8 @@ the promised texture (the operator's next step).
 ## 2026-07-07 — Recipe Studio (sessions 1–2) + the recipe library
 
 The operator-local motion-design editor + recipe factory
-([../../docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md); reports
-[RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md) +
-[RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md)):
+([../../docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md); completed
+reports archived under `docs/history/`):
 
 - **Session 1 — foundation.** RecipeV2 + Level-1 host instantiation
   (`src/engine/recipeContract.ts`, the sixth host-owned contract:
@@ -1803,7 +1802,7 @@ The operator-local motion-design editor + recipe factory
 
 ## 2026-07-07 (later) — attempt-economy sweep (the final audit before recipe skills)
 
-Full record: SENTINEL_REPORT.md "attempt-economy sweep". The 49-run ledger
+Full record: [SENTINEL report](docs/history/SENTINEL_REPORT.md), "attempt-economy sweep". The 49-run ledger
 proved every published run burns ~3 storyboard + ~3 source attempts on polish
 churn the paid patches provably never fix (verbatim-identical finding lists
 across consecutive attempts). Changes, all gates untouched:
@@ -1830,7 +1829,7 @@ across consecutive attempts). Changes, all gates untouched:
 
 ## 2026-07-07 (later still) — storyboard attempt-economy: three L2 normalizers
 
-Full record: SENTINEL_REPORT.md "storyboard attempt-economy". Building the three
+Full record: [SENTINEL report](docs/history/SENTINEL_REPORT.md), "storyboard attempt-economy". Building the three
 next candidates the attempt-economy sweep recorded, all inside the existing
 parse-side atomic commit-or-revert (`parseStoryboardResponse`), all gates
 untouched — WHERE an obligation is enforced, not WHETHER:
@@ -1892,7 +1891,7 @@ author/critic-stage agent's half (handoff in SENTINEL_REPORT).
 
 ## 2026-07-08 — Author/critic-stage attempt economy (the second half)
 
-Full record: SENTINEL_REPORT.md "Author / critic-stage attempt economy". The
+Full record: [SENTINEL report](docs/history/SENTINEL_REPORT.md), "Author / critic-stage attempt economy". The
 second half of the two-agent attempt-economy plan — cut author/critic waste and
 re-measure the whole system. Gates untouched (WHERE, not WHETHER).
 

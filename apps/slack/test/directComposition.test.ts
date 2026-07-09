@@ -4028,7 +4028,7 @@ describe("L2 infinite-repeat clamp (plugin-probe-1 attempt-1 death class)", () =
       ...draftValue,
       html: draftValue.html.replace(
         "</body>",
-        "<script>tl.to('.pulse',{opacity:0.4,repeat: -1,yoyo:true});</script></body>",
+        '<div class="pulse"></div><script>tl.to(\'.pulse\',{opacity:0.4,repeat: -1,yoyo:true});</script></body>',
       ),
     };
     const repaired = applyDeterministicSourceRepairs(withRepeat, projectDir(), storyboard);

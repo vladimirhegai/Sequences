@@ -73,6 +73,7 @@ import { discoverShapeMatchUpgrade } from "./cutDiscovery.ts";
 import { FX_RUNTIME_FILE, resolveFxPlan } from "./fxContract.ts";
 import { ASSET_RUNTIME_FILE, resolveAssetPlan } from "./assetRuntime.ts";
 import { ASSET_LIBRARY } from "./assets/index.ts";
+import { stripDeadGsapTweens } from "./deadTweenRepair.ts";
 import {
   COMPONENT_BEAT_KINDS,
   COMPONENT_KINDS,
@@ -4315,6 +4316,20 @@ export function applyDeterministicSourceRepairs(
         );
       }
     }
+  }
+  // Dead authored timeline calls only create browser warnings: GSAP receives a
+  // literal selector that cannot match the parsed document and performs no
+  // animation. Strip them after every host markup injection so the static DOM
+  // matches the runtime's final bind surface; dynamic/chained calls stay
+  // untouched and the existing moment/motion gates remain the honest backstop.
+  const deadTweens = stripDeadGsapTweens(html);
+  if (deadTweens.removed) {
+    html = deadTweens.html;
+    recordSentinelNormalization("dead-tween-strip", deadTweens.removed);
+    process.stderr.write(
+      `[author] stripped ${deadTweens.removed} dead GSAP tween(s) with missing selector(s): ` +
+        `${deadTweens.selectors.map((selector) => JSON.stringify(selector)).join(", ")}\n`,
+    );
   }
   // Speed ramping wraps the registered timeline in a host-owned master that
   // warps time (sequences-time). ⚠️ The registration rewrite MUST stay the

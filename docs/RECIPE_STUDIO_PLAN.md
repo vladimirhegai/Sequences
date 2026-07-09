@@ -35,7 +35,7 @@ behavior and must not land in the hackathon window unilaterally): a **host-side
 auto-declare** — when a recipe scores above a high threshold AND the brief
 clearly names its pattern, Sentinel L1/L2 injects the declaration into the
 best-matching scene rather than merely offering it. Full detail:
-`apps/slack/RECIPE_STUDIO_REPORT_2.md` §1.
+`apps/slack/docs/history/RECIPE_STUDIO_REPORT_2.md` §1.
 
 **Also not yet built / caveats** (see REPORT_2 §2.4, §3.3): cursor paths +
 `clickAnchor`, effect presets, timeRamp/holds UI, custom ease-graph editor,

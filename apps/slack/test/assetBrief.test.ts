@@ -87,8 +87,8 @@ describe("assetBriefPlanningOffer", () => {
     else process.env[flag] = previousFlag;
   });
 
-  it("is empty while the asset library is off the plugin rails", () => {
-    delete process.env[flag];
+  it("is empty when the asset library is explicitly disabled", () => {
+    process.env[flag] = "0";
     expect(assetBriefPlanningOffer(brief())).toBe("");
   });
 
