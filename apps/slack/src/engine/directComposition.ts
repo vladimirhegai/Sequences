@@ -108,6 +108,36 @@ export interface WorldLayoutCellV1 {
   cell: [number, number];
 }
 
+export interface LayoutRepairRectV1 {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Host-only deterministic layout repair. This is never requested from the
+ * author model; `applyDeterministicSourceRepairs` materializes it as CSS after
+ * browser QA proves the measured geometry can be corrected safely.
+ */
+export interface SceneLayoutRepairV1 {
+  version: 1;
+  id: string;
+  kind: "overflow-clamp";
+  selector: string;
+  issueCode: "canvas_overflow" | "important_safe_area";
+  dx: number;
+  dy: number;
+  scale: number;
+  origin: "center center";
+  before: {
+    rect: LayoutRepairRectV1;
+    safeRect: LayoutRepairRectV1;
+  };
+}
+
 export interface DirectScene {
   id: string;
   title: string;
@@ -147,6 +177,8 @@ export interface DirectScene {
   interactions?: InteractionIntentV1[];
   /** Ordered reviewable changed states this scene promises (the moment contract). */
   moments?: StoryboardMomentV1[];
+  /** Host-only deterministic layout repairs, stripped from author prompts. */
+  layoutRepairs?: SceneLayoutRepairV1[];
   /**
    * Host-applied Sentinel normalization notes (delete/degrade/retime fixes the
    * host made to this scene at parse — never model-authored). Rendered in
@@ -362,6 +394,10 @@ function normalizeStoryboard(
       ...(proposed?.spatialIntent ? { spatialIntent: proposed.spatialIntent } : {}),
       ...(proposed?.interactions?.length ? { interactions: proposed.interactions } : {}),
       ...(proposed?.moments?.length ? { moments: proposed.moments } : {}),
+      ...(proposed?.layoutRepairs?.length ? { layoutRepairs: proposed.layoutRepairs } : {}),
+      ...(proposed?.sentinelNormalizations?.length
+        ? { sentinelNormalizations: proposed.sentinelNormalizations }
+        : {}),
     };
   });
   if (tags.length < 2) errors.push("composition needs at least two elements marked data-scene");

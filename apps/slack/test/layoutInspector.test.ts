@@ -457,9 +457,15 @@ describe("direct layout inspector", () => {
     async () => {
       const result = await inspectDirectComposition(projectDir(), offCanvasTextDraft());
       expect(result.ok).toBe(true);
-      expect(result.issues.some((issue) =>
+      const overflow = result.issues.find((issue) =>
         issue.code === "canvas_overflow" && issue.selector === "#live-badge"
-      )).toBe(true);
+      );
+      expect(overflow).toBeTruthy();
+      expect(overflow?.rect?.right).toBeGreaterThan(800);
+      expect(overflow?.containerRect?.width).toBe(800);
+      expect(overflow?.overflow?.right).toBeGreaterThan(0);
+      expect(overflow?.repairSelector).toBe("#live-badge");
+      expect(overflow?.sceneId).toBe("one");
       expect(result.issues.some((issue) =>
         issue.code === "text_box_overflow" && issue.selector === "#live-badge"
       )).toBe(false);

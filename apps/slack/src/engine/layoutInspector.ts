@@ -60,6 +60,17 @@ import { findBrowserExecutable } from "./render.ts";
 
 export type LayoutSeverity = "error" | "warning" | "info";
 
+export interface LayoutRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+export type LayoutOverflow = Partial<Record<"left" | "right" | "top" | "bottom", number>>;
+
 export interface DirectLayoutIssue {
   code: string;
   severity: LayoutSeverity;
@@ -72,6 +83,17 @@ export interface DirectLayoutIssue {
   selector: string;
   containerSelector?: string;
   text?: string;
+  rect?: LayoutRect;
+  containerRect?: LayoutRect;
+  safeRect?: LayoutRect;
+  overflow?: LayoutOverflow;
+  peerRect?: LayoutRect;
+  repairSelector?: string;
+  sceneId?: string;
+  part?: string;
+  componentRootPart?: string;
+  insideCameraWorld?: boolean;
+  motionWindowOverlap?: boolean;
   message: string;
   fixHint?: string;
   source: "hyperframes" | "sequences";
@@ -312,7 +334,9 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 //     instants before reporting (late entrance ≠ absent focal), and contrast_aa
 //     dedupes to the worst ratio per selector+text instead of one row per
 //     sampled hero frame.
-const QA_CACHE_VERSION = 12;
+// v13: layout findings preserve structured geometry and repair selectors.
+// v14: Sequences safe-area evidence serializes plain root rects, not DOMRect.
+const QA_CACHE_VERSION = 14;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -565,7 +589,15 @@ async function auditSequencesRelationships(
     type BrowserIssue = Omit<DirectLayoutIssue, "source">;
     const root = document.querySelector<HTMLElement>("[data-composition-id][data-width][data-height]");
     if (!root) return [];
-    const rootRect = root.getBoundingClientRect();
+    const rootBox = root.getBoundingClientRect();
+    const rootRect: Rect = {
+      left: rootBox.left,
+      top: rootBox.top,
+      right: rootBox.right,
+      bottom: rootBox.bottom,
+      width: rootBox.width,
+      height: rootBox.height,
+    };
     const rect = (element: Element): Rect => {
       const value = element.getBoundingClientRect();
       return {
@@ -576,6 +608,22 @@ async function auditSequencesRelationships(
         width: value.width,
         height: value.height,
       };
+    };
+    const rectFromEdges = (left: number, top: number, right: number, bottom: number): Rect => ({
+      left,
+      top,
+      right,
+      bottom,
+      width: Math.max(0, right - left),
+      height: Math.max(0, bottom - top),
+    });
+    const overflowFor = (subject: Rect, container: Rect, tolerance: number): LayoutOverflow | undefined => {
+      const overflow: LayoutOverflow = {};
+      if (subject.left < container.left - tolerance) overflow.left = container.left - subject.left;
+      if (subject.right > container.right + tolerance) overflow.right = subject.right - container.right;
+      if (subject.top < container.top - tolerance) overflow.top = container.top - subject.top;
+      if (subject.bottom > container.bottom + tolerance) overflow.bottom = subject.bottom - container.bottom;
+      return Object.keys(overflow).length ? overflow : undefined;
     };
     const selector = (element: Element): string => {
       if (element.id) return `#${CSS.escape(element.id)}`;
@@ -619,6 +667,12 @@ async function auditSequencesRelationships(
     const safe = Number.isFinite(cssSafe) && cssSafe > 0
       ? cssSafe
       : Math.round(Math.min(rootRect.width, rootRect.height) * 0.06);
+    const safeRect = rectFromEdges(
+      rootRect.left + safe,
+      rootRect.top + safe,
+      rootRect.right - safe,
+      rootRect.bottom - safe,
+    );
 
     // Camera-rig worlds are deliberately larger than the frame: content that
     // sits in a currently-unframed region is expected to be off screen, and
@@ -649,14 +703,20 @@ async function auditSequencesRelationships(
         value.bottom - (rootRect.bottom - safe),
       );
       if (overflow > 2) {
-        issues.push(issue(
+        issues.push({
+          ...issue(
           "important_safe_area",
           "warning",
           element,
           `Load-bearing content crosses the ${safe}px safe canvas inset by ${Math.round(overflow)}px.`,
           "Keep it in the .scene flow container; give it a .zone and widen the named layout track before wrapping or reducing type.",
           root,
-        ));
+          ),
+          rect: value,
+          containerRect: rootRect,
+          safeRect,
+          overflow: overflowFor(value, safeRect, 2),
+        });
       }
     }
 
@@ -1773,6 +1833,62 @@ const NEAR_BLANK_SCENE_HARD_SEC = 4;
 /** Blank scenes totalling this fraction of the film block publication. */
 const NEAR_BLANK_FILM_FRACTION = 0.3;
 
+function asLayoutRect(value: unknown): LayoutRect | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const rect = {
+    left: Number(raw.left),
+    top: Number(raw.top),
+    right: Number(raw.right),
+    bottom: Number(raw.bottom),
+    width: Number(raw.width),
+    height: Number(raw.height),
+  };
+  return Object.values(rect).every(Number.isFinite) ? rect : undefined;
+}
+
+function asLayoutOverflow(value: unknown): LayoutOverflow | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const overflow: LayoutOverflow = {};
+  for (const side of ["left", "right", "top", "bottom"] as const) {
+    const parsed = Number(raw[side]);
+    if (Number.isFinite(parsed)) overflow[side] = parsed;
+  }
+  return Object.keys(overflow).length ? overflow : undefined;
+}
+
+function unionLayoutRect(a: LayoutRect | undefined, b: LayoutRect | undefined): LayoutRect | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  const right = Math.max(a.right, b.right);
+  const bottom = Math.max(a.bottom, b.bottom);
+  return {
+    left,
+    top,
+    right,
+    bottom,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+function maxLayoutOverflow(
+  a: LayoutOverflow | undefined,
+  b: LayoutOverflow | undefined,
+): LayoutOverflow | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const overflow: LayoutOverflow = {};
+  for (const side of ["left", "right", "top", "bottom"] as const) {
+    const value = Math.max(a[side] ?? 0, b[side] ?? 0);
+    if (value > 0) overflow[side] = value;
+  }
+  return Object.keys(overflow).length ? overflow : undefined;
+}
+
 function normalizeHyperframesIssue(value: Record<string, unknown>): DirectLayoutIssue {
   const code = String(value.code ?? "layout_issue");
   // Keys quoted deliberately: these are HyperFrames finding codes, and the
@@ -1799,12 +1915,104 @@ function normalizeHyperframesIssue(value: Record<string, unknown>): DirectLayout
     selector: String(value.selector ?? "composition"),
     ...(value.containerSelector ? { containerSelector: String(value.containerSelector) } : {}),
     ...(value.text ? { text: String(value.text) } : {}),
+    ...(asLayoutRect(value.rect) ? { rect: asLayoutRect(value.rect) } : {}),
+    ...(asLayoutRect(value.containerRect) ? { containerRect: asLayoutRect(value.containerRect) } : {}),
+    ...(asLayoutOverflow(value.overflow) ? { overflow: asLayoutOverflow(value.overflow) } : {}),
     message: String(value.message ?? code),
     ...(scaffoldHints[code]
       ? { fixHint: scaffoldHints[code] }
       : value.fixHint ? { fixHint: String(value.fixHint) } : {}),
     source: "hyperframes",
   };
+}
+
+async function enrichRepairEvidence(
+  page: import("puppeteer-core").Page,
+  issues: DirectLayoutIssue[],
+): Promise<DirectLayoutIssue[]> {
+  if (!issues.length) return issues;
+  return page.evaluate((rawIssues: DirectLayoutIssue[]) => {
+    const root = document.querySelector<HTMLElement>("[data-composition-id][data-width][data-height]");
+    if (!root) return rawIssues;
+    const escapeCss = (value: string): string =>
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(value)
+        : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+    const escapeAttr = (value: string): string =>
+      value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const count = (selector: string): number => {
+      try {
+        return root.querySelectorAll(selector).length;
+      } catch {
+        return 0;
+      }
+    };
+    const scenePrefix = (scene: HTMLElement): string | undefined => {
+      const sceneId = scene.getAttribute("data-scene");
+      if (sceneId) return `[data-scene="${escapeAttr(sceneId)}"]`;
+      return scene.id ? `#${escapeCss(scene.id)}` : undefined;
+    };
+    const nthSegment = (element: Element): string => {
+      const tag = element.tagName.toLowerCase();
+      const parent = element.parentElement;
+      if (!parent) return tag;
+      const siblings = Array.from(parent.children).filter((child) => child.tagName === element.tagName);
+      return `${tag}:nth-of-type(${siblings.indexOf(element) + 1})`;
+    };
+    const structuralSelector = (element: Element, scene: HTMLElement | null): string | undefined => {
+      const stop = scene ?? root;
+      const prefix = scene ? scenePrefix(scene) : "[data-composition-id]";
+      if (!prefix) return undefined;
+      const parts: string[] = [];
+      for (let current: Element | null = element; current && current !== stop; current = current.parentElement) {
+        parts.unshift(nthSegment(current));
+      }
+      if (!parts.length) return prefix;
+      const selector = `${prefix} > ${parts.join(" > ")}`;
+      return count(selector) === 1 ? selector : undefined;
+    };
+    const repairSelectorFor = (element: Element, scene: HTMLElement | null): string | undefined => {
+      if (element.id) {
+        const selector = `#${escapeCss(element.id)}`;
+        if (count(selector) === 1) return selector;
+      }
+      const ownPart = element.getAttribute("data-part");
+      if (ownPart && scene) {
+        const prefix = scenePrefix(scene);
+        const selector = prefix
+          ? `${prefix} [data-part="${escapeAttr(ownPart)}"]`
+          : `[data-part="${escapeAttr(ownPart)}"]`;
+        if (count(selector) === 1) return selector;
+      }
+      return structuralSelector(element, scene);
+    };
+    const resolveElement = (selector: string): Element | null => {
+      if (!selector || selector === "composition") return null;
+      try {
+        return root.querySelector(selector);
+      } catch {
+        return null;
+      }
+    };
+    return rawIssues.map((issue) => {
+      const element = resolveElement(issue.selector);
+      if (!element) return issue;
+      const scene = element.closest<HTMLElement>("[data-scene]");
+      const partElement = element.closest<HTMLElement>("[data-part]");
+      const componentRoot = element.closest<HTMLElement>("[data-component][data-part]");
+      const repairSelector = repairSelectorFor(element, scene);
+      return {
+        ...issue,
+        ...(repairSelector ? { repairSelector } : {}),
+        ...(scene ? { sceneId: scene.getAttribute("data-scene") || scene.id || undefined } : {}),
+        ...(partElement ? { part: partElement.getAttribute("data-part") || undefined } : {}),
+        ...(componentRoot
+          ? { componentRootPart: componentRoot.getAttribute("data-part") || undefined }
+          : {}),
+        insideCameraWorld: Boolean(element.closest("[data-camera-world]")),
+      };
+    });
+  }, issues);
 }
 
 function collapseIssues(values: DirectLayoutIssue[]): DirectLayoutIssue[] {
@@ -1815,7 +2023,9 @@ function collapseIssues(values: DirectLayoutIssue[]): DirectLayoutIssue[] {
       value.code,
       value.severity,
       value.interactionId ?? "",
+      value.sceneId ?? "",
       value.selector,
+      value.repairSelector ?? "",
       value.containerSelector ?? "",
       value.text ?? "",
     ].join("|");
@@ -1832,6 +2042,11 @@ function collapseIssues(values: DirectLayoutIssue[]): DirectLayoutIssue[] {
     existing.firstSeen = Math.min(existing.firstSeen ?? value.time, value.time);
     existing.lastSeen = Math.max(existing.lastSeen ?? value.time, value.time);
     existing.occurrences = (existing.occurrences ?? 1) + 1;
+    existing.rect = unionLayoutRect(existing.rect, value.rect);
+    existing.containerRect = unionLayoutRect(existing.containerRect, value.containerRect);
+    existing.safeRect = unionLayoutRect(existing.safeRect, value.safeRect);
+    existing.peerRect = unionLayoutRect(existing.peerRect, value.peerRect);
+    existing.overflow = maxLayoutOverflow(existing.overflow, value.overflow);
   }
   return [...groups.values()].sort((a, b) => {
     const rank = (severity: LayoutSeverity) => severity === "error" ? 0 : severity === "warning" ? 1 : 2;
@@ -2207,6 +2422,7 @@ export async function inspectDirectComposition(
       const interactionAudit = await auditInteractions(page, interactionIntents, time);
       const hyperframesIssues = (hyperframes as Record<string, unknown>[])
         .map(normalizeHyperframesIssue);
+      const sequenceRelationshipIssues = await auditSequencesRelationships(page, time);
       // Content parked in a currently-unframed camera-world region is meant to
       // be off screen (clipped by the viewport); it is not a layout defect.
       const offWorldFlags = await page.evaluate((selectors: string[]) => {
@@ -2237,8 +2453,10 @@ export async function inspectDirectComposition(
         });
       }, hyperframesIssues.map((issue) => issue.selector));
       rawIssues.push(
-        ...hyperframesIssues.filter((_, index) => !offWorldFlags[index]),
-        ...await auditSequencesRelationships(page, time),
+        ...await enrichRepairEvidence(page, [
+          ...hyperframesIssues.filter((_, index) => !offWorldFlags[index]),
+          ...sequenceRelationshipIssues,
+        ]),
         ...await auditFocalParts(page, draft.storyboard, time),
         ...interactionAudit.issues,
       );

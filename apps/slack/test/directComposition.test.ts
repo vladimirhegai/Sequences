@@ -8,6 +8,8 @@ import {
 } from "@sequences/platform/providers";
 import {
   applyCompositionRepair,
+  applyDeterministicSourceRepairs,
+  addressedPartsForLayoutRepair,
   inferStoryboardPlanRequirements,
   injectLayoutIntentHints,
   normalizeWorldLayout,
@@ -24,6 +26,7 @@ import {
   stagnantPolishSignature,
   browserQualityPenalty,
   repairContrastAaIssues,
+  correctLayoutOverflow,
   correctSparseFraming,
   sourceRetryFeedbackForBrowserQa,
   StoryboardValidationError,
@@ -1686,6 +1689,161 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
     delete (issue as { framing?: unknown }).framing;
     const result = correctSparseFraming([cameraScene("lonely", "lonely")], qa([issue]));
     expect(result.corrected).toEqual([]);
+  });
+});
+
+describe("correctLayoutOverflow (browser-measured overflow repair)", () => {
+  const rect = (
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ): NonNullable<DirectLayoutIssue["rect"]> => ({
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+  });
+
+  const scene = (extra: Partial<DirectScene> = {}): DirectScene => ({
+    id: "one",
+    title: "One",
+    purpose: "Open",
+    startSec: 0,
+    durationSec: 3,
+    ...extra,
+  });
+
+  const qa = (issues: DirectLayoutIssue[]): DirectBrowserQaResult => ({
+    ok: true,
+    strictOk: false,
+    samples: [1],
+    issues,
+    errors: [],
+    warnings: [],
+  });
+
+  const overflowIssue = (overrides: Partial<DirectLayoutIssue> = {}): DirectLayoutIssue => ({
+    code: "canvas_overflow",
+    severity: "info",
+    time: 1,
+    selector: "#badge",
+    repairSelector: "#badge",
+    sceneId: "one",
+    part: "badge",
+    rect: rect(780, 100, 60, 30),
+    containerRect: rect(0, 0, 800, 600),
+    overflow: { right: 40 },
+    message: "Text extends outside the composition canvas.",
+    source: "hyperframes",
+    ...overrides,
+  });
+
+  it("emits a bounded overflow clamp repair for a unique non-camera target", () => {
+    const result = correctLayoutOverflow([scene()], qa([overflowIssue()]));
+    expect(result.corrected).toEqual(["one"]);
+    const repair = result.storyboard[0]!.layoutRepairs![0]!;
+    expect(repair.kind).toBe("overflow-clamp");
+    expect(repair.selector).toBe("#badge");
+    expect(repair.issueCode).toBe("canvas_overflow");
+    expect(repair.dx).toBeLessThan(0);
+    expect(Math.abs(repair.dx)).toBeLessThanOrEqual(80);
+    expect(repair.scale).toBe(1);
+    expect(result.storyboard[0]!.sentinelNormalizations?.[0]).toContain("layout-overflow-clamp");
+  });
+
+  it("skips camera, cut, interaction, and focal addressed parts", () => {
+    const storyboard = [scene({
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "pan",
+          toPart: "badge",
+          startSec: 0.4,
+          durationSec: 1,
+        }],
+      },
+    })];
+    expect(addressedPartsForLayoutRepair(storyboard).has("one\u0000badge")).toBe(true);
+    expect(correctLayoutOverflow(storyboard, qa([overflowIssue()])).corrected).toEqual([]);
+  });
+
+  it("skips repairs that require a composition-changing scale", () => {
+    const result = correctLayoutOverflow(
+      [scene()],
+      qa([overflowIssue({
+        rect: rect(-120, 80, 1100, 80),
+        overflow: { left: 120, right: 180 },
+      })]),
+    );
+    expect(result.corrected).toEqual([]);
+  });
+
+  it("injects exactly one idempotent layout repair style block", () => {
+    const draftValue = draft();
+    const storyboard: DirectScene[] = [{
+      ...draftValue.storyboard[0]!,
+      layoutRepairs: [{
+        version: 1,
+        id: "layout-hook-test",
+        kind: "overflow-clamp",
+        selector: "#hook-copy",
+        issueCode: "canvas_overflow",
+        dx: -24,
+        dy: 0,
+        scale: 0.96,
+        origin: "center center",
+        before: {
+          rect: rect(1850, 120, 160, 48),
+          safeRect: rect(8, 8, 1904, 1064),
+        },
+      }],
+    }, draftValue.storyboard[1]!];
+    const first = applyDeterministicSourceRepairs(
+      {
+        ...draftValue,
+        storyboard,
+        html: draftValue.html.replace(
+          "</head>",
+          '<style data-sequences-layout-repair>#old{translate:1px 1px}</style></head>',
+        ),
+      },
+      projectDir(),
+      storyboard,
+    );
+    const second = applyDeterministicSourceRepairs(first, projectDir(), storyboard);
+    expect(second.html.match(/data-sequences-layout-repair/g)).toHaveLength(1);
+    expect(second.html).toContain("#hook-copy{transform-origin:center center !important;");
+    expect(second.html).toContain("translate:-24px 0px !important;");
+    expect(second.html).toContain("scale:0.96 !important;");
+    expect(second.html).not.toContain("#old");
+  });
+
+  it("ignores malformed host-only layout repair metadata instead of throwing", () => {
+    const draftValue = draft();
+    const storyboard: DirectScene[] = [{
+      ...draftValue.storyboard[0]!,
+      layoutRepairs: [{
+        version: 1,
+        id: "layout-bad-shape",
+        kind: "overflow-clamp",
+        selector: "#hook-copy",
+        issueCode: "canvas_overflow",
+        dx: -12,
+        dy: 0,
+        scale: 1,
+        origin: "center center",
+      } as unknown as NonNullable<DirectScene["layoutRepairs"]>[number]],
+    }, draftValue.storyboard[1]!];
+    const repaired = applyDeterministicSourceRepairs(
+      { ...draftValue, storyboard },
+      projectDir(),
+      storyboard,
+    );
+    expect(repaired.html).not.toContain("data-sequences-layout-repair");
   });
 });
 

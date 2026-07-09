@@ -17,6 +17,7 @@ import {
   validateDirectComposition,
   type DirectCompositionDraft,
   type DirectScene,
+  type SceneLayoutRepairV1,
   type WorldLayoutCellV1,
 } from "./directComposition.ts";
 import {
@@ -2554,6 +2555,408 @@ export function correctSparseFraming(
   return corrected.length ? { storyboard: mutated, corrected } : { storyboard, corrected: [] };
 }
 
+const LAYOUT_REPAIR_TARGET_CODES = new Set(["canvas_overflow", "important_safe_area"]);
+const LAYOUT_REPAIR_KEY_SEPARATOR = "\u0000";
+const LAYOUT_REPAIR_CANVAS_GUARD_PX = 8;
+const LAYOUT_REPAIR_SCALE_FLOOR = 0.86;
+const LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION = 0.1;
+const LAYOUT_REPAIR_GOLDEN_RATIO = (1 + Math.sqrt(5)) / 2;
+const LAYOUT_REPAIR_GOLDEN_INSET = 1 / (LAYOUT_REPAIR_GOLDEN_RATIO * LAYOUT_REPAIR_GOLDEN_RATIO);
+
+type RepairRect = NonNullable<DirectLayoutIssue["rect"]>;
+type RepairOverflow = NonNullable<DirectLayoutIssue["overflow"]>;
+
+interface LayoutOverflowRepairCandidate {
+  sceneId: string;
+  selector: string;
+  issueCode: SceneLayoutRepairV1["issueCode"];
+  rect: RepairRect;
+  safeRect: RepairRect;
+  frameRect: RepairRect;
+  part?: string;
+  componentRootPart?: string;
+  issues: DirectLayoutIssue[];
+}
+
+function scenePartKey(sceneId: string, part: string): string {
+  return `${sceneId}${LAYOUT_REPAIR_KEY_SEPARATOR}${part}`;
+}
+
+export function addressedPartsForLayoutRepair(storyboard: DirectScene[]): Set<string> {
+  const addressed = new Set<string>();
+  for (const scene of storyboard) {
+    for (const move of scene.camera?.path ?? []) {
+      for (const part of [move.toPart, move.fromPart, move.focus?.part]) {
+        if (part) addressed.add(scenePartKey(scene.id, part));
+      }
+    }
+    if (scene.spatialIntent?.focalPart) {
+      addressed.add(scenePartKey(scene.id, scene.spatialIntent.focalPart));
+    }
+    for (const interaction of scene.interactions ?? []) {
+      for (const part of [interaction.targetPart, interaction.ripplePart, interaction.dragTargetPart]) {
+        if (part) addressed.add(scenePartKey(scene.id, part));
+      }
+    }
+  }
+  for (const cut of resolveCutPlan(storyboard).cuts) {
+    if (cut.focalPartOut) addressed.add(scenePartKey(cut.fromScene, cut.focalPartOut));
+    if (cut.focalPartIn) addressed.add(scenePartKey(cut.toScene, cut.focalPartIn));
+  }
+  return addressed;
+}
+
+function unionRepairRect(a: RepairRect, b: RepairRect): RepairRect {
+  const left = Math.min(a.left, b.left);
+  const top = Math.min(a.top, b.top);
+  const right = Math.max(a.right, b.right);
+  const bottom = Math.max(a.bottom, b.bottom);
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function intersectRepairRect(a: RepairRect, b: RepairRect): RepairRect | undefined {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.right, b.right);
+  const bottom = Math.min(a.bottom, b.bottom);
+  if (right <= left || bottom <= top) return undefined;
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function insetRepairRect(rect: RepairRect, inset: number): RepairRect | undefined {
+  const left = rect.left + inset;
+  const top = rect.top + inset;
+  const right = rect.right - inset;
+  const bottom = rect.bottom - inset;
+  if (right <= left || bottom <= top) return undefined;
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function roundRepairNumber(value: number, places = 3): number {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+function safeLayoutRepairSelector(selector: string): boolean {
+  if (!selector || selector.length > 360 || /[<{};\n\r]/.test(selector)) return false;
+  if (/^#[^\s>+~,[\]"'{};<>]+$/.test(selector)) return true;
+  return /^\[data-scene="[^"\\<>]+"\](?: \[data-part="[^"\\<>]+"\]|(?: > [a-z][\w:-]*:nth-of-type\([1-9]\d*\))+)$/
+    .test(selector);
+}
+
+function unsafeLayoutRepairPartName(value: string | undefined): boolean {
+  return Boolean(value && /(?:^|-)(?:cursor|ripple|bridge|runtime|actor)(?:-|$)/i.test(value));
+}
+
+function layoutSafeRectForIssue(issue: DirectLayoutIssue): RepairRect | undefined {
+  if (issue.code === "important_safe_area") {
+    return issue.safeRect ?? issue.containerRect;
+  }
+  if (issue.code === "canvas_overflow" && issue.containerRect) {
+    return insetRepairRect(issue.containerRect, LAYOUT_REPAIR_CANVAS_GUARD_PX);
+  }
+  return undefined;
+}
+
+function layoutRepairOverflowMagnitude(overflow: RepairOverflow | undefined): number {
+  return Math.max(overflow?.left ?? 0, overflow?.right ?? 0, overflow?.top ?? 0, overflow?.bottom ?? 0);
+}
+
+function chooseAxisCenter(
+  currentCenter: number,
+  scaledSize: number,
+  safeStart: number,
+  safeSize: number,
+  overflowBefore: boolean,
+  overflowAfter: boolean,
+): number {
+  const minCenter = safeStart + scaledSize / 2;
+  const maxCenter = safeStart + safeSize - scaledSize / 2;
+  if (maxCenter <= minCenter) return (minCenter + maxCenter) / 2;
+  const minimal = Math.min(maxCenter, Math.max(minCenter, currentCenter));
+  const slack = maxCenter - minCenter;
+  let golden = minimal;
+  if (overflowBefore && !overflowAfter) {
+    golden = minCenter + slack * LAYOUT_REPAIR_GOLDEN_INSET;
+  } else if (overflowAfter && !overflowBefore) {
+    golden = maxCenter - slack * LAYOUT_REPAIR_GOLDEN_INSET;
+  } else if (overflowBefore && overflowAfter) {
+    golden = safeStart + safeSize / 2;
+  }
+  const goldenDelta = golden - minimal;
+  const maxNudge = Math.min(24, slack * 0.08);
+  const nudge = Math.min(maxNudge, Math.max(-maxNudge, goldenDelta * 0.25));
+  return Math.min(maxCenter, Math.max(minCenter, minimal + nudge));
+}
+
+function layoutRepairCandidate(
+  candidate: LayoutOverflowRepairCandidate,
+): Omit<SceneLayoutRepairV1, "id"> | undefined {
+  const { rect, safeRect, frameRect } = candidate;
+  if (rect.width <= 0 || rect.height <= 0 || safeRect.width <= 0 || safeRect.height <= 0) {
+    return undefined;
+  }
+  const scale = Math.min(1, safeRect.width / rect.width, safeRect.height / rect.height);
+  if (!Number.isFinite(scale) || scale < LAYOUT_REPAIR_SCALE_FLOOR) return undefined;
+  const scaledWidth = rect.width * scale;
+  const scaledHeight = rect.height * scale;
+  if (scaledWidth > safeRect.width + 0.5 || scaledHeight > safeRect.height + 0.5) {
+    return undefined;
+  }
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const overflow = candidate.issues.reduce<RepairOverflow>((acc, issue) => ({
+    left: Math.max(acc.left ?? 0, issue.overflow?.left ?? 0),
+    right: Math.max(acc.right ?? 0, issue.overflow?.right ?? 0),
+    top: Math.max(acc.top ?? 0, issue.overflow?.top ?? 0),
+    bottom: Math.max(acc.bottom ?? 0, issue.overflow?.bottom ?? 0),
+  }), {});
+  const targetX = chooseAxisCenter(
+    centerX,
+    scaledWidth,
+    safeRect.left,
+    safeRect.width,
+    Boolean(overflow.left),
+    Boolean(overflow.right),
+  );
+  const targetY = chooseAxisCenter(
+    centerY,
+    scaledHeight,
+    safeRect.top,
+    safeRect.height,
+    Boolean(overflow.top),
+    Boolean(overflow.bottom),
+  );
+  const dx = roundRepairNumber(targetX - centerX, 2);
+  const dy = roundRepairNumber(targetY - centerY, 2);
+  const cappedX = frameRect.width * LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION;
+  const cappedY = frameRect.height * LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION;
+  if (Math.abs(dx) > cappedX || Math.abs(dy) > cappedY) return undefined;
+  const roundedScale = roundRepairNumber(scale, 3);
+  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && roundedScale > 0.999) return undefined;
+  return {
+    version: 1,
+    kind: "overflow-clamp",
+    selector: candidate.selector,
+    issueCode: candidate.issueCode,
+    dx,
+    dy,
+    scale: roundedScale,
+    origin: "center center",
+    before: {
+      rect: {
+        left: roundRepairNumber(rect.left, 2),
+        top: roundRepairNumber(rect.top, 2),
+        right: roundRepairNumber(rect.right, 2),
+        bottom: roundRepairNumber(rect.bottom, 2),
+        width: roundRepairNumber(rect.width, 2),
+        height: roundRepairNumber(rect.height, 2),
+      },
+      safeRect: {
+        left: roundRepairNumber(safeRect.left, 2),
+        top: roundRepairNumber(safeRect.top, 2),
+        right: roundRepairNumber(safeRect.right, 2),
+        bottom: roundRepairNumber(safeRect.bottom, 2),
+        width: roundRepairNumber(safeRect.width, 2),
+        height: roundRepairNumber(safeRect.height, 2),
+      },
+    },
+  };
+}
+
+function layoutRepairId(sceneId: string, selector: string, issueCode: string): string {
+  return `layout-${sceneId}-${createHash("sha1").update(`${issueCode}\0${selector}`).digest("hex").slice(0, 10)}`;
+}
+
+function layoutRepairGroups(
+  storyboard: DirectScene[],
+  browserQa: DirectBrowserQaResult,
+): LayoutOverflowRepairCandidate[] {
+  const addressed = addressedPartsForLayoutRepair(storyboard);
+  const groups = new Map<string, LayoutOverflowRepairCandidate>();
+  for (const issue of browserQa.issues ?? []) {
+    if (!LAYOUT_REPAIR_TARGET_CODES.has(issue.code)) continue;
+    if (!issue.sceneId || !issue.repairSelector || !issue.rect) continue;
+    if (!safeLayoutRepairSelector(issue.repairSelector)) continue;
+    if (issue.insideCameraWorld || issue.motionWindowOverlap) continue;
+    if (unsafeLayoutRepairPartName(issue.part) || unsafeLayoutRepairPartName(issue.componentRootPart)) {
+      continue;
+    }
+    if (
+      (issue.part && addressed.has(scenePartKey(issue.sceneId, issue.part))) ||
+      (issue.componentRootPart && addressed.has(scenePartKey(issue.sceneId, issue.componentRootPart)))
+    ) {
+      continue;
+    }
+    const safeRect = layoutSafeRectForIssue(issue);
+    const frameRect = issue.containerRect ?? safeRect;
+    if (!safeRect || !frameRect) continue;
+    const key = `${issue.sceneId}${LAYOUT_REPAIR_KEY_SEPARATOR}${issue.repairSelector}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        sceneId: issue.sceneId,
+        selector: issue.repairSelector,
+        issueCode: issue.code === "important_safe_area" ? "important_safe_area" : "canvas_overflow",
+        rect: issue.rect,
+        safeRect,
+        frameRect,
+        ...(issue.part ? { part: issue.part } : {}),
+        ...(issue.componentRootPart ? { componentRootPart: issue.componentRootPart } : {}),
+        issues: [issue],
+      });
+      continue;
+    }
+    existing.rect = unionRepairRect(existing.rect, issue.rect);
+    const nextSafe = intersectRepairRect(existing.safeRect, safeRect);
+    if (!nextSafe) {
+      groups.delete(key);
+      continue;
+    }
+    existing.safeRect = nextSafe;
+    existing.frameRect = unionRepairRect(existing.frameRect, frameRect);
+    existing.issues.push(issue);
+    if (issue.code === "important_safe_area") existing.issueCode = "important_safe_area";
+  }
+  return [...groups.values()].sort((a, b) => {
+    const scaleA = Math.min(1, a.safeRect.width / a.rect.width, a.safeRect.height / a.rect.height);
+    const scaleB = Math.min(1, b.safeRect.width / b.rect.width, b.safeRect.height / b.rect.height);
+    return scaleB - scaleA ||
+      layoutRepairOverflowMagnitude(b.issues[0]?.overflow) -
+        layoutRepairOverflowMagnitude(a.issues[0]?.overflow);
+  });
+}
+
+export function correctLayoutOverflow(
+  storyboard: DirectScene[],
+  browserQa: DirectBrowserQaResult,
+  options: { maxRepairs?: number } = {},
+): { storyboard: DirectScene[]; corrected: string[] } {
+  const repairs = layoutRepairGroups(storyboard, browserQa)
+    .flatMap((candidate) => {
+      const repair = layoutRepairCandidate(candidate);
+      return repair
+        ? [{
+            sceneId: candidate.sceneId,
+            repair: {
+              ...repair,
+              id: layoutRepairId(candidate.sceneId, candidate.selector, candidate.issueCode),
+            } satisfies SceneLayoutRepairV1,
+          }]
+        : [];
+    })
+    .slice(0, options.maxRepairs ?? Number.POSITIVE_INFINITY);
+  if (!repairs.length) return { storyboard, corrected: [] };
+
+  const byScene = new Map<string, SceneLayoutRepairV1[]>();
+  for (const { sceneId, repair } of repairs) {
+    const list = byScene.get(sceneId) ?? [];
+    list.push(repair);
+    byScene.set(sceneId, list);
+  }
+  const corrected: string[] = [];
+  const mutated = storyboard.map((scene) => {
+    const nextRepairs = byScene.get(scene.id);
+    if (!nextRepairs?.length) return scene;
+    corrected.push(scene.id);
+    const kept = (scene.layoutRepairs ?? []).filter((repair) =>
+      !nextRepairs.some((next) => next.id === repair.id)
+    );
+    const notes = new Set(scene.sentinelNormalizations ?? []);
+    for (const repair of nextRepairs) {
+      notes.add(
+        `layout-overflow-clamp: ${repair.issueCode} ${repair.selector} ` +
+          `translate ${repair.dx}px/${repair.dy}px scale ${repair.scale}`,
+      );
+    }
+    return {
+      ...scene,
+      layoutRepairs: [...kept, ...nextRepairs],
+      sentinelNormalizations: [...notes],
+    };
+  });
+  return { storyboard: mutated, corrected };
+}
+
+function formatLayoutRepairPx(value: number): string {
+  return `${Number.isInteger(value) ? value : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}px`;
+}
+
+function formatLayoutRepairScale(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function validLayoutRepairRect(
+  rect: SceneLayoutRepairV1["before"]["rect"] | undefined,
+): rect is SceneLayoutRepairV1["before"]["rect"] {
+  return Boolean(
+    rect &&
+      Number.isFinite(rect.left) &&
+      Number.isFinite(rect.top) &&
+      Number.isFinite(rect.right) &&
+      Number.isFinite(rect.bottom) &&
+      Number.isFinite(rect.width) &&
+      Number.isFinite(rect.height) &&
+      rect.width >= 0 &&
+      rect.height >= 0,
+  );
+}
+
+function layoutRepairStyleBlock(storyboard: DirectScene[]): string | undefined {
+  const rules = storyboard.flatMap((scene) =>
+    (scene.layoutRepairs ?? []).flatMap((repair) => {
+      if (
+        repair.version !== 1 ||
+        repair.kind !== "overflow-clamp" ||
+        (repair.issueCode !== "canvas_overflow" && repair.issueCode !== "important_safe_area") ||
+        !safeLayoutRepairSelector(repair.selector) ||
+        !Number.isFinite(repair.dx) ||
+        !Number.isFinite(repair.dy) ||
+        !Number.isFinite(repair.scale) ||
+        repair.origin !== "center center" ||
+        repair.scale <= 0 ||
+        repair.scale > 1.001 ||
+        !validLayoutRepairRect(repair.before?.rect) ||
+        !validLayoutRepairRect(repair.before?.safeRect)
+      ) {
+        return [];
+      }
+      const before = repair.before;
+      const comment = cssCommentSafe(
+        `layout-overflow-clamp scene=${scene.id} code=${repair.issueCode} ` +
+          `rect=${before.rect.left},${before.rect.top},${before.rect.width}x${before.rect.height} ` +
+          `safe=${before.safeRect.left},${before.safeRect.top},${before.safeRect.width}x${before.safeRect.height}`,
+      );
+      return [
+        `/* ${comment} */\n${repair.selector}{` +
+          `transform-origin:${repair.origin} !important;` +
+          `translate:${formatLayoutRepairPx(repair.dx)} ${formatLayoutRepairPx(repair.dy)} !important;` +
+          `scale:${formatLayoutRepairScale(repair.scale)} !important;` +
+          `}`,
+      ];
+    })
+  );
+  return rules.length
+    ? `<style data-sequences-layout-repair>\n${rules.join("\n")}\n</style>`
+    : undefined;
+}
+
+function injectLayoutRepairStyles(source: string, storyboard: DirectScene[]): { html: string; repairs: number } {
+  let html = source.replace(
+    /\n?\s*<style\b[^>]*\bdata-sequences-layout-repair\b[^>]*>[\s\S]*?<\/style>/gi,
+    "",
+  );
+  const style = layoutRepairStyleBlock(storyboard);
+  if (!style) return { html, repairs: 0 };
+  html = /<\/head>/i.test(html)
+    ? html.replace(/<\/head>/i, () => `${style}</head>`)
+    : `${style}\n${html}`;
+  return {
+    html,
+    repairs: storyboard.reduce((count, scene) => count + (scene.layoutRepairs?.length ?? 0), 0),
+  };
+}
+
 function decorativeLivenessName(value: string): boolean {
   return /(?:^|[#.\s_\[\]-])(?:accent-?)?(?:underline|rule|divider|hairline|bloom|glow|grain|vignette|keylight|atmosphere|ambient|decor(?:ation|ative)?|particle|spark|noise)(?:$|[#.\s_\[\]-])/i
     .test(value);
@@ -3610,6 +4013,17 @@ export function applyDeterministicSourceRepairs(
         html = html.slice(0, rootTag.index) + withClass +
           html.slice(rootTag.index + tag.length);
         process.stderr.write("[author] applied light-basis cinematography overrides\n");
+      }
+    }
+  }
+  {
+    const layoutRepairs = injectLayoutRepairStyles(html, lockedStoryboard ?? draft.storyboard);
+    if (layoutRepairs.html !== html) {
+      html = layoutRepairs.html;
+      if (layoutRepairs.repairs) {
+        process.stderr.write(
+          `[author] injected ${layoutRepairs.repairs} deterministic layout repair style rule(s)\n`,
+        );
       }
     }
   }
@@ -5960,7 +6374,7 @@ export async function repairStoryboardScenesForFindings(
   const repairSet = new Set(repairIds);
 
   const rawScene = (scene: DirectScene): Record<string, unknown> => {
-    const { sentinelNormalizations: _notes, ...rest } = scene;
+    const { sentinelNormalizations: _notes, layoutRepairs: _layoutRepairs, ...rest } = scene;
     return rest as unknown as Record<string, unknown>;
   };
   const prompt = [
@@ -6603,7 +7017,7 @@ export async function requestStoryboardPlan(
                     "<previous_storyboard_json>",
                     JSON.stringify(
                       lastRejectedPlan.map(
-                        ({ sentinelNormalizations: _notes, ...scene }) => scene,
+                        ({ sentinelNormalizations: _notes, layoutRepairs: _layoutRepairs, ...scene }) => scene,
                       ),
                     ),
                     "</previous_storyboard_json>",
@@ -7207,6 +7621,79 @@ export function browserQualityPenalty(
         ),
       0,
     );
+}
+
+const LAYOUT_REPAIR_SCORE_WEIGHTS: Record<string, number> = {
+  clipped_text: 4,
+  text_box_overflow: 4,
+  important_safe_area: 2,
+  container_overflow: 2,
+  canvas_overflow: 1,
+  content_overlap: 1,
+};
+
+function layoutRepairIssueScore(browserQa: DirectBrowserQaResult): number {
+  return (browserQa.issues ?? []).reduce(
+    (score, issue) => score + (LAYOUT_REPAIR_SCORE_WEIGHTS[issue.code] ?? 0),
+    0,
+  );
+}
+
+function layoutRepairTargetScore(browserQa: DirectBrowserQaResult): number {
+  return (browserQa.issues ?? []).reduce(
+    (score, issue) =>
+      score + (issue.code === "canvas_overflow" ? 1 : issue.code === "important_safe_area" ? 2 : 0),
+    0,
+  );
+}
+
+const LAYOUT_REPAIR_PROTECTED_CODES = new Set([
+  "clipped_text",
+  "text_box_overflow",
+  "content_overlap",
+  "container_overflow",
+  "important_safe_area",
+  "camera_framed_clipped",
+  "camera_framed_sparse",
+  "cut_degraded",
+]);
+
+function protectedLayoutIssueCounts(browserQa: DirectBrowserQaResult): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const issue of browserQa.issues ?? []) {
+    const key = issue.code.startsWith("interaction_")
+      ? "interaction_*"
+      : LAYOUT_REPAIR_PROTECTED_CODES.has(issue.code)
+        ? issue.code
+        : undefined;
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function protectedLayoutIssuesIncreased(
+  before: DirectBrowserQaResult,
+  after: DirectBrowserQaResult,
+): boolean {
+  const beforeCounts = protectedLayoutIssueCounts(before);
+  const afterCounts = protectedLayoutIssueCounts(after);
+  for (const [key, count] of afterCounts) {
+    if (count > (beforeCounts.get(key) ?? 0)) return true;
+  }
+  return false;
+}
+
+function hasNoNewDiagnostics(before: readonly string[], after: readonly string[]): boolean {
+  const remaining = new Map<string, number>();
+  for (const entry of before) remaining.set(entry, (remaining.get(entry) ?? 0) + 1);
+  for (const entry of after) {
+    const count = remaining.get(entry) ?? 0;
+    if (count <= 0) return false;
+    if (count === 1) remaining.delete(entry);
+    else remaining.set(entry, count - 1);
+  }
+  return true;
 }
 
 const SENTINEL_BLOCKING_BY_PREFIX = SENTINEL_CONTRACT.flatMap((row) =>
@@ -8170,7 +8657,7 @@ export function creationPrompt(args: {
         // not authoring instructions — keep them out of the paid prompt.
         JSON.stringify(
           args.lockedStoryboard.map(
-            ({ sentinelNormalizations: _normalizations, ...scene }) => scene,
+            ({ sentinelNormalizations: _normalizations, layoutRepairs: _layoutRepairs, ...scene }) => scene,
           ),
           null,
           2,
@@ -9571,6 +10058,88 @@ async function authorCompositionLoop(
               staticRepairWarnings = afterStaticWarnings;
             }
           }
+        }
+      }
+      if (
+        browserQa.ok &&
+        browserQa.issues?.some((issue) =>
+          issue.code === "canvas_overflow" || issue.code === "important_safe_area"
+        )
+      ) {
+        const attemptLayoutRepair = async (
+          maxRepairs?: number,
+        ): Promise<{ corrected: string[]; adopted: boolean }> => {
+          const overflowFix = correctLayoutOverflow(
+            draft.storyboard,
+            browserQa,
+            maxRepairs === undefined ? {} : { maxRepairs },
+          );
+          if (!overflowFix.corrected.length) return { corrected: [], adopted: false };
+          const candidate = applyDeterministicSourceRepairs(
+            { storyboard: overflowFix.storyboard, html: draft.html },
+            args.projectDir,
+            overflowFix.storyboard,
+          );
+          const candidateValidation = await validateDirectComposition(args.projectDir, candidate);
+          if (!candidateValidation.ok) {
+            process.stderr.write(
+              `[author] deterministic layout overflow repair failed static validation; ` +
+                `keeping the previous draft\n`,
+            );
+            return { corrected: overflowFix.corrected, adopted: false };
+          }
+          const candidateQa = await inspectDirectComposition(args.projectDir, candidate, {
+            captureGuide: false,
+          });
+          const afterStaticWarnings = [
+            ...candidateValidation.frameWarnings,
+            ...candidateValidation.motionWarnings,
+          ];
+          const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
+          const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
+          const beforeTarget = layoutRepairTargetScore(browserQa);
+          const afterTarget = layoutRepairTargetScore(candidateQa);
+          const beforeScore = layoutRepairIssueScore(browserQa);
+          const afterScore = layoutRepairIssueScore(candidateQa);
+          const protectedIncrease = protectedLayoutIssuesIncreased(browserQa, candidateQa);
+          const staticWarningsOk = hasNoNewDiagnostics(staticRepairWarnings, afterStaticWarnings);
+          const runtimeErrorsOk = hasNoNewDiagnostics(browserQa.errors ?? [], candidateQa.errors ?? []);
+          if (
+            !candidateQa.infraError &&
+            candidateQa.ok &&
+            afterTarget < beforeTarget &&
+            afterScore <= beforeScore &&
+            !protectedIncrease &&
+            afterPenalty <= beforePenalty &&
+            staticWarningsOk &&
+            runtimeErrorsOk
+          ) {
+            process.stderr.write(
+              `[author] deterministic layout overflow repair adjusted ` +
+                `${overflowFix.corrected.join(", ")}: target ${beforeTarget} -> ${afterTarget}, ` +
+                `layout score ${beforeScore} -> ${afterScore}, penalty ${beforePenalty} -> ${afterPenalty}\n`,
+            );
+            recordSentinelNormalization("layout-overflow-clamp", overflowFix.corrected.length);
+            summary.strategyChanges.push(`layout-overflow-clamp:${overflowFix.corrected.join(",")}`);
+            draft = candidate;
+            validation = candidateValidation;
+            browserQa = candidateQa;
+            staticRepairWarnings = afterStaticWarnings;
+            args = { ...args, lockedStoryboard: candidate.storyboard };
+            persistUpgradedStoryboard(args.projectDir, candidate.storyboard);
+            return { corrected: overflowFix.corrected, adopted: true };
+          }
+          process.stderr.write(
+            `[author] deterministic layout overflow repair did not clear cleanly ` +
+              `(target ${beforeTarget}->${afterTarget}, layout score ${beforeScore}->${afterScore}, ` +
+              `protectedIncrease=${protectedIncrease}, penalty ${beforePenalty}->${afterPenalty}); ` +
+              `keeping the previous draft\n`,
+          );
+          return { corrected: overflowFix.corrected, adopted: false };
+        };
+        const batch = await attemptLayoutRepair();
+        if (!batch.adopted && batch.corrected.length > 1) {
+          await attemptLayoutRepair(1);
         }
       }
       // Camera-sparse auto-framing (L2-at-L4): a landing the browser measured as
