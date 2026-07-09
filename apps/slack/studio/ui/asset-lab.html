@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sequences · Asset Lab</title>
+<style>
+  :root {
+    --lab-bg: #0b0d11;
+    --lab-panel: #12151c;
+    --lab-edge: rgba(255, 255, 255, 0.08);
+    --lab-text: #e8ecf3;
+    --lab-muted: #8b95a6;
+    --lab-accent: #6ea8ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+    background: var(--lab-bg);
+    color: var(--lab-text);
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--lab-edge);
+  }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: 0.02em; }
+  header h1 span { color: var(--lab-muted); font-weight: 400; }
+  .theme-row { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .theme-row label { color: var(--lab-muted); font-size: 12px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  nav {
+    width: 220px;
+    border-right: 1px solid var(--lab-edge);
+    padding: 12px;
+    overflow-y: auto;
+  }
+  nav h2, aside h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--lab-muted);
+    margin: 0 0 8px;
+  }
+  .asset-item {
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .asset-item:hover { background: rgba(255, 255, 255, 0.04); }
+  .asset-item.active { border-color: var(--lab-accent); background: rgba(110, 168, 255, 0.08); }
+  .asset-item .t { font-weight: 600; }
+  .asset-item .f { color: var(--lab-muted); font-size: 11px; }
+  #stage-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #stage {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    margin: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--lab-edge);
+    background:
+      radial-gradient(80% 90% at 50% 10%, rgba(255, 255, 255, 0.03), transparent 60%),
+      var(--canvas, #0a0c10);
+    position: relative;
+    overflow: hidden;
+  }
+  #stage-note {
+    text-align: center;
+    color: var(--lab-muted);
+    font-size: 12px;
+    padding: 0 16px 12px;
+    min-height: 18px;
+  }
+  aside {
+    width: 320px;
+    border-left: 1px solid var(--lab-edge);
+    padding: 14px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .panel { display: flex; flex-direction: column; gap: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--lab-muted); display: flex; justify-content: space-between; }
+  .field label b { color: var(--lab-text); font-weight: 600; }
+  input, select, button {
+    font: inherit;
+    color: var(--lab-text);
+    background: var(--lab-panel);
+    border: 1px solid var(--lab-edge);
+    border-radius: 8px;
+    padding: 6px 8px;
+  }
+  input[type="range"] { padding: 0; accent-color: var(--lab-accent); }
+  input[type="color"] { padding: 2px; height: 32px; width: 100%; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { flex: 1; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--lab-accent); }
+  button.small { flex: 0 0 auto; font-size: 11px; padding: 5px 8px; }
+  .anim-btn { text-align: left; }
+  .anim-btn .p { display: block; color: var(--lab-muted); font-size: 11px; }
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--lab-edge);
+    color: var(--lab-muted);
+  }
+  .badge.ok { color: #5ce6a8; border-color: rgba(92, 230, 168, 0.4); }
+  .badge.warn { color: #f0b429; border-color: rgba(240, 180, 41, 0.4); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Asset Lab <span>· pre-built parametric assets · spring motion · morph preview</span></h1>
+  <div class="theme-row">
+    <label>Brand theme</label>
+    <select id="theme-select"></select>
+    <label>Accent</label>
+    <input type="color" id="theme-accent" style="width:44px" />
+  </div>
+</header>
+<main>
+  <nav>
+    <h2>Assets</h2>
+    <div id="asset-list"></div>
+  </nav>
+  <div id="stage-wrap">
+    <div id="stage"></div>
+    <div id="stage-note"></div>
+  </div>
+  <aside>
+    <div class="panel">
+      <h2>Params</h2>
+      <div id="params" class="panel"></div>
+    </div>
+    <div class="panel">
+      <h2>Animations <span class="badge">spring physics</span></h2>
+      <div id="animations" class="panel"></div>
+    </div>
+    <div class="panel">
+      <h2>Morph transition</h2>
+      <div class="field">
+        <label>Target asset <span id="rhyme-badge"></span></label>
+        <div class="row">
+          <select id="morph-target"></select>
+          <button class="small" id="morph-go">Morph</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</main>
+<script>
+"use strict";
+
+const THEMES = {
+  Midnight: { canvas: "#0a0c10", surface: "#161b24", surface2: "#1d2430", text: "#edf0f6", muted: "#9aa5b4", accent: "#6ea8ff" },
+  Ember:    { canvas: "#120d0a", surface: "#211712", surface2: "#2b1e17", text: "#f6efe9", muted: "#b4a49a", accent: "#ff8a5c" },
+  Mint:     { canvas: "#0a100e", surface: "#14211c", surface2: "#1a2b24", text: "#eaf6f0", muted: "#9ab4a8", accent: "#5ce6a8" },
+  Paper:    { canvas: "#f2f0ec", surface: "#ffffff", surface2: "#f7f6f3", text: "#1c1e22", muted: "#6b7280", accent: "#4c6fff" },
+};
+const FAMILY_GROUP = { pill: "pill-bar", bar: "pill-bar", card: "ccw", circle: "ccw", window: "ccw" };
+
+const stage = document.getElementById("stage");
+const stageNote = document.getElementById("stage-note");
+const state = { assets: [], morph: null, current: null, params: {}, instance: null, animating: false };
+
+function applyTheme(name, accentOverride) {
+  const theme = THEMES[name] ?? THEMES.Midnight;
+  const accent = accentOverride || theme.accent;
+  const vars = {
+    "--canvas": theme.canvas, "--surface": theme.surface, "--surface-2": theme.surface2,
+    "--text": theme.text, "--muted": theme.muted, "--accent": accent,
+    "--accent-text": "#0b0d11", "--cinema-radius": "14px", "--cinema-edge": "rgba(255,255,255,0.09)",
+  };
+  for (const [key, value] of Object.entries(vars)) stage.style.setProperty(key, value);
+  document.getElementById("theme-accent").value = accent;
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body
+    ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+    : undefined);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+
+function ensureStyle(instance) {
+  let tag = document.getElementById(instance.styleId);
+  if (!tag) {
+    tag = document.createElement("style");
+    tag.id = instance.styleId;
+    document.head.appendChild(tag);
+  }
+  tag.textContent = instance.style;
+}
+
+async function renderCurrent() {
+  const instance = await api("/api/render", { id: state.current.id, params: state.params, partId: "preview" });
+  state.instance = instance;
+  ensureStyle(instance);
+  stage.innerHTML = instance.markup;
+  stageNote.textContent = instance.notes.length ? "governance: " + instance.notes.join(" · ") : "";
+}
+
+function rootEl() {
+  return stage.querySelector("[data-asset]");
+}
+
+function playAnimation(compiled) {
+  const el = rootEl();
+  if (!el || state.animating) return;
+  state.animating = true;
+  const anim = el.animate([compiled.from, compiled.to], {
+    duration: compiled.durationMs,
+    easing: compiled.easing,
+    fill: "forwards",
+    direction: compiled.yoyo ? "alternate" : "normal",
+    iterations: compiled.yoyo ? 2 : 1,
+  });
+  anim.onfinish = () => setTimeout(() => { anim.cancel(); state.animating = false; }, 600);
+  anim.oncancel = () => { state.animating = false; };
+}
+
+function buildParams() {
+  const host = document.getElementById("params");
+  host.innerHTML = "";
+  for (const spec of state.current.params) {
+    const field = document.createElement("div");
+    field.className = "field";
+    const label = document.createElement("label");
+    label.innerHTML = `<b>${spec.name}</b><span>${spec.description}</span>`;
+    field.appendChild(label);
+    const current = state.params[spec.name] ?? spec.default;
+    let input;
+    if (spec.kind === "color") {
+      const row = document.createElement("div");
+      row.className = "row";
+      input = document.createElement("input");
+      input.type = "color";
+      if (/^#[0-9a-f]{6}$/i.test(String(current))) input.value = String(current);
+      input.oninput = () => setParam(spec.name, input.value);
+      const brand = document.createElement("button");
+      brand.className = "small";
+      brand.textContent = "brand";
+      brand.title = "Reset to var(--accent) — follow the theme";
+      brand.onclick = () => setParam(spec.name, "var(--accent)");
+      row.append(input, brand);
+      field.appendChild(row);
+    } else if (spec.kind === "number") {
+      const row = document.createElement("div");
+      row.className = "row";
+      input = document.createElement("input");
+      input.type = "range";
+      input.min = spec.min ?? 0;
+      input.max = spec.max ?? 100;
+      input.value = Number(current);
+      const out = document.createElement("span");
+      out.style.cssText = "flex:0 0 44px;text-align:right;color:var(--lab-muted)";
+      out.textContent = input.value + (spec.unit || "");
+      input.oninput = () => { out.textContent = input.value + (spec.unit || ""); setParam(spec.name, Number(input.value)); };
+      row.append(input, out);
+      field.appendChild(row);
+    } else if (spec.kind === "enum") {
+      input = document.createElement("select");
+      for (const option of spec.options) {
+        const el = document.createElement("option");
+        el.value = option;
+        el.textContent = option;
+        el.selected = option === current;
+        input.appendChild(el);
+      }
+      input.onchange = () => setParam(spec.name, input.value);
+      field.appendChild(input);
+    } else {
+      input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = spec.maxChars ?? 64;
+      input.value = String(current);
+      input.oninput = () => setParam(spec.name, input.value);
+      field.appendChild(input);
+    }
+    host.appendChild(field);
+  }
+}
+
+let renderTimer;
+function setParam(name, value) {
+  state.params[name] = value;
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => renderCurrent().catch(showError), 140);
+}
+
+function buildAnimations() {
+  const host = document.getElementById("animations");
+  host.innerHTML = "";
+  for (const compiled of state.instance.animations) {
+    const btn = document.createElement("button");
+    btn.className = "anim-btn";
+    btn.innerHTML = `<b>${compiled.name}</b> <span class="p">${compiled.purpose} · ${compiled.durationMs}ms · ζ=${compiled.spring.dampingRatio}</span>`;
+    btn.onclick = () => playAnimation(compiled);
+    host.appendChild(btn);
+  }
+}
+
+function buildMorphTargets() {
+  const select = document.getElementById("morph-target");
+  select.innerHTML = "";
+  for (const asset of state.assets) {
+    const option = document.createElement("option");
+    option.value = asset.id;
+    option.textContent = asset.id === state.current.id ? `${asset.title} (defaults)` : asset.title;
+    select.appendChild(option);
+  }
+  select.onchange = updateRhymeBadge;
+  updateRhymeBadge();
+}
+
+function updateRhymeBadge() {
+  const target = state.assets.find((asset) => asset.id === document.getElementById("morph-target").value);
+  const badge = document.getElementById("rhyme-badge");
+  if (!target) { badge.textContent = ""; return; }
+  const rhymes = FAMILY_GROUP[state.current.family] === FAMILY_GROUP[target.family];
+  badge.className = "badge " + (rhymes ? "ok" : "warn");
+  badge.textContent = rhymes
+    ? `rhyme ✓ ${state.current.family}→${target.family}`
+    : `cross-family — would degrade`;
+}
+
+async function morphTo(targetId) {
+  const outgoing = rootEl();
+  if (!outgoing || state.animating) return;
+  const target = state.assets.find((asset) => asset.id === targetId);
+  const incoming = await api("/api/render", { id: targetId, partId: "preview" });
+  ensureStyle(incoming);
+  const fromRect = outgoing.getBoundingClientRect();
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:absolute;inset:0;display:grid;place-items:center;pointer-events:none";
+  holder.innerHTML = incoming.markup;
+  stage.appendChild(holder);
+  const incomingEl = holder.firstElementChild;
+  incomingEl.style.opacity = "0";
+  const toRect = incomingEl.getBoundingClientRect();
+  // FLIP: each side plays the other's geometry, one shared spring gesture.
+  const dx = (fromRect.left + fromRect.width / 2) - (toRect.left + toRect.width / 2);
+  const dy = (fromRect.top + fromRect.height / 2) - (toRect.top + toRect.height / 2);
+  const sx = fromRect.width / toRect.width;
+  const sy = fromRect.height / toRect.height;
+  const timing = { duration: state.morph.durationMs, easing: state.morph.easing, fill: "forwards" };
+  state.animating = true;
+  outgoing.animate(
+    [
+      { transform: "translate(0,0) scale(1)", opacity: 1 },
+      { transform: `translate(${-dx}px,${-dy}px) scale(${1 / sx},${1 / sy})`, opacity: 0 },
+    ],
+    timing,
+  );
+  incomingEl.style.opacity = "";
+  const flip = incomingEl.animate(
+    [
+      { transform: `translate(${dx}px,${dy}px) scale(${sx},${sy})`, opacity: 0 },
+      { transform: "translate(0,0) scale(1)", opacity: 1 },
+    ],
+    timing,
+  );
+  flip.onfinish = () => {
+    state.animating = false;
+    state.current = target;
+    state.params = {};
+    state.instance = incoming;
+    stage.innerHTML = incoming.markup;
+    buildParams();
+    buildAnimations();
+    buildMorphTargets();
+    highlightList();
+  };
+}
+
+function highlightList() {
+  document.querySelectorAll(".asset-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.id === state.current.id);
+  });
+}
+
+async function selectAsset(asset) {
+  state.current = asset;
+  state.params = {};
+  await renderCurrent();
+  buildParams();
+  buildAnimations();
+  buildMorphTargets();
+  highlightList();
+}
+
+function showError(error) {
+  stageNote.textContent = "⚠ " + (error && error.message ? error.message : error);
+}
+
+async function boot() {
+  const themeSelect = document.getElementById("theme-select");
+  for (const name of Object.keys(THEMES)) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    themeSelect.appendChild(option);
+  }
+  themeSelect.onchange = () => { applyTheme(themeSelect.value); renderCurrent().catch(showError); };
+  document.getElementById("theme-accent").oninput = (event) =>
+    applyTheme(themeSelect.value, event.target.value);
+  applyTheme("Midnight");
+
+  const data = await api("/api/assets");
+  state.assets = data.assets;
+  state.morph = data.morph;
+  const list = document.getElementById("asset-list");
+  for (const asset of state.assets) {
+    const item = document.createElement("div");
+    item.className = "asset-item";
+    item.dataset.id = asset.id;
+    item.innerHTML = `<div class="t">${asset.title}</div><div class="f">${asset.family} · ${asset.animations.length} animations</div>`;
+    item.onclick = () => selectAsset(asset).catch(showError);
+    list.appendChild(item);
+  }
+  document.getElementById("morph-go").onclick = () =>
+    morphTo(document.getElementById("morph-target").value).catch(showError);
+  if (state.assets.length) await selectAsset(state.assets[0]);
+}
+
+boot().catch(showError);
+</script>
+</body>
+</html>

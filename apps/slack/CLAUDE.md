@@ -148,6 +148,45 @@ persist under the workspace's `refs/` (never exported). Canvas + agent seams are
 in [studio/INTEGRATION.md](studio/INTEGRATION.md). The recipe path stays
 degrade-never-veto; `SLACK_SEQUENCES_RECIPES=0` remains the kill switch.
 
+## Pre-built assets + `/sequences asset` (2026-07-09 — canonical doc: [ASSETS.md](ASSETS.md))
+
+Designer-grade **parametric assets** replace model-drawn hero visuals:
+`src/engine/assetContract.ts` (typed color/number/text/enum params entering
+the DOM only as root custom properties; invokable animations eased by real
+spring physics from `src/engine/motionSpring.ts`; silhouette rhyme families
+aligned with the cut contract) + the library in `src/engine/assets/` (one
+`defineAsset` file per asset; example `glass-metric`). **Decision: assets are
+tweaked-prebuilt, never model-generated** — models may declare `asset-<id>`
+kinds on the plugin rails (behind `SLACK_SEQUENCES_ASSETS=1`, **default OFF**
+until a paid probe) but can never author or edit asset internals. Operator
+webview: `npm run assets` → the Asset Lab on `http://127.0.0.1:4322` (never
+Railway). NOT built yet: the in-film asset-animation runtime. Brand intake:
+**`/sequences asset`** opens a modal (`file_input` screenshots + notes) →
+`src/assetBrief.ts` extracts a palette deterministically (chromium canvas
+sampling, no model), stores ONE brief per channel in
+`.data/asset-briefs.json`, posts an asset-kit preview PNG, and every later
+`/sequences` create in that channel folds the brief into its context
+(`/sequences asset clear` forgets). Requires the bot `files:read` scope —
+**manifest.json changed 2026-07-09 → reinstall + refresh `SLACK_BOT_TOKEN`.**
+Duration policy (2026-07-09): no-length creates default to ~24s
+(`DEFAULT_TARGET_LENGTH_SEC`), the modal offers 20/25/30/45/60, and duration
+lives in the TEMPLATE, never a gate — the storyboard prompt always carries a
+host-computed narrative/duration scaffold (`storyboardShapeScaffold` over the
+typed `STORYBOARD_SHAPES` segments, scaled to the target; deterministic
+keyword pick when the light-model hint is off). **There is deliberately no
+duration veto: a time miss must never burn an attempt** (storyboard cache
+contract v19).
+
+## Live-probe policy — fix the attempt before continuing
+
+Owner mandate (2026-07-09): the shipped product must publish with the
+minimum possible attempts. When a live probe (or any paid create) burns an
+attempt or falls back and the root cause is NOT architectural: pause the
+current task, fix it deterministically (SENTINEL.md placement tree — usually
+an L2 normalizer), add the regression test, log one row in
+[PROBE_LOG.md](PROBE_LOG.md), then resume. Architectural causes: log +
+park in ROADMAP instead. Never loosen a gate as the "fix".
+
 ## The two bots
 
 This app runs **two distinct agents**. Keep them straight:
@@ -599,9 +638,10 @@ create/revise DOES get rendered temporal evidence: the temporal judge inside
 browser QA (see above). Typed cuts and cinematography-kit injection are proven both by
 the fixture and by a paid OpenRouter live-authoring smoke (2026-07-01): the
 planner chose sensible cut styles and the author adopted kit material classes
-unprompted. Not built yet: Slack screenshot ingestion,
-registry source approval/materialization + in-Slack audition, component
-sub-agents.
+unprompted. Not built yet: registry source approval/materialization +
+in-Slack audition, component sub-agents, and the in-film asset-animation
+runtime (see ASSETS.md). Slack screenshot ingestion SHIPPED 2026-07-09 as
+`/sequences asset` (see below).
 
 Live create/revise now also runs a static `motionDensity.ts` liveness pass for
 10s+, 3+ shot films. It classifies scene starts/cuts, authored GSAP beats, and

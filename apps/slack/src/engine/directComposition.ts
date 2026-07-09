@@ -84,6 +84,11 @@ import {
   validatePluginContract,
   type PluginDeclarationV1,
 } from "./pluginContract.ts";
+import {
+  ASSET_RUNTIME_FILE,
+  assetRuntimeSource,
+  validateAssetContract,
+} from "./assetRuntime.ts";
 import { validateCompositionAgainstFrame } from "./frameValidation.ts";
 import { auditKitMarkupCompleteness } from "./kitMarkupAudit.ts";
 import {
@@ -600,6 +605,11 @@ export async function validateDirectComposition(
   // like recipes, these errors are host-plumbing self-checks.
   const pluginValidation = validatePluginContract(html, normalized.scenes);
   errors.push(...pluginValidation.errors);
+  // Asset spring-animation island/runtime self-check (assetRuntime.ts) —
+  // host plumbing exactly like recipes/plugins; stands down when the assets
+  // flag is off.
+  const assetValidation = validateAssetContract(html, normalized.scenes);
+  errors.push(...assetValidation.errors);
   // Bind failures abort the whole browser compile behind an opaque timeout;
   // re-run the runtimes' bind queries against a parsed DOM here so they
   // surface as named findings the repair loop can act on.
@@ -641,6 +651,7 @@ export async function validateDirectComposition(
       ref !== COMPONENT_RUNTIME_FILE &&
       ref !== TIME_RUNTIME_FILE &&
       ref !== FX_RUNTIME_FILE &&
+      ref !== ASSET_RUNTIME_FILE &&
       !fs.existsSync(resolved)
     ) {
       const staged = path.resolve(projectDir, ref);
@@ -737,6 +748,11 @@ function copyRuntimeAndAssets(projectDir: string, targetDir: string): void {
   fs.writeFileSync(
     path.join(targetDir, FX_RUNTIME_FILE),
     fxRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(targetDir, ASSET_RUNTIME_FILE),
+    assetRuntimeSource(),
     "utf8",
   );
   const sourceAssets = path.join(projectDir, "assets");
@@ -1034,6 +1050,10 @@ export async function commitDirectComposition(
     path.join(target, FX_RUNTIME_FILE),
     path.join(checkpoint, FX_RUNTIME_FILE),
   );
+  fs.copyFileSync(
+    path.join(target, ASSET_RUNTIME_FILE),
+    path.join(checkpoint, ASSET_RUNTIME_FILE),
+  );
   fs.cpSync(path.join(target, "qa"), path.join(checkpoint, "qa"), { recursive: true });
   return { manifest, validation };
 }
@@ -1058,6 +1078,7 @@ export function undoDirectComposition(projectDir: string): boolean {
     COMPONENT_RUNTIME_FILE,
     TIME_RUNTIME_FILE,
     FX_RUNTIME_FILE,
+    ASSET_RUNTIME_FILE,
   ]) {
     const source = path.join(checkpoint, sidecar);
     const destination = path.join(target, sidecar);

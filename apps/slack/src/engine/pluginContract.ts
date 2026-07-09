@@ -32,6 +32,9 @@
  * repair passes and the shared planning cache stay byte-identical.
  */
 import type { DirectScene } from "./directComposition.ts";
+import { assetPluginSpecs } from "./assetContract.ts";
+import { ASSET_LIBRARY } from "./assets/index.ts";
+import { assetsEnabled } from "./sentinelFlags.ts";
 import { diveLegCap, type CameraMoveIntentV1 } from "./cameraContract.ts";
 import {
   COMPONENT_KINDS,
@@ -41,6 +44,7 @@ import {
 import {
   cascadeOffsets,
   createSeededRandom,
+  entranceAnchorSec,
   gridWrapperStyle,
   stackWrapperStyle,
   type SeededRandom,
@@ -182,18 +186,10 @@ function component(
 
 /** Entrance anchor: shortly after the scene opens, scaled to short scenes —
  * or, when the camera only reaches the unit's station later, just before the
- * camera settles there. The delay is capped at 60% of the scene (the pacing
- * gate's introduction deadline) and always leaves ≥1.2s of beat room. */
+ * camera settles there. Shared arithmetic (`entranceAnchorSec` in
+ * pluginKernel.ts) so asset units anchor identically. */
 function entranceSec(ctx: PluginLowerContext): number {
-  const base = ctx.startSec + clampSec(ctx.durationSec * 0.12, 0.2, 0.6);
-  if (ctx.arrivalSec === undefined) return base;
-  const introductionCap = ctx.startSec + ctx.durationSec * 0.6;
-  const beatRoomCap = ctx.startSec + ctx.durationSec - 1.2;
-  return round(clampSec(
-    Math.max(base, ctx.arrivalSec - 0.2),
-    base,
-    Math.max(base, Math.min(introductionCap, beatRoomCap)),
-  ));
+  return entranceAnchorSec(ctx);
 }
 
 /**
@@ -660,6 +656,16 @@ export const PLUGIN_CATALOG: PluginSpec[] = [
     },
   },
 ];
+
+/* Pre-built asset library (assetContract.ts, ASSETS.md): each asset rides
+ * these rails as an `asset-<id>` kind — same governance, same budget, same
+ * strip-and-reinject injection — so the planner can declare but never draw
+ * one. Flag-gated OFF until a live probe proves the vocabulary
+ * (`SLACK_SEQUENCES_ASSETS=1`); the Asset Lab reads the library directly and
+ * ignores this flag. */
+if (assetsEnabled()) {
+  PLUGIN_CATALOG.push(...assetPluginSpecs(ASSET_LIBRARY));
+}
 
 const CATALOG_BY_KIND = new Map(PLUGIN_CATALOG.map((spec) => [spec.kind, spec]));
 

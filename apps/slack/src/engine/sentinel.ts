@@ -672,6 +672,26 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "plugin-reconcile, plugin-inject.",
   },
   {
+    id: "normalize.asset-lower",
+    group: "plugins",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/assetRuntime.test.ts",
+    addedBecause:
+      "2026-07-09 asset animation runtime (ASSETS.md): each declared " +
+      "asset-<id> unit lowers to ONE internal `asset` component (host-only " +
+      "kind — normalizeStoryboardComponents rejects it from models) plus " +
+      "host-derived typed `animate` beats (the asset's trigger:enter " +
+      "animation at the shared entrance anchor, then each trigger:payoff in " +
+      "sequence), so pacing/motion-density/moments/complexity judge the " +
+      "spring choreography like any other beat while " +
+      "applyDeterministicSourceRepairs injects the sequences-assets island + " +
+      "runtime + compile call from the SAME resolved timing. Kill switch " +
+      "SLACK_SEQUENCES_ASSETS. Telemetry tag: asset-inject.",
+  },
+  {
     id: "normalize.kit-chart-complete",
     group: "markup-audit",
     layer: "normalize",
@@ -822,6 +842,25 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "applyDeterministicSourceRepairs, before component-binding " +
       "reconciliation), so these codes are reachable only if the injection " +
       "seam breaks. Never a routine authoring finding; no prompt prose.",
+  },
+  {
+    id: "assets.contract",
+    group: "plugins",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["asset_island_missing", "asset_island_stale", "asset_runtime_missing"],
+    promptCostChars: 0,
+    test: "test/assetRuntime.test.ts",
+    addedBecause:
+      "2026-07-09 asset animation runtime (ASSETS.md): validateAssetContract " +
+      "is a host-plumbing self-check (the validatePluginContract disposition) " +
+      "— the asset plugin lowering emits typed `animate` beats and the host " +
+      "injects the sequences-assets island + sequences-assets.v1.js + compile " +
+      "call itself (applyDeterministicSourceRepairs, telemetry tag " +
+      "asset-inject, behind SLACK_SEQUENCES_ASSETS), so these codes are " +
+      "reachable only if the injection seam breaks. Stands down when the " +
+      "assets flag is off (animate beats then no-op in the components " +
+      "runtime). Never a routine authoring finding; no prompt prose.",
   },
   {
     id: "camera.energy",
@@ -1159,6 +1198,7 @@ export const FINDING_SOURCE_FILES: readonly string[] = [
   "kitMarkupAudit.ts",
   "recipeContract.ts",
   "pluginContract.ts",
+  "assetRuntime.ts",
   "frameValidation.ts",
   "layoutInspector.ts",
   "directComposition.ts",

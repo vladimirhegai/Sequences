@@ -37,6 +37,20 @@ body {
   box-sizing: border-box;
 }
 
+/* Pre-built asset unit roots (assetContract.ts): each asset's LOOK lives in
+ * its own library stylesheet; the kit only guarantees the root behaves as one
+ * self-contained unit inside any station or flex/grid wrapper. */
+.asset {
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+}
+.asset *,
+.asset *::before,
+.asset *::after {
+  box-sizing: border-box;
+}
+
 /* ── shared atoms ─────────────────────────────────────────────────────── */
 
 /* Generic row/list entry used by sidebar, menus, palettes, tabs, lists. */

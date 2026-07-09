@@ -17,6 +17,7 @@
     "storyboard:probe": "tsx scripts/storyboardProbe.ts",
     "sentinel:report": "tsx scripts/sentinelReport.ts",
     "studio": "tsx studio/server.ts",
+    "assets": "tsx studio/assetLab.ts",
     "studio:golden": "tsx studio/selfCheck.ts --recipe last-word-roulette --export",
     "studio:canvas": "tsx studio/canvasSelfCheck.ts",
     "capabilities:sync": "tsx scripts/syncCapabilityIndex.ts",

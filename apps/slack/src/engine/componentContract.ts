@@ -71,7 +71,8 @@ export type ComponentKind =
   | "terminal"
   | "tabs"
   | "avatar-stack"
-  | "headline";
+  | "headline"
+  | "asset";
 
 export type ComponentBeatKind =
   | "type"
@@ -87,7 +88,8 @@ export type ComponentBeatKind =
   | "stream"
   | "highlight"
   | "morph"
-  | "swap";
+  | "swap"
+  | "animate";
 
 /** Beats every component kind supports regardless of its specific list. */
 const UNIVERSAL_BEATS: ReadonlySet<ComponentBeatKind> = new Set<ComponentBeatKind>([
@@ -107,6 +109,12 @@ export interface ComponentKindSpec {
   morphsWith?: ComponentKind[];
   /** Compact authoring exemplar — the markup contract the kit CSS styles. */
   markup: string;
+  /**
+   * Host-only kind: excluded from the planner vocabulary, the authoring
+   * reference, and model-side normalization (Sentinel L0 — the models cannot
+   * even represent it). Only host lowerings may declare it.
+   */
+  internal?: boolean;
 }
 
 /**
@@ -350,6 +358,19 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
       `<h1 class="cmp cmp-headline" data-component="headline" data-part="hero-copy">` +
       `<span class="cmp-text" data-cmp-text>Final copy</span></h1>`,
   },
+  {
+    kind: "asset",
+    className: "asset",
+    internal: true,
+    purpose:
+      "Pre-built parametric library asset (ASSETS.md), host-lowered from an " +
+      "asset-<id> plugin declaration — never planner-declared or author-drawn. " +
+      "Its `animate` beats are spring animations compiled by the host asset runtime.",
+    beats: ["animate"],
+    markup:
+      `<div class="asset" data-component="asset" data-part="unit-core">` +
+      `…host-generated — do not author…</div>`,
+  },
 ];
 
 const CATALOG_BY_KIND = new Map(COMPONENT_CATALOG.map((spec) => [spec.kind, spec]));
@@ -361,7 +382,17 @@ export const COMPONENT_KINDS: ReadonlySet<ComponentKind> = new Set(
 export const COMPONENT_BEAT_KINDS: ReadonlySet<ComponentBeatKind> = new Set<ComponentBeatKind>([
   "type", "open", "close", "select", "press", "set-state", "count",
   "progress", "chart", "rows", "stream", "highlight", "morph", "swap",
+  // Host-only (asset spring animations): valid in resolved plans/islands, but
+  // normalizeStoryboardComponentBeats rejects it from model storyboards.
+  "animate",
 ]);
+
+/** Model-facing subsets (Sentinel L0): host-only kinds/beats are excluded from
+ * the storyboard JSON schema so the planner cannot even represent them. */
+export const PLANNER_COMPONENT_KINDS: readonly ComponentKind[] =
+  COMPONENT_CATALOG.filter((spec) => !spec.internal).map((spec) => spec.kind);
+export const PLANNER_COMPONENT_BEAT_KINDS: readonly ComponentBeatKind[] =
+  [...COMPONENT_BEAT_KINDS].filter((kind) => kind !== "animate");
 
 export function componentSupportsBeat(kind: ComponentKind, beat: ComponentBeatKind): boolean {
   if (UNIVERSAL_BEATS.has(beat)) return true;
@@ -445,6 +476,12 @@ export interface ComponentBeatIntentV1 {
    * unsupported value is style-dropped at parse, never beat-dropped.
    */
   style?: string;
+  /**
+   * `animate` beats only (host-lowered from asset declarations, never
+   * model-authored): the asset library animation name this beat invokes. The
+   * asset runtime compiles the spring motion; the components runtime skips it.
+   */
+  animation?: string;
   ease?: string;
 }
 
@@ -462,6 +499,7 @@ export interface ResolvedComponentBeatV1 {
   toState?: string;
   morphTo?: string;
   style?: string;
+  animation?: string;
 }
 
 export interface SceneComponentPlanV1 {
@@ -496,6 +534,10 @@ const BEAT_DEFAULTS: Record<ComponentBeatKind, BeatDefaults> = {
   highlight: { ease: "power2.out", defaultSec: 0.9, minSec: 0.4, maxSec: 1.6 },
   morph: { ease: "seqSwoosh", defaultSec: 0.8, minSec: 0.4, maxSec: 1.6 },
   swap: { ease: "power3.out", defaultSec: 0.6, minSec: 0.3, maxSec: 1.2 },
+  // Asset spring animations: the real curve lives in the assets island (spring
+  // samples); this paperwork window mirrors the compiled duration the lowering
+  // stamps, with room for a slow bounce settle.
+  animate: { ease: "none", defaultSec: 0.8, minSec: 0.15, maxSec: 6 },
 };
 
 const EASE_PATTERN = new RegExp(
@@ -565,6 +607,9 @@ export function normalizeStoryboardComponents(value: unknown): SceneComponentSpe
     const id = stableName(item.id);
     const kind = typeof item.kind === "string" ? item.kind.trim() as ComponentKind : "";
     if (!id || !kind || !COMPONENT_KINDS.has(kind) || seen.has(id)) return [];
+    // Host-only kinds (the asset unit root) are unrepresentable from the model
+    // side — only a plugin lowering may declare them (Sentinel L0).
+    if (CATALOG_BY_KIND.get(kind)?.internal) return [];
     seen.add(id);
     const region = stableName(item.region);
     return [{
@@ -598,6 +643,8 @@ export function normalizeStoryboardComponentBeats(
     const component = stableName(item.component);
     const kind = typeof item.kind === "string" ? item.kind.trim() as ComponentBeatKind : "";
     if (!id || !component || !kind || !COMPONENT_BEAT_KINDS.has(kind)) return [];
+    // `animate` is host-only (asset lowering); a model cannot declare it.
+    if (kind === "animate") return [];
     if (!componentIds.has(component)) return [];
     if (!finite(item.atSec)) return [];
     const rawAtSec = item.atSec;
@@ -691,6 +738,7 @@ export function resolveComponentPlan(scenes: DirectScene[]): ComponentPlanV1 {
         ...(beat.toState ? { toState: beat.toState } : {}),
         ...(beat.morphTo ? { morphTo: beat.morphTo } : {}),
         ...(beat.style ? { style: beat.style } : {}),
+        ...(beat.animation ? { animation: beat.animation } : {}),
       }];
     });
     if (resolved.length) planScenes.push({ sceneId: scene.id, beats: resolved });
@@ -720,6 +768,8 @@ const BEAT_CHANNELS: Record<ComponentBeatKind, string> = {
   highlight: "pulse",
   "set-state": "state",
   morph: "morph",
+  // Asset animations transform the unit root; two overlapping would fight.
+  animate: "asset",
 };
 
 /** Pulse kinds repeated in quick succession read as a stutter, not emphasis. */
@@ -1485,6 +1535,7 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
       if (errors.some((error) => error.startsWith(label))) return [];
       const morphTo = stableName(beat.morphTo);
       const toState = typeof beat.toState === "string" ? beat.toState : "";
+      const animation = stableName(beat.animation);
       return [{
         id,
         component,
@@ -1497,6 +1548,9 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
         ...(finite(beat.item) ? { item: beat.item } : {}),
         ...(toState ? { toState } : {}),
         ...(morphTo ? { morphTo } : {}),
+        // Asset `animate` beats round-trip their animation name — the
+        // island-equality check rejects any drift from the resolved plan.
+        ...(animation ? { animation } : {}),
         // The resolved plan carries the optional `style` variant (MD3/MD6:
         // type→rise/pop/assemble, open→pop, highlight→sweep/underline), and the
         // runtime reads it. It MUST round-trip here or the island-equality check
@@ -1705,6 +1759,10 @@ export function componentMotionWindows(
         beat.kind === "count" ||
         beat.kind === "set-state" ||
         beat.kind === "highlight" ||
+        // Asset spring animations (enter pops, bouncy expands, fills) move the
+        // unit root by design — mid-flight geometry is designed motion exactly
+        // like an open/morph window; the settled state stays audited.
+        beat.kind === "animate" ||
         // MD3 split-style headline entrances (rise/pop/assemble) transiently
         // displace letters/words by transform (assemble scatters up to ~96px)
         // before converging to the AUTHORED copy — designed entrance motion, not
@@ -1723,7 +1781,7 @@ export function componentMotionWindows(
  * what exists, what state changes it supports, and which twins morph.
  */
 export function componentPlanningVocabulary(): string {
-  const lines = COMPONENT_CATALOG.map((spec) => {
+  const lines = COMPONENT_CATALOG.filter((spec) => !spec.internal).map((spec) => {
     const beats = [...new Set([...spec.beats])];
     const morphs = spec.morphsWith?.length ? ` · morphs↔${spec.morphsWith.join("/")}` : "";
     return `- ${spec.kind}: ${spec.purpose}${beats.length ? ` · beats: ${beats.join(",")}` : ""}${morphs}`;
@@ -1750,7 +1808,7 @@ export function componentPlanningVocabulary(): string {
 export function componentAuthoringReference(kinds?: Iterable<ComponentKind>): string {
   const requested = kinds ? new Set(kinds) : undefined;
   const specs = COMPONENT_CATALOG.filter((spec) =>
-    !requested || requested.has(spec.kind)
+    !spec.internal && (!requested || requested.has(spec.kind))
   );
   if (!specs.length) return "";
   return [

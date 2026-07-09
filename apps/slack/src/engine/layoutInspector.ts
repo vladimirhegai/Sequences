@@ -47,6 +47,7 @@ import {
   warpInverseOf,
 } from "./timeRamp.ts";
 import { FX_RUNTIME_FILE, fxRuntimeSource } from "./fxContract.ts";
+import { ASSET_RUNTIME_FILE, assetRuntimeSource } from "./assetRuntime.ts";
 import { GRADE_SHIFT_DURATION_SEC } from "./gradeShift.ts";
 import { recordSentinelNormalization } from "./sentinelTelemetry.ts";
 import { resolveMomentContract } from "./storyboardMoments.ts";
@@ -354,6 +355,7 @@ function qaStaticFingerprint(): string {
         componentRuntimeSource(),
         timeRampRuntimeSource(),
         fxRuntimeSource(),
+        assetRuntimeSource(),
       ].map((source) => createHash("sha256").update(source).digest("hex")),
       audits: [
         loadBrowserAudit("layout-audit.browser.js"),
@@ -466,6 +468,11 @@ function prepareScratch(projectDir: string, draft: DirectCompositionDraft): stri
   fs.writeFileSync(
     path.join(scratch, FX_RUNTIME_FILE),
     fxRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(scratch, ASSET_RUNTIME_FILE),
+    assetRuntimeSource(),
     "utf8",
   );
   const assets = path.join(projectDir, "assets");

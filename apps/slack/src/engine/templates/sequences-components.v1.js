@@ -860,6 +860,14 @@
     var beats = staggerBeats(scenePlan.beats);
     for (var i = 0; i < beats.length; i += 1) {
       var beat = beats[i];
+      // Asset spring animations are compiled by the host assets runtime
+      // (sequences-assets) from its own island — one owner per visual channel
+      // (the compileHighlight/fx precedent). Skip before the element lookup so
+      // a flag-flipped film without injected units cannot crash the compile.
+      if (beat.kind === "animate") {
+        bound += 1;
+        continue;
+      }
       var el = scene.querySelector('[data-part="' + CSS.escape(beat.component) + '"]');
       if (!el) fail(beat.id, 'component "' + beat.component + '" is absent');
       if (beat.kind === "morph") {

@@ -71,12 +71,16 @@ import {
 } from "./timeRamp.ts";
 import { discoverShapeMatchUpgrade } from "./cutDiscovery.ts";
 import { FX_RUNTIME_FILE, resolveFxPlan } from "./fxContract.ts";
+import { ASSET_RUNTIME_FILE, resolveAssetPlan } from "./assetRuntime.ts";
+import { ASSET_LIBRARY } from "./assets/index.ts";
 import {
   COMPONENT_BEAT_KINDS,
   COMPONENT_KINDS,
   COMPONENT_KIT_FILE,
   COMPONENT_KIT_VERSION,
   COMPONENT_RUNTIME_FILE,
+  PLANNER_COMPONENT_BEAT_KINDS,
+  PLANNER_COMPONENT_KINDS,
   auditComponentComplexity,
   auditSurfaceExits,
   autoStyleCompactPops,
@@ -145,6 +149,7 @@ import {
   type SentinelSlotCallKind,
 } from "./sentinelTelemetry.ts";
 import {
+  assetsEnabled,
   criticSkipCleanEnabled,
   criticSlotRepairEnabled,
   pluginsEnabled,
@@ -368,7 +373,7 @@ function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat
                     properties: {
                       version: { type: "number", enum: [1] },
                       id: { type: "string" },
-                      kind: { type: "string", enum: [...COMPONENT_KINDS] },
+                      kind: { type: "string", enum: [...PLANNER_COMPONENT_KINDS] },
                       region: { type: "string" },
                       role: { type: "string", enum: ["hero", "support"] },
                     },
@@ -385,7 +390,7 @@ function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat
                       version: { type: "number", enum: [1] },
                       id: { type: "string" },
                       component: { type: "string" },
-                      kind: { type: "string", enum: [...COMPONENT_BEAT_KINDS] },
+                      kind: { type: "string", enum: [...PLANNER_COMPONENT_BEAT_KINDS] },
                       atSec: { type: "number" },
                       durationSec: { type: "number" },
                       text: { type: "string" },
@@ -2016,6 +2021,7 @@ export const HOST_PLAN_ISLAND_IDS = [
   "sequences-components",
   "sequences-time",
   "sequences-fx",
+  "sequences-assets",
 ] as const;
 
 /**
@@ -3165,6 +3171,7 @@ const HOST_STAGED_RUNTIME_FILES = new Set<string>([
   COMPONENT_RUNTIME_FILE,
   TIME_RUNTIME_FILE,
   FX_RUNTIME_FILE,
+  ASSET_RUNTIME_FILE,
 ]);
 
 /**
@@ -3212,6 +3219,7 @@ const RUNTIME_SCRIPT_GLOBALS: ReadonlyArray<{ file: string; global: string }> = 
   { file: COMPONENT_RUNTIME_FILE, global: "SequencesComponents" },
   { file: TIME_RUNTIME_FILE, global: "SequencesTime" },
   { file: FX_RUNTIME_FILE, global: "SequencesFx" },
+  { file: ASSET_RUNTIME_FILE, global: "SequencesAssets" },
 ];
 
 /** Match a runtime `<script src="…vN.js">` tag plus one leading newline/indent (so
@@ -4157,6 +4165,73 @@ export function applyDeterministicSourceRepairs(
         process.stderr.write(
           `[author] injected ${repairedFx} deterministic fx binding(s) for ` +
             `${fxPlan.effects.length} host-derived effect(s)\n`,
+        );
+      }
+    }
+  }
+  // Asset spring animations (ASSETS.md): the plugin lowering emits typed
+  // `animate` beats on each asset unit; here the host injects the
+  // sequences-assets island (sampled spring eases + GSAP var maps resolved
+  // from the SAME component-plan timing the gates judged) plus the runtime
+  // tag and compile call. Rides the assets kill switch and stays BEFORE the
+  // time-wrap rewrite, which must remain LAST.
+  if (assetsEnabled()) {
+    const assetPlan = resolveAssetPlan(lockedStoryboard ?? draft.storyboard);
+    if (assetPlan.scenes.length) {
+      let repairedAssets = 0;
+      if (
+        !html.includes(`src="${ASSET_RUNTIME_FILE}"`) &&
+        !html.includes(`src='${ASSET_RUNTIME_FILE}'`)
+      ) {
+        const withRuntime = html.replace(
+          /(<script\b[^>]*\bsrc\s*=\s*(["'])gsap\.min\.js\2[^>]*>\s*<\/script>)/i,
+          `$1\n<script src="${ASSET_RUNTIME_FILE}"></script>`,
+        );
+        if (withRuntime !== html) {
+          html = withRuntime;
+          repairedAssets += 1;
+        }
+      }
+      const payload = JSON.stringify(assetPlan);
+      const assetIslandPattern =
+        /(<script\b[^>]*\bid\s*=\s*(["'])sequences-assets\2[^>]*>)([\s\S]*?)(<\/script>)/i;
+      if (assetIslandPattern.test(html)) {
+        const updated = html.replace(assetIslandPattern, `$1${payload}$4`);
+        if (updated !== html) {
+          html = updated;
+          repairedAssets += 1;
+        }
+      } else {
+        const timelineScript =
+          /<script\b(?![^>]*\bsrc\s*=)[^>]*>[\s\S]*?gsap\.timeline\s*\(/i.exec(html);
+        if (timelineScript?.index !== undefined) {
+          html = html.slice(0, timelineScript.index) +
+            `<script type="application/json" data-sequences-host="1" id="sequences-assets">${payload}</script>\n` +
+            html.slice(timelineScript.index);
+          repairedAssets += 1;
+        }
+      }
+      if (!/\bSequencesAssets\.compile\s*\(/.test(html)) {
+        const timelineName = html.match(
+          /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*gsap\.timeline\s*\(/,
+        )?.[1];
+        if (timelineName) {
+          const registration = timelineRegistrationAnchor(timelineName);
+          if (registration.test(html)) {
+            html = html.replace(
+              registration,
+              `SequencesAssets.compile(${timelineName}, document.querySelector("[data-composition-id]"));\n$1`,
+            );
+            repairedAssets += 1;
+          }
+        }
+      }
+      if (repairedAssets) {
+        recordSentinelNormalization("asset-inject", repairedAssets);
+        process.stderr.write(
+          `[author] injected ${repairedAssets} deterministic asset binding(s) for ` +
+            `${assetPlan.scenes.reduce((count, scene) => count + scene.beats.length, 0)} ` +
+            `spring animation beat(s)\n`,
         );
       }
     }
@@ -5277,6 +5352,17 @@ export function validateStoryboardPlan(
   if (expectedStart < 6 || expectedStart > 60) {
     errors.push("storyboard total duration must be 6-60 seconds");
   }
+  // Duration is deliberately NOT a gate (owner call 2026-07-09): a time miss
+  // must never burn an attempt. The target instead shapes the film by
+  // construction — `storyboardShapeScaffold` puts host-computed per-segment
+  // second allocations in the planning prompt. A large miss only logs.
+  const targetSec = requirements.targetDurationSec;
+  if (targetSec !== undefined && targetSec >= 6 && expectedStart < targetSec * 0.72) {
+    process.stderr.write(
+      `[storyboard] advisory: plan totals ${expectedStart.toFixed(1)}s against a ~${targetSec}s ` +
+        `target (template scaffold should prevent this; never a retry)\n`,
+    );
+  }
   // Camera-era density floor: a framing is a shot or a full camera move
   // (pan/whip/push-in/pull-back/track-to-anchor/parallax-pass/orbit-lite/orbit).
   // The viewer must get a new framing roughly every 3.5 seconds — either by
@@ -6313,12 +6399,21 @@ async function requestConceptDirectionUncached(
 
 /* --------------------------------------------------- storyboard shape hint */
 
+export interface StoryboardShapeSegment {
+  /** Narrative role, e.g. "problem", "product proof", "CTA resolve". */
+  role: string;
+  /** Share of the film's runtime this segment owns (weights sum to 1). */
+  weight: number;
+}
+
 export interface StoryboardShape {
   id: string;
   /** Segment skeleton, human-readable. */
   label: string;
   /** What kind of brief this shape serves. */
   best: string;
+  /** Typed segments — the duration-scaffold arithmetic source. */
+  segments: StoryboardShapeSegment[];
 }
 
 /**
@@ -6331,33 +6426,118 @@ export const STORYBOARD_SHAPES: readonly StoryboardShape[] = [
     id: "problem-turn-product-cta",
     label: "problem (short) → turn (short) → product proof (long, held & developed) → CTA resolve (short)",
     best: "pain-led briefs where the product resolves a named workflow problem",
+    segments: [
+      { role: "problem", weight: 0.17 },
+      { role: "turn", weight: 0.12 },
+      { role: "product proof (held & developed)", weight: 0.54 },
+      { role: "CTA resolve", weight: 0.17 },
+    ],
   },
   {
     id: "hook-demo-payoff",
     label: "cold hook (short) → guided product demo (long, held & developed) → payoff metric + CTA (medium)",
     best: "feature launches whose UI walkthrough is the star",
+    segments: [
+      { role: "cold hook", weight: 0.15 },
+      { role: "guided product demo (held & developed)", weight: 0.6 },
+      { role: "payoff metric + CTA", weight: 0.25 },
+    ],
   },
   {
     id: "stat-proof-tour",
     label: "hero stat (medium) → proof tour across product surfaces (long, one held framing per surface) → brand resolve (short)",
     best: "metric- or performance-led stories",
+    segments: [
+      { role: "hero stat", weight: 0.22 },
+      { role: "proof tour (one held framing per surface)", weight: 0.6 },
+      { role: "brand resolve", weight: 0.18 },
+    ],
   },
   {
     id: "feature-triptych",
     label: "three feature vignettes (equal, medium) → unifying claim + CTA (medium)",
     best: "multi-feature releases with no single hero feature",
+    segments: [
+      { role: "feature vignette 1", weight: 0.26 },
+      { role: "feature vignette 2", weight: 0.26 },
+      { role: "feature vignette 3", weight: 0.26 },
+      { role: "unifying claim + CTA", weight: 0.22 },
+    ],
   },
   {
     id: "before-after",
     label: "before state (medium) → transformation beat (short) → after state (medium) → CTA (short)",
     best: "workflow-transformation stories with a clear old-way/new-way contrast",
+    segments: [
+      { role: "before state", weight: 0.3 },
+      { role: "transformation beat", weight: 0.12 },
+      { role: "after state", weight: 0.34 },
+      { role: "CTA", weight: 0.24 },
+    ],
   },
   {
     id: "crescendo-reveal",
     label: "quiet claim (short) → building evidence (medium) → energetic peak reveal (medium) → still resolve (short)",
     best: "brand-forward launches built around one big reveal",
+    segments: [
+      { role: "quiet claim", weight: 0.15 },
+      { role: "building evidence", weight: 0.3 },
+      { role: "energetic peak reveal", weight: 0.35 },
+      { role: "still resolve", weight: 0.2 },
+    ],
   },
 ];
+
+/**
+ * Deterministic default when the light-model shape hint is disabled or
+ * failed: a keyword sniff over the brief, never a model. The scaffold must
+ * ALWAYS exist — duration lives in the template, not in a validation gate.
+ */
+export function defaultShapeForBrief(brief: string): StoryboardShape {
+  const pick = (id: string): StoryboardShape =>
+    STORYBOARD_SHAPES.find((shape) => shape.id === id)!;
+  if (/\b(problem|pain|struggle|tired of|manual|broken|slow(?:s|ed)? (?:us|you|teams?) down)\b/i.test(brief)) {
+    return pick("problem-turn-product-cta");
+  }
+  if (/\b\d+(?:\.\d+)?\s*(?:%|x|ms|sec)|\bfaster\b|\bbenchmark|\bmetric/i.test(brief)) {
+    return pick("stat-proof-tour");
+  }
+  if (/\bbefore\b.*\bafter\b|\bmigrat|\bold way|\bnew way/i.test(brief)) {
+    return pick("before-after");
+  }
+  if (/\bthree|\b3 (?:new )?features|\bacross the board|\bbundle/i.test(brief)) {
+    return pick("feature-triptych");
+  }
+  return pick("hook-demo-payoff");
+}
+
+/**
+ * The template's duration arithmetic, done by the HOST: distribute the
+ * target runtime across the shape's segments and suggest a shot count per
+ * segment, so the planner completes a concrete scaffold instead of inventing
+ * (and routinely lowballing) film length. Guidance by construction — there
+ * is deliberately NO duration veto and no retry pressure behind it (owner
+ * call 2026-07-09: a time miss must never burn an attempt).
+ */
+export function storyboardShapeScaffold(shape: StoryboardShape, targetSec: number): string[] {
+  const total = Math.min(60, Math.max(12, Math.round(targetSec)));
+  const lines = shape.segments.map((segment, index) => {
+    const seconds = Math.max(2, Math.round(segment.weight * total));
+    const shots = seconds <= 6 ? "1 shot" : seconds <= 11 ? "1-2 shots" : "2-3 shots";
+    return `  ${index + 1}. ${segment.role} — ~${seconds}s (${shots})`;
+  });
+  return [
+    `## Narrative template — "${shape.id}" scaled to ~${total}s`,
+    ...lines,
+    "Complete this template: keep the segment order and roughly these second",
+    "allocations (a few seconds of drift is fine when the edit plays better,",
+    `but a film far under ~${total}s reads as truncated — develop the long`,
+    "segments with held, evolving surfaces rather than compressing them).",
+    "It is pacing scaffolding, not creative direction: deviate when the brief",
+    "evidence or the concept demands a different structure, and it never",
+    "overrides the moments, density, or energy contracts.",
+  ];
+}
 
 export interface StoryboardShapeHint {
   shape: StoryboardShape;
@@ -6841,8 +7021,16 @@ export async function requestStoryboardPlan(
     // and absorbed duplicate parts persist on the scene
     // (pluginAbsorbedParts) for injection-time hiding; v18: camera scenes
     // without a declared worldLayout get default viewport cells synthesized
-    // per path region (world-layout-derive).
-    contract: 18,
+    // per path region (world-layout-derive); v19: duration lives in the
+    // template — the prompt always carries a host-computed narrative/duration
+    // scaffold (storyboardShapeScaffold over typed shape segments, scaled to
+    // targetDurationSec, keyword-picked default when the hint is off), and
+    // there is deliberately NO duration veto (a time miss never burns an
+    // attempt); plans cached before the scaffold predate the duration ask;
+    // v20: asset units lower to an internal `asset` component + typed
+    // `animate` beats (spring animations compiled by sequences-assets), so a
+    // cached plan's parse now carries the lowered asset choreography.
+    contract: 20,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
@@ -6854,6 +7042,10 @@ export async function requestStoryboardPlan(
     blueprints: args.skills.blueprintIds,
     recipesVersion: recipesEnabled() ? loadRecipeLibrary().version : "off",
     recipeIds: args.skills.recipeIds ?? [],
+    // Asset vocabulary keys the cache: flipping the flag (or growing the
+    // library) changes what the planner may declare, so cached plans from the
+    // other regime never replay.
+    assets: assetsEnabled() ? ASSET_LIBRARY.map((asset) => asset.id).join(",") : "off",
   })).digest("hex");
   const planningDir = path.join(args.projectDir, "planning");
   const cacheFile = path.join(planningDir, "storyboard.json");
@@ -7120,20 +7312,16 @@ export async function requestStoryboardPlan(
           "",
         ]
       : []),
-    ...(shapeHint
-      ? [
-          "## Narrative shape (template-selected pacing skeleton)",
-          `A structural pre-pass chose "${shapeHint.shape.id}" for this brief` +
-            `${shapeHint.why ? ` (${shapeHint.why})` : ""}:`,
-          `  ${shapeHint.shape.label}`,
-          "Use it as the DEFAULT segment order and duration weighting when you",
-          "distribute shots. It is pacing scaffolding, not creative direction:",
-          "deviate whenever the brief evidence or the concept demands a",
-          "different structure, and it never overrides the moments, density,",
-          "or energy contracts.",
-          "",
-        ]
-      : []),
+    // Always present: the template generator owns duration by construction
+    // (host arithmetic over typed segments), replacing the retry-causing
+    // duration gate. The light model only picks WHICH template; a failed or
+    // disabled hint falls back to a deterministic keyword pick.
+    ...storyboardShapeScaffold(
+      shapeHint?.shape ?? defaultShapeForBrief(args.brief),
+      args.targetDurationSec ?? 24,
+    ),
+    ...(shapeHint?.why ? [`(Template chosen by a structural pre-pass: ${shapeHint.why})`] : []),
+    "",
     storyboardReference(args.skills.text),
     "",
     "## Brief and trusted evidence",

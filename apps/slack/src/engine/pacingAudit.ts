@@ -207,8 +207,11 @@ function advanceClearOfWindows(
   return round(target);
 }
 
-/** Beat kinds that put a NEW surface (or new content) in front of the viewer. */
-const ENTRANCE_BEAT_KINDS = new Set(["open", "rows", "swap"]);
+/** Beat kinds that put a NEW surface (or new content) in front of the viewer.
+ * `animate` covers a pre-built asset unit's spring entrance (its first beat is
+ * its arrival, camera-aware) so introduction timing judges the real moment the
+ * viewer sees it. */
+const ENTRANCE_BEAT_KINDS = new Set(["open", "rows", "swap", "animate"]);
 /**
  * Component kinds compact enough to land late in a short final resolve (a
  * logo / CTA / metric end card is read in one glance). Dense surfaces —

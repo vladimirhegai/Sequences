@@ -181,6 +181,36 @@ export function stackWrapperStyle(
   );
 }
 
+/* ------------------------------------------------------- entrance timing */
+
+/**
+ * The shared entrance anchor for a plugin/asset unit: shortly after the scene
+ * opens, scaled to short scenes — or, when the scene's camera only reaches the
+ * unit's station later (`arrivalSec`), just before the camera settles there
+ * (the plugin-live-1 lesson: beats fired at scene entrance while the camera
+ * arrived seconds later, landing on a static number). The delay is capped at
+ * 60% of the scene (the pacing gate's introduction deadline) and always leaves
+ * >=1.2s of beat room. Single owner — pluginContract and assetContract both
+ * anchor here so the two unit families never drift apart.
+ */
+export function entranceAnchorSec(ctx: {
+  startSec: number;
+  durationSec: number;
+  arrivalSec?: number;
+}): number {
+  const clamp = (value: number, min: number, max: number): number =>
+    Math.min(max, Math.max(min, value));
+  const base = ctx.startSec + clamp(ctx.durationSec * 0.12, 0.2, 0.6);
+  if (ctx.arrivalSec === undefined) return base;
+  const introductionCap = ctx.startSec + ctx.durationSec * 0.6;
+  const beatRoomCap = ctx.startSec + ctx.durationSec - 1.2;
+  return Math.round(clamp(
+    Math.max(base, ctx.arrivalSec - 0.2),
+    base,
+    Math.max(base, Math.min(introductionCap, beatRoomCap)),
+  ) * 1000) / 1000;
+}
+
 /**
  * Stagger seconds for n children entering as ONE gesture: the whole cascade
  * lands inside `windowSec`, each child keeps a readable beat of its own, and
