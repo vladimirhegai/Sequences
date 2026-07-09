@@ -575,12 +575,14 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
         camera: {
           version: 1,
           path: [
+            { version: 1, move: "hold", toRegion: "intro-stage", startSec: 0, durationSec: 0.4 },
             { version: 1, move: "pan", toRegion: "metric-station", startSec: 0.4, durationSec: 2.1 },
           ],
         },
       }),
     ]);
-    // Arrival 2.5s, 0.2s lead → 2.3s; well past the 0.6s default anchor.
+    // Camera opens on intro-stage; arrival 2.5s, 0.2s lead → 2.3s; well past
+    // the 0.6s default anchor.
     expect(firstBeatAt(result.scenes)).toBeCloseTo(2.3, 2);
   });
 
@@ -591,6 +593,7 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
         camera: {
           version: 1,
           path: [
+            { version: 1, move: "hold", toRegion: "intro-stage", startSec: 0, durationSec: 0.5 },
             {
               version: 1,
               move: "track-to-anchor",
@@ -605,6 +608,73 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
     expect(firstBeatAt(result.scenes)).toBeCloseTo(1.8, 2);
   });
 
+  it("keeps the default entrance when the camera OPENS on the unit's station (asset-probe-1)", () => {
+    // The g2-still shape: hold AT the station, then a same-region push-in.
+    // The push-in re-frames — it never "arrives" — so the entrance anchors at
+    // the default instead of the 60% introduction cap (which manufactured a
+    // pacing/holds rejection in a 3s scene).
+    const result = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations(DECL),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "hold", toRegion: "metric-station", startSec: 0, durationSec: 0.4 },
+            {
+              version: 1,
+              move: "push-in",
+              toRegion: "metric-station",
+              zoom: 1.12,
+              startSec: 0.5,
+              durationSec: 1.9,
+            },
+          ],
+        },
+      }),
+    ]);
+    expect(firstBeatAt(result.scenes)).toBeCloseTo(0.6, 2);
+  });
+
+  it("keeps the default entrance when the FIRST segment's to-target is the unit (entry frame)", () => {
+    // The runtime derives the scene's opening frame from the first segment's
+    // from-else-to target, so a leading full move whose target is the unit's
+    // own station starts on frame — no arrival delay.
+    const result = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations(DECL),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "push-in", toRegion: "metric-station", zoom: 1.2, startSec: 0.3, durationSec: 2.4 },
+          ],
+        },
+      }),
+    ]);
+    expect(firstBeatAt(result.scenes)).toBeCloseTo(0.6, 2);
+  });
+
+  it("honors a from-target entry: a pan FROM elsewhere TO the unit still delays", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations(DECL),
+        camera: {
+          version: 1,
+          path: [
+            {
+              version: 1,
+              move: "pan",
+              fromRegion: "intro-stage",
+              toRegion: "metric-station",
+              startSec: 0.4,
+              durationSec: 2.1,
+            },
+          ],
+        },
+      }),
+    ]);
+    expect(firstBeatAt(result.scenes)).toBeCloseTo(2.3, 2);
+  });
+
   it("caps the delay at the pacing gate's 60% introduction deadline", () => {
     const result = reconcileAndLowerPlugins([
       scene({
@@ -612,12 +682,14 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
         camera: {
           version: 1,
           path: [
+            { version: 1, move: "hold", toRegion: "intro-stage", startSec: 0, durationSec: 3.5 },
             { version: 1, move: "pan", toRegion: "metric-station", startSec: 3.5, durationSec: 2.2 },
           ],
         },
       }),
     ]);
-    // Arrival 5.7s in a 6s scene: clamp to min(60% = 3.6s, end - 1.2 = 4.8s).
+    // Camera opens on intro-stage; arrival 5.7s in a 6s scene: clamp to
+    // min(60% = 3.6s, end - 1.2 = 4.8s).
     expect(firstBeatAt(result.scenes)).toBeCloseTo(3.6, 2);
   });
 

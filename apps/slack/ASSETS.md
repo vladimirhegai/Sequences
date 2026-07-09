@@ -1,9 +1,11 @@
 # ASSETS.md — the pre-built parametric asset system
 
-**Status (2026-07-09):** foundation shipped, flag-gated OFF
-(`SLACK_SEQUENCES_ASSETS=1` opts the planner vocabulary in). One reference
-asset (`glass-metric`). The Asset Lab works today: `npm run assets` →
-`http://127.0.0.1:4322`.
+**Status (2026-07-09, later):** the full system is shipped — a 13-asset
+library covering all five silhouette families, the in-film spring animation
+runtime (the 8th host-owned island, `sequences-assets`), the Asset Lab with
+trigger badges + morph spring tweaks, and the channel-brief auto-offer.
+Flag: `SLACK_SEQUENCES_ASSETS` (see the flag-state note at the bottom).
+The Asset Lab works regardless: `npm run assets` → `http://127.0.0.1:4322`.
 
 ## Why this exists
 
@@ -60,6 +62,60 @@ keep the library reading as one system: `bounce` (two visible bounces —
 `compileAssetAnimation` resolves `$param` references so an animation can
 drive to a declared value (ring fills to `ring=42`).
 
+Each animation also declares an in-film choreography role — `trigger:
+"enter"` (the unit's arrival; at most ONE per asset, validated), `"payoff"`
+(plays right after the entrance settles — fills, draws, shines), or
+`"manual"` (default: Asset Lab / explicit invocation only, so looping
+attention-seekers stay opt-in) — and optionally `preBeat: "from"` for payoff
+animations whose custom-prop tracks BUILD toward the state the static markup
+already shows (ring fills, meter fills, draws): the film runtime writes each
+such track's from-value inline at compile, so a seek before the beat shows
+the empty state instead of the flash-of-full tell.
+
+## The in-film animation runtime (shipped 2026-07-09 — the 8th island)
+
+Design decision: asset animations ride the EXISTING beat rails instead of a
+parallel timing system. The plugin lowering (`assetPluginSpecs` in
+`assetContract.ts`) emits ONE internal `asset`-kind component per declared
+unit (root `data-part` = `<unit>-core`, stamped `pluginUid`) plus
+host-derived typed **`animate` beats**: the `enter` animation at the shared
+camera-arrival-aware entrance anchor (`entranceAnchorSec` in
+`pluginKernel.ts`), then each `payoff` sequenced with 0.15s gaps on the
+shared `"asset"` beat channel. Because these are ordinary `scene.beats`
+flowing through `resolveComponentPlan`, pacing / motion-density / moments /
+complexity budgets / layout-QA motion windows all bind FOR FREE.
+
+- **Sentinel L0:** `asset` kind + `animate` beat are HOST-ONLY vocabulary —
+  the storyboard schema enums (`PLANNER_COMPONENT_KINDS` /
+  `PLANNER_COMPONENT_BEAT_KINDS`) exclude them, and the normalizers reject
+  them from model plans, so models cannot even represent them.
+- `src/engine/assetRuntime.ts`: `resolveAssetPlan` reads timing FROM the
+  resolved component plan (paperwork == execution) and compiles the spring
+  payload via `compileAssetAnimationGsap` (decomposed GSAP vars + sampled
+  ease + preBeat inline writes); `validateAssetContract`
+  (`asset_island_missing` / `asset_island_stale` / `asset_runtime_missing`)
+  stands down when the flag is off.
+- `templates/sequences-assets.v1.js`: `SequencesAssets.compile(tl, root)`
+  linear-interpolates the sampled spring ease (overshoot survives), first
+  beat per part = reveal (immediateRender pre-renders the hidden state),
+  later beats = move + preBeat custom-prop writes, yoyo = repeat:1.
+  Deterministic — no clocks, no random. `sequences-components.v1.js` skips
+  `animate` beats BEFORE element lookup (one owner per channel).
+- Injection lives in `applyDeterministicSourceRepairs` after fx, before
+  recipes and the time-wrap (telemetry tag `asset-inject`); the island is in
+  `HOST_PLAN_ISLAND_IDS`, staging, checkpoint sidecars, and the QA static
+  fingerprint. Island equality is byte-exact: `animate` beats live in BOTH
+  the components island (paperwork) and the assets island (spring payload).
+- Sentinel registry rows: `normalize.asset-lower` + `assets.contract`
+  (SENTINEL.md contract table). `pacingAudit` counts `animate` as an
+  entrance beat kind.
+
+Proof: `test/assetPack.test.ts` (92 generic per-asset tests),
+`test/assetRuntime.test.ts` (plan byte-stability, timing mirror, validation),
+`test/assetRuntime.browser.test.ts` (an all-asset film through REAL
+validateDirectComposition + browser QA — zero errors, every declared moment
+bound to `component` evidence from asset beats, seek-safe).
+
 ## Who may do what (the agent policy)
 
 | Actor | May | May NOT |
@@ -100,11 +156,15 @@ rhyme verdict.
 Terminal-launched operator webview, Recipe-Studio posture (localhost-only,
 refuses `RAILWAY_ENVIRONMENT`, absent from the Docker CMD, zero deps):
 browse the library; tweak every typed param live (color pickers, clamped
-ranges, enum selects); fire each spring animation; retheme brand tokens
-(theme presets + accent picker) to prove `frame.md` retheming; preview morph
-transitions. It renders through `renderAssetInstance` /
-`compileAssetAnimation` — never a forked copy — so what the lab shows is
-byte-what a film would inject.
+ranges, enum selects); fire each spring animation — each button carries its
+**trigger badge** (enter / payoff / manual, the in-film choreography role);
+retheme brand tokens (theme presets + accent picker) to prove `frame.md`
+retheming; preview morph transitions with **morph tweaks** — a spring-preset
+picker (all five house springs, precompiled server-side through
+`compileAssetAnimation` so every option is the exact easing the contract
+would compile) plus an optional duration override with an auto reset. It
+renders through `renderAssetInstance` / `compileAssetAnimation` — never a
+forked copy — so what the lab shows is byte-what a film would inject.
 
 ## Product workflow (step 2 shipped 2026-07-09)
 
@@ -125,27 +185,50 @@ byte-what a film would inject.
    (`DEFAULT_TARGET_LENGTH_SEC`); the target shapes the film through the
    always-on narrative/duration template scaffold in the storyboard prompt —
    never through a validation veto (a time miss never burns an attempt).
-4. Future: the brief also auto-offers/parameterizes matching `asset-<id>`
-   declarations once the flag defaults ON.
+4. When the asset library rides the plugin rails (`assetsEnabled()`), the
+   brief ALSO appends a declare-by-default planning offer
+   (`assetBriefPlanningOffer` in `src/assetBrief.ts`): 3-4 fitting
+   `asset-<id>` kinds (note-keyword nudges outrank a curated default hero
+   set), the brief's accent prefilled in the example declaration, and the
+   recipes-style "declaring is the DEFAULT, drop only on genuine conflict"
+   posture. Degrade-never-veto — the planner may decline every one.
+
+## The library (13 assets, all five silhouette families)
+
+| family | assets |
+| --- | --- |
+| window | `browser-hero` (glass chrome + skeleton page that populates via `--bh-rise` staggered clamps) |
+| card | `spark-card` (sparkline draws) · `logo-tile` (monogram + gloss sweep) · `flow-node` (pipeline stage, activation ring) |
+| circle | `glass-metric` (the reference) · `laurel-badge` (SVG laurels, bounce enter) · `notify-gem` (glossy counter, sonar ping) · `team-medallion` (avatar discs converge) |
+| bar | `metric-bar` (meter fills to `$fill`) · `rating-strip` (stars light via overlay clip) |
+| pill | `delta-chip` (trend pill; `down` = tempered red) · `key-combo` (extruded keycaps, press travel) · `cta-button` (bloom capsule, snap press payoff) |
+
+Mechanics held everywhere (proven generically per asset by
+`test/assetPack.test.ts`): params → root custom props/data-attrs only, brand
+tokens with fallbacks, ONE spring per animation (never linear), size on one
+custom prop with em interiors, honest `family`, payoffs that build toward
+the markup's final state declare `preBeat:"from"`.
 
 ## Shipped / not yet
 
 - ✅ `src/engine/motionSpring.ts` — spring physics + presets + samplers.
-- ✅ `src/engine/assetContract.ts` — params, rendering, animation compile,
-  rhyme families, plugin bridge (`test/assetContract.test.ts`).
-- ✅ `src/engine/assets/glassMetric.ts` — the reference asset.
-- ✅ Asset Lab (`studio/assetLab.ts` + `studio/ui/asset-lab.html`).
-- ✅ Flag `SLACK_SEQUENCES_ASSETS` (default OFF) appending `asset-<id>` kinds
-  to the plugin catalog.
-- ⬜ Film-side asset ANIMATION runtime: compile declared asset animations as
-  typed beats into the paused timeline (a `sequences-assets.v1.js` island
-  registering the sampled spring eases with GSAP — `easeSamples` is already
-  shaped for it). Until then an in-film asset is a themed static unit whose
-  entrance the author animates like any content.
+- ✅ `src/engine/assetContract.ts` — params, rendering, animation compile
+  (WAAPI + GSAP shapes), rhyme families, plugin bridge with component/beat
+  lowering (`test/assetContract.test.ts`).
+- ✅ The 13-asset library (`src/engine/assets/`, one `defineAsset` file each).
+- ✅ The in-film animation runtime (`assetRuntime.ts` +
+  `templates/sequences-assets.v1.js` — see the runtime section above).
+- ✅ Asset Lab with trigger badges + morph spring/duration tweaks
+  (`studio/assetLab.ts` + `studio/ui/asset-lab.html`).
 - ✅ `/sequences asset` (2026-07-09): screenshot intake modal → deterministic
   palette extraction → per-channel brief → context injection on every later
   create + asset-kit preview PNG (`src/assetBrief.ts`, `test/assetBrief.test.ts`).
-- ⬜ Paid live probe with the flag ON, then default-ON decision.
-- ⬜ Auto-offer parameterized `asset-<id>` declarations from the stored brief.
-- ⬜ More assets (authored in the Asset Lab, one file each in
-  `src/engine/assets/`).
+- ✅ Auto-offer parameterized `asset-<id>` declarations from the stored brief
+  (`assetBriefPlanningOffer` — workflow step 4 above).
+- ⬜ More assets as coverage gaps surface (authored in the Asset Lab, one
+  file each in `src/engine/assets/`).
+
+## Flag state
+
+`SLACK_SEQUENCES_ASSETS` — see SENTINEL.md's flag table for the current
+default and the probe record in PROBE_LOG.md.

@@ -58,6 +58,7 @@ import {
 import { loadJobFrame, publicFrameMd } from "./engine/frameDesign.ts";
 import {
   assetBriefContext,
+  assetBriefPlanningOffer,
   clearAssetBrief,
   extractPaletteFromImages,
   loadAssetBrief,
@@ -590,7 +591,14 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
   if (!args.presetPlan) {
     const assetBrief = loadAssetBrief(args.channel);
     if (assetBrief) {
-      enrichedContext = [enrichedContext, assetBriefContext(assetBrief)]
+      // The planning offer names 3-4 fitting pre-built asset kinds with the
+      // brief's accent prefilled (declare-by-default, droppable). It is empty
+      // unless the asset library rides the plugin rails (assetsEnabled()).
+      enrichedContext = [
+        enrichedContext,
+        assetBriefContext(assetBrief),
+        assetBriefPlanningOffer(assetBrief),
+      ]
         .filter(Boolean)
         .join("\n\n");
     }

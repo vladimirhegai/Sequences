@@ -198,22 +198,40 @@ function entranceSec(ctx: PluginLowerContext): number {
  * region, or whose toPart is the unit or one of its children (children derive
  * from the unit id, so a `<id>-` prefix is the child test). hold/drift never
  * re-frame. A dive's arrival is the end of its push-in leg (host arithmetic,
- * mirroring diveLegCap). Undefined when no move targets the unit — the camera
- * either starts on it or never frames it, and the default anchor is right.
+ * mirroring diveLegCap). Undefined when the camera opens already framing the
+ * unit's station (the runtime's entry frame is the first segment's
+ * from-else-to target) or when no move ever targets the unit — in both cases
+ * the default anchor is right.
  */
 function cameraArrivalSec(
   camera: { path?: CameraMoveIntentV1[] } | undefined,
   declaration: Pick<PluginDeclarationV1, "id" | "region">,
 ): number | undefined {
   const childPrefix = `${declaration.id}-`;
+  const framesUnit = (part: string | undefined, region: string | undefined): boolean =>
+    (declaration.region !== undefined && region === declaration.region) ||
+    part === declaration.id ||
+    (part?.startsWith(childPrefix) ?? false);
+  const path = camera?.path ?? [];
+  // The camera runtime derives the scene's OPENING frame from the first
+  // segment's from-target, falling back to its to-target, regardless of verb —
+  // so a unit whose station is that entry target is on frame from second one.
+  // A later push-in/pan back to the same station RE-frames it; it never
+  // "arrives" (asset-probe-1: a hold AT the unit's station followed by a
+  // same-region push-in read as a 20.4s arrival, anchoring the asset entrance
+  // at the 60% introduction cap of a 3s scene — a pacing/holds rejection the
+  // host itself manufactured).
+  const first = path[0];
+  if (first) {
+    const entry = first.fromPart || first.fromRegion
+      ? { part: first.fromPart, region: first.fromRegion }
+      : { part: first.toPart, region: first.toRegion };
+    if (framesUnit(entry.part, entry.region)) return undefined;
+  }
   let arrival: number | undefined;
-  for (const move of camera?.path ?? []) {
+  for (const move of path) {
     if (move.move === "hold" || move.move === "drift") continue;
-    const framesUnit =
-      (declaration.region !== undefined && move.toRegion === declaration.region) ||
-      move.toPart === declaration.id ||
-      (move.toPart?.startsWith(childPrefix) ?? false);
-    if (!framesUnit) continue;
+    if (!framesUnit(move.toPart, move.toRegion)) continue;
     const end = move.move === "dive"
       ? move.startSec + (move.inSec ?? diveLegCap(move.durationSec))
       : move.startSec + move.durationSec;

@@ -13,7 +13,8 @@
  *
  * Endpoints:
  *   GET  /              lab UI (studio/ui/asset-lab.html)
- *   GET  /api/assets    library summaries (params, animations, morph easing)
+ *   GET  /api/assets    library summaries (params, animations + triggers,
+ *                       morph gestures precompiled for every spring preset)
  *   POST /api/render    { id, params?, partId? } → rendered instance
  */
 import http from "node:http";
@@ -26,6 +27,7 @@ import {
   compileAssetAnimation,
   type AssetDefinitionV1,
 } from "../src/engine/assetContract.ts";
+import { SPRING_PRESETS, type SpringPresetName } from "../src/engine/motionSpring.ts";
 import { ASSET_LIBRARY, getAsset } from "../src/engine/assets/index.ts";
 
 if (process.env.RAILWAY_ENVIRONMENT) {
@@ -65,20 +67,30 @@ function assetSummary(definition: AssetDefinitionV1): unknown {
       name: animation.name,
       purpose: animation.purpose,
       spring: animation.spring,
+      trigger: animation.trigger ?? "manual",
     })),
   };
 }
 
-/** The morph preview's shared gesture: one settle spring for every pair. */
-const MORPH_GESTURE = compileAssetAnimation(
-  {
-    name: "morph",
-    purpose: "FLIP morph between two assets",
-    spring: "settle",
-    tracks: [{ property: "opacity", from: 0, to: 1 }],
-  },
-  {},
-);
+/**
+ * The morph preview's gesture, precompiled once per house spring preset so
+ * the lab's morph-tweak picker recomputes nothing client-side — every option
+ * is the exact easing the contract would compile. Default stays `settle`.
+ */
+const MORPH_GESTURES = Object.fromEntries(
+  (Object.keys(SPRING_PRESETS) as SpringPresetName[]).map((preset) => {
+    const compiled = compileAssetAnimation(
+      {
+        name: "morph",
+        purpose: "FLIP morph between two assets",
+        spring: preset,
+        tracks: [{ property: "opacity", from: 0, to: 1 }],
+      },
+      {},
+    );
+    return [preset, { durationMs: compiled.durationMs, easing: compiled.easing }];
+  }),
+) as Record<SpringPresetName, { durationMs: number; easing: string }>;
 
 const server = http.createServer((req, res) => {
   void handle(req, res).catch((error) => {
@@ -101,7 +113,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   if (req.method === "GET" && url.pathname === "/api/assets") {
     return sendJson(res, 200, {
       assets: ASSET_LIBRARY.map(assetSummary),
-      morph: { durationMs: MORPH_GESTURE.durationMs, easing: MORPH_GESTURE.easing },
+      morph: { default: "settle", gestures: MORPH_GESTURES },
     });
   }
   if (req.method === "POST" && url.pathname === "/api/render") {

@@ -154,18 +154,26 @@ Designer-grade **parametric assets** replace model-drawn hero visuals:
 `src/engine/assetContract.ts` (typed color/number/text/enum params entering
 the DOM only as root custom properties; invokable animations eased by real
 spring physics from `src/engine/motionSpring.ts`; silhouette rhyme families
-aligned with the cut contract) + the library in `src/engine/assets/` (one
-`defineAsset` file per asset; example `glass-metric`). **Decision: assets are
-tweaked-prebuilt, never model-generated** — models may declare `asset-<id>`
-kinds on the plugin rails (behind `SLACK_SEQUENCES_ASSETS=1`, **default OFF**
-until a paid probe) but can never author or edit asset internals. Operator
+aligned with the cut contract) + the 13-asset library in `src/engine/assets/`
+(one `defineAsset` file per asset, all five silhouette families). **Decision:
+assets are tweaked-prebuilt, never model-generated** — models may declare
+`asset-<id>` kinds on the plugin rails (flag `SLACK_SEQUENCES_ASSETS` — see
+SENTINEL.md's flag table for the default) but can never author or edit asset
+internals. The **in-film animation runtime SHIPPED 2026-07-09**
+(`assetRuntime.ts` + `templates/sequences-assets.v1.js`, the 8th host-owned
+island): each declared asset lowers to one internal `asset`-kind component +
+host-derived typed `animate` beats (spring `enter` at the camera-arrival
+anchor, `payoff`s sequenced after), so every existing gate binds for free —
+Sentinel rows `normalize.asset-lower` / `assets.contract`. Operator
 webview: `npm run assets` → the Asset Lab on `http://127.0.0.1:4322` (never
-Railway). NOT built yet: the in-film asset-animation runtime. Brand intake:
+Railway; trigger badges + morph spring/duration tweaks). Brand intake:
 **`/sequences asset`** opens a modal (`file_input` screenshots + notes) →
 `src/assetBrief.ts` extracts a palette deterministically (chromium canvas
 sampling, no model), stores ONE brief per channel in
 `.data/asset-briefs.json`, posts an asset-kit preview PNG, and every later
-`/sequences` create in that channel folds the brief into its context
+`/sequences` create in that channel folds the brief into its context — plus,
+when assets ride the plugin rails, a declare-by-default `asset-<id>` offer
+with the brief's accent prefilled (`assetBriefPlanningOffer`)
 (`/sequences asset clear` forgets). Requires the bot `files:read` scope —
 **manifest.json changed 2026-07-09 → reinstall + refresh `SLACK_BOT_TOKEN`.**
 Duration policy (2026-07-09): no-length creates default to ~24s
@@ -639,9 +647,9 @@ browser QA (see above). Typed cuts and cinematography-kit injection are proven b
 the fixture and by a paid OpenRouter live-authoring smoke (2026-07-01): the
 planner chose sensible cut styles and the author adopted kit material classes
 unprompted. Not built yet: registry source approval/materialization +
-in-Slack audition, component sub-agents, and the in-film asset-animation
-runtime (see ASSETS.md). Slack screenshot ingestion SHIPPED 2026-07-09 as
-`/sequences asset` (see below).
+in-Slack audition and component sub-agents. The in-film asset-animation
+runtime SHIPPED 2026-07-09 (see ASSETS.md), as did Slack screenshot
+ingestion (`/sequences asset` — see below).
 
 Live create/revise now also runs a static `motionDensity.ts` liveness pass for
 10s+, 3+ shot films. It classifies scene starts/cuts, authored GSAP beats, and

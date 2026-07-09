@@ -150,6 +150,7 @@ rung) · **advisory** (never blocks).
 | runtime-invariants | `normalize.gsap-repeat-clamp` | L2 normalize | det-repair | — (prevents the static `repeat: -1` invariant rejection: `applyDeterministicSourceRepairs` clamps to `repeat: 2` — the ambient-pulse intent survives, capture stays finite; the invariant gate is untouched) | directComposition |
 | camera | `normalize.station-position` | L2 normalize | det-repair | — (prevents the plugin-live-1 static-flow station class: a `data-region` with a left/top rect but no `position:` gets `position:absolute` completed — otherwise the station spans the whole world plane and its content overflows every clip audit) | directComposition |
 | brand | `normalize.brand-base` | L2 normalize | det-repair | — (prevents `frame/type` "family not used": `injectBrandBase` renders frame.md's committed tokens as a host `:root`/base-rule style block BEFORE authored styles — kit `var()` fallbacks bind to brand, unstyled text gets the committed body family, html/body carry the tinted canvas) | directComposition |
+| plugins | `normalize.asset-lower` | L2 normalize | det-repair | — (each declared `asset-<id>` plugin lowers to ONE internal `asset`-kind component + host-derived typed `animate` beats: the `enter` spring at the camera-arrival-aware entrance anchor, payoffs sequenced +0.15s apart on the shared `"asset"` channel — ordinary scene.beats, so pacing / motion-density / moments / complexity budgets bind for free; `asset` kind + `animate` beat are HOST-ONLY vocabulary the planner schema cannot even represent) | assetRuntime |
 | camera | `camera.energy` | L3 static | blocking | `camera/energy` | cameraContract |
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |
 | coherence | `cuts.coherence` | L3 static | advisory-late | `cuts/coherence` | cutContract |
@@ -158,6 +159,7 @@ rung) · **advisory** (never blocks).
 | moments | `moments.plan` | L3 static | blocking | `storyboard/moments`, `moment_unbound` | storyboardMoments |
 | liveness | `liveness` | L3 static | blocking | `motion/` | motionDensity |
 | markup-audit | `markup-audit` | L3 static | blocking | `kit_markup_incomplete`, `dom_markup_broken` | kitMarkupAudit |
+| plugins | `assets.contract` | L3 static | blocking | `asset_island_missing`, `asset_island_stale`, `asset_runtime_missing` (host-plumbing self-check — `validateAssetContract` stands down when the flag is off; reachable only if the injection seam breaks, never a routine authoring finding) | assetRuntime |
 | frame | `frame` | L3 static | blocking | `frame/` | frameDesign |
 | cuts | `cuts.degrade` | L4 browser | advisory-late | `cut_degraded` | cutShapeMatch.browser |
 | camera | `camera.framing` | L4 browser | advisory-late | `camera_framed_clipped`, `camera_framed_sparse` | framingCoverage.browser |

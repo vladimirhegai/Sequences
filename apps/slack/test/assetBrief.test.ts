@@ -6,12 +6,14 @@ import type { DirectScene } from "../src/engine/directComposition.ts";
 import { validateStoryboardPlan } from "../src/engine/compositionRunner.ts";
 import {
   assetBriefContext,
+  assetBriefPlanningOffer,
   clearAssetBrief,
   loadAssetBrief,
   saveAssetBrief,
   storeReferenceImages,
   type ChannelAssetBrief,
 } from "../src/assetBrief.ts";
+import { ASSET_LIBRARY } from "../src/engine/assets/index.ts";
 
 let tempDir: string;
 let previousDataDir: string | undefined;
@@ -73,6 +75,57 @@ describe("assetBriefContext", () => {
     expect(context).toContain("THE single accent");
     expect(context).toContain("dark UI");
     expect(context).toContain("terminal-first devtool");
+  });
+});
+
+describe("assetBriefPlanningOffer", () => {
+  const flag = "SLACK_SEQUENCES_ASSETS";
+  let previousFlag: string | undefined;
+  beforeAll(() => { previousFlag = process.env[flag]; });
+  afterAll(() => {
+    if (previousFlag === undefined) delete process.env[flag];
+    else process.env[flag] = previousFlag;
+  });
+
+  it("is empty while the asset library is off the plugin rails", () => {
+    delete process.env[flag];
+    expect(assetBriefPlanningOffer(brief())).toBe("");
+  });
+
+  it("offers 4 real asset kinds, declare-by-default, with the accent prefilled", () => {
+    process.env[flag] = "1";
+    const offer = assetBriefPlanningOffer(brief({ notes: undefined }));
+    const kinds = [...offer.matchAll(/"asset-([\w-]+)"/g)].map((match) => match[1]);
+    const libraryIds = new Set(ASSET_LIBRARY.map((asset) => asset.id));
+    const offeredIds = new Set(kinds);
+    expect(offeredIds.size).toBe(4);
+    for (const id of offeredIds) expect(libraryIds.has(id!)).toBe(true);
+    expect(offer).toContain("DECLARE, never draw");
+    expect(offer).toContain("DEFAULT");
+    expect(offer).toContain('"plugins":[');
+    expect(offer).toContain('{"name":"accent","value":"#FF8A5C"}');
+    expect(offer).toContain("Drop an");
+  });
+
+  it("lets brief notes outrank default slots deterministically", () => {
+    process.env[flag] = "1";
+    const offer = assetBriefPlanningOffer(
+      brief({ notes: "our deploy pipeline dashboard for the whole team" }),
+    );
+    expect(offer).toContain("asset-team-medallion");
+    expect(offer).toContain("asset-flow-node");
+    // Still capped at 4 distinct kinds.
+    const kinds = new Set([...offer.matchAll(/"asset-([\w-]+)"/g)].map((match) => match[1]));
+    expect(kinds.size).toBe(4);
+  });
+
+  it("omits the accent prefill when the palette carries none", () => {
+    process.env[flag] = "1";
+    const offer = assetBriefPlanningOffer(
+      brief({ palette: { colors: ["#101010"] } }),
+    );
+    expect(offer).not.toContain('"name":"accent"');
+    expect(offer).toContain('"asset-');
   });
 });
 

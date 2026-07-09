@@ -7029,8 +7029,12 @@ export async function requestStoryboardPlan(
     // attempt); plans cached before the scaffold predate the duration ask;
     // v20: asset units lower to an internal `asset` component + typed
     // `animate` beats (spring animations compiled by sequences-assets), so a
-    // cached plan's parse now carries the lowered asset choreography.
-    contract: 20,
+    // cached plan's parse now carries the lowered asset choreography; v21:
+    // camera arrival honors the runtime's ENTRY frame (first segment's
+    // from-else-to target) — a unit framed from scene start anchors at the
+    // default entrance instead of a same-station re-frame's end (the
+    // asset-probe-1 manufactured pacing/holds rejection).
+    contract: 21,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,

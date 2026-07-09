@@ -119,6 +119,10 @@
   }
   .badge.ok { color: #5ce6a8; border-color: rgba(92, 230, 168, 0.4); }
   .badge.warn { color: #f0b429; border-color: rgba(240, 180, 41, 0.4); }
+  .badge.trigger-enter { color: var(--lab-accent); border-color: rgba(110, 168, 255, 0.45); }
+  .badge.trigger-payoff { color: #5ce6a8; border-color: rgba(92, 230, 168, 0.4); }
+  .badge.trigger-manual { color: var(--lab-muted); }
+  .anim-btn .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 </style>
 </head>
 <body>
@@ -158,6 +162,17 @@
           <button class="small" id="morph-go">Morph</button>
         </div>
       </div>
+      <div class="field">
+        <label>Spring <span id="morph-spring-note"></span></label>
+        <select id="morph-spring"></select>
+      </div>
+      <div class="field">
+        <label>Duration <span id="morph-duration-out"></span></label>
+        <div class="row">
+          <input type="range" id="morph-duration" min="160" max="1600" step="20" />
+          <button class="small" id="morph-duration-auto" title="Back to the spring's natural settle time">auto</button>
+        </div>
+      </div>
     </div>
   </aside>
 </main>
@@ -174,7 +189,11 @@ const FAMILY_GROUP = { pill: "pill-bar", bar: "pill-bar", card: "ccw", circle: "
 
 const stage = document.getElementById("stage");
 const stageNote = document.getElementById("stage-note");
-const state = { assets: [], morph: null, current: null, params: {}, instance: null, animating: false };
+const state = {
+  assets: [], morph: null, current: null, params: {}, instance: null, animating: false,
+  morphSpring: "settle", morphDurationMs: null, // null = the spring's natural settle time
+};
+window.__labState = state; // read-only debug handle for scripted proof drives
 
 function applyTheme(name, accentOverride) {
   const theme = THEMES[name] ?? THEMES.Midnight;
@@ -307,9 +326,14 @@ function buildAnimations() {
   const host = document.getElementById("animations");
   host.innerHTML = "";
   for (const compiled of state.instance.animations) {
+    const spec = state.current.animations.find((entry) => entry.name === compiled.name);
+    const trigger = (spec && spec.trigger) || "manual";
     const btn = document.createElement("button");
     btn.className = "anim-btn";
-    btn.innerHTML = `<b>${compiled.name}</b> <span class="p">${compiled.purpose} · ${compiled.durationMs}ms · ζ=${compiled.spring.dampingRatio}</span>`;
+    btn.innerHTML =
+      `<span class="head"><b>${compiled.name}</b>` +
+      `<span class="badge trigger-${trigger}">${trigger}</span></span>` +
+      `<span class="p">${compiled.purpose} · ${compiled.durationMs}ms · ζ=${compiled.spring.dampingRatio}</span>`;
     btn.onclick = () => playAnimation(compiled);
     host.appendChild(btn);
   }
@@ -339,6 +363,44 @@ function updateRhymeBadge() {
     : `cross-family — would degrade`;
 }
 
+function syncMorphControls() {
+  const gesture = state.morph.gestures[state.morphSpring];
+  const slider = document.getElementById("morph-duration");
+  const out = document.getElementById("morph-duration-out");
+  const auto = state.morphDurationMs === null;
+  slider.value = auto ? gesture.durationMs : state.morphDurationMs;
+  out.textContent = `${slider.value}ms${auto ? " (auto)" : ""}`;
+  document.getElementById("morph-spring-note").textContent =
+    `natural ${gesture.durationMs}ms`;
+}
+
+function buildMorphControls() {
+  const springSelect = document.getElementById("morph-spring");
+  springSelect.innerHTML = "";
+  for (const name of Object.keys(state.morph.gestures)) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    option.selected = name === state.morphSpring;
+    springSelect.appendChild(option);
+  }
+  springSelect.onchange = () => {
+    state.morphSpring = springSelect.value;
+    state.morphDurationMs = null; // a new spring means its own natural time
+    syncMorphControls();
+  };
+  const slider = document.getElementById("morph-duration");
+  slider.oninput = () => {
+    state.morphDurationMs = Number(slider.value);
+    syncMorphControls();
+  };
+  document.getElementById("morph-duration-auto").onclick = () => {
+    state.morphDurationMs = null;
+    syncMorphControls();
+  };
+  syncMorphControls();
+}
+
 async function morphTo(targetId) {
   const outgoing = rootEl();
   if (!outgoing || state.animating) return;
@@ -358,7 +420,12 @@ async function morphTo(targetId) {
   const dy = (fromRect.top + fromRect.height / 2) - (toRect.top + toRect.height / 2);
   const sx = fromRect.width / toRect.width;
   const sy = fromRect.height / toRect.height;
-  const timing = { duration: state.morph.durationMs, easing: state.morph.easing, fill: "forwards" };
+  const gesture = state.morph.gestures[state.morphSpring];
+  const timing = {
+    duration: state.morphDurationMs ?? gesture.durationMs,
+    easing: gesture.easing,
+    fill: "forwards",
+  };
   state.animating = true;
   outgoing.animate(
     [
@@ -424,6 +491,8 @@ async function boot() {
   const data = await api("/api/assets");
   state.assets = data.assets;
   state.morph = data.morph;
+  state.morphSpring = data.morph.default;
+  buildMorphControls();
   const list = document.getElementById("asset-list");
   for (const asset of state.assets) {
     const item = document.createElement("div");

@@ -22,6 +22,7 @@ import { dataDir } from "./engine/projectTemplates.ts";
 import { findBrowserExecutable } from "./engine/render.ts";
 import { luminance, saturation } from "./engine/brandTokens.ts";
 import { renderAssetInstance } from "./engine/assetContract.ts";
+import { assetsEnabled } from "./engine/sentinelFlags.ts";
 import { ASSET_LIBRARY } from "./engine/assets/index.ts";
 
 export interface AssetBriefPalette {
@@ -242,6 +243,66 @@ export function assetBriefContext(brief: ChannelAssetBrief): string {
   }
   if (brief.notes) lines.push(`- The user's own notes about their product/UI: ${brief.notes}`);
   return lines.join("\n");
+}
+
+/* ------------------------------------------------------ brief → asset offer */
+
+/** The hero set almost every launch brief can use — offered when notes add nothing. */
+const DEFAULT_ASSET_OFFER = ["glass-metric", "browser-hero", "cta-button", "laurel-badge"];
+
+/** Note-keyword nudges: a brief that names the concept outranks a default slot. */
+const NOTE_ASSET_HINTS: Array<{ pattern: RegExp; id: string }> = [
+  { pattern: /\b(team|avatar|collab)/i, id: "team-medallion" },
+  { pattern: /\b(rating|review|stars)/i, id: "rating-strip" },
+  { pattern: /\b(shortcut|keyboard|hotkey)/i, id: "key-combo" },
+  { pattern: /\b(pipeline|workflow|deploy|automat)/i, id: "flow-node" },
+  { pattern: /\b(notif|alert|inbox|unread)/i, id: "notify-gem" },
+  { pattern: /\b(trend|spark|chart|graph)/i, id: "spark-card" },
+];
+
+/**
+ * The declare-by-default asset offer appended to a create's context when the
+ * channel captured a brand brief AND the asset library rides the plugin rails
+ * (`SLACK_SEQUENCES_ASSETS=1`). Mirrors the recipe offer's posture: declaring
+ * the matching pre-built asset is the DEFAULT, dropping it is allowed, and the
+ * gate never loosens — the planner may decline every one. The brief's accent
+ * is prefilled so the declaration lands already on-brand.
+ */
+export function assetBriefPlanningOffer(brief: ChannelAssetBrief): string {
+  if (!assetsEnabled()) return "";
+  const picked: string[] = [];
+  for (const hint of NOTE_ASSET_HINTS) {
+    if (picked.length >= 4) break;
+    if (hint.pattern.test(brief.notes ?? "") && !picked.includes(hint.id)) picked.push(hint.id);
+  }
+  for (const id of DEFAULT_ASSET_OFFER) {
+    if (picked.length >= 4) break;
+    if (!picked.includes(id)) picked.push(id);
+  }
+  const byId = new Map(ASSET_LIBRARY.map((asset) => [asset.id, asset]));
+  const offered = picked.flatMap((id) => byId.get(id) ?? []);
+  if (!offered.length) return "";
+  const accent = brief.palette.accent;
+  const example = JSON.stringify({
+    version: 1,
+    kind: `asset-${offered[0]!.id}`,
+    id: "hero",
+    params: [
+      ...(accent ? [{ name: "accent", value: accent }] : []),
+      { name: "label", value: "on-topic copy" },
+    ],
+  });
+  return [
+    "Pre-built brand assets for this channel (host-drawn hero visuals — DECLARE, never draw):",
+    "these assets already render in the captured palette; when a scene needs the matching",
+    "hero visual, declaring it is the DEFAULT — the host draws and spring-animates it at",
+    "zero authoring cost. Fitting kinds for this brief:",
+    ...offered.map((asset) => `- "asset-${asset.id}": ${asset.purpose}`),
+    `Declare inside the shot's "plugins" array, e.g. "plugins":[${example}]`,
+    ...(accent ? [`Set each asset's "accent" param to ${accent} (the captured brand accent).`] : []),
+    "Fill text params with on-topic copy from the brief — never placeholders. Drop an",
+    "asset only when it genuinely conflicts with the scene.",
+  ].join("\n");
 }
 
 /* ------------------------------------------------------------ preview PNG */
