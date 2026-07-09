@@ -16,6 +16,15 @@
  * internals in em — restyle a whole component with one font-size override.
  */
 
+/* Base canvas: authors style #root but rarely html/body, so the first frame
+ * (and any letterboxed edge) flashed the UA's white before content painted.
+ * A tinted near-black default under --canvas keeps the void on-brand; the kit
+ * injects before authored styles, so an authored body rule still wins. */
+html,
+body {
+  background: var(--canvas, #0a0c10);
+}
+
 .cmp {
   position: relative;
   box-sizing: border-box;
@@ -89,12 +98,18 @@
   opacity: 0;
 }
 
-/* Highlight ring the runtime synthesizes for `highlight` beats. */
+/* Highlight ring the runtime synthesizes for `highlight` beats. A hairline
+ * ring + soft accent bloom + faint fill — a focus glow, not the 3px solid
+ * "blue pulse" rectangle the live probes flagged as amateurish. */
 .cmp .cmp-highlight-ring {
   position: absolute;
-  inset: -0.3em;
-  border: 3px solid var(--accent, #6ea8ff);
-  border-radius: var(--cinema-radius, 14px);
+  inset: -0.35em;
+  border: 1.5px solid color-mix(in srgb, var(--accent, #6ea8ff) 65%, transparent);
+  border-radius: calc(var(--cinema-radius, 14px) + 0.2em);
+  background: color-mix(in srgb, var(--accent, #6ea8ff) 7%, transparent);
+  box-shadow:
+    0 0 0.9em color-mix(in srgb, var(--accent, #6ea8ff) 22%, transparent),
+    inset 0 0 0.7em color-mix(in srgb, var(--accent, #6ea8ff) 10%, transparent);
   opacity: 0;
   pointer-events: none;
 }
@@ -603,6 +618,15 @@
   border-radius: var(--cinema-radius, 14px);
   font-family: var(--font-mono, "JetBrains Mono", "Space Mono", monospace);
   font-size: 22px;
+}
+/* Terminals wrap long commands instead of clipping them (fix-probe-2's
+ * clipped_text: a typed command wider than the card died in browser QA twice).
+ * The typewriter grows textContent, so wrapping mid-type is native terminal
+ * behavior, not a glitch. */
+.cmp-terminal .cmp-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
 }
 .cmp-terminal .cmp-line {
   display: flex;

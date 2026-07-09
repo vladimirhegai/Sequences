@@ -75,6 +75,64 @@ monorepo); build reports: [RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md)
 (foundation) + [RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md) (canvas +
 agents).
 
+## Host plugins (2026-07-08 — the seventh contract)
+
+Storyboards may invoke **parameterized host GENERATORS** as typed
+`plugins:[{kind,params}]` forms (`src/engine/pluginContract.ts`): v1 kinds
+`dashboard-grid` (N seeded metric/chart tiles as one cascade),
+`notification-stack` (N believable product toasts), `lockup`
+(headline+sub+CTA owning copy, spacing, and entrance), `activity-feed` (a
+seeded list/table of believable activity rows cascading in — the direct kill
+for "Item 1/2/3" board rows), `terminal-log` (a terminal whose command
+typewrites, then seeded result lines stream in), and `team-strip` (a seeded
+avatar stack that pops in as one unit). Where a recipe is a
+frozen proven fragment, a plugin is computed fresh from params — but it never
+contributes raw model HTML/positions: `reconcileAndLowerPlugins`
+(parseStoryboard, Sentinel L2, degrade-never-veto) LOWERS each kept unit into
+ordinary typed components (host-stamped `pluginUid`) + beats so every existing
+gate (layout QA, moments, pacing, motion density, kit audit) judges the plan
+the runtime executes, and `injectPluginContract`
+(`applyDeterministicSourceRepairs`, before component-binding reconciliation)
+strips + re-generates the unit's seeded kit-valid markup byte-identically each
+pass. One unit = ONE budget/pacing unit regardless of children
+(`componentUnitCount` / `sceneIntroductionTimes`); children are never trimmed.
+Foundations: `pluginKernel.ts` (grid/stack/scatter distribution primitive,
+Fibonacci spacing rhythm, seeded PRNG) and `seedContent.ts` (deterministic
+on-topic SaaS content — metrics, task/PR rows, names, toasts; kills
+"Item 1/2/3" filler). The author model never sees lowered children
+(`authorStoryboardProjection`, skeleton do-not-author comments). Kill switch
+`SLACK_SEQUENCES_PLUGINS=0`; storyboard cache contract v17. Proof:
+`test/pluginContract.test.ts` + `test/pluginRuntime.browser.test.ts` (an
+all-plugin film through real browser QA). Seams: the plugin table in
+[studio/INTEGRATION.md](studio/INTEGRATION.md).
+**2026-07-09 probe fixes (plugin-probe-1/2 + plugin-live-1 lessons):** plugin
+entrance beats wait for the camera's arrival at the unit's station
+(`cameraArrivalSec` — count-ups no longer animate off-screen), the injected
+wrapper defends its placement against author station CSS
+(`grid-column:1/-1;min-width:0`), and author-drawn markup duplicating an
+ABSORBED component is hidden at injection (`pluginAbsorbedParts`). Three new
+L2 normalizers kill the probes' recurring attempt-burner classes:
+`repairStationPositioning` (a `data-region` with a left/top rect but no
+`position:` gets `position:absolute` — the live-1 240px-overflow root cause),
+a `repeat:-1 → repeat: 2` clamp (the probe-1 attempt-1 static death), and
+`injectBrandBase` (frame.md committed tokens/type/canvas as a host style block
+before authored styles — the "EB Garamond not used" class becomes
+unrepresentable, kit `var()` fallbacks bind to brand, no white first-frame
+flash). The component kit fixed three motion tells within v1: progress
+rings/bars and chart strokes render empty before their beat (flash-of-full),
+`html,body` carry the `--canvas` tint, and the default highlight is a
+hairline+bloom focus glow, not the 3px "blue pulse". The browser layout
+repair's scale floor deepens to 0.78 for full-frame `important_safe_area`
+bands (all three probes' least-bad penalty source). Round 2 (after the
+fix-probe-1 live run, penalty 31→1): same-scene exact text-node duplicates of
+a plugin's typed copy params are stamped + hidden at injection (the doubled
+lockup), camera scenes without a declared worldLayout get default
+viewport-sized cells synthesized per path region
+(`normalize.world-layout-derive` — no more author-freestyled 7680px wall
+stations at 0.25 fit zoom), and `repairStationPositioning` also completes
+`display:grid` on stations declaring grid-only alignment props with no
+display (cache contract v18).
+
 The studio now also has a **canvas builder** (`studio/canvasModel.ts` +
 `compileCanvas.ts`): a direct-manipulation film editor (world view over
 `data-camera-world`/`data-region`, live catalog components, camera transitions

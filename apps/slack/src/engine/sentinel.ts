@@ -643,6 +643,35 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "Telemetry tags: recipe-reconcile, recipe-inject.",
   },
   {
+    id: "normalize.plugin-lower",
+    group: "plugins",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/pluginContract.test.ts",
+    addedBecause:
+      "2026-07-08 host plugins (the seventh contract): storyboards may invoke " +
+      "parameterized GENERATORS as typed `plugins:[{kind,params}]` forms. " +
+      "reconcileAndLowerPlugins (parseStoryboard, before the dive/pop/moment " +
+      "machinery) is the L2 governor AND the lowering: unknown kinds no-op " +
+      "with a note, params default/clamp/drop, the MAX_PLUGINS_PER_FILM " +
+      "budget trims, and kept units lower into ordinary typed components " +
+      "(stamped pluginUid) + beats so every existing gate judges the executed " +
+      "plan. A unit counts ONCE in complexity/pacing budgets " +
+      "(componentUnitCount / sceneIntroductionTimes) and its children are " +
+      "never trimmed piecemeal. Probe-audit-01/02/03 motivation: geometry, " +
+      "believable content, and N-element entrances are host strengths the " +
+      "model reliably fumbles. 2026-07-09 plugin-live-1 lessons folded in: " +
+      "entrance beats wait for the camera's arrival at the unit's station " +
+      "(cameraArrivalSec — count-ups no longer play off-screen), the injected " +
+      "wrapper carries placement self-defense (grid-column:1/-1, min-width:0) " +
+      "so an author grid station can never squeeze it, and author-drawn " +
+      "markup duplicating an ABSORBED component (pluginAbsorbedParts) is " +
+      "hidden by a host style block at injection. Telemetry tags: " +
+      "plugin-reconcile, plugin-inject.",
+  },
+  {
     id: "normalize.kit-chart-complete",
     group: "markup-audit",
     layer: "normalize",
@@ -683,6 +712,76 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "topUpRowsMarkup. It PREVENTS the markup-audit row's kit_markup_incomplete " +
       "for fill-less progress.",
   },
+  {
+    id: "normalize.world-layout-derive",
+    group: "camera",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-09 fix-probe-1: a camera scene naming regions but declaring NO " +
+      "worldLayout reached the skeleton as rect-less stations, and the author " +
+      "freestyled geometry — a 7680px wall station put the plugin unit in a " +
+      "quarter-frame void at fit zoom and shipped stations without " +
+      "position:absolute. parseStoryboard now synthesizes one viewport-sized " +
+      "cell per camera-path region (first-appearance order) so " +
+      "worldStationRects/cameraWorldStyle emit sane rects by construction. " +
+      "Declared worldLayout always wins. Telemetry tag world-layout-derive.",
+  },
+  {
+    id: "normalize.gsap-repeat-clamp",
+    group: "runtime-invariants",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-09 plugin-probe-1 attempt 1 died on the static invariant " +
+      "`repeat: -1` (infinite repeats are unbounded under deterministic " +
+      "capture). The author's intent — an ambient pulse — survives a finite " +
+      "clamp, so applyDeterministicSourceRepairs rewrites repeat:-1 to " +
+      "repeat: 2 before the lint (telemetry tag gsap-repeat-clamp). The " +
+      "invariant gate is unchanged; the obligation moved to L2.",
+  },
+  {
+    id: "normalize.station-position",
+    group: "camera",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-09 plugin-live-1: a camera-world station authored with a " +
+      "left/top placement rect but NO position:absolute is static flow — the " +
+      "rect is ignored, the station spans the full world plane, and its " +
+      "content (including host plugin units) overflows every clip audit " +
+      "(canvas_overflow 240px on plugin tiles). The intent is mechanically " +
+      "certain, so repairStationPositioning completes the declaration " +
+      "(telemetry tag station-position).",
+  },
+  {
+    id: "normalize.brand-base",
+    group: "brand",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-09 probes 2/3 both burned browser attempts on `frame/type: " +
+      "body family not used` — a committed-brand fact the host already knows. " +
+      "injectBrandBase (applyDeterministicSourceRepairs) renders frame.md's " +
+      "committed tokens as a host style block BEFORE authored styles: :root " +
+      "custom properties (--canvas/--accent/--font-*), base body/heading/mono " +
+      "font rules, and the kit's var() fallbacks bind to brand instead of " +
+      "default blue. Authored rules still win the cascade; the frame/type " +
+      "warning class becomes unrepresentable and the first frame carries the " +
+      "tinted canvas (no white flash). Telemetry tag brand-base.",
+  },
 
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {
@@ -706,6 +805,23 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "before the time-wrap), so these codes are reachable only if the " +
       "injection seam breaks or a declaration survives reconciliation without " +
       "a library entry. Never a routine authoring finding; no prompt prose.",
+  },
+  {
+    id: "plugins.contract",
+    group: "plugins",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["plugin_unknown", "plugin_island_missing"],
+    promptCostChars: 0,
+    test: "test/pluginContract.test.ts",
+    addedBecause:
+      "2026-07-08 host plugins: validatePluginContract is a host-plumbing " +
+      "self-check (the validateRecipeContract disposition) — the host strips " +
+      "and re-generates every declared unit's markup from the locked " +
+      "storyboard on every repair pass (injectPluginContract in " +
+      "applyDeterministicSourceRepairs, before component-binding " +
+      "reconciliation), so these codes are reachable only if the injection " +
+      "seam breaks. Never a routine authoring finding; no prompt prose.",
   },
   {
     id: "camera.energy",
@@ -1042,6 +1158,7 @@ export const FINDING_SOURCE_FILES: readonly string[] = [
   "storyboardMoments.ts",
   "kitMarkupAudit.ts",
   "recipeContract.ts",
+  "pluginContract.ts",
   "frameValidation.ts",
   "layoutInspector.ts",
   "directComposition.ts",

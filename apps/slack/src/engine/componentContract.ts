@@ -408,6 +408,13 @@ export interface SceneComponentSpecV1 {
   /** Optional camera-world station the component lives in. */
   region?: string;
   role?: "hero" | "support";
+  /**
+   * Host-stamped when this component was lowered from a declared plugin unit
+   * (`pluginContract.ts`) — never model-authored (`normalizeStoryboardComponents`
+   * cannot emit it). Components sharing a pluginUid are ONE budget/pacing unit:
+   * complexity audits count the unit once and trims never dismember it.
+   */
+  pluginUid?: string;
 }
 
 /** One typed state change on a declared component (times are absolute). */
@@ -915,9 +922,16 @@ export function autoStyleCompactPops(storyboard: DirectScene[]): StyleDeriveResu
     const beats = scene.beats ?? [];
     if (!beats.length) return scene;
     const kinds = new Map((scene.components ?? []).map((component) => [component.id, component.kind]));
+    // Plugin-lowered entrances stay uniform: the unit's cascade is ONE
+    // host-choreographed gesture, and pop-styling only the first two children
+    // (the per-scene cap) would make one generated unit read inconsistently.
+    const pluginOwned = new Set(
+      (scene.components ?? []).flatMap((component) => (component.pluginUid ? [component.id] : [])),
+    );
     let changed = false;
     const next = beats.map((beat) => {
       if (beat.kind !== "open" || beat.style) return beat;
+      if (pluginOwned.has(beat.component)) return beat;
       const kind = kinds.get(beat.component);
       if (!kind || !COMPACT_POP_KINDS.has(kind)) return beat;
       changed = true;
@@ -1057,6 +1071,26 @@ const SURFACE_RETIRE_BEATS: ReadonlySet<ComponentBeatKind> = new Set<ComponentBe
 ]);
 
 /**
+ * Budget units in a component list: a plugin unit (components sharing a
+ * `pluginUid`) counts ONCE regardless of how many children it lowered — the
+ * host generated the whole unit as one gesture, the author builds none of it,
+ * and the viewer reads it as one surface. Free-standing components count
+ * individually as before.
+ */
+export function componentUnitCount(
+  components: SceneComponentSpecV1[] | undefined,
+): number {
+  if (!components?.length) return 0;
+  const pluginUids = new Set<string>();
+  let free = 0;
+  for (const component of components) {
+    if (component.pluginUid) pluginUids.add(component.pluginUid);
+    else free += 1;
+  }
+  return free + pluginUids.size;
+}
+
+/**
  * Deterministic plan-complexity audit, run at storyboard validation. The
  * 2026-07-04 baseline failure mode: GLM declared 11 components (4 in one
  * 2.7s scene) for an 18s film, and the source author burned all three
@@ -1072,7 +1106,7 @@ export function auditComponentComplexity(
   let total = 0;
   let filmSec = 0;
   for (const scene of scenes) {
-    const count = scene.components?.length ?? 0;
+    const count = componentUnitCount(scene.components);
     total += count;
     filmSec += scene.durationSec;
     const cap = Math.min(
@@ -1184,8 +1218,10 @@ export function trimOverBudgetComponents(
   // order) — set dressing goes before a surface carrying real state changes.
   const droppableInScene = (scene: DirectScene): SceneComponentSpecV1[] => {
     const components = scene.components ?? [];
+    // A plugin child is never set dressing to trim piecemeal: the unit was
+    // host-generated as one gesture and counts as one budget unit anyway.
     return components
-      .filter((component) => !bound.has(component.id))
+      .filter((component) => !component.pluginUid && !bound.has(component.id))
       .sort(
         (a, b) =>
           beatCountOf(scene, a.id) - beatCountOf(scene, b.id) ||
@@ -1207,7 +1243,7 @@ export function trimOverBudgetComponents(
       MAX_COMPONENTS_PER_SCENE,
       Math.max(1, Math.floor(scene.durationSec / SEC_PER_COMPONENT)),
     );
-    const overBy = components.length - cap;
+    const overBy = componentUnitCount(components) - cap;
     if (overBy < 1 || overBy > 2) return scene;
     const picks = droppableInScene(scene).slice(0, overBy);
     if (picks.length < overBy) return scene; // cannot safely reach the cap → keep the finding
@@ -1220,7 +1256,7 @@ export function trimOverBudgetComponents(
   });
 
   // (2) Film-wide over-cap (recomputed after per-scene trims), over by 1-2.
-  const total = scenes.reduce((count, scene) => count + (scene.components?.length ?? 0), 0);
+  const total = scenes.reduce((count, scene) => count + componentUnitCount(scene.components), 0);
   const filmSec = scenes.reduce((sec, scene) => sec + scene.durationSec, 0);
   const filmCap = Math.max(2, Math.ceil(filmSec / FILM_SEC_PER_COMPONENT));
   const filmOver = total - filmCap;

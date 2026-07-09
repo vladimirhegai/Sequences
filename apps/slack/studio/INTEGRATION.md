@@ -42,6 +42,58 @@ operator/agent edits fragment.html in a studio workspace
 | `projectTemplates.initializeProject` | `studio/workspaces.ts` (a workspace IS a project dir) | keep workspaces initializable without a screenshot seed. |
 | `prompts/planning-director.md` byte budget (`test/promptBudget.test.ts`) | recipe teaching text lives in runtime-composed retrieval + the response-contract lines in `requestStoryboardPlan` — **not** in the prompt file | keep it that way; recipe additions must not grow the budgeted prompt. |
 
+## Plugin pipeline seams (2026-07-08 — `src/engine/pluginContract.ts`, the seventh contract)
+
+Plugins are the recipe seam's sibling: parameterized host GENERATORS (not
+frozen fragments) that LOWER into typed components/beats at parse and inject
+one verbatim markup unit per declaration. Anything that changes a recipe seam
+above probably changes the matching plugin seam too.
+
+v1 catalog (all in `PLUGIN_CATALOG`): `dashboard-grid`, `notification-stack`,
+`lockup`, `activity-feed` (list/table seeded rows), `terminal-log` (typed
+command + streamed result lines), `team-strip` (seeded avatar stack). A new
+kind is a **catalog entry only** — no seam below changes; the planning
+vocabulary + schema enum derive from the catalog, and the module-load probe at
+the foot of `pluginContract.ts` proves every kind lowers to real component
+kinds. `seedContent.ts` domains: `devtools`/`analytics`/`comms`/`commerce`/
+`design`/`ai`/`generic` (ordered signal match, `generic` fallback last).
+
+2026-07-09 amendments (probe fixes; storyboard cache `contract: 17`): the
+lowering also reads the scene's **camera path** — `cameraArrivalSec` delays
+the unit's entrance anchor until the camera's first full-move landing on its
+region/part (markup stays timing-independent, so byte-convergence is
+unaffected even when a later normalize mutates the path); the injected wrapper
+carries placement self-defense (`grid-column:1/-1;min-width:0;max-width:100%`)
+against author station CSS; and scenes carry `pluginAbsorbedParts` — parts
+whose duplicate free components the absorber dropped — which the injector
+hides via the `sequences-plugin-absorbed` host style block. The component kit
+also changed within v1 (no fence bump — pre-beat rendering only): progress
+ring/bar and chart strokes render EMPTY before their beat (flash-of-full fix),
+`html,body` default to the `--canvas` tint, and the default highlight ring is
+a hairline + bloom instead of the 3px accent border. A recipe re-prove
+(`npm run studio:golden`) is still recommended after kit visual changes
+(done this session — `last-word-roulette` revision 7). Round 2 (post
+fix-probe-1, cache contract 18): `resolvePluginPlan` instances carry
+`copyTexts` (verbatim-rendered text params ≥8 chars) and the injector stamps +
+hides same-scene exact text-node duplicates outside the wrapper
+(`data-sequences-plugin-duplicate`, rules live in the same
+`sequences-plugin-absorbed` style block); parseStoryboard synthesizes a
+default worldLayout (one viewport cell per camera-path region) when the plan
+omits it, which is what guarantees plugin stations arrive viewport-sized.
+
+| engine seam | plugin consumer | when you change it |
+|---|---|---|
+| storyboard schema (`storyboardResponseFormat`, `parseStoryboard`, cache `contract:`) | the `plugins` scene field (enum over `PLUGIN_KINDS`, array-form params) | keep the `plugins` property + required entry in the JSON schema; bump `contract:` on shape changes; parse must keep calling `normalizeStoryboardPluginDeclarations` + `reconcileAndLowerPlugins` (BEFORE dive/pop/moment derivations — lowered beats feed them). |
+| `applyDeterministicSourceRepairs` injection order (islands → **plugins** → component-binding reconcile → … → recipes → kits → time-wrap LAST) | `injectPluginContract` call site | plugin injection must stay BEFORE `reconcileComponentBindings` (injected roots satisfy lowered components; reconcilers must never claim author elements for host-provided parts) and be strip-and-reinject byte-convergent (`test/pluginContract.test.ts`). |
+| `componentContract.SceneComponentSpecV1.pluginUid` | `componentUnitCount` (complexity audits), `trimOverBudgetComponents` (never trims plugin children), `pacingAudit.sceneIntroductionTimes` (one introduction per unit) | host-only stamp — `normalizeStoryboardComponents` must never accept it from the model. |
+| author-facing projections (`authorStoryboardProjection`, `buildSceneSkeletonInterior`, `slotScaffoldViolations`, `componentReferenceFor`) | plugin children hidden from the author (locked-storyboard JSON, skeletons show a do-not-author comment, no scaffold violation for host-injected roots) | if the author ever sees lowered plugin components it WILL author duplicate roots. |
+| `validateDirectComposition` | `validatePluginContract` (plugin_unknown / plugin_island_missing) | host-plumbing self-checks (recipe disposition); keep in the error aggregation. |
+| `sentinel.ts` registry | rows `normalize.plugin-lower` + `plugins.contract`; `pluginContract.ts` in `FINDING_SOURCE_FILES` | any new `plugin_*` finding code must be registered or `test/sentinel.test.ts` fails. |
+| foundations `pluginKernel.ts` / `seedContent.ts` | every plugin's geometry + content; lowering must stay a PURE function of (scene identity, declaration) | any nondeterminism (Date.now, Math.random, unordered iteration) breaks byte-convergent re-injection and the shared planning cache. |
+| `sentinelFlags.pluginsEnabled()` (`SLACK_SEQUENCES_PLUGINS=0`) | parse + injection | the whole path behind one switch; default ON. |
+| kit CSS class vocabulary (`templates/sequences-components.v1.css`) | generated markup uses kit classes verbatim (`cmp-stat`, `cmp-toast`, `cmp-ring`, `cmp-headline`, `cmp-item`/`cmp-row`/`cmp-chip`, `cmp-line`/`cmp-dim`, `cmp-avatars`/`cmp-more`, …) | renaming a kit class breaks generated interiors — `test/pluginRuntime.browser.test.ts` catches it in real browser QA. |
+| human-facing paperwork (`storyboardMarkdown`, `directOutline`) | one `- plugin: <kind> "<id>" (name=value…) — host-generated` line per declaration in STORYBOARD.md; a `· plugins: <kind>` suffix on the Slack outline scene row | derive the parenthetical generically from `declaration.params` (+ `station=<region>`), never special-case a kind; keep receipts argument-free (paperwork only). |
+
 ## Canvas builder seams (M1/M2 — `studio/canvasModel.ts` + `compileCanvas.ts`)
 
 The canvas editor is a WYSIWYG surface over the SAME host-owned contracts the

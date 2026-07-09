@@ -12,6 +12,7 @@ import {
   type CompleteOptions,
 } from "@sequences/platform/providers";
 import type { RetrievedSkillContext } from "../agent/skillContext.ts";
+import { parseFrame } from "./frameValidation.ts";
 import { loadCapabilityIndex } from "../agent/capabilityIndex.ts";
 import {
   validateDirectComposition,
@@ -146,6 +147,7 @@ import {
 import {
   criticSkipCleanEnabled,
   criticSlotRepairEnabled,
+  pluginsEnabled,
   recipesEnabled,
   sentinelSkeletonEnabled,
   sentinelSlotsEnabled,
@@ -158,6 +160,14 @@ import {
   normalizeStoryboardRecipeDeclarations,
   reconcileRecipeDeclarations,
 } from "./recipeContract.ts";
+import {
+  MAX_PLUGINS_PER_FILM,
+  PLUGIN_KINDS,
+  injectPluginContract,
+  normalizeStoryboardPluginDeclarations,
+  pluginPlanningVocabulary,
+  reconcileAndLowerPlugins,
+} from "./pluginContract.ts";
 import {
   SENTINEL_CONTRACT,
   type SentinelBlocking,
@@ -219,7 +229,11 @@ export interface CompositionRunResult {
 const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
 const SLOT_SKILL_BUDGET_CHARS = 5_000;
-const REPAIR_MAX_TOKENS = 4_096;
+// 8k, not 4k: fix-probe-2 (and plugin-probe-1 before it) burned its FINAL
+// author attempt on a compact patch truncating at the 4096 output-token
+// ceiling — a config death, not a model one. Patches are still an order of
+// magnitude cheaper than a full re-author.
+const REPAIR_MAX_TOKENS = 8_192;
 const MAX_REPAIR_PATCHES = 16;
 // Camera-era storyboards carry typed camera paths and more shots, so the
 // compact JSON artifact needs more room than the pre-rig 4K ceiling.
@@ -420,6 +434,33 @@ function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat
                     additionalProperties: false,
                   },
                 },
+                plugins: {
+                  type: "array",
+                  maxItems: MAX_PLUGINS_PER_FILM,
+                  items: {
+                    type: "object",
+                    properties: {
+                      version: { type: "number", enum: [1] },
+                      kind: { type: "string", enum: [...PLUGIN_KINDS] },
+                      id: { type: "string" },
+                      region: { type: "string" },
+                      params: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            name: { type: "string" },
+                            value: { type: ["string", "number"] },
+                          },
+                          required: ["name", "value"],
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                    required: ["version", "kind", "params"],
+                    additionalProperties: false,
+                  },
+                },
                 spatialIntent: {
                   type: "object",
                   properties: {
@@ -541,8 +582,8 @@ function storyboardResponseFormat(): NonNullable<CompleteOptions["responseFormat
                 "id", "title", "purpose", "incomingIdea", "foreground", "background",
                 "cameraIntent", "startSec", "durationSec", "blueprint", "rules",
                 "capabilityIds", "continuityAnchor", "outgoingCut", "cut", "timeRamp",
-                "camera", "components", "beats", "recipes", "spatialIntent", "moments",
-                "interactions",
+                "camera", "components", "beats", "recipes", "plugins", "spatialIntent",
+                "moments", "interactions",
               ],
               additionalProperties: false,
             },
@@ -2559,6 +2600,15 @@ const LAYOUT_REPAIR_TARGET_CODES = new Set(["canvas_overflow", "important_safe_a
 const LAYOUT_REPAIR_KEY_SEPARATOR = "\u0000";
 const LAYOUT_REPAIR_CANVAS_GUARD_PX = 8;
 const LAYOUT_REPAIR_SCALE_FLOOR = 0.86;
+/**
+ * Full-frame bands get a deeper floor: all three plugin-probe runs shipped a
+ * least-bad important_safe_area on a hero band whose fix needed scale
+ * 0.80–0.83 — the 0.86 floor refused, and the finding burned paid attempts. A
+ * band that still spans ≥70% of the frame after a 0.78 scale reads as
+ * intentional composition, not shrinkage.
+ */
+const LAYOUT_REPAIR_SCALE_FLOOR_BAND = 0.78;
+const LAYOUT_REPAIR_BAND_FRACTION = 0.7;
 const LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION = 0.1;
 const LAYOUT_REPAIR_GOLDEN_RATIO = (1 + Math.sqrt(5)) / 2;
 const LAYOUT_REPAIR_GOLDEN_INSET = 1 / (LAYOUT_REPAIR_GOLDEN_RATIO * LAYOUT_REPAIR_GOLDEN_RATIO);
@@ -2697,7 +2747,12 @@ function layoutRepairCandidate(
     return undefined;
   }
   const scale = Math.min(1, safeRect.width / rect.width, safeRect.height / rect.height);
-  if (!Number.isFinite(scale) || scale < LAYOUT_REPAIR_SCALE_FLOOR) return undefined;
+  const isBand =
+    candidate.issueCode === "important_safe_area" &&
+    (rect.width >= frameRect.width * LAYOUT_REPAIR_BAND_FRACTION ||
+      rect.height >= frameRect.height * LAYOUT_REPAIR_BAND_FRACTION);
+  const scaleFloor = isBand ? LAYOUT_REPAIR_SCALE_FLOOR_BAND : LAYOUT_REPAIR_SCALE_FLOOR;
+  if (!Number.isFinite(scale) || scale < scaleFloor) return undefined;
   const scaledWidth = rect.width * scale;
   const scaledHeight = rect.height * scale;
   if (scaledWidth > safeRect.width + 0.5 || scaledHeight > safeRect.height + 0.5) {
@@ -3340,6 +3395,112 @@ function ensureRootDataStart(html: string): { html: string; repaired: boolean } 
   return { html: next, repaired };
 }
 
+/**
+ * L2: a camera-world station authored with a placement rect but no
+ * `position:absolute` is static flow — left/top are ignored, the station
+ * spans the whole world plane, and everything inside lands off-frame or
+ * overflowing (the plugin-live-1 metric-station class: our own plugin tiles
+ * "overflowed" 240px because the station was 3840px wide). The intent is
+ * mechanically certain, so the host completes it.
+ */
+export function repairStationPositioning(html: string): { html: string; repairs: number } {
+  let repairs = 0;
+  const result = html.replace(
+    /<([a-z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*\bdata-region\s*=(?:[^>"']|"[^"]*"|'[^']*')*)>/gi,
+    (tag, name: string, attrs: string) => {
+      const style = attrs.match(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i);
+      if (!style) return tag;
+      const css = style[2]!;
+      const completions: string[] = [];
+      if (
+        !/(?:^|;)\s*position\s*:/i.test(css) &&
+        /(?:^|;)\s*(?:left|top)\s*:/i.test(css)
+      ) {
+        completions.push("position:absolute");
+      }
+      // Grid alignment props without a display are inert (fix-probe-1: two
+      // stations declared align-content/justify-items in static flow, so
+      // nothing centered). The vocabulary is grid-only, so the intent is
+      // mechanically certain.
+      if (
+        !/(?:^|;)\s*display\s*:/i.test(css) &&
+        /(?:^|;)\s*(?:align-content|justify-items)\s*:/i.test(css)
+      ) {
+        completions.push("display:grid");
+      }
+      if (!completions.length) return tag;
+      repairs += 1;
+      const patched = attrs.replace(
+        style[0]!,
+        `style=${style[1]}${completions.join(";")};${css}${style[1]}`,
+      );
+      return `<${name}${patched}>`;
+    },
+  );
+  return { html: result, repairs };
+}
+
+const BRAND_BASE_STYLE_ID = "sequences-brand-base";
+const BRAND_BASE_BLOCK = new RegExp(
+  `<style\\b[^>]*\\bid\\s*=\\s*(["'])${BRAND_BASE_STYLE_ID}\\1[^>]*>[\\s\\S]*?</style>\\n?`,
+  "i",
+);
+
+/**
+ * L2: host-owned brand base tokens from the job's frame.md — the committed
+ * type trio as :root custom properties + base rules, the canvas hex, and the
+ * committed accent. Injected BEFORE authored styles so every authored rule
+ * still wins; the kit's var() fallbacks bind to the brand instead of the
+ * default blue, unstyled text renders in the committed body family (the
+ * recurring "EB Garamond not used" browser finding becomes unrepresentable),
+ * and html/body carry the tinted canvas from the first frame.
+ */
+export function brandBaseStyleBlock(frameMd: string): string | undefined {
+  const frame = parseFrame(frameMd);
+  const quote = (family: string): string => `'${family.replace(/['"]/g, "")}'`;
+  const rootTokens: string[] = [];
+  if (frame.canvas) rootTokens.push(`--canvas:${frame.canvas}`);
+  if (frame.accent) rootTokens.push(`--accent:${frame.accent}`);
+  if (frame.display) rootTokens.push(`--font-display:${quote(frame.display)}`);
+  if (frame.body) rootTokens.push(`--font-body:${quote(frame.body)}`);
+  if (frame.mono) rootTokens.push(`--font-mono:${quote(frame.mono)}`);
+  if (!rootTokens.length) return undefined;
+  const rules: string[] = [`:root{${rootTokens.join(";")}}`];
+  if (frame.body) {
+    rules.push(`body{font-family:var(--font-body),'Inter',system-ui,sans-serif}`);
+  }
+  if (frame.display) {
+    rules.push(
+      `h1,h2,h3,.cmp-headline{font-family:var(--font-display),var(--font-body,'Inter'),sans-serif}`,
+    );
+  }
+  if (frame.mono) rules.push(`code,pre{font-family:var(--font-mono),monospace}`);
+  return (
+    `<style data-sequences-host="1" id="${BRAND_BASE_STYLE_ID}">\n` +
+    `${rules.join("\n")}\n</style>`
+  );
+}
+
+export function injectBrandBase(
+  html: string,
+  frameMd: string | undefined,
+): { html: string; injected: boolean } {
+  if (!frameMd) return { html, injected: false };
+  const block = brandBaseStyleBlock(frameMd);
+  if (!block) return { html, injected: false };
+  const hadBlock = BRAND_BASE_BLOCK.test(html);
+  let result = hadBlock ? html.replace(BRAND_BASE_BLOCK, "") : html;
+  const anchor = /<style\b/i.exec(result);
+  if (anchor?.index !== undefined) {
+    result = result.slice(0, anchor.index) + block + "\n" + result.slice(anchor.index);
+  } else {
+    const headClose = /<\/head>/i.exec(result);
+    if (headClose?.index === undefined) return { html, injected: false };
+    result = result.slice(0, headClose.index) + block + "\n" + result.slice(headClose.index);
+  }
+  return { html: result, injected: !hadBlock };
+}
+
 export function applyDeterministicSourceRepairs(
   draft: DirectCompositionDraft,
   projectDir: string,
@@ -3457,6 +3618,42 @@ export function applyDeterministicSourceRepairs(
     process.stderr.write(
       "[author] deterministically replaced Math.random() with a fixed seeded PRNG\n",
     );
+  }
+  // Infinite repeats are a static invariant rejection (deterministic capture
+  // cannot bound them) — but the author's INTENT (an ambient pulse) survives a
+  // finite clamp, so the obligation moves to L2 instead of burning an attempt.
+  const infiniteRepeats = html.match(/\brepeat\s*:\s*-1\b/g)?.length ?? 0;
+  if (infiniteRepeats) {
+    html = html.replace(/\brepeat\s*:\s*-1\b/g, "repeat: 2");
+    recordSentinelNormalization("gsap-repeat-clamp", infiniteRepeats);
+    process.stderr.write(
+      `[author] clamped ${infiniteRepeats} infinite GSAP repeat(s) to repeat: 2 ` +
+        `(finite timelines by construction)\n`,
+    );
+  }
+  const stationPositioning = repairStationPositioning(html);
+  if (stationPositioning.repairs) {
+    html = stationPositioning.html;
+    recordSentinelNormalization("station-position", stationPositioning.repairs);
+    process.stderr.write(
+      `[author] completed position:absolute on ${stationPositioning.repairs} camera-world ` +
+        `station(s) declaring a placement rect in static flow\n`,
+    );
+  }
+  const frameMdPath = path.join(projectDir, "frame.md");
+  const brandBase = injectBrandBase(
+    html,
+    fs.existsSync(frameMdPath) ? fs.readFileSync(frameMdPath, "utf8") : undefined,
+  );
+  if (brandBase.html !== html) {
+    html = brandBase.html;
+    if (brandBase.injected) {
+      recordSentinelNormalization("brand-base", 1);
+      process.stderr.write(
+        "[author] injected the host brand-base style block (frame tokens, committed " +
+          "type trio, canvas) — authored rules still win the cascade\n",
+      );
+    }
   }
   const compositionId = html.match(
     /<[^>]+\bdata-composition-id\s*=\s*(["'])(.*?)\1[^>]*>/is,
@@ -3617,6 +3814,23 @@ export function applyDeterministicSourceRepairs(
       recordSentinelScaffoldRestoration("l2-normalize", cameraWorlds.repairs);
       process.stderr.write(
         `[author] wrapped ${cameraWorlds.repairs} scene(s) in deterministic camera world plane(s)\n`,
+      );
+    }
+  }
+  // Plugin units (seventh contract) are stripped and re-generated VERBATIM
+  // from the locked storyboard every pass — the recipe seam discipline — so
+  // the author model can never edit (or accidentally lose) a generated unit.
+  // Runs BEFORE component-binding reconciliation so the injected roots satisfy
+  // the lowered components' bindings and no author element is ever claimed
+  // for a part the host provides.
+  if (pluginsEnabled()) {
+    const pluginInjection = injectPluginContract(html, lockedStoryboard ?? draft.storyboard);
+    if (pluginInjection.html !== html) {
+      html = pluginInjection.html;
+      recordSentinelNormalization("plugin-inject", pluginInjection.injected.length || 1);
+      process.stderr.write(
+        `[author] injected ${pluginInjection.injected.length} host-generated ` +
+          `plugin unit(s): ${pluginInjection.injected.join(", ")}\n`,
       );
     }
   }
@@ -4538,6 +4752,11 @@ function parseStoryboard(raw: string): DirectScene[] {
     const recipes = recipesEnabled()
       ? normalizeStoryboardRecipeDeclarations(scene.recipes)
       : [];
+    // Plugin declarations are likewise time-free typed forms: the host derives
+    // every beat time from the (re-based) scene window at lowering.
+    const plugins = pluginsEnabled()
+      ? normalizeStoryboardPluginDeclarations(scene.plugins)
+      : [];
     // The authored and rebased windows have identical length (duration is
     // clamped once, above), so a pure shift keeps every time in-window and
     // preserves relative ordering within each intent.
@@ -4604,6 +4823,7 @@ function parseStoryboard(raw: string): DirectScene[] {
       ...(components.length ? { components } : {}),
       ...(beats.length ? { beats } : {}),
       ...(recipes.length ? { recipes } : {}),
+      ...(plugins.length ? { plugins } : {}),
       ...(spatialIntent ? { spatialIntent } : {}),
       ...(interactions.length ? { interactions } : {}),
       ...(moments.length ? { moments } : {}),
@@ -4627,10 +4847,56 @@ function parseStoryboard(raw: string): DirectScene[] {
         }
       : {}),
   }));
+  // Plugin lowering (seventh contract, Sentinel L2): declared generator forms
+  // become typed components (stamped pluginUid) + beats merged into their
+  // scenes NOW, before the dive/pop/grade/moment machinery, so every
+  // downstream derivation and gate judges the plan the runtime will execute.
+  // Degrade-never-veto: unknown kinds no-op, bad params default/clamp/drop.
+  const pluginLowering = pluginsEnabled()
+    ? reconcileAndLowerPlugins(deduped)
+    : { scenes: deduped, notes: [] };
+  for (const line of pluginLowering.notes) {
+    process.stderr.write(`[storyboard] plugin-reconcile: ${line}\n`);
+  }
+  if (pluginLowering.notes.length) {
+    recordSentinelNormalization("plugin-reconcile", pluginLowering.notes.length);
+  }
+  // Default world layout (fix-probe-1 lesson): a camera scene whose plan
+  // names regions but declares NO worldLayout used to reach the skeleton as
+  // rect-less stations — the author freestyled geometry (a 7680px "wall"
+  // station put every plugin tile in a quarter-frame void at fit zoom, and
+  // stations shipped without position:absolute). Synthesizing one
+  // viewport-sized cell per path region (first-appearance order) makes the
+  // existing worldStationRects/cameraWorldStyle machinery emit sane station
+  // rects by construction. Degrade-never-veto: declared worldLayout always
+  // wins; scenes without camera regions are untouched.
+  const withWorldLayout = (pluginLowering.scenes as DirectScene[]).map((scene) => {
+    if (scene.worldLayout?.length || !scene.camera?.path?.length) return scene;
+    const ordered: string[] = [];
+    for (const move of scene.camera.path) {
+      for (const region of [move.fromRegion, move.toRegion]) {
+        if (region && !ordered.includes(region)) ordered.push(region);
+      }
+    }
+    if (!ordered.length) return scene;
+    recordSentinelNormalization("world-layout-derive", 1);
+    process.stderr.write(
+      `[storyboard] scene "${scene.id}": derived default worldLayout cells for ` +
+        `${ordered.join(", ")} (plan declared camera regions but no layout)\n`,
+    );
+    return {
+      ...scene,
+      worldLayout: ordered.map((region, index) => ({ region, cell: [index, 0] as [number, number] })),
+      sentinelNormalizations: [
+        ...(scene.sentinelNormalizations ?? []),
+        `world-layout-derive: default viewport cells for ${ordered.join(", ")}`,
+      ],
+    };
+  });
   // Dive legs are host arithmetic (MD5, lever-10 philosophy): the model
   // declares only the intent + total window; the in/hold/out split is derived
   // here from the overlapping beat windows and stored on the move.
-  const dives = deriveDiveWindows(deduped);
+  const dives = deriveDiveWindows(withWorldLayout);
   for (const line of dives.normalized) {
     process.stderr.write(`[storyboard] dive-window derived: ${line}\n`);
   }
@@ -6565,8 +6831,18 @@ export async function requestStoryboardPlan(
     // `recipes:[{id,params}]` from the retrieved library, reconciled at parse
     // and host-instantiated verbatim (recipeContract.ts). The library content
     // hash below also keys the cache, so an exported/re-proven recipe
-    // invalidates plans that could now use it.
-    contract: 14,
+    // invalidates plans that could now use it; v15: host plugins — scenes may
+    // declare typed `plugins:[{kind,params}]` generator forms that LOWER into
+    // components/beats at parse (pluginContract.ts), so a cached plan's parse
+    // now carries the lowered unit; v16: the plugin reconciler also ABSORBS
+    // free same-kind components duplicating a declared unit's content (the
+    // plugin-probe-1 double-declaration lesson); v17: plugin entrance beats
+    // wait for the camera's arrival at the unit's station (cameraArrivalSec)
+    // and absorbed duplicate parts persist on the scene
+    // (pluginAbsorbedParts) for injection-time hiding; v18: camera scenes
+    // without a declared worldLayout get default viewport cells synthesized
+    // per path region (world-layout-derive).
+    contract: 18,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
@@ -6714,6 +6990,9 @@ export async function requestStoryboardPlan(
     "and about 1 per 2s of film overall. One component carrying three beats is",
     "ALWAYS better than three components carrying one beat each. Never declare",
     "a component that exists only as set dressing.",
+    "",
+    pluginPlanningVocabulary(),
+    "",
     "Do not schedule a press/select/highlight beat on the same component a",
     "cursor interaction is pressing at the same time — the cursor's press",
     "feedback already animates the target, and the doubled pulse reads as a",
@@ -6920,6 +7199,11 @@ export async function requestStoryboardPlan(
     "present) on the shot it belongs to; the host injects its proven",
     "markup+motion verbatim with your param values, costing zero authoring",
     'budget. Use "recipes":[] when no library recipe fits the shot.',
+    '"plugins":[{"version":1,"kind":"dashboard-grid|notification-stack|lockup",',
+    '"id":"kebab-case unit part name","region":"optional station",',
+    '"params":[{"name":"…","value":"…"}]}]',
+    "— declare a host plugin (see HOST PLUGINS above) on the shot that wants a",
+    'generated set-piece; use "plugins":[] otherwise.',
     "A component id doubles as its data-part: cameras can track-to-anchor it,",
     "object-match cuts can carry it, and cursor interactions can click it.",
     '"spatialIntent":{"version":1,"focalPart":"stable semantic part",',
@@ -7882,13 +8166,42 @@ function availableAssets(projectDir: string): string {
 }
 
 /**
+ * The author-facing view of one locked-storyboard scene: plugin-lowered
+ * components and beats collapse back into their one-line `plugins`
+ * declaration (the host injects the whole unit — an author who sees N lowered
+ * tiles WILL author N duplicate roots), while everything author-owned passes
+ * through untouched. Exported for tests.
+ */
+export function authorStoryboardProjection<T extends Partial<DirectScene>>(scene: T): T {
+  const pluginComponents = new Set(
+    (scene.components ?? []).flatMap((component) => (component.pluginUid ? [component.id] : [])),
+  );
+  if (!pluginComponents.size) return scene;
+  const components = (scene.components ?? []).filter(
+    (component) => !component.pluginUid,
+  );
+  const beats = (scene.beats ?? []).filter(
+    (beat) => !pluginComponents.has(beat.component),
+  );
+  return {
+    ...scene,
+    ...(components.length ? { components } : { components: undefined }),
+    ...(beats.length ? { beats } : { beats: undefined }),
+  };
+}
+
+/**
  * The markup contract for exactly the component kinds these scenes declare.
  * Empty when no scene declares components, so plain films pay no prompt cost.
  */
 function componentReferenceFor(scenes: DirectScene[] | undefined): string {
   const kinds = new Set<ComponentKind>();
   for (const scene of scenes ?? []) {
-    for (const component of scene.components ?? []) kinds.add(component.kind);
+    for (const component of scene.components ?? []) {
+      // Plugin-owned components are host-injected; the author never writes
+      // their markup, so their kinds cost no authoring-reference budget.
+      if (!component.pluginUid) kinds.add(component.kind);
+    }
   }
   return kinds.size ? componentAuthoringReference(kinds) : "";
 }
@@ -8071,7 +8384,14 @@ function worldStationRects(scene: DirectScene): Map<string, string> {
   for (const { region, cell } of cells) {
     const left = (cell[0] - minX) * 1920 + 260;
     const top = (cell[1] - minY) * 1080 + 140;
-    map.set(region, `position:absolute;left:${left}px;top:${top}px;width:1400px;height:800px`);
+    // Centering grid default (fix-probe-3 m01: author interiors hug the
+    // station's top-left corner in a void). Authors may override; a station
+    // whose content is a centered group at fit zoom is the right default.
+    map.set(
+      region,
+      `position:absolute;left:${left}px;top:${top}px;width:1400px;height:800px;` +
+        `display:grid;align-content:center;justify-items:center`,
+    );
   }
   return map;
 }
@@ -8111,8 +8431,24 @@ function buildSceneSkeletonInterior(
   cameraScene: ResolvedCameraScene | undefined,
   cutFocalParts: ReadonlySet<string>,
 ): string {
-  const components = scene.components ?? [];
-  const componentIds = new Set(components.map((component) => component.id));
+  // Plugin-owned components are HOST-INJECTED units (pluginContract.ts): the
+  // author must not author their roots (the injection would duplicate them),
+  // so the skeleton shows a do-not-author note instead of fillable roots.
+  const allComponents = scene.components ?? [];
+  const components = allComponents.filter((component) => !component.pluginUid);
+  const componentIds = new Set(allComponents.map((component) => component.id));
+  const pluginUnitIds = new Set(
+    (scene.plugins ?? []).flatMap((declaration) => (declaration.uid ? [declaration.id] : [])),
+  );
+  const pluginNotes = (scene.plugins ?? [])
+    .filter((declaration) => declaration.uid)
+    .map((declaration) =>
+      `  <!-- host-injected plugin "${declaration.kind}" (data-part="${declaration.id}") ` +
+      `lands ${declaration.region ? `inside data-region="${declaration.region}"` : "in this scene"} — ` +
+      `do NOT author it, its "${declaration.id}-*" parts, or content that restates what it ` +
+      `renders${declaration.kind === "lockup" ? " (the lockup owns this scene's copy — no competing headlines/paragraphs)" : ""}; ` +
+      `style the surrounding atmosphere instead -->`,
+    );
 
   const regions = new Set<string>();
   for (const cell of scene.worldLayout ?? []) regions.add(cell.region);
@@ -8129,9 +8465,11 @@ function buildSceneSkeletonInterior(
     }
   }
   // A component root and a station already carry their name as a binding; only
-  // truly free focal parts need a bare carrier.
+  // truly free focal parts need a bare carrier. Plugin unit wrappers carry
+  // their unit id as data-part, so those never need a carrier either.
   for (const id of componentIds) requiredParts.delete(id);
   for (const region of regions) requiredParts.delete(region);
+  for (const id of pluginUnitIds) requiredParts.delete(id);
 
   const rects = worldStationRects(scene);
   const componentsByRegion = new Map<string, SkeletonComponent[]>();
@@ -8171,6 +8509,7 @@ function buildSceneSkeletonInterior(
       `<div data-camera-world style="${cameraWorldStyle(scene)}">`,
       ...stations,
       ...loose,
+      ...pluginNotes,
       `</div>${overlay}`,
     ].join("\n");
   }
@@ -8178,6 +8517,7 @@ function buildSceneSkeletonInterior(
   return [
     ...components.map((component) => `  ${componentSkeletonMarkup(component)}`),
     ...[...requiredParts].map((part) => `  ${carrier(part)}`),
+    ...pluginNotes,
     "  …compose this scene's interior…",
   ].join("\n");
 }
@@ -8655,9 +8995,13 @@ export function creationPrompt(args: {
         "<locked_storyboard_json>",
         // Host-normalization notes are operator paperwork (STORYBOARD.md),
         // not authoring instructions — keep them out of the paid prompt.
+        // Plugin-owned components/beats are likewise host business: the author
+        // seeing them invites double-authoring the units the host injects, so
+        // the projection collapses each unit back to its one-line declaration.
         JSON.stringify(
           args.lockedStoryboard.map(
-            ({ sentinelNormalizations: _normalizations, layoutRepairs: _layoutRepairs, ...scene }) => scene,
+            ({ sentinelNormalizations: _normalizations, layoutRepairs: _layoutRepairs, ...scene }) =>
+              authorStoryboardProjection(scene),
           ),
           null,
           2,
@@ -9250,13 +9594,16 @@ export function slotScaffoldViolations(
         }
       }
     }
+    // Plugin-owned roots are host-injected AFTER authoring — their absence
+    // from a returned interior is the designed state, never a violation.
+    const authorOwned = (scene.components ?? []).filter((component) => !component.pluginUid);
     const componentsByKind = new Map<string, NonNullable<DirectScene["components"]>>();
-    for (const component of scene.components ?? []) {
+    for (const component of authorOwned) {
       const group = componentsByKind.get(component.kind) ?? [];
       group.push(component);
       componentsByKind.set(component.kind, group);
     }
-    for (const component of scene.components ?? []) {
+    for (const component of authorOwned) {
       const rootRe = new RegExp(
         `\\bdata-part\\s*=\\s*["']${regexpEscape(component.id)}["']`,
         "i",

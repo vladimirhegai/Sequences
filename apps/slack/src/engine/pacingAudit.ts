@@ -280,13 +280,27 @@ export function sceneIntroductionTimes(scene: DirectScene): number[] {
   const beats = scene.beats ?? [];
   const events: number[] = [];
   const usedBeatIds = new Set<string>();
+  // A plugin unit's children arrive as ONE host-choreographed gesture (the
+  // cascade), so the unit contributes one introduction at its earliest
+  // entrance — N seeded tiles are one surface to the eye, not N.
+  const pluginIntro = new Map<string, number>();
   for (const component of components) {
     const entrance = beats
       .filter((beat) => beat.component === component.id && ENTRANCE_BEAT_KINDS.has(beat.kind))
       .sort((a, b) => a.atSec - b.atSec)[0];
     if (entrance) usedBeatIds.add(entrance.id);
-    events.push(entrance ? entrance.atSec : scene.startSec);
+    const at = entrance ? entrance.atSec : scene.startSec;
+    if (component.pluginUid) {
+      const earliest = pluginIntro.get(component.pluginUid);
+      pluginIntro.set(
+        component.pluginUid,
+        earliest === undefined ? at : Math.min(earliest, at),
+      );
+    } else {
+      events.push(at);
+    }
   }
+  events.push(...pluginIntro.values());
   for (const beat of beats) {
     if (beat.kind === "swap" && !usedBeatIds.has(beat.id)) events.push(beat.atSec);
   }

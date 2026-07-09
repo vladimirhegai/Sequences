@@ -461,6 +461,11 @@
     if (ring && typeof ring.getTotalLength === "function") {
       var length = ring.getTotalLength();
       ring.style.strokeDasharray = String(length);
+      // Eager pre-beat state (the compileCount format(0) precedent): the kit
+      // markup carries the FULL final state, so without this the ring renders
+      // full from t=0, snaps empty at the beat, then animates — the
+      // flash-of-full tell. The inline write is what a pre-beat seek shows.
+      ring.style.strokeDashoffset = String(length);
       move(timeline, ring, { strokeDashoffset: length }, {
         strokeDashoffset: length * (1 - value),
         duration: duration,
@@ -470,6 +475,7 @@
     }
     var fill = firstMatch(el, ["[data-cmp-fill]", ":scope > i"]);
     if (!fill) fail(beat.id, "progress component has no fill element");
+    fill.style.transform = "scaleX(0)";
     move(timeline, fill, { scaleX: 0 }, {
       scaleX: value,
       duration: duration,
@@ -483,6 +489,9 @@
     if (stroke && typeof stroke.getTotalLength === "function") {
       var length = stroke.getTotalLength();
       stroke.style.strokeDasharray = String(length);
+      // Same flash-of-full guard as compileProgress: hide the stroke until
+      // its draw-on beat starts (the fx drawStrokes anchor discipline).
+      stroke.style.strokeDashoffset = String(length);
       move(timeline, stroke, { strokeDashoffset: length }, {
         strokeDashoffset: 0,
         duration: duration,
@@ -658,18 +667,21 @@
       el.appendChild(ring);
     }
     var duration = beat.endSec - beat.startSec;
-    move(timeline, ring, { opacity: 0, scale: 0.94 }, {
-      opacity: 0.95,
+    // Quick rise, long settle, near-still scale: the ring is a focus glow now
+    // (hairline + bloom in the kit CSS), so the motion whispers instead of
+    // popping a 6% scale jump.
+    move(timeline, ring, { opacity: 0, scale: 0.985 }, {
+      opacity: 1,
       scale: 1,
-      duration: duration * 0.35,
+      duration: duration * 0.3,
       ease: "power2.out",
     }, beat.startSec);
-    move(timeline, ring, { opacity: 0.95, scale: 1 }, {
+    move(timeline, ring, { opacity: 1, scale: 1 }, {
       opacity: 0,
-      scale: 1.05,
-      duration: duration * 0.65,
-      ease: "power2.in",
-    }, beat.startSec + duration * 0.35);
+      scale: 1.015,
+      duration: duration * 0.7,
+      ease: "sine.in",
+    }, beat.startSec + duration * 0.3);
   }
 
   function compileSwap(timeline, el, beat) {

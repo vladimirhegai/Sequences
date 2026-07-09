@@ -29,6 +29,9 @@ import {
   correctLayoutOverflow,
   correctSparseFraming,
   sourceRetryFeedbackForBrowserQa,
+  repairStationPositioning,
+  injectBrandBase,
+  brandBaseStyleBlock,
   StoryboardValidationError,
 } from "../src/engine/compositionRunner.ts";
 import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
@@ -44,6 +47,7 @@ import {
   type DirectCompositionDraft,
 } from "../src/engine/directComposition.ts";
 import { resolveMomentContract, type StoryboardMomentV1 } from "../src/engine/storyboardMoments.ts";
+import { normalizeStoryboardPluginDeclarations } from "../src/engine/pluginContract.ts";
 import {
   dropUnusableGradeShifts,
   normalizeStoryboardGradeShift,
@@ -784,9 +788,37 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
       .toHaveLength(1);
     // The surviving move is the highest-energy one (pull-back outranks pan/track).
     expect(middle.camera!.path.some((move) => move.move === "pull-back")).toBe(true);
-    // The committed normalization is visible on the scene → STORYBOARD.md.
-    expect(middle.sentinelNormalizations?.length).toBe(1);
+    // The committed normalization is visible on the scene → STORYBOARD.md
+    // (a derived default worldLayout may add its own note beside it).
+    expect(
+      middle.sentinelNormalizations?.filter((note) => note.includes("camera")).length,
+    ).toBe(1);
     expect(storyboardMarkdown("t", parsed)).toContain("- Sentinel normalized: dropped 2");
+  });
+
+  it("renders one host-generated line per declared plugin in STORYBOARD.md", () => {
+    const pluginScene = {
+      id: "s1",
+      title: "Metrics land",
+      purpose: "Prove the deploy story at a glance",
+      startSec: 0,
+      durationSec: 6,
+      plugins: normalizeStoryboardPluginDeclarations([
+        {
+          version: 1,
+          kind: "dashboard-grid",
+          id: "metrics",
+          region: "metric-wall",
+          params: { tiles: 4, topic: "deploy speed" },
+        },
+        { version: 1, kind: "lockup", id: "closing", params: { headline: "Ship it faster" } },
+      ]),
+    };
+    const md = storyboardMarkdown("t", [pluginScene]);
+    expect(md).toContain(
+      '- plugin: dashboard-grid "metrics" (tiles=4, topic=deploy speed, station=metric-wall) — host-generated',
+    );
+    expect(md).toContain('- plugin: lockup "closing" (headline=Ship it faster) — host-generated');
   });
 
   it("reverts a normalization that would mint a NEW blocking finding (atomic commit)", () => {
@@ -3222,7 +3254,7 @@ describe("direct HyperFrames composition", () => {
     expect(complete).toHaveBeenCalledTimes(2);
     expect(complete.mock.calls[1]?.[0]).toContain("timer-driven visual state is not seek-safe");
     expect(complete.mock.calls[1]?.[0]).toContain('"patches" array');
-    expect((complete.mock.calls[1]?.[1] as { maxTokens?: number }).maxTokens).toBe(4_096);
+    expect((complete.mock.calls[1]?.[1] as { maxTokens?: number }).maxTokens).toBe(8_192);
     expect((complete.mock.calls[1]?.[1] as {
       responseFormat?: { json_schema?: { name?: string } };
     }).responseFormat?.json_schema?.name).toBe("sequences_composition_patches");
@@ -3955,5 +3987,131 @@ describe("direct HyperFrames composition", () => {
     const drifted = await validateDirectComposition(dir, draft("#22d3ee"));
     expect(drifted.ok).toBe(false);
     expect(drifted.frameErrors.join("\n")).toContain("committed frame accent #8B5CF6");
+  });
+});
+
+describe("L2 station positioning repair (plugin-live-1 static-flow station)", () => {
+  it("completes position:absolute on a station declaring a placement rect", () => {
+    const html =
+      `<div data-camera-world style="width:3840px;height:2160px;position:absolute">` +
+      `<div data-region="metric-station" style="left:0;top:0;width:1920px;height:1080px;display:grid"></div>` +
+      `</div>`;
+    const result = repairStationPositioning(html);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toContain(
+      'style="position:absolute;left:0;top:0;width:1920px;height:1080px;display:grid"',
+    );
+  });
+
+  it("leaves already-positioned and rect-less stations alone (idempotent)", () => {
+    const html =
+      `<div data-region="a" style="position:absolute;left:10px;top:0;width:100px;height:100px"></div>` +
+      `<div data-region="b" style="display:flex;gap:8px"></div>` +
+      `<div data-region="c"></div>`;
+    const result = repairStationPositioning(html);
+    expect(result.repairs).toBe(0);
+    expect(result.html).toBe(html);
+    const repaired = repairStationPositioning(
+      repairStationPositioning(
+        `<div data-region="d" style="left:0;top:0;width:9px;height:9px"></div>`,
+      ).html,
+    );
+    expect(repaired.repairs).toBe(0);
+  });
+});
+
+describe("L2 infinite-repeat clamp (plugin-probe-1 attempt-1 death class)", () => {
+  it("rewrites repeat:-1 to a finite repeat before the invariant lint", () => {
+    const draftValue = draft();
+    const storyboard = draftValue.storyboard;
+    const withRepeat = {
+      ...draftValue,
+      html: draftValue.html.replace(
+        "</body>",
+        "<script>tl.to('.pulse',{opacity:0.4,repeat: -1,yoyo:true});</script></body>",
+      ),
+    };
+    const repaired = applyDeterministicSourceRepairs(withRepeat, projectDir(), storyboard);
+    expect(repaired.html).not.toMatch(/repeat\s*:\s*-1\b/);
+    expect(repaired.html).toContain("repeat: 2");
+  });
+});
+
+describe("L2 brand base injection (host-owned committed type/canvas/accent)", () => {
+  const FRAME_MD = [
+    "| Token | Value | Rule |",
+    "| Canvas | `#0A0E14` | Primary text must remain >=7:1 |",
+    "| Committed accent | `#E8590C` | one accent |",
+    "",
+    "**Display / headlines:** Space Grotesk",
+    "**Body / UI:** EB Garamond",
+    "**Mono / chrome / code:** JetBrains Mono",
+  ].join("\n");
+
+  it("renders the committed tokens as a host style block", () => {
+    const block = brandBaseStyleBlock(FRAME_MD)!;
+    expect(block).toContain('id="sequences-brand-base"');
+    expect(block).toContain("--canvas:#0A0E14");
+    expect(block).toContain("--accent:#E8590C");
+    expect(block).toContain("--font-body:'EB Garamond'");
+    expect(block).toContain("body{font-family:var(--font-body)");
+    expect(block).toContain(".cmp-headline{font-family:var(--font-display)");
+    expect(block).toContain("--font-mono:'JetBrains Mono'");
+  });
+
+  it("injects before the first authored style so authored rules win, and converges", () => {
+    const html =
+      `<html><head><style>:root{--accent:#ffffff}</style></head><body></body></html>`;
+    const once = injectBrandBase(html, FRAME_MD);
+    expect(once.injected).toBe(true);
+    const brandIndex = once.html.indexOf("sequences-brand-base");
+    const authoredIndex = once.html.indexOf("--accent:#ffffff");
+    expect(brandIndex).toBeGreaterThan(-1);
+    expect(brandIndex).toBeLessThan(authoredIndex);
+    const twice = injectBrandBase(once.html, FRAME_MD);
+    expect(twice.injected).toBe(false);
+    expect(twice.html).toBe(once.html);
+  });
+
+  it("no-ops without a frame or without committed tokens", () => {
+    expect(injectBrandBase("<html></html>", undefined).injected).toBe(false);
+    expect(brandBaseStyleBlock("no tokens here")).toBeUndefined();
+  });
+});
+
+describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", () => {
+  it("synthesizes viewport cells for camera-path regions when the plan omits worldLayout", () => {
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            camera: {
+              version: 1,
+              path: [
+                { version: 1, move: "pan", toRegion: "terminal-strip", startSec: 3.2, durationSec: 0.8 },
+                { version: 1, move: "pan", toRegion: "metric-wall", startSec: 4.4, durationSec: 0.8 },
+              ],
+            },
+          }
+        : scene
+    );
+    const parsed = parseStoryboardResponse(`<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`);
+    const middle = parsed[1]!;
+    expect(middle.worldLayout).toEqual([
+      { region: "terminal-strip", cell: [0, 0] },
+      { region: "metric-wall", cell: [1, 0] },
+    ]);
+    expect(
+      middle.sentinelNormalizations?.some((note) => note.startsWith("world-layout-derive")),
+    ).toBe(true);
+    // A declared layout always wins — no synthesis, no note.
+    const declared = raw.map((scene, index) =>
+      index === 1
+        ? { ...scene, worldLayout: [{ region: "metric-wall", cell: [0, 0] }] }
+        : scene
+    );
+    const kept = parseStoryboardResponse(`<storyboard_json>${JSON.stringify(declared)}</storyboard_json>`)[1]!;
+    expect(kept.worldLayout).toEqual([{ region: "metric-wall", cell: [0, 0] }]);
   });
 });

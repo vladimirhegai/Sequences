@@ -34,6 +34,7 @@ point an agent at the listed file.
 | Cinematography kit (light/material/grade/grain) | `src/engine/cinemaKit.ts`, `src/engine/templates/sequences-cinema.v1.css` | grain/vignette floor, key lights, lit materials, bloom, scene grades / color arc |
 | Spatial / layout placement ("spacing" tool) | `frame.md` flow compositions + relational `data-layout-*` + `src/engine/layoutInspector.ts` | flow-first placement, safe-area / anchor / align / gap / optical audit |
 | Cursor interactions | `src/engine/interactionContract.ts`, `src/engine/templates/sequences-interactions.v1.js` | hotspot / target / ripple geometry, interaction QA |
+| Host plugins (generated set-pieces: dashboard-grid / notification-stack / lockup) | `src/engine/pluginContract.ts` + foundations `src/engine/pluginKernel.ts` (distribution/spacing/PRNG), `src/engine/seedContent.ts` (believable seeded SaaS content) | plugin catalog + params, lowering into typed components/beats (`pluginUid` one-unit budgeting), seeded markup generation, injection seam, planner vocabulary (`pluginPlanningVocabulary`), kill switch `SLACK_SEQUENCES_PLUGINS` |
 | Executable boundary cuts | `src/engine/cutContract.ts`, `src/engine/templates/sequences-cuts.v1.js`, `src/engine/compositionRunner.ts` | typed cut styles, wrapper ownership, object/shape-match bindings, plan-time silhouette-family sanity (`auditShapeMatchHints`), repairable+honest degradation (`cut_degraded` finding, `reconcileDegradedCutPaperwork`) |
 | Framing coverage audit | `src/engine/layoutInspector.ts` | `camera_framed_sparse` — whole-scene on-frame content coverage floor at camera landings + static mid-windows (WS5) |
 | Hold-what-matters pacing audits | `src/engine/pacingAudit.ts` (called from `validateStoryboardPlan`) | plan-stage findings: introduction→development ratio, typed-copy reading floor, outcome holds after press/set-state/toast, camera-move budget per scene + whip cap per film (WS3) |
@@ -2131,3 +2132,134 @@ arrival); the film's one morph flew clean with **no `cut_degraded`** (no T8 fals
 positive); and no `Item N` / no-op swap / rows-neutral degradation shipped. The
 `published-degraded` disposition is the ordinary `least-bad-pick:penalty=14`
 (content-overlap/contrast/framing polish), unrelated to this batch.
+
+## 2026-07-09 — Plugin audit + motion-quality bugs + attempt-killers (Fable)
+
+**Plugin audit (light).** The trio (`pluginContract.ts` / `pluginKernel.ts` /
+`seedContent.ts`) is architecturally sound: pure-function lowering with
+byte-convergent strip/reinject, honest degrade-never-veto governance,
+believable seeded content, and across plugin-probe-1/2 + plugin-live-1 **zero
+retries traced to a plugin finding**. The weaknesses were all at the seams:
+(1) a unit is injected into an author station whose CSS is arbitrary — live-1's
+`metric-station` was a 2-col grid AND missing `position:absolute`, so our tiles
+"overflowed" 240px; (2) entrance beats anchored at scene-open while the camera
+arrived seconds later — count-ups played off-screen and the viewer landed on a
+static number; (3) the storyboard-level duplicate absorber can't stop the
+SOURCE author hand-drawing the same content (live-1's second, hand-built team
+rail beside the injected `team-strip`).
+
+**Fixes (all Sentinel-placed, no gate loosened).**
+- *Plugins:* `cameraArrivalSec` delays a unit's entrance anchor to the camera's
+  first full-move landing on its region/part (capped at the 60% introduction
+  deadline; dive uses its push-in leg); wrapper self-defense
+  (`grid-column:1/-1;min-width:0;max-width:100%`); `pluginAbsorbedParts`
+  persists absorbed duplicate ids and the injector hides author-drawn markup
+  still carrying them (CSS hide, not a strip — authored GSAP selectors keep
+  binding). Storyboard cache contract 16→17.
+- *Kit motion tells (within v1):* progress ring/bar + chart strokes render
+  EMPTY before their beat (the flash-of-full → snap → animate tell; the
+  compileCount/fx-drawStrokes eager-state precedent); `html,body` default to
+  the `--canvas` tint (white first-frame flash); the default highlight ring is
+  a hairline + accent bloom with whisper motion (the "blue pulse").
+- *New L2 normalizers* (registered in sentinel.ts, proof in
+  `test/directComposition.test.ts`): `normalize.gsap-repeat-clamp`
+  (`repeat:-1` → `repeat: 2` before the invariant lint — probe-1's attempt-1
+  static death), `normalize.station-position` (completes `position:absolute` on a
+  `data-region` declaring a left/top rect in static flow — live-1's overflow
+  root cause), `normalize.brand-base` (`injectBrandBase`: frame.md committed
+  tokens/type/canvas as a host style block before authored styles — the
+  probes' twice-recurring `frame/type: EB Garamond not used` class becomes
+  unrepresentable, and kit `var()` fallbacks bind to brand).
+- *Browser layout repair:* scale floor deepens to **0.78** for
+  `important_safe_area` subjects spanning ≥70% of a frame axis (all three
+  probes shipped least-bad penalties on hero bands needing scale 0.80–0.83
+  that the 0.86 floor refused).
+
+**Proof.** typecheck green; full slack suite 856/856 (13 new tests: arrival
+timing ×5, absorbed-hide ×2, wrapper defense ×1, station repair ×2,
+repeat-clamp ×1, brand-base ×3 net); film:demo + mcp:demo + direct:demo green.
+
+**Round 2 (same session, after fix-probe-1).** The probe published-degraded at
+penalty **1** (vs 31/11 baseline) with author attempts 3→2, `station-position`
+firing 10×, `brand-base` live, and zero safe-area/font/repeat findings — but
+eyeballing the thumbnails found three NEW fixable classes, all fixed + tested:
+(1) **doubled lockup** — the author hand-drew the exact headline/sub/CTA copy
+beside the injected unit; plugin text params are typed copy, so
+`injectPluginContract` now stamps same-scene exact text-node duplicates
+outside the wrapper (`data-sequences-plugin-duplicate`) and hides them (CSS,
+never a strip — GSAP selectors keep binding; cross-scene echoes untouched);
+(2) **mega-station void** — the plan named camera regions but declared no
+worldLayout, so the skeleton emitted rect-less stations and the author
+freestyled a 7680px wall (fit zoom 0.25 → plugin tiles in a quarter-frame
+void); `parseStoryboard` now synthesizes one viewport-sized cell per
+camera-path region (`normalize.world-layout-derive`, cache contract → 18) so
+the scaffold emits sane rects by construction; (3) **inert grid alignment** —
+two stations declared `align-content`/`justify-items` with no `display:`;
+`repairStationPositioning` completes `display:grid` (grid-only vocabulary =
+mechanically certain intent). Suite 859/859.
+
+**Round 3 (after fix-probe-2, incident/team genre).** Published-degraded at
+penalty 17 (storyboard 3 attempts on real pacing/moment findings — cheap GLM
+retries working as designed; author 2 browser-rejects + 1 truncation). Two
+mechanical fixes landed: **REPAIR_MAX_TOKENS 4096→8192** — the final author
+attempt in BOTH fix-probe-2 and old plugin-probe-1 died on a compact patch
+truncating at the 4k output ceiling (a config death, not a model one) — and
+**terminal text wrapping** in the kit (`.cmp-terminal .cmp-text` pre-wraps
+instead of clipping; fix-probe-2 burned two attempts partly on
+clipped_text/text_box_overflow from a long typed command). Parked with
+reasons: static placement of position-less sequential GSAP tweens
+(motion/liveness "cannot place" repeated across two patches — needs a GSAP
+sequence simulator in motionDensity, a real design), and detecting plan
+directions pasted as on-screen copy (moment titles legitimately double as
+toast copy — not mechanically certain, so not an L2 candidate).
+
+**Round 4.** fix-probe-3 (dashboard genre rerun, ALL fixes in): storyboard
+**1 attempt**, author **1 attempt** (2.2 min), NO least-bad pick — the only
+degradation is the honest `moment_static_frame:2`. Eyeball: a real centered
+dashboard (seeded 97.7% / 49-deploy stat cards, drawn bars, an 85% ring with
+no flash), a clean tracked count-up close-up, an assembling lockup with no
+doubling. Residual weakness: author interiors hugged a station's top-left in
+the opening shot → skeleton station rects now carry a centering grid default
+(`display:grid;align-content:center;justify-items:center` in
+`worldStationRects`; authors may override). fix-probe-4 (incident genre,
+validation) closes the battery.
+
+**Round 5.** fix-probe-4 (incident genre rerun): storyboard 1 attempt
+(5.4 min, was 16.8), author 3, penalty **5** (was 17). Attempt 1 burned partly
+on a `content_overlap` flagged on **kit avatar-stack initials — deliberate
+negative-margin overlap**, a false positive by construction: the browser QA
+filter now suppresses `content_overlap` on `.cmp-avatars`
+(`QA_CACHE_VERSION` 14→15); attempt 2's patch deleted a camera station
+(`camera_region_missing` static reject) — the ladder recovered, and the
+never-delete-bindings patch warning already covers it (left as-is, one
+occurrence). fix-probe-5 (analytics genre) is the closing validation probe.
+
+**Round 6 + closing measurements.** fix-probe-5 (analytics genre): storyboard
+1, author 2, early-least-bad penalty **3**. Its residual finding class —
+`container_overflow` flagged on the `data-camera-world` ELEMENT itself, which
+extends beyond the scene clip by design under any pan/zoom — is dropped at
+the source after enrichment (`isCameraWorld` on `DirectLayoutIssue`;
+`QA_CACHE_VERSION` → 16) so penalty/warnings/repair prompts all agree.
+fix-probe-6 (same brief, fresh author/QA): storyboard 1, author 3, penalty
+**5**, with both rejections attributable to the PARKED `motion/liveness`
+position-less-tween class — no fixed class recurred.
+
+| run (genre) | storyboard att. | author att. | least-bad penalty |
+| --- | --- | --- | --- |
+| plugin-probe-1 (dashboard, BASELINE) | 3 | 3 | 31 |
+| plugin-probe-2 (analytics, BASELINE) | 2 | 3 | 11 |
+| plugin-live-1 (incident, BASELINE) | 1 | 3 | quarantine shipped |
+| fix-probe-1 (dashboard, round 1) | 1 | 2 | 1 |
+| fix-probe-2 (incident, round 1) | 3 | 3 | 17 → fixed 2 classes |
+| fix-probe-3 (dashboard, rounds 1–2) | 1 | **1** | **0** (clean pick) |
+| fix-probe-4 (incident, rounds 1–3) | 1 | 3 | 5 |
+| fix-probe-5 (analytics, rounds 1–4) | 1 | 2 | 3 |
+| fix-probe-6 (analytics, rounds 1–5) | 1 | 3 | 5 |
+
+Every recurring baseline class (important_safe_area least-bads, "EB Garamond
+not used", repeat:-1 static deaths, patch truncation at 4k, doubled plugin
+content, mega-station voids, kit flash-of-full/blue-pulse/white-flash) is now
+either unrepresentable or deterministically repaired. Remaining known model
+classes: position-less sequential GSAP tweens (`motion/liveness` — parked:
+needs a static GSAP sequence simulator) and occasional patch-stage binding
+deletions (covered by the existing never-delete warning + ladder recovery).

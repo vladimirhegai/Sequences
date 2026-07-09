@@ -93,6 +93,8 @@ export interface DirectLayoutIssue {
   part?: string;
   componentRootPart?: string;
   insideCameraWorld?: boolean;
+  /** The subject IS a data-camera-world plane (overflow there is by design). */
+  isCameraWorld?: boolean;
   motionWindowOverlap?: boolean;
   message: string;
   fixHint?: string;
@@ -336,7 +338,7 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 //     sampled hero frame.
 // v13: layout findings preserve structured geometry and repair selectors.
 // v14: Sequences safe-area evidence serializes plain root rects, not DOMRect.
-const QA_CACHE_VERSION = 14;
+const QA_CACHE_VERSION = 16;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -2010,6 +2012,7 @@ async function enrichRepairEvidence(
           ? { componentRootPart: componentRoot.getAttribute("data-part") || undefined }
           : {}),
         insideCameraWorld: Boolean(element.closest("[data-camera-world]")),
+        isCameraWorld: element.hasAttribute("data-camera-world"),
       };
     });
   }, issues);
@@ -2452,11 +2455,18 @@ export async function inspectDirectComposition(
           return area <= 0 || (w * h) / area < 0.6;
         });
       }, hyperframesIssues.map((issue) => issue.selector));
+      const enriched = await enrichRepairEvidence(page, [
+        ...hyperframesIssues.filter((_, index) => !offWorldFlags[index]),
+        ...sequenceRelationshipIssues,
+      ]);
       rawIssues.push(
-        ...await enrichRepairEvidence(page, [
-          ...hyperframesIssues.filter((_, index) => !offWorldFlags[index]),
-          ...sequenceRelationshipIssues,
-        ]),
+        // A camera world plane extends beyond its scene clip BY DESIGN under
+        // any pan/zoom — container_overflow on the world ELEMENT is a false
+        // positive dropped at the source so penalty/warnings/repair prompts
+        // all agree (fix-probe-5/6). Content INSIDE the world stays judged.
+        ...enriched.filter((issue) =>
+          !(issue.code === "container_overflow" && issue.isCameraWorld)
+        ),
         ...await auditFocalParts(page, draft.storyboard, time),
         ...interactionAudit.issues,
       );
@@ -3444,6 +3454,16 @@ export async function inspectDirectComposition(
       // the blocking pressure.
       issue.code !== "stale_asset_lingers" &&
       (issue.code !== "eye_trace_jump" || eyeTrace === "block") &&
+      // Kit avatar stacks overlap BY DESIGN (negative-margin monograms) —
+      // a content_overlap on them is a false positive that burned a paid
+      // attempt in fix-probe-4. Kit-owned deliberate overlap only; any other
+      // content_overlap stays a finding.
+      !(issue.code === "content_overlap" && /\.cmp-avatars/.test(issue.selector ?? "")) &&
+      // A camera world plane extends beyond its scene clip BY DESIGN under
+      // any pan/zoom — container_overflow on the world element itself is a
+      // false positive (fix-probe-5 burned an attempt + shipped penalty on
+      // three of them). Content INSIDE the world stays judged.
+      !(issue.code === "container_overflow" && issue.isCameraWorld) &&
       (
         issue.source === "sequences" ||
         issue.code === "content_overlap" ||

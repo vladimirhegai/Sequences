@@ -89,3 +89,17 @@ export function storyboardSceneRepairEnabled(): boolean {
 export function recipesEnabled(): boolean {
   return process.env.SLACK_SEQUENCES_RECIPES !== "0";
 }
+
+/**
+ * Host plugins — parameterized generators the storyboard invokes as typed
+ * `plugins:[{kind,params}]` forms and the host LOWERS into the existing
+ * component/beat contracts plus a host-injected markup unit
+ * (`pluginContract.ts`, the seventh host-owned contract). Default ON: the
+ * whole path is degrade-never-veto (unknown kinds no-op, bad params
+ * default/clamp/drop at parse — zero paid attempts), and lowered output still
+ * passes every existing gate. `SLACK_SEQUENCES_PLUGINS=0` reverts to the
+ * plugin-free pipeline in one env var (declarations then parse to nothing).
+ */
+export function pluginsEnabled(): boolean {
+  return process.env.SLACK_SEQUENCES_PLUGINS !== "0";
+}

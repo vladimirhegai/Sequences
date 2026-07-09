@@ -80,6 +80,10 @@ import {
   validateRecipeContract,
   type RecipeDeclarationV1,
 } from "./recipeContract.ts";
+import {
+  validatePluginContract,
+  type PluginDeclarationV1,
+} from "./pluginContract.ts";
 import { validateCompositionAgainstFrame } from "./frameValidation.ts";
 import { auditKitMarkupCompleteness } from "./kitMarkupAudit.ts";
 import {
@@ -173,6 +177,20 @@ export interface DirectScene {
    * values — the author model never owns the mechanism.
    */
   recipes?: RecipeDeclarationV1[];
+  /**
+   * Declared host plugins (seventh contract): typed generator forms the host
+   * lowered into this scene's components/beats at parse and injects as one
+   * verbatim markup unit per declaration — the author model never owns them.
+   */
+  plugins?: PluginDeclarationV1[];
+  /**
+   * Part names whose free component declarations the plugin reconciler
+   * absorbed as duplicates of a declared plugin unit. The injector hides any
+   * author-drawn markup still carrying these parts (the plugin-live-1 lesson:
+   * the storyboard-level absorber can't stop the source author hand-drawing
+   * the same content beside the injected unit).
+   */
+  pluginAbsorbedParts?: string[];
   spatialIntent?: SpatialIntentV1;
   interactions?: InteractionIntentV1[];
   /** Ordered reviewable changed states this scene promises (the moment contract). */
@@ -391,6 +409,8 @@ function normalizeStoryboard(
       ...(proposed?.gradeShift ? { gradeShift: proposed.gradeShift } : {}),
       ...(proposed?.components?.length ? { components: proposed.components } : {}),
       ...(proposed?.beats?.length ? { beats: proposed.beats } : {}),
+      ...(proposed?.recipes?.length ? { recipes: proposed.recipes } : {}),
+      ...(proposed?.plugins?.length ? { plugins: proposed.plugins } : {}),
       ...(proposed?.spatialIntent ? { spatialIntent: proposed.spatialIntent } : {}),
       ...(proposed?.interactions?.length ? { interactions: proposed.interactions } : {}),
       ...(proposed?.moments?.length ? { moments: proposed.moments } : {}),
@@ -576,6 +596,10 @@ export async function validateDirectComposition(
   // reachable only if the injection seam breaks.
   const recipeValidation = validateRecipeContract(html, normalized.scenes);
   errors.push(...recipeValidation.errors);
+  // Plugin units are host-injected from the catalog (lowered typed forms);
+  // like recipes, these errors are host-plumbing self-checks.
+  const pluginValidation = validatePluginContract(html, normalized.scenes);
+  errors.push(...pluginValidation.errors);
   // Bind failures abort the whole browser compile behind an opaque timeout;
   // re-run the runtimes' bind queries against a parsed DOM here so they
   // surface as named findings the repair loop can act on.
@@ -766,6 +790,16 @@ export function storyboardMarkdown(title: string, scenes: DirectScene[]): string
           ` (net-zero inside the shot)`
         : "",
       ...(scene.sentinelNormalizations ?? []).map((note) => `- Sentinel normalized: ${note}`),
+      ...(scene.plugins ?? []).map((declaration) => {
+        const details = Object.entries(declaration.params).map(
+          ([name, value]) => `${name}=${value}`,
+        );
+        if (declaration.region) details.push(`station=${declaration.region}`);
+        return (
+          `- plugin: ${declaration.kind} "${declaration.id}"` +
+          `${details.length ? ` (${details.join(", ")})` : ""} — host-generated`
+        );
+      }),
       scene.components?.length
         ? `- Components: ${scene.components
           .map((component) => `${component.id} (${component.kind})`)
@@ -1054,9 +1088,12 @@ export function directOutline(manifest: DirectCompositionManifest): string {
     .map((scene, index) => {
       const recipe = scene.blueprint ? ` · ${scene.blueprint}` : "";
       const cut = scene.outgoingCut ? ` · cut: ${scene.outgoingCut}` : "";
+      const plugins = scene.plugins?.length
+        ? ` · plugins: ${scene.plugins.map((declaration) => declaration.kind).join(", ")}`
+        : "";
       const header = `${index + 1}. ${scene.title} · ${scene.startSec.toFixed(1)}–${(
         scene.startSec + scene.durationSec
-      ).toFixed(1)}s${recipe}${cut}`;
+      ).toFixed(1)}s${recipe}${cut}${plugins}`;
       const moments = (scene.moments ?? []).map((moment) => {
         const marker = moment.importance === "primary" ? "◆" : "◇";
         // Declared moments carry an authored change description; synthesized
