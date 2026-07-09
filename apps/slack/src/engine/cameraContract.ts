@@ -82,6 +82,20 @@ export const CAMERA_FULL_MOVES: ReadonlySet<CameraMoveStyle> = new Set<CameraMov
 export const DIVE_LEG_MAX_SEC = 0.8;
 export const DIVE_LEG_FRACTION = 0.25;
 export const DIVE_MIN_HOLD_FRACTION = 0.2;
+/**
+ * Minimum in/out leg for a dive whose legs are NOT constrained tighter by a
+ * beat landing right after the push-in (probe-audit-03 read harsh on short
+ * dives). Raised from the quarter-window fallback so a short dive eases in/out
+ * instead of snapping; capped by the fraction ceiling and the hold budget so it
+ * never eats the held middle a tightly-timed dive derives.
+ */
+export const DIVE_LEG_MIN_SEC = 0.7;
+
+/** The fallback leg length for a dive of this total duration, floored so short
+ * dives don't snap (DIVE_LEG_MIN_SEC) but never past the fraction ceiling. */
+export function diveLegCap(durationSec: number): number {
+  return Math.max(DIVE_LEG_MIN_SEC, Math.min(DIVE_LEG_MAX_SEC, durationSec * DIVE_LEG_FRACTION));
+}
 export const DIVE_ZOOM_MIN = 1.0;
 export const DIVE_ZOOM_MAX = 1.4;
 export const DIVE_ZOOM_DEFAULT = 1.18;
@@ -96,7 +110,7 @@ export const DIVE_ZOOM_DEFAULT = 1.18;
 export function diveWindows(
   move: Pick<CameraMoveIntentV1, "durationSec" | "inSec" | "outSec">,
 ): { inSec: number; outSec: number } {
-  const legCap = Math.min(DIVE_LEG_MAX_SEC, move.durationSec * DIVE_LEG_FRACTION);
+  const legCap = diveLegCap(move.durationSec);
   let inSec = finite(move.inSec) ? move.inSec : legCap;
   let outSec = finite(move.outSec) ? move.outSec : legCap;
   const maxLegs = move.durationSec * (1 - DIVE_MIN_HOLD_FRACTION);

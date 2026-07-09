@@ -13,8 +13,14 @@ import {
   lintHyperframeHtml,
   type HyperframeLintFinding,
 } from "@hyperframes/core";
-import type { RenderQuality } from "./render.ts";
-import { ensureFfmpegOnPath, findBrowserExecutable } from "./render.ts";
+import type { RenderQuality, SupersamplePlan } from "./render.ts";
+import {
+  downscaleSupersampledRender,
+  ensureFfmpegOnPath,
+  findBrowserExecutable,
+  resolveSupersamplePlan,
+  supersampleJobFields,
+} from "./render.ts";
 import { inspectDirectComposition } from "./layoutInspector.ts";
 import {
   INTERACTION_RUNTIME_FILE,
@@ -1405,38 +1411,64 @@ export async function renderDirectComposition(
   options: { quality?: RenderQuality; browserPath?: string; quiet?: boolean } = {},
 ): Promise<DirectRenderResult> {
   const current = loadDirectComposition(projectDir);
-  ensureFfmpegOnPath();
+  const ffmpegPath = ensureFfmpegOnPath();
   const browserPath = options.browserPath ?? findBrowserExecutable();
+  const quality = options.quality ?? "draft";
   const outputPath = path.join(projectDir, "renders", renderName(current.manifest.title));
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   const started = Date.now();
   (globalThis as { require?: NodeRequire }).require ??= createRequire(import.meta.url);
   const producerSpecifier: string = "@hyperframes/producer";
   const producer = (await import(producerSpecifier)) as ProducerModule;
-  const job = producer.createRenderJob({
-    fps: current.manifest.fps,
-    quality: options.quality ?? "draft",
-    format: "mp4",
-    entryFile: "index.html",
-    logger: options.quiet ? undefined : producer.createConsoleLogger?.("info"),
-    producerConfig: producer.resolveConfig({
-      browserGpuMode: "software",
-      forceScreenshot: true,
-      ...(browserPath ? { chromePath: browserPath } : {}),
-    }),
-  });
-  await producer.executeRenderJob(
-    job,
-    compositionDir(projectDir),
-    outputPath,
-    options.quiet
-      ? undefined
-      : (progressJob, message) => {
-          const percent = Math.round(progressJob.progress);
-          process.stdout.write(`\rrender ${percent}% ${message.padEnd(40).slice(0, 40)}`);
-          if (percent >= 100) process.stdout.write("\n");
-        },
+  const makeJob = (supersample?: SupersamplePlan): unknown =>
+    producer.createRenderJob({
+      fps: current.manifest.fps,
+      quality,
+      format: "mp4",
+      entryFile: "index.html",
+      logger: options.quiet ? undefined : producer.createConsoleLogger?.("info"),
+      ...(supersample ? supersampleJobFields(supersample) : {}),
+      producerConfig: producer.resolveConfig({
+        browserGpuMode: "software",
+        forceScreenshot: true,
+        ...(browserPath ? { chromePath: browserPath } : {}),
+      }),
+    });
+  const onProgress = options.quiet
+    ? undefined
+    : (progressJob: { progress: number }, message: string): void => {
+        const percent = Math.round(progressJob.progress);
+        process.stdout.write(`\rrender ${percent}% ${message.padEnd(40).slice(0, 40)}`);
+        if (percent >= 100) process.stdout.write("\n");
+      };
+  // HD tier: capture the film at an integer 2× DPR and lanczos-downscale back
+  // to composition dimensions, so slow sub-pixel motion stops stair-stepping
+  // in the MP4 (see resolveSupersamplePlan). Any failure falls back to the
+  // plain 1× render.
+  const supersample = resolveSupersamplePlan(
+    current.manifest.width,
+    current.manifest.height,
+    quality,
   );
+  let rendered = false;
+  if (supersample) {
+    const masterPath = `${outputPath}.supersample-master.mp4`;
+    try {
+      await producer.executeRenderJob(makeJob(supersample), compositionDir(projectDir), masterPath, onProgress);
+      downscaleSupersampledRender(ffmpegPath, masterPath, outputPath, supersample);
+      rendered = true;
+    } catch (error) {
+      process.stderr.write(
+        `[render] supersampled render failed, falling back to 1x: ` +
+          `${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    } finally {
+      fs.rmSync(masterPath, { force: true });
+    }
+  }
+  if (!rendered) {
+    await producer.executeRenderJob(makeJob(), compositionDir(projectDir), outputPath, onProgress);
+  }
   return {
     outputPath,
     durationSec: current.manifest.durationSec,

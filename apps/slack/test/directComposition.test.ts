@@ -514,7 +514,10 @@ describe("host-owned scene-timing re-base (LESS_FALLBACKS lever 10)", () => {
         camera: {
           version: 1,
           path: [
-            { version: 1, move: "pan", toRegion: "stage", startSec: 5.0, durationSec: 0.8 },
+            // Starts after the interaction's settled result so the 2026-07-08
+            // retimeCameraOverInteractions normalizer has nothing to fix here —
+            // this test isolates the re-base arithmetic.
+            { version: 1, move: "pan", toRegion: "stage", startSec: 6.0, durationSec: 0.8 },
           ],
         },
         interactions: [{
@@ -547,7 +550,7 @@ describe("host-owned scene-timing re-base (LESS_FALLBACKS lever 10)", () => {
     expect(parsed[2]!.startSec).toBe(6);
     // Every nested time moved by the -1.3s delta: same offsets inside the scene.
     expect(parsed[1]!.beats![0]!.atSec).toBeCloseTo(4.0, 3);
-    expect(parsed[1]!.camera!.path[0]!.startSec).toBeCloseTo(3.7, 3);
+    expect(parsed[1]!.camera!.path[0]!.startSec).toBeCloseTo(4.7, 3);
     expect(parsed[1]!.interactions![0]!.startSec).toBeCloseTo(3.5, 3);
     expect(parsed[1]!.interactions![0]!.arriveSec).toBeCloseTo(4.1, 3);
     // Look the declared moment up by id — the moment top-up may add

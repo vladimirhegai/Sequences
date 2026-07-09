@@ -38,6 +38,26 @@
     timeline.fromTo(target, fromVars, toVars, at);
   }
 
+  // One entrance owner per text element (probe-audit-03): a `type`/split reveal
+  // never moves its own slot, but an AUTHORED from-below/opacity reveal on the
+  // same element makes the line type WHILE sliding up. Hold the slot's own
+  // transform (and, for the plain typewriter, opacity) steady across the beat
+  // window with a spanning identity tween. The component runtime compiles AFTER
+  // the authored tweens and GSAP resolves overlapping same-property tweens by
+  // timeline position (the later child wins per frame), so this pins the window
+  // WITHOUT touching the author's tween object — seek-safe by construction
+  // (immediateRender:false reverts control before beat.startSec, the move()
+  // precedent). Split styles own their per-unit opacity, so they pin x/y only.
+  function pinSlotIdentity(timeline, slot, beat, pinOpacity) {
+    var from = { x: 0, y: 0 };
+    var to = { x: 0, y: 0, duration: Math.max(0.01, beat.endSec - beat.startSec), ease: "none" };
+    if (pinOpacity) {
+      from.opacity = 1;
+      to.opacity = 1;
+    }
+    move(timeline, slot, from, to, beat.startSec);
+  }
+
   function firstMatch(scope, selectors) {
     for (var i = 0; i < selectors.length; i += 1) {
       var found = scope.querySelector(selectors[i]);
@@ -71,6 +91,96 @@
 
   function setState(timeline, el, state, at) {
     timeline.set(el, { attr: { "data-state": state } }, at);
+  }
+
+  /* ------------------------------------------------ exclusive list selection */
+  // Nav/list single-active (probe-audit-01): when a list item becomes active,
+  // its siblings must go inactive, or a default-active item stays highlighted
+  // beside the selected one (TWO active nav items). The kit doesn't own state
+  // motion, so the runtime clears siblings — for a `select` beat AND for a
+  // cursor click (routed here from the interactions runtime, so the beat/click,
+  // never a per-target hack, owns HOW state changes). Every write is a
+  // zero-duration timeline.set: GSAP records the built value and reverts it on a
+  // backward seek, so the authored state is restored under out-of-order seek.
+
+  // Which channel the authored markup uses to mark an item active.
+  function itemActiveState(item) {
+    if (item.getAttribute && item.getAttribute("data-active") === "true") return "data-active";
+    if (item.getAttribute && item.getAttribute("data-state") === "active") return "data-state";
+    if (item.classList && item.classList.contains("active")) return "class";
+    return "";
+  }
+
+  function setItemActive(timeline, item, active, mechanism, atSec) {
+    if (mechanism === "data-state") {
+      timeline.set(item, { attr: { "data-state": active ? "active" : "inactive" } }, atSec);
+      return;
+    }
+    if (mechanism === "class") {
+      var base = (item.className || "").replace(/(^|\s)active(?=\s|$)/g, "").replace(/\s+/g, " ").trim();
+      timeline.set(item, { className: active ? (base ? base + " active" : "active") : base }, atSec);
+      return;
+    }
+    timeline.set(item, { attr: { "data-active": active ? "true" : "false" } }, atSec);
+  }
+
+  // The channel a set of items uses (whatever one already carries), default
+  // data-active — the kit's own active selector across sidebar/tabs/table.
+  function activeMechanismOf(items) {
+    for (var i = 0; i < items.length; i += 1) {
+      var mechanism = itemActiveState(items[i]);
+      if (mechanism) return mechanism;
+    }
+    return "data-active";
+  }
+
+  // Make exactly `chosen` active among `items`, at `atSec`. Each item also gets a
+  // t=0 set of its AUTHORED state: a gained-active item is authored inactive, and
+  // GSAP cannot restore "no attribute" under immediateRender on a backward seek,
+  // so the t=0 anchor is the value the seek reverts to (the addEchoTrail /
+  // compileSwap seek-safety precedent). The anchor reproduces the authored visual
+  // state exactly (the kit's active selector only matches the active token).
+  function activateAmong(timeline, items, chosen, atSec) {
+    var mechanism = activeMechanismOf(items);
+    for (var i = 0; i < items.length; i += 1) {
+      setItemActive(timeline, items[i], Boolean(itemActiveState(items[i])), mechanism, 0);
+      setItemActive(timeline, items[i], items[i] === chosen, mechanism, atSec);
+    }
+  }
+
+  // The item's exclusive-selection peers: same-signature direct siblings under
+  // one parent. childItems() only knows kit classes (.cmp-row/.cmp-item/…), but
+  // authored navs use their own class (.sidebar-item), so match on the item's
+  // own leading class token (else its tag).
+  function listSiblings(item) {
+    var parent = item.parentElement;
+    if (!parent) return [item];
+    var token = (item.className || "").trim().split(/\s+/)[0] || "";
+    var out = [];
+    var kids = parent.children;
+    for (var i = 0; i < kids.length; i += 1) {
+      var kid = kids[i];
+      if (kid === item) { out.push(kid); continue; }
+      var kidToken = (kid.className || "").trim().split(/\s+/)[0] || "";
+      if (token ? kidToken === token : kid.tagName === item.tagName) out.push(kid);
+    }
+    return out.length ? out : [item];
+  }
+
+  // Cursor-driven exclusive activation (called from the interactions runtime).
+  // Fires only when the target has real peers AND one already carries an active
+  // marker — proof this is a selection list, not arbitrary content — so a click
+  // on a plain button never grows a spurious active state.
+  function activateExclusiveItem(timeline, item, atSec) {
+    if (!item || atSec == null) return;
+    var siblings = listSiblings(item);
+    if (siblings.length < 2) return;
+    var hasActive = false;
+    for (var i = 0; i < siblings.length; i += 1) {
+      if (itemActiveState(siblings[i])) { hasActive = true; break; }
+    }
+    if (!hasActive) return;
+    activateAmong(timeline, siblings, item, atSec);
   }
 
   // Deterministic 32-bit string hash + seeded [0,1) generator — the assemble
@@ -145,6 +255,9 @@
     var slot = textSlot(el);
     var full = beat.text != null ? String(beat.text) : (slot.textContent || "");
     if (!full) return;
+    // Pin the slot's transform for the window (x/y only — the per-unit spans
+    // own opacity/scale). One-entrance-owner rule, shared with compileType.
+    pinSlotIdentity(timeline, slot, beat, false);
     var duration = beat.endSec - beat.startSec;
     var wordCount = full.split(/\s+/).filter(Boolean).length;
     // rise: per-word for a sentence (>6 words), else per-letter; pop: per-word;
@@ -260,6 +373,10 @@
     slot.textContent = "";
     var caret = ensureCaret(slot);
     var duration = beat.endSec - beat.startSec;
+    // The plain typewriter writes in place — pin the slot's transform AND
+    // opacity so an authored reveal on the same element cannot slide or fade the
+    // line while it types (probe-audit-03 self-writing-digest).
+    pinSlotIdentity(timeline, slot, beat, true);
     var proxy = { n: 0 };
     move(timeline, proxy, { n: 0 }, {
       n: full.length,
@@ -478,11 +595,9 @@
     var index = clamp((beat.item || 1) - 1, 0, items.length - 1);
     var chosen = items[index];
     var duration = beat.endSec - beat.startSec;
-    for (var i = 0; i < items.length; i += 1) {
-      timeline.set(items[i], {
-        attr: { "data-active": i === index ? "true" : "false" },
-      }, beat.startSec + duration * 0.4);
-    }
+    // Single-active: the chosen item goes active, every sibling inactive, across
+    // whatever channel the markup uses (data-active/data-state/.active class).
+    activateAmong(timeline, items, chosen, beat.startSec + duration * 0.4);
     move(timeline, chosen, { scale: 1 }, {
       scale: 0.96,
       duration: duration * 0.35,
@@ -559,8 +674,15 @@
 
   function compileSwap(timeline, el, beat) {
     var slot = firstMatch(el, ["[data-cmp-value]", ".cmp-value", "[data-cmp-text]", ".cmp-text", ".cmp-title"]) || el;
-    var duration = beat.endSec - beat.startSec;
     var incoming = String(beat.text || "");
+    // No-op swap (probe-audit-01): the slot already reads the incoming text, so
+    // swapping to itself is a pointless double-reveal — the same word flies out
+    // and the same word flies back in. Bail BEFORE building the old/new spans or
+    // any tween: a swap to itself is not motion (the beat still counts for
+    // paperwork, and a moment bound to it earns at most an advisory
+    // moment_static_frame from the temporal judge, never a block).
+    if ((slot.textContent || "").trim() === incoming.trim()) return;
+    var duration = beat.endSec - beat.startSec;
     slot.style.position = slot.style.position || "relative";
     var old = document.createElement("span");
     old.className = "cmp-swap-old";
@@ -587,6 +709,17 @@
       duration: duration * 0.55,
       ease: beat.ease,
     }, beat.startSec + duration * 0.4);
+    // Settle (probe-audit-01 "faint ghost"): during the crossfade the slot is
+    // laid out by the OLD copy while the new copy floats absolute over it, so
+    // leaving that arrangement forever means the settled text never rejoins
+    // normal flow (it overlaps neighbors whenever lengths differ) and the
+    // zeroed-out old copy still owns the slot's box. At the beat's end the old
+    // span leaves the layout and the new span takes the slot in normal flow.
+    // Zero-duration sets are seek-safe: GSAP records the start values on first
+    // render, so seeking back before endSec restores inline-block + absolute
+    // (the addEchoTrail t=0-pin precedent).
+    timeline.set(old, { display: "none" }, beat.endSec);
+    timeline.set(next, { position: "static" }, beat.endSec);
   }
 
   // An overlay kind's root spans the whole scene (.cmp-modal is inset:0 with a
@@ -750,5 +883,6 @@
   global.SequencesComponents = Object.freeze({
     version: VERSION,
     compile: compile,
+    activateExclusiveItem: activateExclusiveItem,
   });
 })(window);

@@ -35,6 +35,15 @@ const RUNTIME_SOURCE_PATH = path.join(
 /** Sweeps are the film's loudest garnish — capped host-side, by design. */
 export const MAX_SWEEPS_PER_SCENE = 1;
 export const MAX_SWEEPS_PER_FILM = 3;
+/**
+ * Connectors were host-derived toward EVERY full-move region arrival, so a busy
+ * film drew a line at every reframe — the #1 recurring "repetitive spamming"
+ * complaint (probe-audit-01/02). Cap them like sweeps: one per scene (the
+ * earliest arrival), a handful across the film, and never in a scene that
+ * already earned a sweep (one garnish per scene reads produced; two reads busy).
+ */
+export const MAX_CONNECTORS_PER_SCENE = 1;
+export const MAX_CONNECTORS_PER_FILM = 3;
 /** No sweep inside the film's very first second — the hook owns that beat. */
 export const SWEEP_OPENING_EXCLUSION_SEC = 1;
 /**
@@ -61,7 +70,7 @@ export interface FxEffectV1 {
   kind: FxEffectKind;
   sceneId: string;
   /** sweep / glow-pulse / draw: the data-part the effect answers.
-   *  grade-shift: the optional data-part the wash expands from. */
+   *  grade-shift: legacy anchor hint (the full-frame wash ignores it). */
   target?: string;
   /** connector: the data-region whose camera arrival ends the draw. */
   region?: string;
@@ -108,9 +117,10 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
     const beats = beatsByScene.get(scene.id) ?? [];
     let sceneSweeps = 0;
 
-    // MD4 grade shift: the scene's temperature turns at a payoff. The panel
-    // expands from fromPart (default center) and the runtime swaps the grade
-    // class at full cover. Discipline (window, aftermath, 1/scene, 2/film,
+    // MD4 grade shift: the scene's temperature turns at a payoff. The runtime
+    // fades a full-frame panel to the target grade's own steady wash, swaps
+    // the grade class at cover, and carries the tone across later same-grade
+    // scenes. Discipline (window, aftermath, 1/scene, 2/film,
     // moment coincidence) is enforced at parse (`dropUnusableGradeShifts`), so a
     // surviving gradeShift always compiles.
     if (scene.gradeShift) {
@@ -190,21 +200,36 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
     }
   }
 
-  // Rung 3: connector draw-ons toward every full-move region arrival. Pure
+  // Rung 3: connector draw-ons toward full-move region arrivals. Pure
   // decoration — the runtime no-ops when the author placed no `.fx-connector`
-  // markup — and it AIDS eye-trace: the drawn line points where the camera
-  // goes next.
+  // markup — and it AIDS eye-trace: the drawn line points where the camera goes
+  // next. Density-capped (probe-audit-01/02: a line at EVERY reframe read as
+  // spam): at most one per scene (the earliest arrival), MAX_CONNECTORS_PER_FILM
+  // across the film in scene order, and none in a scene that already earned a
+  // sweep this pass.
+  const sweepScenes = new Set(
+    effects.filter((effect) => effect.kind === "sweep").map((effect) => effect.sceneId),
+  );
+  let filmConnectors = 0;
   for (const scenePlan of resolveCameraPlan(scenes).scenes) {
-    for (const segment of scenePlan.segments) {
-      if (!CAMERA_FULL_MOVES.has(segment.move) || segment.blend < 1) continue;
-      if (!segment.toRegion) continue;
+    if (filmConnectors >= MAX_CONNECTORS_PER_FILM) break;
+    if (sweepScenes.has(scenePlan.sceneId)) continue;
+    const arrivals = scenePlan.segments
+      .filter((segment) =>
+        CAMERA_FULL_MOVES.has(segment.move) && segment.blend >= 1 && Boolean(segment.toRegion)
+      )
+      .sort((a, b) => a.startSec - b.startSec)
+      .slice(0, MAX_CONNECTORS_PER_SCENE);
+    for (const arrival of arrivals) {
+      if (filmConnectors >= MAX_CONNECTORS_PER_FILM) break;
       effects.push({
         kind: "connector",
         sceneId: scenePlan.sceneId,
-        region: segment.toRegion,
-        atSec: round(segment.startSec),
-        durationSec: round(Math.max(0.2, segment.endSec - segment.startSec)),
+        region: arrival.toRegion!,
+        atSec: round(arrival.startSec),
+        durationSec: round(Math.max(0.2, arrival.endSec - arrival.startSec)),
       });
+      filmConnectors += 1;
     }
   }
 

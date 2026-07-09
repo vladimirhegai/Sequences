@@ -467,6 +467,11 @@ components); `cinemaKit.ts` docs; `kitMarkupAudit.ts` mirror;
   the fx pass times each connector's draw to end at the camera's arrival
   at its `data-fx-toward="<region>"` station (arrival seconds come from
   the resolved camera plan). Pure decoration; absent attribute = no tween.
+  **Density-capped (2026-07-08 probe-audit):** the resolver emits at most one
+  connector per scene (the earliest arrival, `MAX_CONNECTORS_PER_SCENE`) and
+  `MAX_CONNECTORS_PER_FILM` across the film, and skips a scene that already
+  earned a sweep — a line at every reframe was the top "repetitive spamming"
+  complaint. Not every arrival; the earliest per non-sweep scene.
 
 **Tricky:**
 - FX artifacts must be invisible to: framing coverage (decoration counts

@@ -93,6 +93,7 @@
   // Dive leg fallbacks — kept in sync with cameraContract's diveWindows.
   var DIVE_LEG_MAX = 0.8;
   var DIVE_LEG_FRACTION = 0.25;
+  var DIVE_LEG_MIN = 0.7;
   var REGION_MARGIN_RATIO = 0.04;
   var PART_MARGIN_RATIO = 0.16;
   var CREEP_ZOOM = 1.028;
@@ -435,15 +436,22 @@
         var framedDive = frameState(
           viewport, world, diveTarget.element, "part", segment.zoom,
         );
-        var legCap = Math.min(DIVE_LEG_MAX, duration * DIVE_LEG_FRACTION);
+        var legCap = Math.max(DIVE_LEG_MIN, Math.min(DIVE_LEG_MAX, duration * DIVE_LEG_FRACTION));
         var inSec = isFinite(segment.inSec) ? segment.inSec : legCap;
         var outSec = isFinite(segment.outSec) ? segment.outSec : legCap;
+        // Dive envelope softening (probe-audit-03: the dive read harsh on entry
+        // and exit). The runtime OWNS the dive's leg eases (MD5: the host owns
+        // the whole dive arithmetic), so the push-in gets a soft committed
+        // ease-in-out and the pull-back a gentle ease-out — never a
+        // velocity-spike ease like seqImpulse that snaps the frame. The held
+        // middle between the legs is untouched (exact return to the pre-dive
+        // state by construction).
         tween(timeline, proxy, { x: state.x, y: state.y, z: state.z }, {
           x: framedDive.x,
           y: framedDive.y,
           z: framedDive.z,
           duration: inSec,
-          ease: segment.ease || "seqSettle",
+          ease: "power2.inOut",
           onUpdate: apply,
         }, segment.startSec);
         tween(timeline, proxy, {
@@ -455,7 +463,7 @@
           y: state.y,
           z: state.z,
           duration: outSec,
-          ease: "power3.inOut",
+          ease: "power2.out",
           onUpdate: apply,
         }, segment.endSec - outSec);
         // state is unchanged by construction — the camera came home.

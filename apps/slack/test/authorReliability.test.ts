@@ -458,6 +458,61 @@ describe("deterministic rows-markup top-up (fallback-elimination lever 1)", () =
     expect(result.html.match(/class="cmp-item"/g)).toHaveLength(3);
     expect(topUpRowsMarkup(result.html, selectScene).repaired).toEqual([]);
   });
+
+  it("labels topped-up rows with real plan copy, not 'Item N' (T5)", () => {
+    // Priority: the component's own beat text, then moment titles, then the
+    // foreground fragments — never generic placeholders.
+    const html =
+      '<section data-scene="board"><div data-part="board-list" data-component="list" ' +
+      'class="cmp cmp-list"></div></section>';
+    const scenes: DirectScene[] = [scene("board", 0, {
+      components: [{ version: 1, id: "board-list", kind: "list" }],
+      beats: [{ version: 1, id: "rows", sceneId: "board", component: "board-list", kind: "rows", atSec: 1 }],
+      foreground: "'deploy blocked on auth', 'PR 234 ready', 'waiting on API spec'",
+    })];
+    const result = topUpRowsMarkup(html, scenes);
+    expect(result.repaired).toEqual(["board-list"]);
+    // The quoted foreground fragments ship as row copy, quotes stripped.
+    expect(result.html).toContain("deploy blocked on auth");
+    expect(result.html).toContain("PR 234 ready");
+    expect(result.html).toContain("waiting on API spec");
+    expect(result.html).not.toContain("Item 1");
+    // The source is recorded for the degradation ledger.
+    expect(result.html).toContain('data-sequences-rows-source="foreground"');
+    // Still marked host-invented placeholder STRUCTURE (a degradation on ship).
+    expect(result.html.match(/data-sequences-neutral="1"/g)).toHaveLength(3);
+  });
+
+  it("prefers the component's own beat text over moments/foreground", () => {
+    const html =
+      '<section data-scene="feed"><div data-part="feed" data-component="chat" ' +
+      'class="cmp cmp-chat"></div></section>';
+    const scenes: DirectScene[] = [scene("feed", 0, {
+      components: [{ version: 1, id: "feed", kind: "chat" }],
+      beats: [
+        { version: 1, id: "type-1", sceneId: "feed", component: "feed", kind: "type", atSec: 1, text: "Deploy shipped" },
+        { version: 1, id: "rows", sceneId: "feed", component: "feed", kind: "rows", atSec: 2 },
+      ],
+      moments: [{ version: 1, id: "m", sceneId: "feed", atSec: 1, title: "A moment title", visualState: "x", change: "y", motionIntent: "type-on", importance: "primary" }],
+      foreground: "some, foreground, fragments",
+    })];
+    const result = topUpRowsMarkup(html, scenes);
+    expect(result.html).toContain("Deploy shipped");
+    expect(result.html).toContain('data-sequences-rows-source="beat-text"');
+  });
+
+  it("falls back to the neutral noun only when the plan carries no copy", () => {
+    const html =
+      '<section data-scene="bare"><div data-part="bare" data-component="table" ' +
+      'class="cmp cmp-table"></div></section>';
+    const scenes: DirectScene[] = [scene("bare", 0, {
+      components: [{ version: 1, id: "bare", kind: "table" }],
+      beats: [{ version: 1, id: "rows", sceneId: "bare", component: "bare", kind: "rows", atSec: 1 }],
+    })];
+    const result = topUpRowsMarkup(html, scenes);
+    expect(result.html).toContain("Row 1");
+    expect(result.html).toContain('data-sequences-rows-source="neutral"');
+  });
 });
 
 function compositionDoc(body: string): string {

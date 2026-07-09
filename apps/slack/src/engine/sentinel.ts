@@ -205,6 +205,76 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "commit-or-revert. Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
   },
   {
+    id: "normalize.interaction-hold-retime",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/pacingAudit.test.ts",
+    addedBecause:
+      "2026-07-08 probe-audit-01: a whip re-framed the world DURING a cursor " +
+      "click (arrive 8.4s, press 8.5s, whip in flight 8.1-8.8s). " +
+      "retimeCameraOverInteractions delays any full move (dive exempt — its " +
+      "held middle exists to frame an act) out of every interaction's " +
+      "arrive→result window (+lead/settle), never passing the next full move, " +
+      "stretching the cut boundary <= MAX_PACING_STRETCH_SEC when it overruns, " +
+      "and preserving every moment-evidence binding; an unfittable " +
+      "NON-load-bearing move drops to the drift auto-fill. The backstop gate is " +
+      "auditPacing's pacing/interaction-hold (pacing.holds row, advisory-late), " +
+      "which only fires on residue no retime could fix. Same atomic " +
+      "commit-or-revert. Telemetry tag: interaction-hold-retime.",
+  },
+  {
+    id: "normalize.move-spacing",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/pacingAudit.test.ts",
+    addedBecause:
+      "2026-07-08 probe-audit-02: stacked entry transitions — a hard cut then a " +
+      "whip 0.2s later, a morph then a push-in 0.3s later — play as two " +
+      "transitions back to back, and mergeCompoundMoves only fuses SAME-target " +
+      "pairs. spaceStackedCameraMoves delays an ENERGETIC full move " +
+      "(whip/orbit/dive/committed push-pull) to ENTRY_SETTLE_SEC after a scene's " +
+      "incoming cut and to MOVE_SETTLE_GAP_SEC after a previous energetic move " +
+      "aimed at a DIFFERENT target, under the same fit/binding constraints as " +
+      "the interaction retime; an unfittable stack is left alone (spacing is " +
+      "polish, never worth a veto — no backstop finding). Live probe " +
+      "probe-audit-fable-2 lesson: both retime normalizers walk their targets " +
+      "CLEAR of reading/outcome hold windows + interaction windows " +
+      "(advanceClearOfWindows) so a spacing delay can never mint the " +
+      "pacing/outcome conflict delayConflictingCameraMoves (which runs earlier) " +
+      "exists to prevent. Same atomic commit-or-revert. Telemetry tag: " +
+      "move-spacing.",
+  },
+  {
+    id: "normalize.early-swap-delay",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/pacingAudit.test.ts",
+    addedBecause:
+      "2026-07-08 probe-audit-01: the incoming copy of a cut must be READ before " +
+      "it CHANGES. A `swap` beat firing within ENTRY_SETTLE_SEC of a non-first " +
+      "scene's start re-writes the just-landed frame before the viewer reads it " +
+      "(cta-resolve: headline morphs in at 18.6s, swaps its text 0.2s later at " +
+      "18.8s — a pointless flash of the landed copy). delayEarlySwapBeats delays " +
+      "the swap to scene.startSec + ENTRY_SETTLE_SEC (shift atSec, keep duration) " +
+      "when the beat still fits the scene — stretching the cut boundary <= " +
+      "MAX_PACING_STRETCH_SEC (15s scene cap) when it overruns — and preserving " +
+      "every moment-evidence binding (EVIDENCE_BEFORE/AFTER overlap, like " +
+      "retimeCameraOverInteractions); a retime that would break a binding leaves " +
+      "the beat alone. The backstop gate is auditPacing's pacing/reading variant " +
+      "(pacing.holds row, advisory-late), which fires only on the residue. Same " +
+      "atomic commit-or-revert (order: after move-spacing, before pacing-stretch). " +
+      "Telemetry tag: early-swap-delay.",
+  },
+  {
     id: "normalize.component-trim",
     group: "normalize",
     layer: "normalize",
@@ -704,7 +774,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "press/set-state/toast outcome holds; all viewer-time. pacing/* blocks " +
       "attempts 1-2 of the primary rung and demotes to advisory from its final " +
       "attempt (degrade-never-veto, the improve-ws32-1 lesson). Marginal misses " +
-      "are first absorbed deterministically by normalize.pacing-stretch above.",
+      "are first absorbed deterministically by normalize.pacing-stretch above. " +
+      "2026-07-08 adds pacing/interaction-hold: no full move in flight during a " +
+      "cursor interaction's arrive→result window (dive exempt) — repaired first " +
+      "by normalize.interaction-hold-retime, so the finding is residue-only.",
   },
   {
     id: "moments.plan",

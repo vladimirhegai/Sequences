@@ -45,8 +45,7 @@ import {
   CAMERA_MOVES,
   CAMERA_RUNTIME_FILE,
   type CameraMoveIntentV1,
-  DIVE_LEG_FRACTION,
-  DIVE_LEG_MAX_SEC,
+  diveLegCap,
   SEQUENCES_EASES,
   auditCameraEnergy,
   injectCameraRuntimeTag,
@@ -119,10 +118,13 @@ import {
   READING_SEC_PER_WORD,
   auditPacing,
   delayConflictingCameraMoves,
+  delayEarlySwapBeats,
   framingChangeEvents,
   nextFramingChangeAfter,
   normalizeCameraBudget,
   requiredFramingCount,
+  retimeCameraOverInteractions,
+  spaceStackedCameraMoves,
   stretchMarginalPacingMisses,
   topUpFramingFloor,
   withNormalizationNotes,
@@ -1558,18 +1560,90 @@ function normalizeGsapDisplayVisibilityTweens(source: string): { html: string; r
 const REVEALABLE_CHILD_CLASS =
   /\bclass\s*=\s*(["'])[^"']*\bcmp-(?:row|item|card|msg)\b[^"']*\1/i;
 
-/** The kind-appropriate revealable child class for a rows-markup top-up. */
-function rowsChildMarkup(kind: string | undefined, index: number): string {
-  // data-sequences-neutral marks host-invented placeholder copy so the
-  // publish-time honesty scan can tell whether it actually SHIPPED (an
-  // earlier attempt's injection may be superseded by a real re-author).
-  const mark = ' data-sequences-neutral="1"';
-  if (kind === "kanban") return `<div class="cmp-card material"${mark}>Card ${index}</div>`;
-  if (kind === "chat") return `<div class="cmp-msg"${mark}>Message ${index}</div>`;
-  if (kind === "table") {
-    return `<div class="cmp-row"${mark}><span>Row ${index}</span><span class="cmp-chip">ok</span></div>`;
+/** Beat kinds that carry model-authored copy usable as a real row label. */
+const ROW_LABEL_BEAT_KINDS: ReadonlySet<string> = new Set(["type", "swap", "stream"]);
+/** The neutral "Item N" noun per kind, only used when the plan carries no copy. */
+const NEUTRAL_ROW_NOUN: Record<string, string> = { kanban: "Card", chat: "Message", table: "Row" };
+
+function escapeRowLabel(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Clean a candidate row label reused from elsewhere in the plan: strip wrapping
+ * quotes (the scattered-fragments foreground quotes each phrase), collapse
+ * whitespace, and clamp to ~40 chars so a long sentence fragment reads as a row.
+ * Returns "" for an unusable fragment.
+ */
+function cleanRowLabel(raw: string): string {
+  let text = raw.trim().replace(/^["'“”‘’]+/, "").replace(/["'“”‘’]+$/, "").trim();
+  text = text.replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length > 40) text = `${text.slice(0, 39).trimEnd()}…`;
+  return text;
+}
+
+/**
+ * Derive up to `count` REAL row labels for a topped-up rows target, honestly
+ * reusing strings the model itself wrote elsewhere in the plan — never inventing
+ * a product claim (T5, probe-audit-01/03: the generic "Item 1/2/3" shipped on
+ * screen). Priority order:
+ *   1. the component's own type/swap/stream beat text,
+ *   2. the owning scene's moment titles (short, already display-grade),
+ *   3. the scene's foreground sentence split on commas/semicolons (probe-01's
+ *      scattered-fragments scene carries five quoted phrases exactly like this).
+ * Each label carries the source it came from so the degradation note is honest;
+ * slots past the derivable copy fall back to the neutral noun.
+ */
+function deriveRowLabels(
+  scene: DirectScene,
+  componentId: string,
+  count: number,
+): Array<{ label: string; source: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ label: string; source: string }> = [];
+  const add = (value: string | undefined, source: string): void => {
+    if (out.length >= count || value == null) return;
+    const label = cleanRowLabel(value);
+    if (!label) return;
+    const key = label.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ label, source });
+  };
+  for (const beat of scene.beats ?? []) {
+    if (beat.component === componentId && ROW_LABEL_BEAT_KINDS.has(beat.kind)) add(beat.text, "beat-text");
   }
-  return `<div class="cmp-item"${mark}>Item ${index}</div>`;
+  for (const moment of scene.moments ?? []) add(moment.title, "moments");
+  for (const fragment of (scene.foreground ?? "").split(/[;,]/)) add(fragment, "foreground");
+  return out;
+}
+
+/**
+ * The kind-appropriate revealable child markup for a rows-markup top-up.
+ * `data-sequences-neutral="1"` marks host-invented placeholder STRUCTURE (the
+ * author omitted these rows) so the publish-time honesty scan records the
+ * degradation; `data-sequences-rows-source` records WHERE the copy came from
+ * (a reused plan string, or "neutral" for the "Item N" fallback).
+ */
+function rowsChildMarkup(
+  kind: string | undefined,
+  index: number,
+  label: string | undefined,
+  source: string,
+): string {
+  const mark = ` data-sequences-neutral="1" data-sequences-rows-source="${source}"`;
+  const text = escapeRowLabel(label ?? `${NEUTRAL_ROW_NOUN[kind ?? ""] ?? "Item"} ${index}`);
+  if (kind === "kanban") return `<div class="cmp-card material"${mark}>${text}</div>`;
+  if (kind === "chat") return `<div class="cmp-msg"${mark}>${text}</div>`;
+  if (kind === "table") {
+    return `<div class="cmp-row"${mark}><span>${text}</span><span class="cmp-chip">ok</span></div>`;
+  }
+  return `<div class="cmp-item"${mark}>${text}</div>`;
 }
 
 /**
@@ -1659,17 +1733,24 @@ export function topUpRowsMarkup(
   scenes: DirectScene[],
 ): { html: string; repaired: string[] } {
   const kindByTarget = new Map<string, string | undefined>();
+  const sceneByTarget = new Map<string, DirectScene>();
   for (const scene of scenes) {
     const kinds = new Map((scene.components ?? []).map((entry) => [entry.id, entry.kind]));
     for (const beat of scene.beats ?? []) {
       if (beat.kind === "rows" || beat.kind === "select") {
         kindByTarget.set(beat.component, kinds.get(beat.component));
+        sceneByTarget.set(beat.component, scene);
       }
     }
   }
   return injectIntoComponentRoots(html, kindByTarget.keys(), (component, content) => {
     if (REVEALABLE_CHILD_CLASS.test(content)) return null;
-    const rows = [1, 2, 3].map((index) => rowsChildMarkup(kindByTarget.get(component), index));
+    const kind = kindByTarget.get(component);
+    const scene = sceneByTarget.get(component);
+    const derived = scene ? deriveRowLabels(scene, component, 3) : [];
+    const rows = [0, 1, 2].map((i) =>
+      rowsChildMarkup(kind, i + 1, derived[i]?.label, derived[i]?.source ?? "neutral"),
+    );
     return `\n${rows.join("\n")}\n`;
   });
 }
@@ -4295,7 +4376,7 @@ export function deriveDiveWindows(
       }
       holdStart = Math.max(start, Math.min(holdStart, end));
       holdEnd = Math.max(holdStart, Math.min(holdEnd, end));
-      const legCap = Math.min(DIVE_LEG_MAX_SEC, move.durationSec * DIVE_LEG_FRACTION);
+      const legCap = diveLegCap(move.durationSec);
       const inSec = Math.round(Math.max(0.15, Math.min(legCap, holdStart - start)) * 1000) / 1000;
       const outSec = Math.round(Math.max(0.15, Math.min(legCap, end - holdEnd)) * 1000) / 1000;
       const note =
@@ -5189,7 +5270,16 @@ export function parseStoryboardResponse(
   const framingTopUp = topUpFramingFloor(cameraBudget.storyboard);
   const energyLift = liftCameraEnergyPeak(framingTopUp.storyboard);
   const moveDelay = delayConflictingCameraMoves(energyLift.storyboard);
-  const pacingStretch = stretchMarginalPacingMisses(moveDelay.storyboard);
+  // Choreography spacing next (2026-07-08 probe set): moves out of interaction
+  // arrive→result windows, then entry/stack settles — both pure retimes over
+  // the surviving move set, before the marginal-miss stretch sees final times.
+  const interactionHold = retimeCameraOverInteractions(moveDelay.storyboard);
+  const moveSpacing = spaceStackedCameraMoves(interactionHold.storyboard);
+  // Early-swap read-hold next (2026-07-08 probe-audit-01): delay a swap that
+  // re-writes a cut's just-landed copy, over the post-spacing move set, before
+  // the marginal-miss stretch sees final times.
+  const earlySwap = delayEarlySwapBeats(moveSpacing.storyboard);
+  const pacingStretch = stretchMarginalPacingMisses(earlySwap.storyboard);
   const normalizationLines = [
     ...morphFix.changed,
     ...componentTrim.normalized,
@@ -5197,6 +5287,9 @@ export function parseStoryboardResponse(
     ...framingTopUp.normalized,
     ...energyLift.normalized,
     ...moveDelay.normalized,
+    ...interactionHold.normalized,
+    ...moveSpacing.normalized,
+    ...earlySwap.normalized,
     ...pacingStretch.normalized,
   ];
   if (normalizationLines.length) storyboard = pacingStretch.storyboard;
@@ -5299,6 +5392,15 @@ export function parseStoryboardResponse(
     }
     if (moveDelay.normalized.length) {
       recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);
+    }
+    if (interactionHold.normalized.length) {
+      recordSentinelNormalization("interaction-hold-retime", interactionHold.normalized.length);
+    }
+    if (moveSpacing.normalized.length) {
+      recordSentinelNormalization("move-spacing", moveSpacing.normalized.length);
+    }
+    if (earlySwap.normalized.length) {
+      recordSentinelNormalization("early-swap-delay", earlySwap.normalized.length);
     }
     if (pacingStretch.normalized.length) {
       recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
@@ -10556,7 +10658,21 @@ export async function requestDirectComposition(
   // Detected here — not at injection — because an earlier attempt's injection
   // may be superseded by a real re-author.
   if (/\bdata-sequences-neutral\s*=\s*["']1["']/i.test(final.draft.html)) {
-    recordSentinelDegradation("rows-neutral-children-shipped");
+    // Record the source the host reused for the row labels (T5) so the ledger
+    // shows whether "Item N" placeholder copy or real plan strings shipped.
+    const rowSources = new Set<string>();
+    for (const match of final.draft.html.matchAll(
+      /data-sequences-rows-source\s*=\s*["']([^"']+)["']/gi,
+    )) {
+      rowSources.add(match[1]!);
+    }
+    if (rowSources.size) {
+      for (const source of rowSources) {
+        recordSentinelDegradation(`rows-neutral-children-shipped:${source}`);
+      }
+    } else {
+      recordSentinelDegradation("rows-neutral-children-shipped");
+    }
   }
   if (/\bdata-sequences-neutral\s*=\s*["']chart["']/i.test(final.draft.html)) {
     recordSentinelDegradation("chart-neutral-bars-shipped");

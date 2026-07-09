@@ -48,7 +48,7 @@ point an agent at the listed file.
 | Explicit fallback stages | `src/orchestrator.ts` | named stage receipts, `fallback:{stage,reason}`, Slack-safe fallback labeling |
 | Temporal motion evidence | `src/engine/temporalInspector.ts` | development strips, cut triptychs, change curve, quiet-window review |
 | Zero-token revise ("shorter" / "warmer") | `src/engine/tweakRunner.ts` | deterministic tweak matcher |
-| Render + thumbnails | `src/engine/render.ts`, `src/engine/thumbs.ts`, `src/engine/directComposition.ts` (`generateDirectThumbnails`) | Chrome / FFmpeg pipeline, draft vs HD; WS7 moment-thumbnail walk-forward: a scene-start moment whose subject hasn't revealed (opacity check) or whose copy clip-reveals later (relative painted-pixel check) walks to the first frame that actually shows the moment |
+| Render + thumbnails | `src/engine/render.ts`, `src/engine/thumbs.ts`, `src/engine/directComposition.ts` (`generateDirectThumbnails`) | Chrome / FFmpeg pipeline, draft vs HD; HD tier supersamples (2× DPR master → ffmpeg lanczos downscale, `SLACK_SEQUENCES_RENDER_SUPERSAMPLE`, 2026-07-08) so slow sub-pixel motion stops stair-stepping in the MP4; WS7 moment-thumbnail walk-forward: a scene-start moment whose subject hasn't revealed (opacity check) or whose copy clip-reveals later (relative painted-pixel check) walks to the first frame that actually shows the moment |
 | Recipe library (Level-1 host instantiation) | `src/engine/recipeContract.ts`, `skills/sequences-recipes/`, `src/agent/skillContext.ts` | RecipeV2 format, typed param slots, verbatim fragment injection, retrieval scoring/budget, version fencing (`SLACK_SEQUENCES_RECIPES=0`) |
 | Recipe Studio (operator tool, never deployed) | `studio/server.ts`, `studio/gate.ts`, `studio/exportRecipe.ts`, `studio/scaffold.ts`, `studio/canvasModel.ts`, `studio/compileCanvas.ts`, `studio/agents/`, `studio/INTEGRATION.md` | workspace gate loop (real validators + browser QA), RecipeV2 export wizard, golden proof (`npm run studio:golden`); **canvas builder** (world view + live catalog + typed camera transitions → zero-token compile, `npm run studio:canvas`); **agent chat** (OpenRouter critic + Claude-CLI file-first agent, re-gated). Live-create recipe-declaration proof did NOT convert — see the 2026-07-07 section |
 | Curated model-free demo | `src/demo.ts` | the bulletproof preset reel |
@@ -1934,3 +1934,200 @@ remaining levers are the deferred prompt diet and the still-open deterministic
 contrast repair + sparse establishing zoom (Agent 1's handoff, unchanged).
 Operator ladder (Docker/`railway up`/sandbox/`ALLOW_DETERMINISTIC_FALLBACK=1`)
 not run here — flagged for the operator.
+
+## 2026-07-08 (later) — probe-audit polish, hard half (Fable)
+
+Three fresh paid probes on one "Cadence" brief (`probe-audit-01/02/03`)
+surfaced recurring texture/choreography defects. This session shipped the hard
+half; the medium/minor half is handed to a follow-up agent (see the handoff
+prompt in the session notes).
+
+- **Swap settles clean (probe-01 "faint ghost").** `compileSwap`
+  (`templates/sequences-components.v1.js`) left `.cmp-swap-new`
+  position:absolute over a zeroed-out old span forever — the slot stayed laid
+  out by the OLD copy and the new copy floated over it (overlapping neighbors
+  whenever lengths differ). Two zero-duration sets at the beat end now remove
+  the old span from layout (`display:none`) and rejoin the new one to normal
+  flow (`position:static`) — seek-safe both ways (GSAP restores recorded start
+  values on backward seek; the echo-trail pin precedent). Proof: the new
+  "swap settle browser contract" in `test/textFx.browser.test.ts`.
+- **Grade shift = grading, not a shape (probe-01/02 "ugly orange circle").**
+  `bindGradeShift` (`templates/sequences-fx.v1.js`) replaced the expanding
+  border-radius:50% panel (2.4× diagonal, solid `--cinema-panel-*` color far
+  brighter than the settled wash) with a full-frame panel WEARING the target
+  grade class: its own `::after` paints exactly the settled wash, so the fade
+  can never overshoot, and at cover the scene class swap + instant panel
+  drop-out exchange identical pixels. The turn now also **carries across
+  cuts**: later scenes still wearing the pre-shift tone are re-classed at
+  cover time; the first deliberately re-graded scene ends the carry.
+  `--cinema-panel-*` vars removed from the cinema kit (runtime no longer
+  reads them); `fromPart` survives in the schema as a no-op. Proof: rewritten
+  MD4 test in `test/fxRuntime.browser.test.ts` (fade + handoff + carry + stop
+  + backward-seek restore).
+- **Camera holds through interactions (probe-01).** New L2 normalizer
+  `retimeCameraOverInteractions` (`pacingAudit.ts`, in the parse-side atomic
+  commit-or-revert after `delayConflictingCameraMoves`): any full move (dive
+  exempt) in flight during an interaction's arrive→result window
+  (+`INTERACTION_HOLD_LEAD_SEC`/`INTERACTION_HOLD_SETTLE_SEC`) is delayed past
+  the settled result — never passing the next full move, stretching the cut
+  boundary ≤ `MAX_PACING_STRETCH_SEC`, preserving every moment-evidence
+  binding; an unfittable NON-load-bearing move drops to the drift auto-fill.
+  Backstop gate: `pacing/interaction-hold` in `auditPacing` (rides the
+  pacing/* late-attempt advisory demotion, so it never vetoes a final rung).
+  Registry rows `normalize.interaction-hold-retime` + pacing.holds update.
+- **Stacked entry transitions spaced (probe-02).** New L2 normalizer
+  `spaceStackedCameraMoves`: an ENERGETIC move (whip/orbit/dive/committed
+  push-pull per `cameraMoveEnergyRank`) is delayed to `ENTRY_SETTLE_SEC` after
+  a scene's incoming cut and to `MOVE_SETTLE_GAP_SEC` after a previous
+  energetic move aimed at a DIFFERENT target (same-target pairs stay
+  `mergeCompoundMoves`' business). No backstop finding — spacing is polish;
+  an unfittable stack is left alone. Registry row `normalize.move-spacing`.
+  Live-probe hardening (`probe-audit-fable-2`, same day): both retime
+  normalizers walk their targets CLEAR of reading/outcome hold windows and
+  interaction windows (`advanceClearOfWindows`/`beatHoldWindows`) so a
+  spacing delay can never mint the `pacing/outcome` conflict that
+  `delayConflictingCameraMoves` (which runs earlier in the chain) exists to
+  prevent — the probe's attempt 2 showed the entry-settle delay putting a
+  push-in in flight through a set-state payoff's hold.
+- **Supersampled HD renders (all probes' MP4 shakiness).** Software-GPU
+  screenshot capture at DPR 1 quantizes slow sub-pixel motion to whole pixels
+  (smooth live, stair-stepped in the MP4). `render.ts` gains
+  `resolveSupersamplePlan` / `supersampleJobFields` /
+  `downscaleSupersampledRender`: the producer's own `outputResolution` knob
+  renders an integer 2× master (`landscape-4k`/`portrait-4k`/`square-4k`,
+  near-lossless CRF 16, `hdrMode:"force-sdr"`), then ffmpeg lanczos-downscales
+  back to composition dimensions (CRF 18, faststart). Gated to the HD tier
+  (`quality === "high"`, the Render HD button) for Railway memory;
+  `SLACK_SEQUENCES_RENDER_SUPERSAMPLE=1` forces every tier, `=0` disables; any
+  failure falls back to the plain 1× render. Wired in BOTH
+  `renderDirectComposition` (live films) and `renderProject` (legacy). Proven
+  live: a 3s probe-01 clip rendered 4K → 1080p through the full path.
+  Tests: `test/renderSupersample.test.ts`.
+
+Also: `componentMotionWindows` now suppresses the static overlap/overflow
+heuristics during `swap`/`count`/`set-state`/`highlight` beats (in-place
+component-internal motion misread mid-beat as overlapping text), and
+`studio/INTEGRATION.md` gained a seam row for behavior-changing runtime
+template edits at the same island version (re-prove recipes via
+`npm run studio:golden`; contract changes must bump the VERSION instead).
+
+## 2026-07-08 (later) — probe-audit polish, medium/minor half (Opus)
+
+The follow-up half of the probe-audit fix batch (see `docs/PROBE_AUDIT_HANDOFF.md`).
+All host-side and seek-safe; no prompt growth; one new `normalize.*` registry row.
+
+- **No-op swap killed (probe-01 `snap-to-line`).** A `swap(cadence-wordmark →
+  "Cadence")` onto a wordmark already reading "Cadence" was a pointless
+  double-reveal (the same word flew out and back in). Two deterministic rungs:
+  `compileSwap` (`templates/sequences-components.v1.js`) now returns BEFORE
+  building the old/new spans or any tween when the slot's trimmed text already
+  equals the incoming text (a swap to itself is not motion); and Rule 5 of
+  `dedupeRedundantBeats` (`componentContract.ts`) drops a `swap` whose text
+  equals the most recent type/swap text of the same component in the same scene
+  (parse has no HTML, so only beat-derived text is knowable — the runtime rung
+  covers the authored-markup case; the drop lands in
+  `storyboard-redundant-beat-dropped` paperwork). Proof: the "no-op swap" case in
+  `test/textFx.browser.test.ts` (no `.cmp-swap-old/new`, one text node) +
+  `test/componentContract.test.ts` dedupe cases.
+- **Read-hold after a cut before a swap (probe-01 `cta-resolve`).** The morphed-in
+  headline swapped its copy 0.2s after the scene's cut landed, so the incoming
+  frame changed before the viewer read it. New L2 normalizer `delayEarlySwapBeats`
+  (`pacingAudit.ts`, in the parse-side atomic group after `spaceStackedCameraMoves`,
+  before `stretchMarginalPacingMisses`): for scenes with index > 0, a `swap` beat
+  starting before `scene.startSec + ENTRY_SETTLE_SEC` is delayed to that settle
+  point — keeping duration, stretching the cut boundary ≤ `MAX_PACING_STRETCH_SEC`
+  when it overruns, and preserving every moment-evidence binding
+  (`EVIDENCE_BEFORE/AFTER`, like `retimeCameraOverInteractions`); a retime that
+  would break a binding leaves the beat alone. Backstop gate: a `pacing/reading`
+  variant in `auditPacing` (a non-first-scene swap starting <
+  `ENTRY_SETTLE_SEC - PACING_TOLERANCE_SEC` into the scene), residue-only, riding
+  the pacing/* late-attempt advisory demotion. Registry row
+  `normalize.early-swap-delay` + telemetry tag `early-swap-delay`. Proof:
+  `test/pacingAudit.test.ts` (probe-01 shape: 18.6 start, swap 18.8 → 19.5).
+- **FX connector density cap (probe-01/02 "repetitive spamming").**
+  `resolveFxPlan` (`fxContract.ts`) rung 3 drew a `connector` toward EVERY
+  full-move region arrival, so a busy film drew a line at every reframe. Now capped
+  like sweeps: `MAX_CONNECTORS_PER_SCENE` (1, the earliest arrival per scene),
+  `MAX_CONNECTORS_PER_FILM` (3, counted in scene order), and a scene that already
+  earned a sweep this pass skips its connector (one garnish per scene reads
+  produced; two reads busy). Pure resolver arithmetic — no new finding class; the
+  island stays host-injected from the same resolver so `validateFxContract` sees no
+  drift. Proof: `test/fxContract.test.ts` cap cases; `film:demo` green.
+- **Nav single-active (probe-01 `momentum-board-enter`, sidebar showed TWO active
+  items).** The default-active "Home" stayed highlighted while the cursor selected
+  "Platform". The runtime owns state motion, so it now clears siblings when an item
+  becomes active. `templates/sequences-components.v1.js` gains an exclusive-active
+  helper (`activateAmong`/`activateExclusiveItem`, exposed on
+  `SequencesComponents`) that detects the authored active channel
+  (`data-active`/`data-state="active"`/`.active` class), sets the chosen item
+  active + every sibling inactive, and pins each item's AUTHORED state at t=0 so a
+  backward seek restores it (a gained-active item is authored inactive, which GSAP
+  cannot restore under immediateRender without the anchor — the compileSwap /
+  echo-trail precedent). `compileSelect` uses it; and the interactions runtime
+  (`templates/sequences-interactions.v1.js`) routes a nav/list cursor click through
+  the SAME helper at the press instant (ONE owner, self-guarded to real selection
+  lists via same-class siblings — a click on a plain button is a no-op — and it
+  matches authored `.sidebar-item` classes childItems() never knew). Proof:
+  `test/navActive.browser.test.ts` (select beat + cursor path, single-active +
+  seek restore).
+- **Real labels for topped-up rows (probe-01/03 "Item 1/2/3").** `topUpRowsMarkup`
+  (`compositionRunner.ts`) shipped generic "Item N" copy on screen. It now derives
+  REAL labels, honestly reusing strings the model itself wrote — priority: the
+  component's own type/swap/stream beat text, the owning scene's moment titles,
+  then the scene's `foreground` split on commas/semicolons (quotes stripped,
+  clamped ~40 chars) — falling back to the neutral noun only when the plan carries
+  no copy. Each row records its source (`data-sequences-rows-source`), and the
+  publish-time honesty scan records `rows-neutral-children-shipped:<source>` so the
+  degradation ledger stays honest. `topUpChartMarkup` ships no visible text (bars
+  are height-only), so it needs no treatment. Proof: `test/authorReliability.test.ts`.
+- **One entrance owner per text element (probe-03 `self-writing-digest`).** A `type`
+  beat (a pure typewriter that never moves its slot) coexisting with an authored
+  from-below reveal on the same line made it type WHILE sliding up. `compileType`
+  (and `compileSplitType`) now pin the slot with a spanning identity tween
+  (`pinSlotIdentity` — y/x/opacity for the plain typewriter, x/y only for split
+  styles that own per-unit opacity): the component runtime compiles AFTER the
+  authored tweens and GSAP resolves overlapping same-property tweens by timeline
+  position (later wins per frame), so the pin holds the window without touching the
+  author's tween — seek-safe by construction (immediateRender:false reverts before
+  the beat). Proof: `test/textFx.browser.test.ts` (slot rect identical at
+  start/mid/end while the caret advances; backward seek restores).
+- **Dive envelope softening (probe-03, dive in/out too rough).** The dive read harsh
+  because its IN leg used a velocity-spike ease (`seqImpulse`) over a tight
+  0.3s-derived leg. The camera runtime (`templates/sequences-camera.v1.js`) now
+  OWNS the dive leg eases (MD5: the host owns the whole dive arithmetic): a soft
+  committed `power2.inOut` push-in and a gentle `power2.out` pull-back, held middle
+  untouched. `diveWindows` (`cameraContract.ts`) also floors the fallback leg at
+  `DIVE_LEG_MIN_SEC` (0.7) via the new `diveLegCap` — softening short dives whose
+  legs aren't already constrained by a beat landing right after the push-in (a
+  tightly-timed leg like probe-03's 0.3s stays, framing the surface before the act;
+  its softening comes from the ease). Proof: `test/cameraDive.test.ts` (updated
+  short-dive leg expectation). `film:demo`/fallback/golden don't dive (verified).
+- **Cross-family morph degrade (probe-03 `timeline-alignment →
+  momentum-board-reveal`, list→window smearing).** A row list morphing into a table
+  wrapped in a chrome app-window read as smearing; the plan declared no shape hints,
+  so the bind-time geometry audit is the owner. `shapeMatchAudit`
+  (`templates/sequences-cuts.v1.js`) gains a structure-mismatch rule: measuring each
+  focal part through its FRAMING SURFACE (a `.cmp-list/table/kanban` embedded in a
+  `.cmp-window/modal` is measured as that whole surface), a child-count ratio > 4×
+  or a subtree-depth ratio ≥ 2× degrades the morph to the axis-derived swipe with a
+  typed `mismatched structure` reason — inside the existing `cut_degraded` class (no
+  new registry row). `cutContract.ts` also adds `list`/`table` shape hints in a new
+  `grid` family (distinct from the `block` window/card family) so a FUTURE
+  hint-declared list→window is caught at plan stage; window/card/circle stay one
+  family (the pinned `shapeHintsRhyme` test). Proof:
+  `test/cutShapeMatch.browser.test.ts` (list→window degrades; the healthy pill→bar
+  and aspect-mismatch pass cases stay green).
+
+Verification: `npm run typecheck` clean, full suite green (800 tests, +18),
+`film:demo` green, `studio:golden` re-proved + re-exported the golden recipe
+(revision 5) against the new runtime content, Sentinel closed-world test green
+(new `normalize.early-swap-delay` row). One fresh paid probe
+(`probe-audit-second-half-1`, Cadence brief, openrouter-api) **published
+`hyperframes-direct`, no fallback** (10 thumbnails, 11 moments, 0 unbound, 0
+motion warnings): `early-swap-delay` fired **twice live** (a `digest-type` swap
+15.10→15.80 held past the cut) and is in the telemetry normalization ledger; the
+FX pass drew only **2 connectors** across a 7-full-move film (was one per
+arrival); the film's one morph flew clean with **no `cut_degraded`** (no T8 false
+positive); and no `Item N` / no-op swap / rows-neutral degradation shipped. The
+`published-degraded` disposition is the ordinary `least-bad-pick:penalty=14`
+(content-overlap/contrast/framing polish), unrelated to this batch.

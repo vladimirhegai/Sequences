@@ -182,7 +182,9 @@ recorded `published-degraded`, never clean.
 
 `reconcileUndeclaredMorphTargets`, `trimOverBudgetComponents`,
 `normalizeCameraBudget`, `topUpFramingFloor`, `liftCameraEnergyPeak`,
-`delayConflictingCameraMoves`, and `stretchMarginalPacingMisses` run in
+`delayConflictingCameraMoves`, `retimeCameraOverInteractions`,
+`spaceStackedCameraMoves`, `delayEarlySwapBeats`, and
+`stretchMarginalPacingMisses` run in
 `parseStoryboardResponse` **before** `validateStoryboardPlan` and commit
 **atomically**: the normalized plan is kept when it re-validates clean OR when
 every remaining finding belongs to a class (digit-stripped comparison) the

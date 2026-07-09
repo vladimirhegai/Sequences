@@ -3,12 +3,18 @@ import {
   auditPacing,
   sceneIntroductionTimes,
   delayConflictingCameraMoves,
+  delayEarlySwapBeats,
   normalizeCameraBudget,
   requiredFramingCount,
+  retimeCameraOverInteractions,
+  spaceStackedCameraMoves,
   stretchMarginalPacingMisses,
   topUpFramingFloor,
+  ENTRY_SETTLE_SEC,
   FRAMING_TOPUP_ZOOM,
+  INTERACTION_HOLD_SETTLE_SEC,
   LAST_INTRODUCTION_MAX_FRACTION,
+  MOVE_SETTLE_GAP_SEC,
   PACING_TOLERANCE_SEC,
   MAX_PACING_STRETCH_SEC,
 } from "../src/engine/pacingAudit.ts";
@@ -18,6 +24,7 @@ import { resolveTimeRampPlan, warpInverseOf } from "../src/engine/timeRamp.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import type { ComponentBeatIntentV1 } from "../src/engine/componentContract.ts";
 import type { CameraMoveIntentV1 } from "../src/engine/cameraContract.ts";
+import type { InteractionIntentV1 } from "../src/engine/interactionContract.ts";
 import type { StoryboardMomentV1 } from "../src/engine/storyboardMoments.ts";
 
 function scene(
@@ -1091,5 +1098,379 @@ describe("Sentinel — topUpFramingFloor (normalize-before-retry)", () => {
   it("does not touch a short (<10s) film", () => {
     const storyboard = [held("a", 0, 3), held("b", 3, 3), held("c", 6, 3)];
     expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
+  });
+});
+
+function interaction(
+  sceneId: string,
+  spec: {
+    id: string;
+    startSec: number;
+    arriveSec: number;
+    pressSec?: number;
+    releaseSec?: number;
+    holdUntilSec?: number;
+  },
+): InteractionIntentV1 {
+  return {
+    version: 1,
+    sceneId,
+    cursorId: "cursor",
+    targetPart: "nav-item",
+    action: "click",
+    from: "frame:bottom-right",
+    path: "human",
+    aimX: 0.5,
+    aimY: 0.5,
+    feedback: "press-ripple",
+    ...spec,
+  };
+}
+
+describe("2026-07-08 probe set — interaction holds (audit + retimeCameraOverInteractions)", () => {
+  // The probe-audit-01 shape: drift 0-1s, whip 1-1.7s to the board, cursor
+  // arrives 1.3s, presses 1.4s, releases 1.7s — the whip re-frames the world
+  // mid-click.
+  const clashing = (): DirectScene =>
+    scene({
+      id: "board",
+      startSec: 0,
+      durationSec: 4,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "drift", startSec: 0, durationSec: 1 }),
+          move({ move: "whip", toRegion: "board-station", startSec: 1, durationSec: 0.7 }),
+        ],
+      },
+      interactions: [
+        interaction("board", {
+          id: "lane-click",
+          startSec: 0.8,
+          arriveSec: 1.3,
+          pressSec: 1.4,
+          releaseSec: 1.7,
+          holdUntilSec: 1.7,
+        }),
+      ],
+    });
+
+  it("auditPacing flags a full move in flight during arrive→result", () => {
+    const findings = auditPacing([clashing()]);
+    expect(findings.some((finding) =>
+      finding.startsWith("pacing/interaction-hold:") && finding.includes('"lane-click"')
+    )).toBe(true);
+  });
+
+  it("retimeCameraOverInteractions delays the move past the settled result, clearing the finding", () => {
+    const result = retimeCameraOverInteractions([clashing()]);
+    expect(result.normalized).toHaveLength(1);
+    const whip = result.storyboard[0]!.camera!.path.find((entry) => entry.move === "whip")!;
+    // result 1.7s + settle = the first stable instant after the click.
+    expect(whip.startSec).toBeCloseTo(1.7 + INTERACTION_HOLD_SETTLE_SEC, 3);
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/interaction-hold:")
+    )).toEqual([]);
+  });
+
+  it("a move landing before the cursor arrives is left alone", () => {
+    const fine = scene({
+      id: "calm",
+      startSec: 0,
+      durationSec: 4,
+      camera: {
+        version: 1,
+        path: [move({ move: "whip", startSec: 0.4, durationSec: 0.6 })],
+      },
+      interactions: [
+        interaction("calm", { id: "late-click", startSec: 1.2, arriveSec: 1.8, pressSec: 1.9, releaseSec: 2.2 }),
+      ],
+    });
+    expect(
+      auditPacing([fine]).filter((finding) => finding.startsWith("pacing/interaction-hold:")),
+    ).toEqual([]);
+    expect(retimeCameraOverInteractions([fine]).normalized).toEqual([]);
+  });
+
+  it("a dive over the interaction is exempt (its held middle frames the act)", () => {
+    const diving = scene({
+      id: "dive-scene",
+      startSec: 0,
+      durationSec: 6,
+      camera: {
+        version: 1,
+        path: [move({ move: "dive", toPart: "row", startSec: 0.5, durationSec: 4 })],
+      },
+      interactions: [
+        interaction("dive-scene", { id: "row-click", startSec: 1.2, arriveSec: 1.8, pressSec: 2, releaseSec: 2.3 }),
+      ],
+    });
+    expect(
+      auditPacing([diving]).filter((finding) => finding.startsWith("pacing/interaction-hold:")),
+    ).toEqual([]);
+    expect(retimeCameraOverInteractions([diving]).normalized).toEqual([]);
+  });
+
+  it("drops a NON-load-bearing move when no retime fits; a load-bearing one keeps its finding", () => {
+    // The interaction owns the frame until 4.0s (result 3.7 + settle 0.3) in a
+    // 3s scene: delaying the whip there needs a 1.7s+ boundary stretch — over
+    // the MAX_PACING_STRETCH_SEC cap, so no retime fits.
+    const droppable = scene({
+      id: "tight",
+      startSec: 0,
+      durationSec: 3,
+      camera: {
+        version: 1,
+        path: [move({ move: "whip", startSec: 1, durationSec: 0.7 })],
+      },
+      interactions: [
+        interaction("tight", {
+          id: "long-press",
+          startSec: 0.4,
+          arriveSec: 0.9,
+          pressSec: 1.1,
+          releaseSec: 3.5,
+          holdUntilSec: 3.7,
+        }),
+      ],
+    });
+    const dropped = retimeCameraOverInteractions([droppable]);
+    expect(dropped.normalized).toHaveLength(1);
+    expect(dropped.normalized[0]).toContain("dropped the whip");
+    expect(dropped.storyboard[0]!.camera!.path.some((entry) => entry.move === "whip")).toBe(false);
+
+    const loadBearing = scene({
+      id: "anchored",
+      startSec: 0,
+      durationSec: 3,
+      camera: {
+        version: 1,
+        path: [move({ move: "whip", startSec: 1, durationSec: 0.7 })],
+      },
+      interactions: [
+        interaction("anchored", {
+          id: "long-press",
+          startSec: 0.4,
+          arriveSec: 0.9,
+          pressSec: 1.1,
+          releaseSec: 3.5,
+          holdUntilSec: 3.7,
+        }),
+      ],
+      moments: [moment("anchored", "m-arrive", 1.5)],
+    });
+    expect(retimeCameraOverInteractions([loadBearing]).normalized).toEqual([]);
+    expect(auditPacing([loadBearing]).some((finding) =>
+      finding.startsWith("pacing/interaction-hold:")
+    )).toBe(true);
+  });
+});
+
+describe("2026-07-08 probe set — spaceStackedCameraMoves (stacked entry transitions)", () => {
+  it("delays an energetic move that fires right after the scene's incoming cut", () => {
+    // probe-audit-02 momentum-board: hard cut at 3.5, whip at 3.7.
+    const opener = scene({ id: "hook", startSec: 0, durationSec: 3.5 });
+    const stacked = scene({
+      id: "board",
+      startSec: 3.5,
+      durationSec: 7,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "drift", startSec: 3.5, durationSec: 0.2 }),
+          move({ move: "whip", toRegion: "board-region", startSec: 3.7, durationSec: 0.6 }),
+        ],
+      },
+    });
+    const result = spaceStackedCameraMoves([opener, stacked]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain("incoming cut needs a beat");
+    const whip = result.storyboard[1]!.camera!.path.find((entry) => entry.move === "whip")!;
+    expect(whip.startSec).toBeCloseTo(3.5 + ENTRY_SETTLE_SEC, 3);
+  });
+
+  it("the FIRST scene has no incoming cut — its opening move is free", () => {
+    const opening = scene({
+      id: "hook",
+      startSec: 0,
+      durationSec: 4,
+      camera: { version: 1, path: [move({ move: "whip", startSec: 0.2, durationSec: 0.6 })] },
+    });
+    expect(spaceStackedCameraMoves([opening]).normalized).toEqual([]);
+  });
+
+  it("spaces two energetic moves aimed at DIFFERENT targets; same-target pairs stay merged by mergeCompoundMoves", () => {
+    const churn = scene({
+      id: "churn",
+      startSec: 0,
+      durationSec: 8,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "whip", toRegion: "a", startSec: 2, durationSec: 0.6 }),
+          move({ move: "push-in", toRegion: "b", startSec: 2.7, durationSec: 1, zoom: 1.3 }),
+        ],
+      },
+    });
+    const spaced = spaceStackedCameraMoves([churn]);
+    expect(spaced.normalized).toHaveLength(1);
+    const push = spaced.storyboard[0]!.camera!.path.find((entry) => entry.move === "push-in")!;
+    expect(push.startSec).toBeCloseTo(2.6 + MOVE_SETTLE_GAP_SEC, 3);
+
+    const sameTarget = scene({
+      id: "same",
+      startSec: 0,
+      durationSec: 8,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "whip", toRegion: "a", startSec: 2, durationSec: 0.6 }),
+          move({ move: "push-in", toRegion: "a", startSec: 2.7, durationSec: 1, zoom: 1.3 }),
+        ],
+      },
+    });
+    expect(spaceStackedCameraMoves([sameTarget]).normalized).toEqual([]);
+  });
+
+  it("connective pans/drifts right after a cut stay free", () => {
+    const opener = scene({ id: "hook", startSec: 0, durationSec: 3 });
+    const gentle = scene({
+      id: "board",
+      startSec: 3,
+      durationSec: 5,
+      camera: { version: 1, path: [move({ move: "pan", startSec: 3.1, durationSec: 1 })] },
+    });
+    expect(spaceStackedCameraMoves([opener, gentle]).normalized).toEqual([]);
+  });
+
+  it("never delays a move INTO a payoff hold — it clears past it (probe-audit-fable-2)", () => {
+    // The live-probe lesson: entry-settle wanted to move the push-in from
+    // 4.8s to 5.4s, but a set-state payoff settles at 6.2s and needs its
+    // >=0.8s outcome hold — a move in flight 5.4-6.4s would mint the very
+    // pacing/outcome finding delayConflictingCameraMoves exists to prevent
+    // (it runs BEFORE this normalizer and cannot see its retimes). The
+    // spacing delay must walk clear: past 6.2 + 0.8 = 7.0s.
+    const opener = scene({ id: "hook", startSec: 0, durationSec: 4.5 });
+    const grid = scene({
+      id: "collapse-to-grid",
+      startSec: 4.5,
+      durationSec: 4,
+      components: [{ version: 1, id: "compressed-grid", kind: "toggle" }],
+      beats: [beat("collapse-to-grid", {
+        id: "grid-snap",
+        component: "compressed-grid",
+        kind: "set-state",
+        atSec: 5.9,
+        durationSec: 0.3,
+        toState: "on",
+      })],
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "push-in", toRegion: "grid-station", startSec: 4.8, durationSec: 1, zoom: 1.3 }),
+        ],
+      },
+    });
+    const result = spaceStackedCameraMoves([opener, grid]);
+    expect(result.normalized).toHaveLength(1);
+    const push = result.storyboard[1]!.camera!.path[0]!;
+    expect(push.startSec).toBeCloseTo(7.0, 3);
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toEqual([]);
+  });
+
+  it("leaves an unfittable stack alone (spacing is polish, never a veto)", () => {
+    const opener = scene({ id: "hook", startSec: 0, durationSec: 3 });
+    // Whip at entry, but a second full move immediately after leaves no room
+    // to delay it without passing that move.
+    const jammed = scene({
+      id: "jam",
+      startSec: 3,
+      durationSec: 4,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "whip", toRegion: "a", startSec: 3.1, durationSec: 0.6 }),
+          move({ move: "pan", toRegion: "b", startSec: 3.8, durationSec: 0.8 }),
+        ],
+      },
+    });
+    const result = spaceStackedCameraMoves([opener, jammed]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard[1]!.camera!.path[0]!.startSec).toBe(3.1);
+  });
+});
+
+describe("2026-07-08 probe-audit-01 — delayEarlySwapBeats (early swap read-hold)", () => {
+  // The probe-audit-01 cta-resolve shape: the headline morphs in at the scene
+  // start (18.6s) and a swap re-writes it 0.2s later at 18.8s.
+  const ctaResolve = (overrides: Partial<DirectScene> = {}): DirectScene =>
+    scene({
+      id: "cta-resolve",
+      startSec: 18.6,
+      durationSec: 3,
+      components: [{ version: 1, id: "cta-headline", kind: "headline" }],
+      beats: [beat("cta-resolve", {
+        id: "tagline-swap",
+        component: "cta-headline",
+        kind: "swap",
+        atSec: 18.8,
+        durationSec: 0.5,
+        text: "Ship with momentum",
+      })],
+      ...overrides,
+    });
+  const intro = (): DirectScene => scene({ id: "intro", startSec: 0, durationSec: 18.6 });
+
+  it("delays a swap firing right after a non-first scene's cut to the entry-settle point", () => {
+    const result = delayEarlySwapBeats([intro(), ctaResolve()]);
+    expect(result.normalized).toHaveLength(1);
+    const swap = result.storyboard[1]!.beats!.find((entry) => entry.id === "tagline-swap")!;
+    // 18.6 + ENTRY_SETTLE_SEC (0.9) = 19.5.
+    expect(swap.atSec).toBeCloseTo(18.6 + ENTRY_SETTLE_SEC, 3);
+    expect(swap.atSec).toBeCloseTo(19.5, 3);
+  });
+
+  it("audit flags the early swap, and the retime clears it", () => {
+    const before = auditPacing([intro(), ctaResolve()]);
+    expect(before.some((finding) =>
+      finding.startsWith("pacing/reading:") && finding.includes('"tagline-swap"')
+    )).toBe(true);
+    const result = delayEarlySwapBeats([intro(), ctaResolve()]);
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/reading:") && finding.includes('"tagline-swap"')
+    )).toEqual([]);
+  });
+
+  it("leaves a swap in the FIRST scene alone (no incoming cut to hold)", () => {
+    const firstSceneSwap = scene({
+      id: "opener",
+      startSec: 0,
+      durationSec: 3,
+      components: [{ version: 1, id: "wordmark", kind: "headline" }],
+      beats: [beat("opener", { id: "early", component: "wordmark", kind: "swap", atSec: 0.2, durationSec: 0.5, text: "Cadence" })],
+    });
+    expect(delayEarlySwapBeats([firstSceneSwap]).normalized).toEqual([]);
+    expect(auditPacing([firstSceneSwap]).filter((finding) =>
+      finding.startsWith("pacing/reading:") && finding.includes('"early"')
+    )).toEqual([]);
+  });
+
+  it("leaves a swap that already holds past the settle point alone", () => {
+    const late = ctaResolve({
+      beats: [beat("cta-resolve", { id: "late-swap", component: "cta-headline", kind: "swap", atSec: 19.8, durationSec: 0.5, text: "Ship with momentum" })],
+    });
+    expect(delayEarlySwapBeats([intro(), late]).normalized).toEqual([]);
+  });
+
+  it("leaves a swap alone when delaying it would break a moment binding", () => {
+    // A scene-start moment (18.6s) bound to the swap: delaying to 19.5s pushes
+    // the beat start past the moment's evidence-after window, so the retime is
+    // declined rather than orphaning the moment.
+    const bound = ctaResolve({
+      moments: [moment("cta-resolve", "resolve-lands", 18.6)],
+    });
+    expect(delayEarlySwapBeats([intro(), bound]).normalized).toEqual([]);
   });
 });

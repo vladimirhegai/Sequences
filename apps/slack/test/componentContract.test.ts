@@ -347,6 +347,35 @@ describe("component motion windows and density evidence", () => {
     expect(windows[0]!.start).toBeCloseTo(1.95, 2);
   });
 
+  it("suppresses layout QA during in-place component motion (swap/count/highlight)", () => {
+    // probe-audit-01: a swap crossfade (absolute .cmp-swap-new over the slot), a
+    // count (value text reflows every frame) and a highlight (ring pulse) perturb
+    // a surface's OWN internal geometry, which the vendored static overlap/overflow
+    // heuristics misread as "two text blocks overlap"/"container overflow". Those
+    // beats now get a designed-motion suppression window like morph/open/close; a
+    // plain cursor `press` (audited by interaction QA) still does NOT suppress.
+    const inPlaceScene = scene({
+      id: "resolve",
+      startSec: 0,
+      durationSec: 8,
+      components: declared(["stat", "stat-card"], ["cta", "headline"], ["btn", "button"]),
+      beats: [
+        { version: 1, id: "count", sceneId: "resolve", component: "stat", kind: "count", atSec: 1, durationSec: 1.5, value: 47 },
+        { version: 1, id: "hl", sceneId: "resolve", component: "stat", kind: "highlight", atSec: 3, durationSec: 0.8 },
+        { version: 1, id: "swap", sceneId: "resolve", component: "cta", kind: "swap", atSec: 5, durationSec: 0.5, text: "Ship with momentum" },
+        { version: 1, id: "press", sceneId: "resolve", component: "btn", kind: "press", atSec: 6.5, durationSec: 0.4 },
+      ],
+    });
+    const windows = componentMotionWindows(resolveComponentPlan([inPlaceScene]))
+      .sort((a, b) => a.start - b.start);
+    // count + highlight + swap suppress; the plain press stays audited.
+    expect(windows).toHaveLength(3);
+    expect(windows[0]!.start).toBeCloseTo(0.95, 2); // count: 1 - 0.05
+    expect(windows[0]!.end).toBeCloseTo(2.6, 2); //    count end: 2.5 + 0.1
+    expect(windows[1]!.start).toBeCloseTo(2.95, 2); // highlight: 3 - 0.05
+    expect(windows[2]!.start).toBeCloseTo(4.95, 2); // swap: 5 - 0.05
+  });
+
   it("counts typed beats as medium activities that satisfy scene liveness", () => {
     const scenes = [
       componentScene(),
@@ -617,6 +646,38 @@ describe("dedupeRedundantBeats", () => {
     })];
     const result = dedupeRedundantBeats(input);
     expect(result.scenes[0]).toBe(input[0]);
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("drops a swap to text a prior beat already put on the same component (Rule 5, T1)", () => {
+    const result = dedupeRedundantBeats([scene({
+      id: "s1",
+      startSec: 0,
+      durationSec: 8,
+      components: declared(["wordmark", "headline"]),
+      beats: [
+        beat("type-name", "wordmark", "type", 1, { text: "Cadence" }),
+        beat("noop-swap", "wordmark", "swap", 4, { text: " Cadence " }),
+      ],
+    })]);
+    expect(result.scenes[0]?.beats?.map((entry) => entry.id)).toEqual(["type-name"]);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0]).toContain("noop-swap");
+    expect(result.dropped[0]).toContain("already shows");
+  });
+
+  it("keeps a swap that genuinely changes the copy", () => {
+    const result = dedupeRedundantBeats([scene({
+      id: "s1",
+      startSec: 0,
+      durationSec: 8,
+      components: declared(["wordmark", "headline"]),
+      beats: [
+        beat("type-name", "wordmark", "type", 1, { text: "Cadence" }),
+        beat("real-swap", "wordmark", "swap", 4, { text: "Ship with momentum" }),
+      ],
+    })]);
+    expect(result.scenes[0]?.beats).toHaveLength(2);
     expect(result.dropped).toEqual([]);
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CONNECTORS_PER_FILM,
   MAX_SWEEPS_PER_FILM,
   resolveFxPlan,
   validateFxContract,
@@ -112,6 +113,69 @@ describe("resolveFxPlan (the taste ladder)", () => {
     const connector = plan.effects.find((effect) => effect.kind === "connector");
     expect(connector).toMatchObject({ sceneId: "world", region: "metrics", atSec: 3 });
     expect(connector!.durationSec).toBeCloseTo(1.2);
+  });
+
+  it("caps connectors: <=1/scene (the earliest arrival), skips sweep-holding scenes (T3)", () => {
+    // 4 scenes, 5 full-move arrivals: s0 has two (a1 earliest, a2 later), the
+    // payoff scene s1 has one but also a sweep, s2 and s3 have one each.
+    const cameraScene = (
+      id: string,
+      startSec: number,
+      moves: Array<{ region: string; at: number }>,
+    ): DirectScene => scene({
+      id,
+      startSec,
+      durationSec: 5,
+      camera: {
+        version: 1,
+        path: moves.map((entry) => ({
+          version: 1 as const,
+          move: "push-in" as const,
+          toRegion: entry.region,
+          startSec: entry.at,
+          durationSec: 0.8,
+          zoom: 1.3,
+        })),
+      },
+    });
+    const s0 = cameraScene("s0", 0, [{ region: "a1", at: 0.5 }, { region: "a2", at: 2.5 }]);
+    const s1 = { ...payoffScene("s1", 5), camera: cameraScene("s1", 5, [{ region: "b", at: 6 }]).camera };
+    const s2 = cameraScene("s2", 10, [{ region: "c", at: 11 }]);
+    const s3 = cameraScene("s3", 15, [{ region: "d", at: 16 }]);
+    const plan = resolveFxPlan([s0, s1, s2, s3]);
+    const connectors = plan.effects.filter((effect) => effect.kind === "connector");
+    // <= MAX_CONNECTORS_PER_FILM across the film.
+    expect(connectors.length).toBeLessThanOrEqual(MAX_CONNECTORS_PER_FILM);
+    // <= 1 per scene, and s0 keeps its EARLIEST arrival (a1, not a2).
+    const perScene = new Map<string, string[]>();
+    for (const connector of connectors) {
+      const regions = perScene.get(connector.sceneId) ?? [];
+      regions.push(connector.region!);
+      perScene.set(connector.sceneId, regions);
+    }
+    for (const regions of perScene.values()) expect(regions).toHaveLength(1);
+    expect(perScene.get("s0")).toEqual(["a1"]);
+    // The sweep-holding scene s1 earns NO connector (one garnish per scene).
+    expect(plan.effects.some((effect) => effect.kind === "sweep" && effect.sceneId === "s1")).toBe(true);
+    expect(perScene.has("s1")).toBe(false);
+  });
+
+  it("caps connectors at MAX_CONNECTORS_PER_FILM across the film", () => {
+    const scenes = [0, 5, 10, 15, 20].map((start, index) =>
+      scene({
+        id: `c${index}`,
+        startSec: start,
+        durationSec: 5,
+        camera: {
+          version: 1,
+          path: [{ version: 1, move: "push-in", toRegion: `r${index}`, startSec: start + 1, durationSec: 0.8, zoom: 1.3 }],
+        },
+      })
+    );
+    const connectors = resolveFxPlan(scenes).effects.filter((effect) => effect.kind === "connector");
+    expect(connectors).toHaveLength(MAX_CONNECTORS_PER_FILM);
+    // Counted in scene order — the earliest scenes keep their connectors.
+    expect(connectors.map((effect) => effect.sceneId)).toEqual(["c0", "c1", "c2"]);
   });
 
   it("derives nothing from a storyboard with no payoffs, styles, or camera moves", () => {

@@ -850,6 +850,29 @@ export function dedupeRedundantBeats(storyboard: DirectScene[]): BeatDedupeResul
           continue;
         }
       }
+      // Rule 5: a swap to text the component ALREADY shows is a no-op
+      // double-reveal — the same word flies out and flies back in
+      // (probe-audit-01: swap "Cadence" onto a wordmark a prior beat already
+      // put there). Parse time has no HTML, so only beat-derived text is
+      // knowable (a prior type/swap on the same component); the runtime no-op
+      // in compileSwap covers the authored-markup case. Drop the redundant beat.
+      if (beat.kind === "swap" && beat.text != null) {
+        const priorText = [...kept]
+          .reverse()
+          .find((earlier) =>
+            earlier.component === beat.component &&
+            (earlier.kind === "type" || earlier.kind === "swap") &&
+            earlier.text != null
+          )?.text;
+        if (priorText != null && priorText.trim() === beat.text.trim()) {
+          changed = true;
+          dropped.push(
+            `scene "${scene.id}": beat "${beat.id}" (swap on ${beat.component}) swaps in text the ` +
+              `component already shows ("${beat.text.trim()}") — dropped (a swap to itself is not motion)`,
+          );
+          continue;
+        }
+      }
       kept.push(beat);
     }
     if (!changed) return scene;
@@ -1628,6 +1651,24 @@ export function componentMotionWindows(
         beat.kind === "morph" ||
         beat.kind === "open" ||
         beat.kind === "close" ||
+        // In-place component-internal motion (2026-07-08, probe-audit-01): these
+        // beats animate a surface's OWN text/value/emphasis without moving the
+        // surface, transiently perturbing the internal geometry the vendored
+        // static overlap/overflow heuristics measure. `swap` stacks an
+        // absolutely-positioned `.cmp-swap-new` over the old text in the same
+        // slot; `count` rewrites the value text every frame as digits roll in
+        // (reflowing its box); `set-state` re-lays a surface's internal state;
+        // `highlight` pulses a ring/scale over the surface. Sampled mid-beat the
+        // heuristics misread this as "two text blocks overlap" / "container
+        // overflow" (the stat-card label↔value↔delta and swap-new↔slot false
+        // positives that legible frames disprove), and the author loop then
+        // spends repairs fighting motion it cannot fix. Suppress exactly like
+        // morph/open/close; the settled state is still audited outside the
+        // window, and these heuristics are advisory-only — never a gate.
+        beat.kind === "swap" ||
+        beat.kind === "count" ||
+        beat.kind === "set-state" ||
+        beat.kind === "highlight" ||
         // MD3 split-style headline entrances (rise/pop/assemble) transiently
         // displace letters/words by transform (assemble scatters up to ~96px)
         // before converging to the AUTHORED copy — designed entrance motion, not
