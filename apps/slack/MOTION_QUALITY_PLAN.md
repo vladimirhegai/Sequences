@@ -14,23 +14,38 @@ messy, bad morphing and transitions" — make them actual Motion Design.
 
 ## 0. Operating rules for this session (owner mandates — not optional)
 
-1. **Live-probe fix-first.** Any paid probe that burns an attempt, falls back, or
-   fails: STOP the current task, fix the root cause deterministically at the
-   lowest Sentinel layer (usually an L2 normalizer in
-   `applyDeterministicSourceRepairs` or a parse-time normalize/top-up), add the
-   regression test, log one PROBE_LOG.md row, then resume. Architectural causes:
-   log + park in ROADMAP. Never loosen a gate as the "fix". A probe that takes
-   way too long is also a failure — read stage receipts
-   (`planning/sentinel-run.json`), don't poll or grow timeouts.
-2. **Be smart with subagents.** Thinking too high on small tasks wastes time and
-   degrades output. Owner's calibration:
-   - **5.6 Luna, medium or high thinking** — design judgment and small tasks
-     (frame/palette review, contact-strip critique, doc edits, single-file fixes).
-   - **5.6 Terra** — implementation, most of the time (write the module + tests
-     from a precise spec).
-   - **5.6 Sol** — orchestration, auditing, planning, and implementing the few
-     genuinely *hard* features (cross-cutting engine seams, the enforcement-flip
-     calibration below). Reserve yourself for these; delegate the rest.
+1. **Session rhythm (owner, 2026-07-10 late — supersedes "probe early").**
+   Do NOT open the session with a live probe: fixing its fallout first thing
+   loses the session's direction. Instead: make the plan/todo → implement the
+   planned work → THEN launch a probe and **wait for the result** (a run takes
+   ~10–20 min; keep the process handle open and wait — do not poll in a loop;
+   if you must check, check once every ~10 minutes). On completion (or on a
+   fallback / attempt burn / way-too-long run), analyze the probe and triage
+   every issue into three categories:
+   - **New issue** — caused by THIS session's changes;
+   - **Fallback/Attempt issue** — anything that burned an attempt, fell back,
+     or failed loud;
+   - **Motion issue** — found by watching/analyzing the film (clipping,
+     out-of-bounds, dead time, bad morphs, "mad motion design").
+   Fix New and Fallback/Attempt issues immediately (fix-first, lowest Sentinel
+   layer, regression test, one PROBE_LOG.md row each; never loosen a gate);
+   **log Motion issues** in §3.5 / PROBE_FEEDBACK.md instead of fixing them
+   mid-probe-loop. Repeat implement→probe→fix until fallback/attempt classes
+   go quiet. THEN work the logged Motion-issue backlog. Finish with a smaller
+   final probe round — still fixing new/fallback/attempt issues, but only
+   LOGGING fresh Motion issues: the owner verifies those claims and adds
+   opinions next session.
+2. **Be smart with subagents and model routing.** Thinking too high on small
+   tasks wastes time and degrades output. Owner's calibration (2026-07-10):
+   - **5.6 Sol Ultra** (you, the main model) — super heavy, expensive:
+     orchestration, auditing, hard tasks, very large problems. That is where
+     it shines; reserve yourself for these.
+   - **5.6 Terra High/xHigh** — implementation of MEDIUM features, but Sol
+     must audit its output. Keep it for small and lower-priority medium work.
+   - **5.6 Luna High** — design judgment (better than Terra at design; built
+     the owner a good website in testing) and the lowest-priority features;
+     far cheaper.
+   - **5.6 Luna Low** — cheapest; unproven, use at your own judgment.
    Give subagents narrow, evidence-anchored briefs (project dir + finding +
    file:line), not open-ended "improve X".
 3. **A passing gate is not a good film.** Review the actual MP4 / contact strip
@@ -197,14 +212,14 @@ spec → Terra implements → probe → fix-first → PROBE_LOG.
   scrim mode/opacity, motion mode + maxTravel/maxScale — several are
   deliberately `static`). Respect the catalog's ambient-motion caps; the
   wallpaper drifts, the SCREEN and its text do not (see WS-B evidence).
-  ⚠ Provenance: the catalog is still marked `moodboard-only` (no license
-  manifest). The owner has mandated production use for the hackathon demo —
-  flip the provenance policy deliberately in one commit (and record it) or
-  swap in licensed equivalents; do not ship customer-facing films on
-  silently-un-flipped assets. Likely mechanism: a `data-depth` environment
-  layer + a new `wallpaper-stage` / `desktop-stage` plugin kind (or frame.md
-  background policy) so the pattern rides existing rails — decide placement
-  with the SENTINEL tree.
+  Provenance RESOLVED (owner, 2026-07-10): the wallpapers are **MIT-licensed
+  and fully cleared for production use.** Flip `backgroundCatalog.ts`'s
+  `moodboard-only` provenance block (status / licenseManifestPresent /
+  customerProjectUse) to reflect that in the same commit that first ships
+  them into films. Likely mechanism: a `data-depth` environment layer + a new
+  `wallpaper-stage` / `desktop-stage` plugin kind (or frame.md background
+  policy) so the pattern rides existing rails — decide placement with the
+  SENTINEL tree.
 - **A2. Station sizing discipline.** When a declared station's content union is
   a fraction of its cell, world-layout derivation shrinks the cell or scales
   the cluster (L2, sibling of `normalize.world-layout-derive`) so fit zoom
@@ -352,15 +367,86 @@ failure keeps the pre-critique draft — same discipline as the GLM critic).
 This is the only path to the taste tail; do it AFTER WS-0/A/B so the critic
 isn't spending its directives on mechanizable classes.
 
+## 3.5 Owner complaint ledger (2026-07-10 late — direct film review, verbatim intent)
+
+The owner watched the verify probes and monogram-r4 in the Studio Probes tab.
+Each complaint below is mapped to its likely seam. These are **Motion issues**
+under §4's triage taxonomy unless marked otherwise — fix on the Motion-issue
+pass, not mid-probe.
+
+**QuillSign (`motion-quality-verify-2-quillsign`):**
+- *First frame is messy* — cold-open has no composition discipline; floating
+  gray copy fragments at ~10% contrast (WS-A3 composition floor + E1 washout).
+- *"unlimited liability capped at 12-month fees" appears twice* — repeated
+  copy across two surfaces (Amendment card + redline list). We only dedupe
+  same-scene exact text duplicates of PLUGIN copy (`pluginAbsorbedParts`,
+  `applyDeterministicSourceRepairs`). Generalize: a repeated-copy audit across
+  components/scenes at storyboard parse or in layout QA — the same fact should
+  never render as two near-identical blocks.
+- *Stays on "Amendment No. 2" too long; SaaS commercials constantly move* —
+  dead-time class (WS-B ambient life + B3 dead-frame ratio).
+- *Signature squiggle mispositioned; a blue line appears for no reason* —
+  free-form decorative SVG paths unanchored to any endpoint (exactly WS-E2:
+  kill free-form decorative SVG / endpoint-bound `flow-diagram` plugin). The
+  indigo-line MOTIF is good; its geometry is unbound.
+- *Zoom to Sign button, then a weird corrective pan (zoomed to the wrong spot
+  first)* — camera lands off-anchor then corrects; matches the measured
+  "landings missed screen anchor >14%" evidence. Seam: route solve + anchor in
+  `sequences-camera.v1.js` (`blockingFrameState`/route spline), WS-0c.
+- *Sign-contract loading bar doesn't work* — a progress/loading visual never
+  animated. Suspects: the beat never compiled onto the authored bar, or the
+  authored tween was stripped (`stripDeadGsapTweens` removed 19 "dead" tweens
+  in meridian — check the strip is not eating LIVE selectors after injection).
+  Verify in the project dir before theorizing.
+- *Last dark frame chaos: ghost button text, a "Document signed" toast that
+  feels unmotivated, "…the canvas." cropped at frame edge (must NEVER
+  happen)* — final-scene lockup placement + delivery-safe framing must cover
+  the WHOLE lockup (headline/sub/CTA), not just the CTA; cropped copy at a
+  landing should be blocking, not least-bad-shippable (WS-0d occupancy grid +
+  safe-area severity at final landings).
+
+**verify-1:** fine overall, just slightly slow — pacing/energy, not defects.
+
+**monogram-r4 (`motion-v3-replay-monogram-r4`):**
+- *"One file" → next shot takes way too long AND lands half out of frame*
+  (table clipped at bottom-right) — transit dead time + station placement;
+  the derived world layout put the table's station half off the camera path.
+- *"Needs review"→"Approved": the new label renders at the WRONG spot, then
+  snaps into place* — the swap beat runtime: `compileSwap` /
+  `span.cmp-split` geometry in `sequences-components.v1.js` (~L275/L396/L758).
+  Meridian's QA independently flagged `text_box_overflow span.cmp-split` —
+  same defect, measured. This one is mechanical: fix the split/ghost
+  positioning so incoming swap text is laid out in its final box from frame 1.
+- *Camera "swaying" while parked on the button is NOT micro-movement* — the
+  operated-hold float, confirmed by the owner's eye (r4 predates today's
+  hold fix; dwells <1.2s now rest, scale-breathe is gone — the ≥1.2s
+  translate drift remains and is the WS-B deletion target).
+- *"One file. One decision." frame oddly composed* (pill clipped at left
+  edge, headline floating right) — landing composition/eye-trace, WS-0d.
+
+**Owner's overall verdict:** results aren't THAT bad — the gap is POLISH:
+fallbacks/attempts, weird camera movements, weird invokables, and making the
+six catalogs (Components, Assets, Recipes, Looks, Camera, Plugins) feel
+properly integrated rather than co-located.
+
+⚠ **Do not trust the moment thumbnails/screenshots for framing claims.** They
+deliberately walk to settled, on-frame, safe-inset evidence frames — so the
+Studio thumbnails can show a perfectly centered subject while the VIDEO shows
+it out of bounds mid-transit. The MP4 and the temporal strip are the truth for
+out-of-bounds/clipping/transit judgments; verify every framing claim against
+the video.
+
 ## 4. Live-probe protocol for this session
 
 - Continuity graph ON (`SLACK_SEQUENCES_CONTINUITY_GRAPH=1`). Use
   `npm run sequence:check --workspace @sequences/slack -- --render …` (no Slack
   creds needed); treat exit + `status-report.json` as the result; a requested
   render with no non-empty MP4 is a FAIL.
-- Start ONE probe early (background); review strip + blocking + MP4; fix-first
-  on any attempt. Then one probe after each workstream lands. Vary briefs
-  across motion profiles and both light and dark treatments (light exposes E1).
+- Probe cadence per rule 0.1: no probe at session start — plan, implement,
+  then probe and WAIT for the result. One probe after each workstream lands;
+  review strip + blocking + MP4 (never thumbnails alone — §3.5 warning);
+  triage New / Fallback-Attempt / Motion. Vary briefs across motion profiles
+  and both light and dark treatments (light exposes E1).
 - Free replay before paying again: `storyboard:replay`, `continuity:replay`,
   `temporal:replay`, `render:existing`.
 - Known parcelpilot classes (2026-07-10, mid-fix at handoff — verify before the
