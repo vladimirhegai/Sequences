@@ -1,5 +1,20 @@
 # Recipe Studio — operator motion-design editor + recipe factory (full plan)
 
+> ## ⚠️ SUPERSEDED by the 2026-07-10 pivot — this plan is historical
+>
+> The owner changed the model: **coding agents author recipes directly as
+> committed source files** (`apps/slack/recipes/<id>.recipe.html`, one file
+> per recipe — guide: `apps/slack/recipes/README.md`; CLI:
+> `npm run recipes -- gate|export <id>`), and the operator only **views**
+> components, assets, and recipes in ONE combined tool (`npm run studio` —
+> Sequences Studio, which absorbed the Asset Lab). The operator-facing canvas
+> builder (M1/M2), the in-studio agent chat (M3: OpenRouter critic + Claude
+> CLI spawning), the workspace store, and the export wizard UI were removed.
+> **Kept unchanged:** the RecipeV2 export format, Level-1 host instantiation,
+> retrieval, version fencing, the full production gate as the referee, and
+> every guardrail in §10. Current contract:
+> `apps/slack/studio/INTEGRATION.md` + `apps/slack/recipes/README.md`.
+
 Status: PLAN v2 (2026-07-05), **partially built** (M0–M3 core landed 2026-07-07).
 This remains the authoritative spec — it still governs the parts not yet built
 and the invariants everything must obey. For *what is actually shipped* read the

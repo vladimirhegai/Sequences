@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
+import { launchHeadlessBrowser } from "../src/engine/browserLifecycle.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import {
   CAMERA_RUNTIME_FILE,
@@ -187,8 +188,7 @@ describe("camera depth browser contract (orbit + rack focus)", () => {
     fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
     fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
@@ -229,8 +229,7 @@ describe("camera depth browser contract (orbit + rack focus)", () => {
     fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
 
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
@@ -441,8 +440,7 @@ describe("camera depth level 2 (preserve-3d layers + whip lens)", () => {
     fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
 
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
@@ -600,8 +598,7 @@ describe("dive camera browser contract (MD5)", () => {
     fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
     fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],

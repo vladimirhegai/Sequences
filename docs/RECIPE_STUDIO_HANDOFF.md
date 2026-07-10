@@ -1,5 +1,16 @@
 # Recipe Studio — handoff prompt for the next agent (session 3)
 
+> ## ⚠️ SUPERSEDED (2026-07-10)
+>
+> Session 3 took a different direction on the owner's instruction: recipes are
+> now agent-authored source files (`apps/slack/recipes/`, see its README), the
+> studio became the combined read-only viewer (components + assets + recipes,
+> `npm run studio`), and the canvas builder / agent chat / workspace store were
+> removed. Items 1 (auto-declare), 3 (cursor paths + effect presets), and 5
+> (library curation — now trivially agent-driven) remain open ideas; do NOT
+> rebuild items this handoff assumes exist. See `docs/RECIPE_STUDIO_PLAN.md`'s
+> pivot banner and `apps/slack/studio/INTEGRATION.md`.
+
 Two build sessions are done (foundation, then canvas + agents). This is the
 prompt for the agent who **finishes** the studio. Copy everything below the line
 into that agent's prompt.

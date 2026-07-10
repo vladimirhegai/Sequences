@@ -5,9 +5,9 @@ library covering all five silhouette families, the in-film spring animation
 runtime (the 8th host-owned island, `sequences-assets`), the Asset Lab with
 trigger badges + morph spring tweaks, and the channel-brief auto-offer.
 Flag: `SLACK_SEQUENCES_ASSETS` (see the flag-state note at the bottom).
-The Asset Lab works regardless: `npm run assets` → `http://127.0.0.1:4747`
-(`STUDIO_ASSETS_PORT` / `--port` override; moved off 4322 because tests were
-squatting that port).
+The Asset Lab works regardless: since 2026-07-10 it is the **Assets tab of
+the combined Sequences Studio** — `npm run assets` (alias of `npm run studio`)
+→ `http://127.0.0.1:4321` (`STUDIO_PORT` / `--port` override).
 
 ## Why this exists
 
@@ -153,9 +153,9 @@ time. The Asset Lab's morph panel previews the FLIP gesture between any two
 library assets with the same settle spring the film would use, and shows the
 rhyme verdict.
 
-## The Asset Lab (`npm run assets`)
+## The Asset Lab (`npm run assets` — the studio's Assets tab)
 
-Terminal-launched operator webview, Recipe-Studio posture (localhost-only,
+Terminal-launched operator webview, studio posture (localhost-only,
 refuses `RAILWAY_ENVIRONMENT`, absent from the Docker CMD, zero deps):
 browse the library; tweak every typed param live (color pickers, clamped
 ranges, enum selects); fire each spring animation — each button carries its
@@ -220,8 +220,8 @@ the markup's final state declare `preBeat:"from"`.
 - ✅ The 13-asset library (`src/engine/assets/`, one `defineAsset` file each).
 - ✅ The in-film animation runtime (`assetRuntime.ts` +
   `templates/sequences-assets.v1.js` — see the runtime section above).
-- ✅ Asset Lab with trigger badges + morph spring/duration tweaks
-  (`studio/assetLab.ts` + `studio/ui/asset-lab.html`).
+- ✅ Asset Lab with trigger badges + morph spring/duration tweaks (since
+  2026-07-10 the Assets tab of `studio/server.ts` + `studio/ui/index.html`).
 - ✅ `/sequences asset` (2026-07-09): screenshot intake modal → deterministic
   palette extraction → per-channel brief → context injection on every later
   create + asset-kit preview PNG (`src/assetBrief.ts`, `test/assetBrief.test.ts`).

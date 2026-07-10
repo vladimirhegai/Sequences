@@ -82,29 +82,53 @@ These rules supersede older historical descriptions later in this file:
   reconciliation may move one hidden `stat-card` binding to one unambiguous
   visible stat/metric root with `data-cmp-value`; ambiguity remains blocking.
 
-## Recipe Studio + the recipe library (2026-07-07)
+## Sequences Studio + the agent-authored recipe library (2026-07-10)
 
-`apps/slack/studio/` is the operator-local Recipe Studio
-(`npm run studio --workspace @sequences/slack` → `http://127.0.0.1:4321`;
-**never** on Railway — the server refuses `RAILWAY_ENVIRONMENT`). It gates and
-exports **recipes**: proven motion patterns in
-`skills/sequences-recipes/<id>/` that live creates consume at **Level 1 host
-instantiation** — retrieval (`skillContext.ts`) offers ≤2 matching recipes
-with a declare-by-default instruction, the storyboard declares
-`recipes:[{id,params}]` per scene, `reconcileRecipeDeclarations` (Sentinel L2,
-degrade-never-veto) governs the declarations, and
-`applyDeterministicSourceRepairs` strips + re-injects the proven fragment
-VERBATIM every pass (`src/engine/recipeContract.ts` — the sixth host-owned
-contract; the author model can never edit the mechanism). Kill switch
-`SLACK_SEQUENCES_RECIPES=0`. Golden proof: `npm run studio:golden` re-proves
-and re-exports `last-word-roulette` through the full gate. **Touching any
-engine seam (runtime/kit versions, storyboard schema, injection order,
-retrieval, sentinel registry) requires updating
+**Recipes are authored by coding agents as committed source files** — one
+recipe per file in [recipes/](recipes/) (`<id>.recipe.html`: a JSON
+`data-recipe-meta` block, a `data-recipe-doc` markdown block, and the fragment
+itself; authoring guide + hard rules in [recipes/README.md](recipes/README.md)).
+The loop: write the file → `npm run recipes --workspace @sequences/slack --
+gate <id>` (the EXACT production gate: staging library, demo scaffold, host
+injection, static validation, real browser QA, thumbnails — eyeball them) →
+`npm run recipes -- export <id>` (green gate only) writes the unchanged
+RecipeV2 format to `skills/sequences-recipes/<id>/` and runs retrieval sanity
++ a live-retrieval surface check. `npm run studio:golden` = `export
+last-word-roulette`, the golden re-proof after any engine change on a recipe
+seam. Gate work dirs are derived + gitignored (`.data/studio/<id>/`).
+
+Live creates consume exported recipes at **Level 1 host instantiation**,
+unchanged: retrieval (`skillContext.ts`) offers ≤2 matching recipes with a
+declare-by-default instruction, the storyboard declares `recipes:[{id,params}]`
+per scene, `reconcileRecipeDeclarations` (Sentinel L2, degrade-never-veto)
+governs the declarations, and `applyDeterministicSourceRepairs` strips +
+re-injects the proven fragment VERBATIM every pass
+(`src/engine/recipeContract.ts` — the sixth host-owned contract; the author
+model can never edit the mechanism). Kill switch `SLACK_SEQUENCES_RECIPES=0`.
+**Touching any engine seam (runtime/kit versions, storyboard schema, injection
+order, retrieval, sentinel registry) requires updating
 [studio/INTEGRATION.md](studio/INTEGRATION.md)'s seam table** — bumping a
-runtime/kit version marks every exported recipe stale until re-proven. Plan:
-[docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md) (in the private
-monorepo). Historical build reports live under `docs/history/`; the seam table
-above is the current Recipe Studio contract.
+runtime/kit version marks every exported recipe stale until re-proven.
+
+`apps/slack/studio/` is now ONE operator-local viewer — **Sequences Studio**
+(`npm run studio --workspace @sequences/slack` → `http://127.0.0.1:4321`;
+`npm run assets` is an alias; **never** on Railway — the server refuses
+`RAILWAY_ENVIRONMENT`): a Components tab (the catalog rendered live from
+`COMPONENT_CATALOG` + kit CSS, per-kind beat vocabulary), an Assets tab (the
+former standalone Asset Lab — params, spring animations, morph preview), and a
+Recipes tab (library gallery with a live seekable demo preview, param/tweak
+tables, gate findings, and Gate/Export buttons over the same CLI machinery).
+The operator-era canvas builder, workspace store, and in-studio agent chat
+were REMOVED in the 2026-07-10 pivot — the operator views; agents author.
+Historical plan/reports: [docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md)
+(private monorepo) + `docs/history/`.
+
+Headless-browser hygiene (2026-07-10): every Sequences-owned puppeteer launch
+goes through `src/engine/browserLifecycle.ts` (`launchHeadlessBrowser` —
+tagged temp profiles + process-exit reaping), and
+`npm run browsers:clean --workspace @sequences/slack` sweeps orphaned QA
+browsers stranded by killed test workers / interrupted gates (`-- --all` to
+also kill live tagged ones). The studio server sweeps orphans on boot.
 
 ## Host plugins (2026-07-08 — the seventh contract)
 
@@ -164,20 +188,10 @@ stations at 0.25 fit zoom), and `repairStationPositioning` also completes
 `display:grid` on stations declaring grid-only alignment props with no
 display (cache contract v18).
 
-The studio now also has a **canvas builder** (`studio/canvasModel.ts` +
-`compileCanvas.ts`): a direct-manipulation film editor (world view over
-`data-camera-world`/`data-region`, live catalog components, camera transitions
-with ease picker, timeline, inspector) that compiles a typed `CanvasFilm`
-**deterministically, zero tokens** into a composition and runs it through the
-EXACT production gate (`npm run studio:canvas` proves it green end-to-end). And
-an **agent chat** (`studio/agents/`): an OpenRouter in-process critic (GLM /
-DeepSeek Flash via `modelPolicy`) and a **Claude Code CLI file-first agent**
-(`claude -p --output-format stream-json --permission-mode acceptEdits`, cwd =
-the workspace, `--resume` per workspace, generated AGENT.md) — the studio is the
-referee, re-gating the composition after every CLI turn. Ref-image attachments
-persist under the workspace's `refs/` (never exported). Canvas + agent seams are
-in [studio/INTEGRATION.md](studio/INTEGRATION.md). The recipe path stays
-degrade-never-veto; `SLACK_SEQUENCES_RECIPES=0` remains the kill switch.
+(The studio's former canvas builder and in-studio agent chat were removed in
+the 2026-07-10 pivot — see "Sequences Studio + the agent-authored recipe
+library" above. The recipe path stays degrade-never-veto;
+`SLACK_SEQUENCES_RECIPES=0` remains the kill switch.)
 
 ## Pre-built assets + `/sequences asset` (2026-07-09 — canonical doc: [ASSETS.md](ASSETS.md))
 
@@ -196,8 +210,9 @@ island): each declared asset lowers to one internal `asset`-kind component +
 host-derived typed `animate` beats (spring `enter` at the camera-arrival
 anchor, `payoff`s sequenced after), so every existing gate binds for free —
 Sentinel rows `normalize.asset-lower` / `assets.contract`. Operator
-webview: `npm run assets` → the Asset Lab on `http://127.0.0.1:4747` (never
-Railway; trigger badges + morph spring/duration tweaks). Brand intake:
+webview: `npm run assets` → the Assets tab of the combined Sequences Studio
+on `http://127.0.0.1:4321` (never Railway; trigger badges + morph
+spring/duration tweaks). Brand intake:
 **`/sequences asset`** opens a modal (`file_input` screenshots + notes) →
 `src/assetBrief.ts` extracts a palette deterministically (chromium canvas
 sampling, no model), stores ONE brief per channel in

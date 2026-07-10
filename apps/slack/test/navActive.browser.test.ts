@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
+import { launchHeadlessBrowser } from "../src/engine/browserLifecycle.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import {
   COMPONENT_RUNTIME_FILE,
@@ -79,8 +80,7 @@ async function withActiveStates(
   fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
   fs.writeFileSync(path.join(dir, COMPONENT_RUNTIME_FILE), componentRuntimeSource(), "utf8");
   const server = await serveDir(dir);
-  const puppeteer = (await import("puppeteer-core")).default;
-  const browser = await puppeteer.launch({
+  const browser = await launchHeadlessBrowser({
     executablePath: browserPath!,
     headless: true,
     args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],

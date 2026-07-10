@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it } from "vitest";
+import { launchHeadlessBrowser } from "../src/engine/browserLifecycle.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import { CAMERA_RUNTIME_FILE, cameraRuntimeSource } from "../src/engine/cameraContract.ts";
 import { CUT_RUNTIME_FILE, cutRuntimeSource, resolveCutPlan } from "../src/engine/cutContract.ts";
@@ -151,8 +152,7 @@ describe("sequences-fx runtime browser contract (MD2)", () => {
     fs.writeFileSync(path.join(dir, CUT_RUNTIME_FILE), cutRuntimeSource(), "utf8");
     fs.writeFileSync(path.join(dir, FX_RUNTIME_FILE), fxRuntimeSource(), "utf8");
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
@@ -304,8 +304,7 @@ window.__timelines["grade-smoke"]=tl;tl.seek(0);
     fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
     fs.writeFileSync(path.join(dir, FX_RUNTIME_FILE), fxRuntimeSource(), "utf8");
     const server = await serveDir(dir);
-    const puppeteer = (await import("puppeteer-core")).default;
-    const browser = await puppeteer.launch({
+    const browser = await launchHeadlessBrowser({
       executablePath: browserPath!,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],

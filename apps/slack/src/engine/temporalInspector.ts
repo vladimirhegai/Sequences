@@ -19,6 +19,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { findBrowserExecutable } from "./render.ts";
+import { launchHeadlessBrowser } from "./browserLifecycle.ts";
 import { loadDirectComposition } from "./directComposition.ts";
 import { resolveCutPlan, type CutIntentV1 } from "./cutContract.ts";
 import { parseTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
@@ -252,10 +253,9 @@ export async function reportTemporalEvidence(
   };
 
   const server = await serveDir(path.join(projectDir, "composition"));
-  const puppeteer = (await import("puppeteer-core")).default;
   let browser: import("puppeteer-core").Browser | undefined;
   try {
-    browser = await puppeteer.launch({
+    browser = await launchHeadlessBrowser({
       executablePath: browserPath,
       headless: true,
       args: [

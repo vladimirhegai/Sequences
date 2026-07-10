@@ -157,9 +157,9 @@ export async function extractPaletteFromImages(
 ): Promise<AssetBriefPalette | null> {
   const browserPath = findBrowserExecutable();
   if (!browserPath || !images.length) return null;
-  let launch: typeof import("puppeteer-core").launch;
+  let launch: typeof import("./engine/browserLifecycle.ts").launchHeadlessBrowser;
   try {
-    ({ launch } = await import("puppeteer-core"));
+    ({ launchHeadlessBrowser: launch } = await import("./engine/browserLifecycle.ts"));
   } catch {
     return null;
   }
@@ -351,9 +351,9 @@ export async function renderAssetBriefPreview(
     `${styles.join("\n")}</style></head><body>` +
     instances.map((entry) => entry.markup).join("") +
     `</body></html>`;
-  let launch: typeof import("puppeteer-core").launch;
+  let launch: typeof import("./engine/browserLifecycle.ts").launchHeadlessBrowser;
   try {
-    ({ launch } = await import("puppeteer-core"));
+    ({ launchHeadlessBrowser: launch } = await import("./engine/browserLifecycle.ts"));
   } catch {
     return null;
   }

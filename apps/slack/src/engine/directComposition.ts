@@ -23,6 +23,7 @@ import {
   supersampleJobFields,
 } from "./render.ts";
 import { inspectDirectComposition } from "./layoutInspector.ts";
+import { launchHeadlessBrowser } from "./browserLifecycle.ts";
 import {
   INTERACTION_RUNTIME_FILE,
   INTERACTION_RUNTIME_VERSION,
@@ -1351,11 +1352,10 @@ export async function generateDirectThumbnails(
   if (!browserPath) throw new Error("no Chrome/Edge found for thumbnail capture");
   const scale = (options.width ?? 480) / current.manifest.width;
   const started = Date.now();
-  const puppeteer = (await import("puppeteer-core")).default;
   const server = await serveDir(compositionDir(projectDir));
-  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
+  let browser: import("puppeteer-core").Browser | undefined;
   try {
-    browser = await puppeteer.launch({
+    browser = await launchHeadlessBrowser({
       executablePath: browserPath,
       headless: true,
       args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu"],

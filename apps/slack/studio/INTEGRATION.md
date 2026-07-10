@@ -1,20 +1,34 @@
-# Recipe Studio ↔ engine — the coupling map
+# Sequences Studio ↔ engine — the coupling map
 
-The studio (`apps/slack/studio/`) and the recipe pipeline
+The studio (`apps/slack/studio/` — the combined components/assets/recipes
+viewer + the recipe gate/export CLI) and the recipe pipeline
 (`src/engine/recipeContract.ts` + `skills/sequences-recipes/`) are a **cockpit
 over the engine, never a second engine**. Every seam below is a place where an
 engine change can silently break the studio or the shipped recipe library.
 **Rule: touching a seam in the left column requires updating the right column
 — or recording a TODO here in this file.**
 
+**2026-07-10 pivot:** recipes are now **agent-authored source files** —
+`recipes/<id>.recipe.html` (one file per recipe, committed; format +
+authoring guide in [../recipes/README.md](../recipes/README.md)). The
+operator-era canvas builder, workspace store, and in-studio agent chat
+(OpenRouter critic / Claude CLI spawning) were removed; the operator VIEWS
+components, assets, and recipes in one tool (`npm run studio`) and coding
+agents author recipes directly in the repo. The RecipeV2 export format and
+every live-pipeline consumer are UNCHANGED.
+
 ## The recipe pipeline at a glance
 
 ```
-operator/agent edits fragment.html in a studio workspace
-  → gateWorkspace(): stage into SLACK_SEQUENCES_RECIPES_DIR, scaffold demo,
+coding agent writes recipes/<id>.recipe.html (meta + doc + fragment, one file)
+  → npm run recipes -- gate <id>: parse source (studio/recipeSource.ts),
+    stage into SLACK_SEQUENCES_RECIPES_DIR, scaffold demo,
     applyDeterministicSourceRepairs (REAL injection), validate + browser QA
-  → export: skills/sequences-recipes/<id>/ (recipe.json + recipe.md +
-    fragment.html + demo.html + preview/) with engine version fences + hash
+    (work dir: .data/studio/<id>/, gitignored + regenerable)
+  → npm run recipes -- export <id> (green gate only):
+    skills/sequences-recipes/<id>/ (recipe.json + recipe.md + fragment.html +
+    demo.html + preview/) with engine version fences + hash, then retrieval
+    sanity + live-retrieval surface check
   → live create: skillContext retrieval offers ≤2 matching recipes (Level 0)
   → GLM storyboard declares recipes:[{id,params}] per scene (schema field)
   → parseStoryboard normalizes + reconcileRecipeDeclarations (Sentinel L2:
@@ -38,8 +52,10 @@ operator/agent edits fragment.html in a studio workspace
 | `sentinel.ts` registry | rows `normalize.recipe-reconcile` + `recipes.contract`; `recipeContract.ts` in `FINDING_SOURCE_FILES` | any new `recipe_*` finding code must be registered or `test/sentinel.test.ts` fails. |
 | `sentinelFlags.recipesEnabled()` (`SLACK_SEQUENCES_RECIPES=0`) | parse, cache key, retrieval, injection | the whole Level-1 path behind one switch; default ON. |
 | `componentContract.COMPONENT_CATALOG` | `recipe.json` `componentKinds` (retrieval overlap), future clickAnchor metadata (M2) | removing/renaming a kind invalidates manifests naming it (`validateRecipeManifest` warns at load). |
-| `directComposition.commitDirectComposition` / `generateDirectThumbnails` | `studio/gate.ts` | the studio gate is exactly these functions; signature changes break `npm run studio` + `studio:golden`. |
-| `projectTemplates.initializeProject` | `studio/workspaces.ts` (a workspace IS a project dir) | keep workspaces initializable without a screenshot seed. |
+| `directComposition.commitDirectComposition` / `generateDirectThumbnails` | `studio/gate.ts` | the studio gate is exactly these functions; signature changes break `npm run recipes` + `studio:golden`. |
+| `projectTemplates.initializeProject` | `studio/gate.ts` (a recipe's gate work dir IS a project dir) | keep gate dirs initializable without a screenshot seed. |
+| `RecipeManifest` shape (`validateRecipeManifest`) | `studio/recipeSource.ts` (the `data-recipe-meta` block is the manifest draft + `demo`/`sanityBriefs`) | new manifest fields flow through source files automatically; STRIPPED fields (`engine`, `fragmentHash`) must stay export-stamped, never source-authored (`test/recipeSource.test.ts`). |
+| `assetContract.renderAssetInstance` / `compileAssetAnimation` / `ASSET_LIBRARY`, `componentContract.COMPONENT_CATALOG` + kit CSS | `studio/server.ts` (`/api/state`, `/api/render`) + `studio/ui/index.html` — the components/assets viewer renders LIVE from the contracts, never a forked copy | renderer/summary signature changes break `npm run studio` (the old standalone Asset Lab merged into this server 2026-07-10; `npm run assets` is an alias). |
 | `prompts/planning-director.md` byte budget (`test/promptBudget.test.ts`) | recipe teaching text lives in runtime-composed retrieval + the response-contract lines in `requestStoryboardPlan` — **not** in the prompt file | keep it that way; recipe additions must not grow the budgeted prompt. |
 
 ### 2026-07-09 motion-polish re-proof
@@ -103,29 +119,6 @@ omits it, which is what guarantees plugin stations arrive viewport-sized.
 | kit CSS class vocabulary (`templates/sequences-components.v1.css`) | generated markup uses kit classes verbatim (`cmp-stat`, `cmp-toast`, `cmp-ring`, `cmp-headline`, `cmp-item`/`cmp-row`/`cmp-chip`, `cmp-line`/`cmp-dim`, `cmp-avatars`/`cmp-more`, …) | renaming a kit class breaks generated interiors — `test/pluginRuntime.browser.test.ts` catches it in real browser QA. |
 | human-facing paperwork (`storyboardMarkdown`, `directOutline`) | one `- plugin: <kind> "<id>" (name=value…) — host-generated` line per declaration in STORYBOARD.md; a `· plugins: <kind>` suffix on the Slack outline scene row | derive the parenthetical generically from `declaration.params` (+ `station=<region>`), never special-case a kind; keep receipts argument-free (paperwork only). |
 
-## Canvas builder seams (M1/M2 — `studio/canvasModel.ts` + `compileCanvas.ts`)
-
-The canvas editor is a WYSIWYG surface over the SAME host-owned contracts the
-agents emit. `compileCanvas.ts` is a cockpit over the engine, never a second
-engine — it reuses `applyDeterministicSourceRepairs` for ALL island injection.
-
-| engine seam | canvas consumer | when you change it |
-|---|---|---|
-| `componentContract.COMPONENT_CATALOG` markup | `compileCanvas.renderCatalogComponent` (substitutes only `data-part` + copy) + the UI component browser (served via `GET /api/catalog`) | never fork the markup; a kind's markup change flows through automatically. If a kind's primary text slot changes selector, update `fillPrimaryCopy`. |
-| `cameraContract` — camera times are **ABSOLUTE** composition seconds | `compileCanvas` shifts each canvas move by `scene.startSec` (the canvas model stores scene-relative, operator-facing). `CAMERA_MOVES` / `SEQUENCES_EASES` feed the editor dropdowns via `/api/catalog` | if the resolver's time base changes, fix the shift in `compileScene`. `test/studioCanvas.test.ts` guards absolute-time camera resolution. |
-| `applyDeterministicSourceRepairs` (islands, runtimes, time-wrap LAST) | `compileCanvas.compileCanvasFilm` hands it `{html, storyboard}` | the compiler emits DOM + entrance tweens + declared moments only; the pass owns every island. Never inject islands in the compiler. |
-| `motionDensity` liveness (front-load / quiet-gap / back-half beat) | the compiler spreads entrances across each station's window + declares moments at settled times | a sparse operator scene draws a real gate finding (by design — advice, not a silent pass). |
-| `directComposition.commitDirectComposition` / `generateDirectThumbnails` | `gate.ts` `gateCanvasWorkspace` (validate → commit + browser QA → thumbnails) | same gate as recipes and live creates — no laxer referee. |
-
-## Agent seams (M3 — `studio/agents/`)
-
-| engine seam | agent consumer | when you change it |
-|---|---|---|
-| `@sequences/platform` `PROVIDERS["openrouter-api"].complete` + `CompleteOptions.images` | `agents/openrouter.ts` (in-process critic; passes ref images to vision-capable models, degrades honestly otherwise) | prompt FILES are never forked — the studio composes a chat prompt from `agents/context.ts`. |
-| `PROVIDERS["claude-code-cli"]` / the `claude` binary on PATH | `agents/cli.ts` spawns `claude -p --output-format stream-json --permission-mode acceptEdits` (cwd = workspace, `--resume` per workspace) | the CLI agent's cwd is the (gitignored) workspace dir but claude can still see the parent repo — treat diff-scoping as a TODO before this is trusted unattended. |
-| `modelPolicy` model ids (`OPENROUTER_CREATIVE_MODEL` / `_LIGHT_MODEL`) | `agents/openrouter.ts` provider switcher | keep the studio's model choices reading from `modelPolicy`, never hard-coded. |
-| `validateDirectComposition` + commit + thumbnails | `agents/context.ts` `regateComposition` — re-gates an agent-edited CANVAS composition after every CLI turn; RECIPE workspaces re-gate through `gate.ts` `gateWorkspace` instead (2026-07-07 fix: edited `fragment.html` must be re-staged + re-proven, not re-committed as a composition), which also persists the workspace gate record itself | the agent is refereed by the production gate; changing either signature breaks the re-gate. |
-
 ## Environment variables
 
 | var | meaning |
@@ -138,11 +131,16 @@ engine — it reuses `applyDeterministicSourceRepairs` for ALL island injection.
 
 1. Never on Railway: `server.ts` exits under `RAILWAY_ENVIRONMENT`; nothing in
    the Docker CMD references the studio.
-2. Workspaces live in `apps/slack/.data/studio/` (gitignored via `.data/`);
-   job dirs under `.data/projects/` stay immutable — studio imports are copies.
+2. Recipe SOURCES are the committed truth (`recipes/<id>.recipe.html`); gate
+   work dirs live in `apps/slack/.data/studio/` (gitignored via `.data/`) and
+   are derived/regenerable; job dirs under `.data/projects/` stay immutable.
 3. Export only from a green gate whose `fragmentHash` still matches the
-   workspace fragment.
+   source fragment (`gate.json` binds to the hash; edits re-arm the gate).
 4. Every studio preview/gate runs the production validators — no laxer
    studio-only referee.
 5. The exported `fragment.html` is content-addressed (`recipe.json.fragmentHash`);
-   hand-editing a library fragment marks the recipe stale until re-proven.
+   hand-editing a library fragment marks the recipe stale until re-proven —
+   fix the SOURCE file and re-export instead.
+6. Headless browsers launch through `src/engine/browserLifecycle.ts`
+   (`launchHeadlessBrowser`) — tagged profile dirs + exit reaping;
+   `npm run browsers:clean` sweeps orphans.
