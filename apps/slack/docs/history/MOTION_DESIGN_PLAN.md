@@ -14,7 +14,7 @@
 > contract table (`src/engine/sentinel.ts`: `normalize.fx-plan`,
 > `normalize.dive-window`, `normalize.auto-headline-style`,
 > `normalize.assemble-cap`, `normalize.auto-grade-shift`, `normalize.grade-shift`,
-> `normalize.auto-pop-style`, `normalize.open-pop`) — see [SENTINEL.md](SENTINEL.md).
+> `normalize.auto-pop-style`, `normalize.open-pop`) — see [SENTINEL.md](../../SENTINEL.md).
 >
 > **What remains is verification, not construction:** walk this doc's workstreams
 > against the code and the paid-probe checklist in §6, confirm nothing was

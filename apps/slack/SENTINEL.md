@@ -278,7 +278,8 @@ envelope sends them to the full ladder. Proof: `test/storyboardSceneRepair.test.
 `pacing/*`, `components/exit:`, `cuts/coherence:` demote to advisories from the
 **primary rung's final attempt** (`options.degradePacingFindings`) — if the
 ladder count ever changes, that boundary and all attempt accounting move with it
-(a known landmine; see SENTINEL_PLAN §3 Phase 3.2).
+(a known landmine; see
+[docs/history/SENTINEL_PLAN.md](docs/history/SENTINEL_PLAN.md) §3 Phase 3.2).
 
 ### Token / char budgets
 

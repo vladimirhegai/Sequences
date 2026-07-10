@@ -1,9 +1,9 @@
 # HANDOFF — where we are, what's next (updated 2026-07-07)
 
 The lightweight "start here for the next session" pointer. The detailed
-inventories live in [ROADMAP.md](ROADMAP.md) (feature-by-feature current state),
-[SENTINEL.md](SENTINEL.md)/[SENTINEL_REPORT.md](SENTINEL_REPORT.md) (the
-correctness system + its shipped evidence), and [FALLBACKS.md](FALLBACKS.md)
+inventories live in [ROADMAP.md](../../ROADMAP.md) (feature-by-feature current state),
+[SENTINEL.md](../../SENTINEL.md)/[SENTINEL_REPORT.md](SENTINEL_REPORT.md) (the
+correctness system + its shipped evidence), and [FALLBACKS.md](../../FALLBACKS.md)
 (fallback classes + the recoverable-paperwork catalog). This file is just the
 map + the ordered plan + the gotchas.
 
@@ -19,7 +19,7 @@ map + the ordered plan + the gotchas.
    Every mechanically-decidable obligation moved to the lowest owning layer (L0
    schema / L1 scaffold / L2 normalize), scene-scoped slot retries, the contract
    registry + closed-world test, the prompt budget test, telemetry
-   (`sentinel:report`). System doc: [SENTINEL.md](SENTINEL.md); design contract:
+   (`sentinel:report`). System doc: [SENTINEL.md](../../SENTINEL.md); design contract:
    [SENTINEL_PLAN.md](SENTINEL_PLAN.md); shipped evidence: [SENTINEL_REPORT.md](SENTINEL_REPORT.md).
 3. **Motion-design texture (2026-07-06/07, MD1–MD6).** The FX runtime
    (sweep/glow/draw/echo), the `dive` camera move, the `headline` kind + letter
@@ -30,16 +30,16 @@ map + the ordered plan + the gotchas.
    instantiation (the sixth host contract), the studio server/gate/export, the
    canvas builder, and the agent chat. Golden `last-word-roulette` proven; the
    paid live-create proof did NOT convert (the recipe-declaration gap). Plan:
-   [../../docs/RECIPE_STUDIO_PLAN.md](../../docs/RECIPE_STUDIO_PLAN.md); reports:
+   [../../docs/RECIPE_STUDIO_PLAN.md](../../../../docs/RECIPE_STUDIO_PLAN.md); reports:
    [RECIPE_STUDIO_REPORT.md](RECIPE_STUDIO_REPORT.md) +
    [RECIPE_STUDIO_REPORT_2.md](RECIPE_STUDIO_REPORT_2.md); next-agent prompt:
-   [../../docs/RECIPE_STUDIO_HANDOFF.md](../../docs/RECIPE_STUDIO_HANDOFF.md).
+   [../../docs/RECIPE_STUDIO_HANDOFF.md](../../../../docs/RECIPE_STUDIO_HANDOFF.md).
 
 ## Read first
 
-1. [CLAUDE.md](CLAUDE.md) — two bots, isolation, determinism boundary,
+1. [CLAUDE.md](../../CLAUDE.md) — two bots, isolation, determinism boundary,
    verification ladder, publish-vs-deploy.
-2. [ROADMAP.md](ROADMAP.md) — current state; the 2026-07-05/06/07 sections are
+2. [ROADMAP.md](../../ROADMAP.md) — current state; the 2026-07-05/06/07 sections are
    the latest inventory.
 
 ## The plan from here (the operator's ordered roadmap)
@@ -49,7 +49,7 @@ map + the ordered plan + the gotchas.
    `planning/attempts/` + `author-run.json` artifacts), confirm Sentinel
    actually captures each failure class at the right layer, and hunt for bugs /
    places attempts can be cut further. Fewer paid attempts is the metric.
-2. **Complete the Recipe Studio** per [../../docs/RECIPE_STUDIO_HANDOFF.md](../../docs/RECIPE_STUDIO_HANDOFF.md)
+2. **Complete the Recipe Studio** per [../../docs/RECIPE_STUDIO_HANDOFF.md](../../../../docs/RECIPE_STUDIO_HANDOFF.md)
    — the #1 item there is closing the **recipe-declaration gap** (a host-side
    auto-declare for high-confidence matches; today's retrieval *offer* doesn't
    convert the planner). Then CLI diff-scoping, cursor paths + effect presets,

@@ -492,7 +492,8 @@ design tools** extract brand truth, derive and validate semantic tokens, repair
 unsafe contrast/unavailable fonts, and expose which values are committed versus
 tunable without limiting motion. The art director also picks one **curated type
 system** — a display/body/mono trio from `engine/typeSystems.ts` (the integrated,
-**embedded-only** successor to the old `vendor/font-pairing/` sandbox: every
+**embedded-only** successor to the old `vendor/font-pairing/` sandbox, since
+deleted from the tree: every
 family is one the renderer actually draws, deterministic keyword scorer + display
 diversity guard), so type variety is real, not five hardcoded trios. Every frame
 also renders a brand-informed **Forbidden defaults** block (one accent, no H.264-

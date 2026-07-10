@@ -38,7 +38,7 @@ emergent property of two cheap models. It doesn't emerge.
 - **Past probes.** Job dirs under `.data/projects/<id>/` keep everything:
   `planning/` (concept, storyboard, attempts, findings, sentinel-run.json),
   `STORYBOARD.md`, QA artifacts, thumbnails, `motion-plan.json`,
-  temporal-evidence strips. [PROBE_LOG.md](PROBE_LOG.md) and ROADMAP.md's
+  temporal-evidence strips. [PROBE_LOG.md](../../PROBE_LOG.md) and ROADMAP.md's
   2026-07-0x audit sections carry the incident history and the owner's
   running complaints.
 - **What was already tried for texture:**
@@ -50,7 +50,7 @@ emergent property of two cheap models. It doesn't emerge.
   state; contracts live in `src/engine/*Contract.ts`; the Recipe Studio
   (`npm run studio`) can gate + preview any motion pattern you author
   against the REAL production gate, zero tokens (`npm run studio:canvas`).
-- **The new asset layer** ([ASSETS.md](ASSETS.md)): pre-built parametric
+- **The new asset layer** ([ASSETS.md](../../ASSETS.md)): pre-built parametric
   assets with real spring physics (`motionSpring.ts`) — the same
   quality-is-a-library-property philosophy, applied to visuals. Consider
   whether it generalizes.
@@ -78,7 +78,7 @@ plan doc first, then build.
   in anything the host injects.
 - **Attempt economy** (owner mandate): nothing you add may burn paid
   attempts on mechanical misses — degrade-never-veto, deterministic repair
-  first, and the live-probe policy in [PROBE_LOG.md](PROBE_LOG.md) applies
+  first, and the live-probe policy in [PROBE_LOG.md](../../PROBE_LOG.md) applies
   to every probe you run.
 - **Prompt bytes are budgeted** (`test/promptBudget.test.ts`) — prefer
   host-computed structure over prose instruction.

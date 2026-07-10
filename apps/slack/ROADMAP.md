@@ -391,8 +391,8 @@ See [PROBE_LOG.md](PROBE_LOG.md) for attempt fixes and
 ### Shape-match cuts + camera depth (2026-07-03, second pass)
 
 Implements the match-cut breakthrough plan (v1) and the camera-depth plan
-(level 1 + rack focus; the unbuilt level-2 follow-up now lives in
-`PLAN_camera_depth_level2.md`):
+(level 1 + rack focus; the level-2 follow-up shipped 2026-07-04 — see
+"Camera depth level 2" in CLAUDE.md — and its planning doc was retired):
 
 - **`shape-match` cut style** (`cutContract.ts` + `bindShapeMatch` in
   `sequences-cuts.v1.js`): two *different* rhyming-silhouette elements swap
@@ -1158,8 +1158,9 @@ count, not a mid-animation frame).
 ### WS audit fixes + fallback-elimination levers (2026-07-05)
 
 The WS_Improvements.md follow-ups and the LESS_FALLBACKS.md levers landed in
-one pass (both docs carry a STATUS block naming what shipped and the small
-deliberate deltas from their specs).
+one pass (both planning docs — since retired, see the "Full audit" section
+below — carried a STATUS block naming what shipped and the small deliberate
+deltas from their specs).
 
 **Pacing/eye-trace bug fixes (WS3/WS2 hardening).** `auditPacing` now judges
 single-surface scenes (one dense window opened at 90% of a scene was
@@ -1781,11 +1782,15 @@ normalizers commit-with-findings, and five new L2 owners landed
 (camera-move-delay, timeramp-retime, morph-twin-reconcile, load-bearing
 text/numeric beat analogs, last-resort unbound-primary-moment salvage). The
 morph runtime FLIPs onto visual boxes and owns the twin's entrance
-(open-after-morph dedupes). Full record: SENTINEL_REPORT.md "Auditor review +
-Sentinel COMPLETION". Owed before judging: Docker + sandbox ladder, and
+(open-after-morph dedupes). Full record:
+[docs/history/SENTINEL_REPORT.md](docs/history/SENTINEL_REPORT.md) "Auditor
+review + Sentinel COMPLETION". Owed before judging: Docker + sandbox ladder, and
 `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=1` on Railway.
 
 ## 2026-07-06/07 — Motion-design texture (MOTION_DESIGN_PLAN MD1–MD6)
+
+(The completed plan is archived at
+[docs/history/MOTION_DESIGN_PLAN.md](docs/history/MOTION_DESIGN_PLAN.md).)
 
 The "produced, not just choreographed" mandate is IMPLEMENTED — the garnish
 layer real motion designers add on top of choreography, all host-derived and
@@ -1836,7 +1841,9 @@ reports archived under `docs/history/`):
   schema + Sentinel L2 `reconcileRecipeDeclarations` + cache-key wiring; the
   studio server/gate/export; the golden `last-word-roulette` recipe
   (`npm run studio:golden`). Kill switch `SLACK_SEQUENCES_RECIPES=0`.
-- **Session 2 — canvas builder + agents.** A direct-manipulation film editor
+- **Session 2 — canvas builder + agents** *(REMOVED in the 2026-07-10 studio
+  pivot — the files below no longer exist; see the feature-map row above)*. A
+  direct-manipulation film editor
   (`studio/canvasModel.ts` + `compileCanvas.ts`: world view, live catalog, typed
   camera transitions → zero-token compile through the real gate,
   `npm run studio:canvas`); the agent chat (`studio/agents/`: OpenRouter critic +
@@ -1940,7 +1947,8 @@ the caller re-split into a scene-less `__film__` fragment that cancelled the
 repair) was CAUGHT by the pre-fix probe `reprobe-econ-1` and fixed in `6901a5a`
 (`StoryboardValidationError` now carries the raw `findings[]`; attribution reads
 that array). Source-author remains 3 attempts on contrast churn — the
-author/critic-stage agent's half (handoff in SENTINEL_REPORT).
+author/critic-stage agent's half (handoff in
+[docs/history/SENTINEL_REPORT.md](docs/history/SENTINEL_REPORT.md)).
 
 ## 2026-07-08 — Author/critic-stage attempt economy (the second half)
 
@@ -2067,7 +2075,9 @@ template edits at the same island version (re-prove recipes via
 
 ## 2026-07-08 (later) — probe-audit polish, medium/minor half (Opus)
 
-The follow-up half of the probe-audit fix batch (see `docs/PROBE_AUDIT_HANDOFF.md`).
+The follow-up half of the probe-audit fix batch (its handoff doc,
+`docs/PROBE_AUDIT_HANDOFF.md`, was a working scratch file that was never
+committed and no longer exists — this section is the surviving record).
 All host-side and seek-safe; no prompt growth; one new `normalize.*` registry row.
 
 - **No-op swap killed (probe-01 `snap-to-line`).** A `swap(cadence-wordmark →
