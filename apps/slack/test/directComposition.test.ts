@@ -38,6 +38,7 @@ import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.
 import {
   commitDirectComposition,
   hasDirectComposition,
+  isCssVarFontFamilyArtifact,
   isFloatingPointClipOverlap,
   loadDirectComposition,
   momentSubjectPart,
@@ -174,6 +175,40 @@ describe("floating-point clip-overlap filter", () => {
       code: "timed_element_missing_clip_class",
       severity: "error" as const,
       message: "clip ending at 11.600000000000001s overlaps with clip starting at 11.6s",
+    })).toBe(false);
+  });
+});
+
+describe("css-var font-family artifact filter", () => {
+  const finding = (message: string) => ({
+    code: "font_family_without_font_face",
+    severity: "warning" as const,
+    message,
+  });
+
+  it("drops the kit CSS var() indirection the pinned linter splits into phantom families", () => {
+    expect(isCssVarFontFamilyArtifact(finding(
+      "Font families used without @font-face declaration: var(--font-mono, monospace), " +
+        "var(--font-display, inherit). These are not in the auto-resolved font list, " +
+        "so the renderer cannot supply them automatically.",
+    ))).toBe(true);
+  });
+
+  it("keeps findings that name at least one real missing family", () => {
+    expect(isCssVarFontFamilyArtifact(finding(
+      "Font families used without @font-face declaration: Comic Sans MS, " +
+        "var(--font-display, inherit). These are not in the auto-resolved font list, " +
+        "so the renderer cannot supply them automatically.",
+    ))).toBe(false);
+    expect(isCssVarFontFamilyArtifact(finding(
+      "Font families used without @font-face declaration: Neue Machina. " +
+        "These are not in the auto-resolved font list, so the renderer cannot " +
+        "supply them automatically.",
+    ))).toBe(false);
+    expect(isCssVarFontFamilyArtifact({
+      code: "overlapping_clips_same_track",
+      severity: "warning" as const,
+      message: "Font families used without @font-face declaration: var(--font-mono, monospace). These are not…",
     })).toBe(false);
   });
 });

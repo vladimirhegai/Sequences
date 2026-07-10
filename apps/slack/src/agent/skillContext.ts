@@ -423,11 +423,33 @@ export function retrieveHyperframesSkillContext(
     ruleSummaries,
   ].join("\n");
 
-  // 3. Selected recipes (full content for the ones matched to this brief)
-  const usedFoundation = foundation.length + capabilities.length + capabilityContext.text.length;
-  const recipeBudget = Math.max(8_000, maxChars - usedFoundation - 1_500);
+  // Library recipes lead the selected section (computed here so their length
+  // participates in the budget below): they are gate-proven, host-instantiated
+  // signature patterns, and the operator wants them to be the planner's first
+  // vocabulary, ahead of prose blueprints. Each recipe's doc is capped so a
+  // growing library can never crowd the craft reference out of the window.
+  const recipeSection = libraryRecipes.matched.length
+    ? recipePlanningVocabulary(libraryRecipes.matched, { markdownBudget: 1_200 })
+    : recipeLibraryIndexLine(libraryRecipes.index);
+
+  // 3. Selected recipes (full content for the ones matched to this brief).
+  // Exact accounting: every fixed section — including the library-recipe
+  // vocabulary — is measured before dividing the REMAINING window across the
+  // blueprint/rule blocks (the tail of `text` is what trimTo cuts, and the
+  // motion rules live at the tail). The per-block share is clamped instead of
+  // floored high: eleven 500-char blocks beat three fat ones plus a cliff.
   const recipeCount = blueprintIds.length + ruleIds.length;
-  const perRecipe = Math.max(1_200, Math.floor(recipeBudget / Math.max(1, recipeCount)));
+  const selectedHeadersLength =
+    `## Selected blueprints for this job: ${blueprintIds.join(", ") || "compose freely"}`.length +
+    `## Selected motion rules: ${ruleIds.join(", ") || "author from the vocabulary above"}`.length;
+  const usedFixed = foundation.length + capabilities.length +
+    capabilityContext.text.length + recipeSection.length + selectedHeadersLength;
+  // ~1.6k covers the wrapper lines, block tags, and "\n\n" joins.
+  const recipeBudget = Math.max(0, maxChars - usedFixed - 1_600);
+  const perRecipe = Math.min(
+    2_400,
+    Math.max(500, Math.floor(recipeBudget / Math.max(1, recipeCount))),
+  );
 
   const blueprintTexts = blueprintIds.map((id) => {
     const content = readRecipe("blueprints", id, perRecipe);
@@ -438,13 +460,6 @@ export function retrieveHyperframesSkillContext(
     const content = readRecipe("rules", id, perRecipe);
     return content ? `<motion-rule id="${id}">\n${content}\n</motion-rule>` : "";
   }).filter(Boolean);
-
-  // Library recipes lead the selected section: they are gate-proven,
-  // host-instantiated signature patterns, and the operator wants them to be
-  // the planner's first vocabulary, ahead of prose blueprints.
-  const recipeSection = libraryRecipes.matched.length
-    ? recipePlanningVocabulary(libraryRecipes.matched)
-    : recipeLibraryIndexLine(libraryRecipes.index);
 
   const selectedSection = [
     ...(recipeSection ? [recipeSection] : []),

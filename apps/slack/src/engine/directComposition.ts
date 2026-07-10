@@ -57,6 +57,16 @@ import {
   type SceneCameraIntentV1,
 } from "./cameraContract.ts";
 import {
+  CONTINUITY_RUNTIME_FILE,
+  CONTINUITY_RUNTIME_VERSION,
+  continuityGraphEnabled,
+  continuityRuntimeHash,
+  continuityRuntimeSource,
+  resolveContinuityGraph,
+  type SceneContinuityAppearanceV1,
+} from "./continuityGraph.ts";
+import { resolveCameraBlockingPlan } from "./cameraBlocking.ts";
+import {
   TIME_RUNTIME_FILE,
   TIME_RUNTIME_VERSION,
   parseTimeRampPlan,
@@ -162,6 +172,8 @@ export interface DirectScene {
   background?: string;
   cameraIntent?: string;
   continuityAnchor?: string;
+  /** Stable product-object representations carried into the continuity graph. */
+  continuity?: SceneContinuityAppearanceV1[];
   startSec: number;
   durationSec: number;
   blueprint?: string;
@@ -554,6 +566,23 @@ export function isFloatingPointClipOverlap(finding: HyperframeLintFinding): bool
     end - start < CLIP_OVERLAP_EPSILON_SEC;
 }
 
+/**
+ * True when a `font_family_without_font_face` finding names only var()-split
+ * artifacts. The pinned linter splits `font-family` stacks on commas, so the
+ * kit CSS's token indirection (`font-family: var(--font-display, inherit)`)
+ * fabricates "families" like `var(--font-display` and `inherit)` — never real
+ * font names (real families never carry parentheses). A finding that still
+ * names at least one paren-free family is a genuine missing font and is kept.
+ */
+export function isCssVarFontFamilyArtifact(finding: HyperframeLintFinding): boolean {
+  if (finding.code !== "font_family_without_font_face") return false;
+  const list = finding.message.match(/@font-face declaration:\s*(.+?)\.\s/)?.[1];
+  if (!list) return false;
+  const families = list.split(/,\s*/).map((token: string) => token.trim()).filter(Boolean);
+  return families.length > 0 &&
+    families.every((token: string) => token.includes("(") || token.includes(")"));
+}
+
 export async function validateDirectComposition(
   projectDir: string,
   draft: DirectCompositionDraft,
@@ -654,6 +683,7 @@ export async function validateDirectComposition(
       ref !== INTERACTION_RUNTIME_FILE &&
       ref !== CUT_RUNTIME_FILE &&
       ref !== CAMERA_RUNTIME_FILE &&
+      ref !== CONTINUITY_RUNTIME_FILE &&
       ref !== COMPONENT_RUNTIME_FILE &&
       ref !== TIME_RUNTIME_FILE &&
       ref !== FX_RUNTIME_FILE &&
@@ -675,7 +705,8 @@ export async function validateDirectComposition(
   try {
     const lint = await lintHyperframeHtml(html, { filePath: "index.html" });
     findings = lint.findings.filter(
-      (finding: HyperframeLintFinding) => !isFloatingPointClipOverlap(finding),
+      (finding: HyperframeLintFinding) =>
+        !isFloatingPointClipOverlap(finding) && !isCssVarFontFamilyArtifact(finding),
     );
     errors.push(...findings
       .filter((finding: HyperframeLintFinding) => finding.severity === "error")
@@ -739,6 +770,11 @@ function copyRuntimeAndAssets(projectDir: string, targetDir: string): void {
   fs.writeFileSync(
     path.join(targetDir, CAMERA_RUNTIME_FILE),
     cameraRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(targetDir, CONTINUITY_RUNTIME_FILE),
+    continuityRuntimeSource(),
     "utf8",
   );
   fs.writeFileSync(
@@ -961,6 +997,12 @@ export async function commitDirectComposition(
       storyboardMarkdown(title, normalized.scenes),
       "utf8",
     );
+    const continuity = continuityGraphEnabled()
+      ? resolveContinuityGraph(normalized.scenes)
+      : undefined;
+    const cameraBlocking = continuity
+      ? resolveCameraBlockingPlan(normalized.scenes, continuity)
+      : undefined;
     writeJson(path.join(staged, "motion-plan.json"), {
       version: 1,
       compositionId: manifest.compositionId,
@@ -984,6 +1026,16 @@ export async function commitDirectComposition(
         version: CAMERA_RUNTIME_VERSION,
         sha256: cameraRuntimeHash(),
       },
+      ...(continuity
+        ? {
+            continuity,
+            continuityRuntime: {
+              version: CONTINUITY_RUNTIME_VERSION,
+              sha256: continuityRuntimeHash(),
+            },
+            cameraBlocking,
+          }
+        : {}),
       timeRamps: resolveTimeRampPlan(normalized.scenes).ramps,
       timeRuntime: {
         version: TIME_RUNTIME_VERSION,
@@ -1071,6 +1123,10 @@ export async function commitDirectComposition(
     path.join(checkpoint, CAMERA_RUNTIME_FILE),
   );
   fs.copyFileSync(
+    path.join(target, CONTINUITY_RUNTIME_FILE),
+    path.join(checkpoint, CONTINUITY_RUNTIME_FILE),
+  );
+  fs.copyFileSync(
     path.join(target, COMPONENT_RUNTIME_FILE),
     path.join(checkpoint, COMPONENT_RUNTIME_FILE),
   );
@@ -1107,6 +1163,7 @@ export function undoDirectComposition(projectDir: string): boolean {
     INTERACTION_RUNTIME_FILE,
     CUT_RUNTIME_FILE,
     CAMERA_RUNTIME_FILE,
+    CONTINUITY_RUNTIME_FILE,
     COMPONENT_RUNTIME_FILE,
     TIME_RUNTIME_FILE,
     FX_RUNTIME_FILE,

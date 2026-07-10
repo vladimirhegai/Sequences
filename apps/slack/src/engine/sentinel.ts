@@ -904,6 +904,25 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "invariant gate is unchanged; the obligation moved to L2.",
   },
   {
+    id: "normalize.lint-font-var-artifact",
+    group: "runtime-invariants",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: ["font_family_without_font_face"],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-10 recipe-gate noise: the pinned linter splits font-family " +
+      "stacks on commas, so the component kit's token indirection " +
+      "(font-family: var(--font-display, inherit)) fabricates phantom " +
+      "families like 'var(--font-display' + 'inherit)' in EVERY composition " +
+      "that ships the kit CSS. isCssVarFontFamilyArtifact " +
+      "(directComposition.ts) drops a finding whose named families are ALL " +
+      "paren-carrying var()-split artifacts — real families never carry " +
+      "parentheses — while a finding naming even one real missing family is " +
+      "kept verbatim. The isFloatingPointClipOverlap disposition.",
+  },
+  {
     id: "normalize.station-position",
     group: "camera",
     layer: "normalize",
@@ -1192,6 +1211,22 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "double-sampled so entrances can't false-positive) and fills >=18% of the " +
       "frame (camera_framed_sparse, WS5). strictOk-blocking polish, never " +
       "unpublishing; final-scene / full-width escapes.",
+  },
+  {
+    id: "camera.blocking",
+    group: "camera",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["camera_blocking_landing"],
+    promptCostChars: 0,
+    test: "test/layoutInspector.test.ts",
+    addedBecause:
+      "2026-07-10 Continuity Graph + Camera Blocking Director: when the " +
+      "default-off graph owns the camera, legacy authored-segment framing " +
+      "findings no longer describe the shipped route. Browser QA instead " +
+      "seeks every primary blocking dwell and proves its exact target is at " +
+      "least 85% visible and inside its entity/component occupancy range. " +
+      "This is measured geometry and stays advisory-late like camera.framing.",
   },
   {
     id: "interactions",

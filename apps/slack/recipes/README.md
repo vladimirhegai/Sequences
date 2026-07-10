@@ -110,10 +110,35 @@ usable value drops the declaration (degrade-never-veto).
   `demo.html` (the gated proof), `preview/` (thumbnail strip). Committed.
   Hand-editing a library fragment marks it stale until re-proven.
 
+## Library (shipped)
+
+- `last-word-roulette` — locked sentence, final-word wheel spin, payoff snap.
+- `iris-cta-close` — accent iris floods the end card, CTA pill ignites with a
+  pop (kills the "closing CTA too small/timid" probe-feedback class).
+- `metric-odometer` — hero stat digits roll on masked odometer columns with a
+  wave landing (the KPI proof shot models fake with instant numbers).
+- `checklist-cascade` — rows cascade in, checkmarks DRAW on in rhythm,
+  completion bar sweeps (onboarding/launch-list accumulation payoff).
+
+Authoring conventions proven by these four (follow them — they are why the
+gate reports zero warnings): tween targets are INLINE STRING LITERALS with
+`{{uid}}` filled by the host (the pinned GSAP parser resolves literals, never
+concatenations), and the timing spine derives from `{{start}}`/`{{settleSec}}`
+numeric literal slots so every position constant-folds at parse time. Size
+for a 1920×1080 frame — hero patterns that look right in a browser tab are
+usually too small on the film canvas. And mind GSAP's `fromTo`
+immediate-render: a `fromTo` paints its FROM state at timeline build, not at
+its position. For entrances (from `opacity: 0`) that is exactly what hides
+the element early — but a mid-scene accent whose from-state is VISIBLE (a
+ring pulse, a flash) must pass `immediateRender: false` or it parks a ghost
+on the frame from scene start (the iris-cta-close ring incident). The gate's
+endpoint thumbnails will NOT catch this — eyeball the first frame.
+
 ## Backlog worth building (from the plan, §5.6)
 
-iris-fill CTA close · cursor demo click-through · notification stack cascade ·
-KPI dashboard flythrough (counter rolls) · bento-grid feature reveal · pricing
-table build + tier highlight · onboarding checklist tick-through ·
-command-palette power-user flow · before/after wipe · terminal-to-chart
-transform · headline word-swap positioning loop.
+cursor demo click-through · bento-grid feature reveal · pricing table build +
+tier highlight · command-palette power-user flow · before/after wipe ·
+terminal-to-chart transform · headline word-swap positioning loop.
+(Notification stack cascade and KPI dashboard grid are covered by the
+`notification-stack` / `dashboard-grid` PLUGINS — don't duplicate them as
+recipes.)

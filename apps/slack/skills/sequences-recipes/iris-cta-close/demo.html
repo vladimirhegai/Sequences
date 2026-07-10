@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1920, height=1080" />
-    <title>Recipe proof — last-word-roulette</title>
+    <title>Recipe proof — iris-cta-close</title>
     <script src="gsap.min.js"></script>
 <script src="sequences-camera.v1.js"></script>
     <style id="sequences-cinema" data-version="1">
@@ -1226,113 +1226,126 @@ body {
       .slate-name { font-size: 54px; font-weight: 700; margin-top: 18px; }
     </style>
   <style data-sequences-host="1" data-sequences-recipe-style="seq-recipe-base" id="sequences-recipe-style-base">.seq-recipe{display:contents}</style>
-<style data-sequences-host="1" data-sequences-recipe-style="last-word-roulette" id="sequences-recipe-style-last-word-roulette">
-.rcp-roulette {
+<style data-sequences-host="1" data-sequences-recipe-style="iris-cta-close" id="sequences-recipe-style-iris-cta-close">
+.rcp-cta {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 36px;
     text-align: center;
-    line-height: 1.08;
-    /* Self-sufficient display scale with tunable overrides: a hosting scene
-       may retune via --rcp-size/--rcp-weight without touching the mechanism. */
-    font-size: var(--rcp-size, 104px);
-    font-weight: var(--rcp-weight, 800);
-    letter-spacing: -0.015em;
   }
-  .rcp-roulette .rcp-line {
-    display: block;
-    white-space: nowrap;
+  .rcp-cta .rcp-cta-kicker {
+    font-size: var(--rcp-kicker-size, 27px);
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--rcp-accent, #ffc24d);
+    opacity: 0;
+    position: relative;
+    z-index: 1;
   }
-  .rcp-roulette .rcp-lead {
-    display: inline-block;
-    vertical-align: baseline;
-  }
-  .rcp-roulette .rcp-slot {
-    /* The wheel's column: inline with the lead, owns the underline + glow so
-       both track the PAYOFF word, not the sentence. vertical-align: bottom
-       matches the mask's box bottom to the line box bottom, so the wheel
-       words share the lead's baseline (an overflow-hidden inline-block would
-       otherwise baseline-align its bottom edge and ride high). */
+  .rcp-cta .rcp-cta-pillwrap {
     position: relative;
     display: inline-block;
-    vertical-align: bottom;
-    margin-left: 0.28em;
   }
-  .rcp-roulette .rcp-mask {
-    display: block;
-    overflow: hidden;
-    height: 1.08em;
-    text-align: left;
-  }
-  .rcp-roulette .rcp-wheel {
-    display: inline-block;
-    will-change: transform;
-  }
-  .rcp-roulette .rcp-word {
-    display: block;
-    height: 1.08em;
-    color: var(--rcp-accent, #ffc24d);
-  }
-  .rcp-roulette .rcp-word:not(.rcp-payoff) {
-    opacity: 0.82;
-  }
-  .rcp-roulette .rcp-rule {
-    display: block; /* transformed inline spans are a no-op (determinism rules) */
-    position: absolute;
-    left: 3%;
-    right: 3%;
-    top: calc(100% + 0.08em);
-    height: 0.05em;
-    border-radius: 999px;
-    background: var(--rcp-accent, #ffc24d);
-    transform: scaleX(0);
-    transform-origin: 50% 50%;
-  }
-  .rcp-roulette .rcp-glow {
+  .rcp-cta .rcp-cta-iris {
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 8em;
-    height: 3em;
-    transform: translate(-50%, -50%);
+    width: 3600px;
+    height: 3600px;
+    margin-left: -1800px;
+    margin-top: -1800px;
     border-radius: 50%;
-    background: radial-gradient(closest-side, var(--rcp-accent, #ffc24d), transparent 72%);
+    background: var(--rcp-accent, #ffc24d);
     opacity: 0;
+    transform: scale(0);
+    will-change: transform;
     pointer-events: none;
-    filter: blur(14px);
+    z-index: 0;
+  }
+  .rcp-cta .rcp-cta-ring {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 440px;
+    height: 440px;
+    margin-left: -220px;
+    margin-top: -220px;
+    border-radius: 50%;
+    border: 3px solid var(--rcp-accent, #ffc24d);
+    opacity: 0;
+    transform: scale(0.55);
+    will-change: transform;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .rcp-cta .rcp-cta-pill {
+    position: relative;
+    display: grid;
+    padding: 30px 80px;
+    border-radius: 999px;
+    border: 3px solid var(--rcp-accent, #ffc24d);
+    font-size: var(--rcp-label-size, 52px);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    opacity: 0;
+    z-index: 1;
+    will-change: transform;
+  }
+  .rcp-cta .rcp-cta-fill {
+    position: absolute;
+    inset: -3px;
+    border-radius: 999px;
+    background: var(--rcp-accent, #ffc24d);
+    opacity: 0;
+  }
+  .rcp-cta .rcp-cta-label {
+    grid-area: 1 / 1;
+    position: relative;
+    white-space: nowrap;
+  }
+  .rcp-cta .rcp-cta-label-ghost {
+    color: var(--rcp-accent, #ffc24d);
+  }
+  .rcp-cta .rcp-cta-label-lit {
+    color: #0b0e12;
+    opacity: 0;
+  }
+  .rcp-cta .rcp-cta-sub {
+    font-size: var(--rcp-sub-size, 27px);
+    font-weight: 500;
+    opacity: 0;
+    position: relative;
+    z-index: 1;
   }
 </style>
 </head>
   <body>
-    <div id="root" data-composition-id="recipe-demo" data-start="0" data-width="1920" data-height="1080" data-duration="6.6">
-      <section id="stage" class="scene clip" data-scene="stage" data-start="0" data-duration="5" data-track-index="1">
-<div class="seq-recipe" data-sequences-host="1" data-sequences-recipe="last-word-roulette" data-recipe-uid="stage-last-word-roulette"><div class="rcp-roulette" data-part="stage-last-word-roulette-roulette" data-layout-important
+    <div id="root" data-composition-id="recipe-demo" data-start="0" data-width="1920" data-height="1080" data-duration="6.2">
+      <section id="stage" class="scene clip" data-scene="stage" data-start="0" data-duration="4.6" data-track-index="1">
+<div class="seq-recipe" data-sequences-host="1" data-sequences-recipe="iris-cta-close" data-recipe-uid="stage-iris-cta-close"><div class="rcp-cta" data-part="stage-iris-cta-close-cta" data-layout-important
     data-layout-anchor="frame:center" style="--rcp-accent: var(--cinema-key)">
-    <span class="rcp-line">
-      <span class="rcp-lead">Your launch becomes</span>
-      <span class="rcp-slot" data-layout-allow-overflow>
-        <span class="rcp-glow" data-layout-ignore></span>
-        <span class="rcp-mask">
-          <span class="rcp-wheel" data-part="stage-last-word-roulette-wheel">
-            <span class="rcp-word">a thread</span>
-            <span class="rcp-word">a task</span>
-            <span class="rcp-word">a demo</span>
-            <span class="rcp-word">a thread</span>
-            <span class="rcp-word">a task</span>
-            <span class="rcp-word">a demo</span>
-            <span class="rcp-word rcp-payoff">a film.</span>
-          </span>
-        </span>
-        <span class="rcp-rule" data-layout-ignore></span>
+    <span class="rcp-cta-kicker">Ship the story</span>
+    <span class="rcp-cta-pillwrap" data-layout-allow-overflow>
+      <span class="rcp-cta-iris" data-layout-ignore></span>
+      <span class="rcp-cta-ring" data-layout-ignore></span>
+      <span class="rcp-cta-pill" data-part="stage-iris-cta-close-cta-button">
+        <span class="rcp-cta-fill"></span>
+        <span class="rcp-cta-label rcp-cta-label-ghost">Start free trial</span>
+        <span class="rcp-cta-label rcp-cta-label-lit">Start free trial</span>
       </span>
     </span>
+    <span class="rcp-cta-sub">Sequences for Slack · free today</span>
   </div></div>
         <div class="stage-key" data-layout-ignore></div>
         <div class="stage-floor" data-layout-ignore></div>
       </section>
-      <section id="slate" class="scene clip" data-scene="slate" data-start="5" data-duration="1.6" data-track-index="1">
+      <section id="slate" class="scene clip" data-scene="slate" data-start="4.6" data-duration="1.6" data-track-index="1">
         <div class="slate-card" data-layout-important data-layout-anchor="frame:center">
           <div class="slate-kicker">Recipe Studio proof</div>
-          <div class="slate-name">last-word-roulette</div>
+          <div class="slate-name">iris-cta-close</div>
         </div>
       </section>
     </div>
@@ -1340,49 +1353,56 @@ body {
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.set("#stage", { opacity: 1 }, 0);
-      tl.set("#stage", { opacity: 0 }, 4.99);
-      tl.set("#slate", { opacity: 1 }, 5);
-      tl.set("#slate", { opacity: 0 }, 6.6);
+      tl.set("#stage", { opacity: 0 }, 4.59);
+      tl.set("#slate", { opacity: 1 }, 4.6);
+      tl.set("#slate", { opacity: 0 }, 6.2);
       // A slow key-light breath keeps the stage alive around the recipe.
-      tl.fromTo(".stage-key", { opacity: 0.55 }, { opacity: 1, duration: 4.50, ease: "none" }, 0.25);
-      tl.fromTo(".slate-card", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 5.10);
-      /*<seq-recipe uid="stage-last-word-roulette">*/
+      tl.fromTo(".stage-key", { opacity: 0.55 }, { opacity: 1, duration: 4.10, ease: "none" }, 0.25);
+      tl.fromTo(".slate-card", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 4.70);
+      /*<seq-recipe uid="stage-iris-cta-close">*/
 (function(tl, root, start, duration, uid){
-// Timing spine: 0/2.8 fill as numeric literals, so `settle`
-  // and every position below constant-fold in the static GSAP parser — the
-  // whole gesture is placeable at lint time (no phantom-overlap warnings) and
-  // identical at runtime. Selectors are inline string literals for the same
-  // reason: the linter resolves literals, never concatenations.
-  var settle = 0 + 2.8;
+// Timing spine: 0/2.3 are numeric literals, so every
+  // position below constant-folds at parse time (lint-placeable, identical at
+  // runtime). settle = the iris landing / button ignition.
+  var settle = 0 + 2.3;
 
-  // Entrance: the locked sentence rises in as one object.
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"]', { y: 24, opacity: 0 },
-    { y: 0, opacity: 1, duration: 0.45, ease: "power3.out" }, 0 + 0.15);
+  // Entrance: kicker, then the ghost pill.
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-kicker', { y: 18, opacity: 0 },
+    { y: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.15);
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-pill', { y: 20, opacity: 0, scale: 0.97 },
+    { y: 0, opacity: 1, scale: 1, duration: 0.45, ease: "power3.out" }, 0 + 0.32);
 
-  // The wheel is a 7-row strip (candidates twice, then the payoff), so the
-  // spin reads as a real roulette: five quick committed ticks that ease off,
-  // then the payoff lands on seqSettle — overshoot-free arrival (house style).
-  // One row is 100/7% of the strip.
-  tl.set('[data-part="stage-last-word-roulette-wheel"]', { yPercent: 0 }, 0);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 1 / 7, duration: 0.13, ease: "power1.in" }, settle - 1.30);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 2 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 1.12);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 3 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 0.95);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 4 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 0.78);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 5 / 7, duration: 0.13, ease: "power1.out" }, settle - 0.60);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 6 / 7, duration: 0.38, ease: "seqSettle" }, settle - 0.38);
+  // Anticipation ring: one clean pulse announcing the flood.
+  // immediateRender:false — this fromTo's FROM state is VISIBLE (opacity
+  // 0.55); without it GSAP paints that state at timeline build, parking a
+  // ghost ring on the frame from scene start. CSS rest (opacity 0) rules
+  // until the pulse begins.
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-ring', { scale: 0.55, opacity: 0.55 },
+    { scale: 1.5, opacity: 0, duration: 0.55, ease: "power2.out", immediateRender: false },
+    settle - 0.62);
 
-  // Landing impact: the slot pops once (committed, no wobble)…
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-slot', { scale: 1 },
-    { scale: 1.035, duration: 0.12, ease: "power2.out" }, settle - 0.05);
-  tl.to('[data-part="stage-last-word-roulette-roulette"] .rcp-slot', { scale: 1, duration: 0.28, ease: "seqSettle" }, settle + 0.09);
+  // The iris: a crisp accent edge sweeps past the frame, relaxing to a tint
+  // so every pre-flood copy color stays valid on the landed canvas.
+  // (immediateRender:false for the same reason — its from-opacity is 0.85;
+  // scale 0 happens to hide it, but the rest state belongs to the CSS.)
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-iris', { scale: 0, opacity: 0.85 },
+    { scale: 1, opacity: 0.16, duration: 0.5, ease: "seqSwoosh", immediateRender: false },
+    settle - 0.5);
 
-  // …the underline draws fast, and the glow breathes once and releases.
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-rule', { scaleX: 0 },
-    { scaleX: 1, duration: 0.32, ease: "power3.out" }, settle + 0.02);
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-glow', { opacity: 0 },
-    { opacity: 0.5, duration: 0.22, ease: "power2.out" }, settle - 0.02);
-  tl.to('[data-part="stage-last-word-roulette-roulette"] .rcp-glow', { opacity: 0.18, duration: 0.5, ease: "power2.inOut" }, settle + 0.24);
-})(tl, document.querySelector("[data-composition-id]"), 0, 5, "stage-last-word-roulette");
+  // Ignition: the pill fills accent, ink label crossfades in, ghost releases.
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-fill', { opacity: 0 },
+    { opacity: 1, duration: 0.16, ease: "power2.out" }, settle);
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-label-lit', { opacity: 0 },
+    { opacity: 1, duration: 0.16, ease: "power2.out" }, settle);
+  tl.to('[data-part="stage-iris-cta-close-cta"] .rcp-cta-label-ghost', { opacity: 0, duration: 0.12, ease: "power1.out" }, settle);
+
+  // One committed pop (no wobble), then the reassurance line settles.
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-pill', { scale: 1 },
+    { scale: 1.05, duration: 0.12, ease: "power2.out" }, settle + 0.01);
+  tl.to('[data-part="stage-iris-cta-close-cta"] .rcp-cta-pill', { scale: 1, duration: 0.3, ease: "seqSettle" }, settle + 0.15);
+  tl.fromTo('[data-part="stage-iris-cta-close-cta"] .rcp-cta-sub', { y: 14, opacity: 0 },
+    { y: 0, opacity: 0.9, duration: 0.4, ease: "power3.out" }, settle + 0.22);
+})(tl, document.querySelector("[data-composition-id]"), 0, 4.6, "stage-iris-cta-close");
 /*</seq-recipe>*/
 window.__timelines["recipe-demo"] = tl;
       tl.seek(0);

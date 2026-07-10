@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=1920, height=1080" />
-    <title>Recipe proof — last-word-roulette</title>
+    <title>Recipe proof — checklist-cascade</title>
     <script src="gsap.min.js"></script>
 <script src="sequences-camera.v1.js"></script>
     <style id="sequences-cinema" data-version="1">
@@ -1226,113 +1226,112 @@ body {
       .slate-name { font-size: 54px; font-weight: 700; margin-top: 18px; }
     </style>
   <style data-sequences-host="1" data-sequences-recipe-style="seq-recipe-base" id="sequences-recipe-style-base">.seq-recipe{display:contents}</style>
-<style data-sequences-host="1" data-sequences-recipe-style="last-word-roulette" id="sequences-recipe-style-last-word-roulette">
-.rcp-roulette {
+<style data-sequences-host="1" data-sequences-recipe-style="checklist-cascade" id="sequences-recipe-style-checklist-cascade">
+.rcp-chk {
     position: relative;
-    display: block;
-    text-align: center;
-    line-height: 1.08;
-    /* Self-sufficient display scale with tunable overrides: a hosting scene
-       may retune via --rcp-size/--rcp-weight without touching the mechanism. */
-    font-size: var(--rcp-size, 104px);
-    font-weight: var(--rcp-weight, 800);
-    letter-spacing: -0.015em;
-  }
-  .rcp-roulette .rcp-line {
-    display: block;
-    white-space: nowrap;
-  }
-  .rcp-roulette .rcp-lead {
-    display: inline-block;
-    vertical-align: baseline;
-  }
-  .rcp-roulette .rcp-slot {
-    /* The wheel's column: inline with the lead, owns the underline + glow so
-       both track the PAYOFF word, not the sentence. vertical-align: bottom
-       matches the mask's box bottom to the line box bottom, so the wheel
-       words share the lead's baseline (an overflow-hidden inline-block would
-       otherwise baseline-align its bottom edge and ride high). */
-    position: relative;
-    display: inline-block;
-    vertical-align: bottom;
-    margin-left: 0.28em;
-  }
-  .rcp-roulette .rcp-mask {
-    display: block;
-    overflow: hidden;
-    height: 1.08em;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 40px;
     text-align: left;
   }
-  .rcp-roulette .rcp-wheel {
+  .rcp-chk .rcp-chk-head {
+    position: relative;
     display: inline-block;
-    will-change: transform;
+    padding-bottom: 16px;
   }
-  .rcp-roulette .rcp-word {
-    display: block;
-    height: 1.08em;
-    color: var(--rcp-accent, #ffc24d);
+  .rcp-chk .rcp-chk-title {
+    font-size: var(--rcp-title-size, 58px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
   }
-  .rcp-roulette .rcp-word:not(.rcp-payoff) {
-    opacity: 0.82;
-  }
-  .rcp-roulette .rcp-rule {
-    display: block; /* transformed inline spans are a no-op (determinism rules) */
+  .rcp-chk .rcp-chk-bar {
     position: absolute;
-    left: 3%;
-    right: 3%;
-    top: calc(100% + 0.08em);
-    height: 0.05em;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4px;
     border-radius: 999px;
     background: var(--rcp-accent, #ffc24d);
     transform: scaleX(0);
-    transform-origin: 50% 50%;
+    transform-origin: 0 50%;
   }
-  .rcp-roulette .rcp-glow {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 8em;
-    height: 3em;
-    transform: translate(-50%, -50%);
-    border-radius: 50%;
-    background: radial-gradient(closest-side, var(--rcp-accent, #ffc24d), transparent 72%);
+  .rcp-chk .rcp-chk-item {
+    display: flex;
+    align-items: center;
+    gap: 22px;
     opacity: 0;
-    pointer-events: none;
-    filter: blur(14px);
+  }
+  .rcp-chk .rcp-chk-dot {
+    position: relative;
+    width: 50px;
+    height: 50px;
+    flex: 0 0 50px;
+    border-radius: 50%;
+    border: 2.5px solid var(--rcp-accent, #ffc24d);
+  }
+  .rcp-chk .rcp-chk-fill {
+    position: absolute;
+    inset: -2.5px;
+    border-radius: 50%;
+    background: var(--rcp-accent, #ffc24d);
+    transform: scale(0);
+    will-change: transform;
+  }
+  .rcp-chk .rcp-chk-mark {
+    position: absolute;
+    inset: 8px;
+    width: 34px;
+    height: 34px;
+  }
+  .rcp-chk .rcp-chk-path {
+    fill: none;
+    stroke: #0b0e12;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+  }
+  .rcp-chk .rcp-chk-copy {
+    font-size: var(--rcp-item-size, 38px);
+    font-weight: 500;
+    opacity: 0.62;
   }
 </style>
 </head>
   <body>
-    <div id="root" data-composition-id="recipe-demo" data-start="0" data-width="1920" data-height="1080" data-duration="6.6">
-      <section id="stage" class="scene clip" data-scene="stage" data-start="0" data-duration="5" data-track-index="1">
-<div class="seq-recipe" data-sequences-host="1" data-sequences-recipe="last-word-roulette" data-recipe-uid="stage-last-word-roulette"><div class="rcp-roulette" data-part="stage-last-word-roulette-roulette" data-layout-important
+    <div id="root" data-composition-id="recipe-demo" data-start="0" data-width="1920" data-height="1080" data-duration="7.6">
+      <section id="stage" class="scene clip" data-scene="stage" data-start="0" data-duration="6" data-track-index="1">
+<div class="seq-recipe" data-sequences-host="1" data-sequences-recipe="checklist-cascade" data-recipe-uid="stage-checklist-cascade"><div class="rcp-chk" data-part="stage-checklist-cascade-checklist" data-layout-important
     data-layout-anchor="frame:center" style="--rcp-accent: var(--cinema-key)">
-    <span class="rcp-line">
-      <span class="rcp-lead">Your launch becomes</span>
-      <span class="rcp-slot" data-layout-allow-overflow>
-        <span class="rcp-glow" data-layout-ignore></span>
-        <span class="rcp-mask">
-          <span class="rcp-wheel" data-part="stage-last-word-roulette-wheel">
-            <span class="rcp-word">a thread</span>
-            <span class="rcp-word">a task</span>
-            <span class="rcp-word">a demo</span>
-            <span class="rcp-word">a thread</span>
-            <span class="rcp-word">a task</span>
-            <span class="rcp-word">a demo</span>
-            <span class="rcp-word rcp-payoff">a film.</span>
-          </span>
-        </span>
-        <span class="rcp-rule" data-layout-ignore></span>
-      </span>
-    </span>
+    <div class="rcp-chk-head">
+      <span class="rcp-chk-title">Launch day, handled</span>
+      <span class="rcp-chk-bar" data-layout-ignore></span>
+    </div>
+    <div class="rcp-chk-item rcp-chk-item-1">
+      <span class="rcp-chk-dot"><span class="rcp-chk-fill"></span><svg class="rcp-chk-mark" viewBox="0 0 24 24" aria-hidden="true"><path class="rcp-chk-path" d="M5 12.6l4.4 4.4L19 7.2"/></svg></span>
+      <span class="rcp-chk-copy">Threads summarized</span>
+    </div>
+    <div class="rcp-chk-item rcp-chk-item-2">
+      <span class="rcp-chk-dot"><span class="rcp-chk-fill"></span><svg class="rcp-chk-mark" viewBox="0 0 24 24" aria-hidden="true"><path class="rcp-chk-path" d="M5 12.6l4.4 4.4L19 7.2"/></svg></span>
+      <span class="rcp-chk-copy">Storyboard approved</span>
+    </div>
+    <div class="rcp-chk-item rcp-chk-item-3">
+      <span class="rcp-chk-dot"><span class="rcp-chk-fill"></span><svg class="rcp-chk-mark" viewBox="0 0 24 24" aria-hidden="true"><path class="rcp-chk-path" d="M5 12.6l4.4 4.4L19 7.2"/></svg></span>
+      <span class="rcp-chk-copy">Video rendered in channel</span>
+    </div>
+    <div class="rcp-chk-item rcp-chk-item-4">
+      <span class="rcp-chk-dot"><span class="rcp-chk-fill"></span><svg class="rcp-chk-mark" viewBox="0 0 24 24" aria-hidden="true"><path class="rcp-chk-path" d="M5 12.6l4.4 4.4L19 7.2"/></svg></span>
+      <span class="rcp-chk-copy">Shared with the team</span>
+    </div>
   </div></div>
         <div class="stage-key" data-layout-ignore></div>
         <div class="stage-floor" data-layout-ignore></div>
       </section>
-      <section id="slate" class="scene clip" data-scene="slate" data-start="5" data-duration="1.6" data-track-index="1">
+      <section id="slate" class="scene clip" data-scene="slate" data-start="6" data-duration="1.6" data-track-index="1">
         <div class="slate-card" data-layout-important data-layout-anchor="frame:center">
           <div class="slate-kicker">Recipe Studio proof</div>
-          <div class="slate-name">last-word-roulette</div>
+          <div class="slate-name">checklist-cascade</div>
         </div>
       </section>
     </div>
@@ -1340,49 +1339,67 @@ body {
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.set("#stage", { opacity: 1 }, 0);
-      tl.set("#stage", { opacity: 0 }, 4.99);
-      tl.set("#slate", { opacity: 1 }, 5);
-      tl.set("#slate", { opacity: 0 }, 6.6);
+      tl.set("#stage", { opacity: 0 }, 5.99);
+      tl.set("#slate", { opacity: 1 }, 6);
+      tl.set("#slate", { opacity: 0 }, 7.6);
       // A slow key-light breath keeps the stage alive around the recipe.
-      tl.fromTo(".stage-key", { opacity: 0.55 }, { opacity: 1, duration: 4.50, ease: "none" }, 0.25);
-      tl.fromTo(".slate-card", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 5.10);
-      /*<seq-recipe uid="stage-last-word-roulette">*/
+      tl.fromTo(".stage-key", { opacity: 0.55 }, { opacity: 1, duration: 5.50, ease: "none" }, 0.25);
+      tl.fromTo(".slate-card", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5, ease: "power3.out" }, 6.10);
+      /*<seq-recipe uid="stage-checklist-cascade">*/
 (function(tl, root, start, duration, uid){
-// Timing spine: 0/2.8 fill as numeric literals, so `settle`
-  // and every position below constant-fold in the static GSAP parser — the
-  // whole gesture is placeable at lint time (no phantom-overlap warnings) and
-  // identical at runtime. Selectors are inline string literals for the same
-  // reason: the linter resolves literals, never concatenations.
-  var settle = 0 + 2.8;
+// Timing spine: 0/3.4 are numeric literals, so every
+  // position below constant-folds at parse time (lint-placeable, identical
+  // at runtime). settle = the moment the LAST checkmark finishes drawing;
+  // ticks land every 0.55s before it.
+  var settle = 0 + 3.4;
 
-  // Entrance: the locked sentence rises in as one object.
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"]', { y: 24, opacity: 0 },
-    { y: 0, opacity: 1, duration: 0.45, ease: "power3.out" }, 0 + 0.15);
+  // Title, then the rows cascade in.
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-head', { y: 16, opacity: 0 },
+    { y: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.12);
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-1', { x: -18, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.26);
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-2', { x: -18, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.38);
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-3', { x: -18, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.50);
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-4', { x: -18, opacity: 0 },
+    { x: 0, opacity: 1, duration: 0.4, ease: "power3.out" }, 0 + 0.62);
 
-  // The wheel is a 7-row strip (candidates twice, then the payoff), so the
-  // spin reads as a real roulette: five quick committed ticks that ease off,
-  // then the payoff lands on seqSettle — overshoot-free arrival (house style).
-  // One row is 100/7% of the strip.
-  tl.set('[data-part="stage-last-word-roulette-wheel"]', { yPercent: 0 }, 0);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 1 / 7, duration: 0.13, ease: "power1.in" }, settle - 1.30);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 2 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 1.12);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 3 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 0.95);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 4 / 7, duration: 0.12, ease: "power1.inOut" }, settle - 0.78);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 5 / 7, duration: 0.13, ease: "power1.out" }, settle - 0.60);
-  tl.to('[data-part="stage-last-word-roulette-wheel"]', { yPercent: -100 * 6 / 7, duration: 0.38, ease: "seqSettle" }, settle - 0.38);
+  // Tick rhythm: per row — the accent disc pops (committed, seqPop), the
+  // checkmark stroke DRAWS on, and the row copy brightens. Each draw ends
+  // 0.55s after the previous; the last finishes exactly at settle.
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-1 .rcp-chk-fill', { scale: 0 },
+    { scale: 1, duration: 0.25, ease: "seqPop" }, settle - 2.01);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-1 .rcp-chk-path',
+    { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, settle - 1.95);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-1 .rcp-chk-copy',
+    { opacity: 1, duration: 0.25, ease: "power2.out" }, settle - 1.96);
 
-  // Landing impact: the slot pops once (committed, no wobble)…
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-slot', { scale: 1 },
-    { scale: 1.035, duration: 0.12, ease: "power2.out" }, settle - 0.05);
-  tl.to('[data-part="stage-last-word-roulette-roulette"] .rcp-slot', { scale: 1, duration: 0.28, ease: "seqSettle" }, settle + 0.09);
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-2 .rcp-chk-fill', { scale: 0 },
+    { scale: 1, duration: 0.25, ease: "seqPop" }, settle - 1.46);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-2 .rcp-chk-path',
+    { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, settle - 1.40);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-2 .rcp-chk-copy',
+    { opacity: 1, duration: 0.25, ease: "power2.out" }, settle - 1.41);
 
-  // …the underline draws fast, and the glow breathes once and releases.
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-rule', { scaleX: 0 },
-    { scaleX: 1, duration: 0.32, ease: "power3.out" }, settle + 0.02);
-  tl.fromTo('[data-part="stage-last-word-roulette-roulette"] .rcp-glow', { opacity: 0 },
-    { opacity: 0.5, duration: 0.22, ease: "power2.out" }, settle - 0.02);
-  tl.to('[data-part="stage-last-word-roulette-roulette"] .rcp-glow', { opacity: 0.18, duration: 0.5, ease: "power2.inOut" }, settle + 0.24);
-})(tl, document.querySelector("[data-composition-id]"), 0, 5, "stage-last-word-roulette");
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-3 .rcp-chk-fill', { scale: 0 },
+    { scale: 1, duration: 0.25, ease: "seqPop" }, settle - 0.91);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-3 .rcp-chk-path',
+    { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, settle - 0.85);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-3 .rcp-chk-copy',
+    { opacity: 1, duration: 0.25, ease: "power2.out" }, settle - 0.86);
+
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-4 .rcp-chk-fill', { scale: 0 },
+    { scale: 1, duration: 0.25, ease: "seqPop" }, settle - 0.36);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-4 .rcp-chk-path',
+    { strokeDashoffset: 0, duration: 0.3, ease: "power2.out" }, settle - 0.30);
+  tl.to('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-item-4 .rcp-chk-copy',
+    { opacity: 1, duration: 0.25, ease: "power2.out" }, settle - 0.31);
+
+  // Completion: the bar sweeps under the title once everything is ticked.
+  tl.fromTo('[data-part="stage-checklist-cascade-checklist"] .rcp-chk-bar', { scaleX: 0 },
+    { scaleX: 1, duration: 0.4, ease: "power3.out" }, settle + 0.10);
+})(tl, document.querySelector("[data-composition-id]"), 0, 6, "stage-checklist-cascade");
 /*</seq-recipe>*/
 window.__timelines["recipe-demo"] = tl;
       tl.seek(0);

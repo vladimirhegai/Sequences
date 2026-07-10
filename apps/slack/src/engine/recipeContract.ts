@@ -934,14 +934,32 @@ export function recipeRetrievalScore(manifest: RecipeManifest, query: string): n
   return score;
 }
 
+/** Cut markdown to a budget at a paragraph boundary (never mid-sentence). */
+function trimMarkdownToBudget(markdown: string, budget: number): string {
+  if (markdown.length <= budget) return markdown;
+  const slice = markdown.slice(0, budget);
+  const paragraphEnd = slice.lastIndexOf("\n\n");
+  return (paragraphEnd > budget * 0.5 ? slice.slice(0, paragraphEnd) : slice).trimEnd() + "\n…";
+}
+
 /**
  * The planner-facing teaching block for retrieved recipes. Recipes are
  * host-instantiated proven patterns, so the instruction is deliberately
  * strong: when one matches the brief, declaring it is the DEFAULT — the
  * planner may decline only when it genuinely conflicts with the brief.
+ *
+ * `markdownBudget` bounds each recipe's doc inside the block: the skill
+ * context is a fixed window shared with blueprints/motion rules, and an
+ * unbounded recipe.md (they grow with every authored recipe) would push the
+ * craft reference past the final trim. Param slots + the declaration example
+ * are never trimmed — they are the executable part.
  */
-export function recipePlanningVocabulary(recipes: RecipeDefinition[]): string {
+export function recipePlanningVocabulary(
+  recipes: RecipeDefinition[],
+  options: { markdownBudget?: number } = {},
+): string {
   if (!recipes.length) return "";
+  const markdownBudget = options.markdownBudget ?? Infinity;
   const blocks = recipes.map((recipe) => {
     const params = recipe.manifest.params.map((param) => {
       const constraint =
@@ -966,7 +984,9 @@ export function recipePlanningVocabulary(recipes: RecipeDefinition[]): string {
     };
     return [
       `<recipe id="${recipe.manifest.id}">`,
-      recipe.markdown || recipe.manifest.title,
+      Number.isFinite(markdownBudget)
+        ? trimMarkdownToBudget(recipe.markdown || recipe.manifest.title, markdownBudget)
+        : recipe.markdown || recipe.manifest.title,
       "",
       `Param slots:`,
       ...params,
