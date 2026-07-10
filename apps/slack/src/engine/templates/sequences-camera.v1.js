@@ -1108,20 +1108,28 @@
       var landingRest = Math.min(0.18, holdDuration * 0.18);
       holdStart += landingRest;
       holdDuration = holdEnd - holdStart;
-      if (holdDuration < 0.3) return;
-      // A readable hold is not a freeze. Float the lens by only ~0.6% of the
-      // short frame edge and 0.35% in scale, then return to the exact blocking
-      // pose before the next route. The hash chooses a stable operated side;
-      // there is no random motion and the focal never leaves its anchor budget.
+      // A dwell is the audience's READING window. Floating the lens through it
+      // put every glyph in constant subpixel motion — measured on the
+      // motion-quality-verify-1 render as whole-frame edge ghosting between
+      // consecutive dwell frames (~38dB PSNR at "rest"), which H.264 turns
+      // into visible text shake. Short dwells therefore rest completely (a
+      // locked frame under 1.4s can never become a flagged quiet window), and
+      // only holds long enough to read as a stopped slide keep a drift.
+      if (holdDuration < 1.2) return;
+      // The remaining long-hold drift is TRANSLATE ONLY. The old 0.35% scale
+      // breathe re-rasterized every glyph radially each frame — the single
+      // worst text-shimmer source — while translate on the composited world
+      // reads as calm operated motion. The hash chooses a stable operated
+      // side; there is no random motion and the focal never leaves its anchor
+      // budget, returning to the exact blocking pose before the next route.
       var sign = hashUnit(scenePlan.sceneId + ":" + block.id) < 0.5 ? -1 : 1;
       var travel = Math.min(viewport.w, viewport.h) * 0.006 /
         Math.max(0.5, proxy.z || 1);
       var outDuration = holdDuration * 0.56;
       var backDuration = holdDuration - outDuration;
-      tween(timeline, proxy, { ox: 0, oy: 0, oz: 1 }, {
+      tween(timeline, proxy, { ox: 0, oy: 0 }, {
         ox: sign * travel,
         oy: -travel * 0.34,
-        oz: 1.0035,
         duration: outDuration,
         ease: "sine.inOut",
         onUpdate: apply,
@@ -1129,11 +1137,9 @@
       tween(timeline, proxy, {
         ox: sign * travel,
         oy: -travel * 0.34,
-        oz: 1.0035,
       }, {
         ox: 0,
         oy: 0,
-        oz: 1,
         duration: backDuration,
         ease: "sine.inOut",
         onUpdate: apply,

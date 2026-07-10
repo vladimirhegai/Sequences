@@ -593,15 +593,19 @@ describe("continuity + camera blocking browser runtime", () => {
       expect(landed.centerX).toBeLessThanOrEqual(1835);
       expect(landed.centerY).toBeGreaterThanOrEqual(85);
       expect(landed.centerY).toBeLessThanOrEqual(995);
+      // A short dwell is the audience's reading window: the lens now RESTS
+      // through it (no float, no scale breathe) so glyphs are not in constant
+      // subpixel motion — the measured "shaky text" source on the
+      // motion-quality-verify-1 render. Long merged holds keep their
+      // translate-only drift (proven by the merged-dwell test above).
       const livingDistance = Math.hypot(
         alive.centerX - landed.centerX,
         alive.centerY - landed.centerY,
       );
-      expect(livingDistance).toBeGreaterThan(0.25);
-      expect(livingDistance).toBeLessThan(10);
+      expect(livingDistance).toBeLessThan(0.25);
       expect(Math.abs(returned.centerX - landed.centerX)).toBeLessThan(0.25);
       expect(Math.abs(returned.centerY - landed.centerY)).toBeLessThan(0.25);
-      expect(new Set([opening.world, middle.world, landed.world, alive.world]).size).toBe(4);
+      expect(new Set([opening.world, middle.world]).size).toBe(2);
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

@@ -390,4 +390,84 @@ describe("camera blocking director", () => {
       entry.includes("above 0.018 normalized frame-diagonals/s")
     )).toBe(true);
   });
+
+  it("waives the subject's solo occupancy floor for ensemble phrases with a framingTarget", () => {
+    const storyboard = scenes();
+    const graph = resolveContinuityGraph(storyboard);
+    const plan = resolveCameraBlockingPlan(storyboard, graph);
+    const template = plan.scenes[0]!.phrases[0]!;
+    const framed = {
+      ...template,
+      id: "shot-1:ensemble-test:blocking",
+      phraseId: "ensemble-test",
+      framingTarget: { kind: "region" as const, id: "product-ui" },
+      framingOccupancy: { min: 0.1, preferred: 0.22, max: 0.42 },
+      occupancy: { min: 0.018, preferred: 0.055, max: 0.14 },
+      nextHandoff: undefined,
+    };
+    plan.scenes[0]!.phrases.push(framed);
+    const unframed = plan.scenes[1]!.phrases.find((block) => !block.framingTarget)!;
+    expect(unframed).toBeDefined();
+    const sampleFor = (block: typeof template) => ({
+      time: block.arrivalSec,
+      sceneId: block.sceneId,
+      phraseId: block.phraseId,
+      attention: { kind: "part" as const, id: block.target.id },
+      focal: {
+        found: true,
+        visibleFraction: 1,
+        // The runtime capped zoom for the ensemble context, so the subject
+        // sits well below its solo floor (the verify-1 recovery-cta class).
+        occupancyFraction: block.occupancy.min * 0.4,
+        centerX: block.arrivalPose.anchor.x * 1920,
+        centerY: block.arrivalPose.anchor.y * 1080,
+        width: 300,
+        height: 120,
+        speed: 0.01,
+        acceleration: 0.02,
+        jerk: 0.03,
+      },
+      independentMotionCount: 1,
+    });
+    const motion = {
+      version: 1,
+      advisory: true,
+      sampleHz: 8,
+      frame: { width: 1920, height: 1080 },
+      samples: [sampleFor(framed), sampleFor(unframed)],
+      reversals: [],
+      jerkMarkers: [],
+      quietWindows: [],
+      settleWindows: [],
+      scenes: [],
+      summary: {
+        sampleCount: 2,
+        focalFoundSamples: 2,
+        minimumVisibleFraction: 1,
+        meanVisibleFraction: 1,
+        minimumOccupancyFraction: 0.01,
+        meanOccupancyFraction: 0.02,
+        offframeSamples: 0,
+        tinyFocalSamples: 0,
+        peakSpeed: 0.01,
+        peakAcceleration: 0.02,
+        peakJerk: 0.03,
+        reversalCount: 0,
+        jerkMarkerCount: 0,
+        maxIndependentMotionCount: 1,
+        meanIndependentMotionCount: 1,
+        settleWindowCount: 0,
+        measuredSettleWindowCount: 0,
+        settledByWindowEndCount: 0,
+        quietWindowCount: 0,
+        maxQuietWindowSec: 0,
+      },
+      advisories: [],
+    } satisfies ContinuousMotionEvidenceV1;
+    const evidence = buildCameraBlockingEvidence(plan, graph, motion);
+    const framedLanding = evidence.landings.find((landing) => landing.blockId === framed.id)!;
+    const unframedLanding = evidence.landings.find((landing) => landing.blockId === unframed.id)!;
+    expect(framedLanding.occupancyInRange).toBe(true);
+    expect(unframedLanding.occupancyInRange).toBe(false);
+  });
 });

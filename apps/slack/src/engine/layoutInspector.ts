@@ -1762,8 +1762,8 @@ async function auditPrimaryMomentFocals(
   return issues;
 }
 
-/** Feature-on browser proof for the camera that actually ships. */
-async function auditCameraBlockingLandings(
+/** Feature-on browser proof for the camera that actually ships. Exported for tests. */
+export async function auditCameraBlockingLandings(
   page: import("puppeteer-core").Page,
   draft: DirectCompositionDraft,
   seekContent: (time: number) => Promise<void>,
@@ -1785,7 +1785,11 @@ async function auditCameraBlockingLandings(
     );
     if (sampleAt <= 0) continue;
     await seekContent(sampleAt);
-    const measured = await page.evaluate((payload: { sceneId: string; part: string }) => {
+    const measured = await page.evaluate((payload: {
+      sceneId: string;
+      part: string;
+      framing: { kind: "part" | "region"; id: string } | null;
+    }) => {
       const root = document.querySelector<HTMLElement>(
         "[data-composition-id][data-width][data-height]",
       );
@@ -1796,33 +1800,136 @@ async function auditCameraBlockingLandings(
         `[data-part="${CSS.escape(payload.part)}"]`,
       );
       if (!root || !target) {
-        return { missing: true, opacity: 0, visibleFraction: 0, occupancyFraction: 0 };
+        return {
+          missing: true,
+          opacity: 0,
+          visibleFraction: 0,
+          occupancyFraction: 0,
+          framingOccupancyFraction: -1,
+          framingCollapsed: true,
+        };
       }
       const frame = root.getBoundingClientRect();
+      const frameArea = Math.max(1, frame.width * frame.height);
+      const opacityCache = new Map<Element, number>();
+      const chainOpacity = (element: Element | null): number => {
+        if (!element) return 1;
+        const cached = opacityCache.get(element);
+        if (cached !== undefined) return cached;
+        const style = getComputedStyle(element);
+        const own = style.display === "none" || style.visibility === "hidden"
+          ? 0
+          : Number.parseFloat(style.opacity);
+        const value = (Number.isFinite(own) ? own : 1) * chainOpacity(element.parentElement);
+        opacityCache.set(element, value);
+        return value;
+      };
+      const visibleAreaOf = (rect: { left: number; top: number; right: number; bottom: number }) => {
+        const width = Math.max(0, Math.min(rect.right, frame.right) - Math.max(rect.left, frame.left));
+        const height = Math.max(0, Math.min(rect.bottom, frame.bottom) - Math.max(rect.top, frame.top));
+        return width * height;
+      };
       const rect = target.getBoundingClientRect();
-      let opacity = 1;
-      for (let node: Element | null = target; node; node = node.parentElement) {
-        const style = getComputedStyle(node);
-        if (style.display === "none" || style.visibility === "hidden") opacity = 0;
-        opacity *= Number.parseFloat(style.opacity) || 0;
-      }
-      const width = Math.max(0, Math.min(rect.right, frame.right) - Math.max(rect.left, frame.left));
-      const height = Math.max(0, Math.min(rect.bottom, frame.bottom) - Math.max(rect.top, frame.top));
+      const opacity = chainOpacity(target);
       const area = Math.max(0, rect.width * rect.height);
-      const visibleArea = width * height;
+      const visibleArea = visibleAreaOf(rect);
+      // Mirror the camera runtime's regionContentRect: an ensemble framing
+      // station is judged by the union of its painted/semantic content, not
+      // its raw placement rect, and a station whose only painted content IS
+      // the addressed subject collapses back to the subject's own contract.
+      let framingOccupancyFraction = -1;
+      let framingCollapsed = true;
+      const framingElement = payload.framing && scene
+        ? payload.framing.kind === "region"
+          ? scene.querySelector<HTMLElement>(`[data-region="${CSS.escape(payload.framing.id)}"]`)
+          : scene.querySelector<HTMLElement>(`[data-part="${CSS.escape(payload.framing.id)}"]`)
+        : null;
+      if (framingElement) {
+        const MEDIA = new Set(["IMG", "SVG", "VIDEO", "CANVAS", "PICTURE"]);
+        const nodes = [framingElement, ...Array.from(framingElement.querySelectorAll<HTMLElement>("*"))];
+        const prefersSemantic = Boolean(
+          framingElement.querySelector("[data-layout-important],[data-component],[data-part]"),
+        );
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+        for (const node of nodes) {
+          if (node.closest("[data-layout-ignore],[data-camera-overlay]")) continue;
+          if (node.matches(".cmp-scrim,.seq-whip-lens,[data-layout-decorative]")) continue;
+          const isSemantic = node.matches("[data-layout-important],[data-component],[data-part]");
+          const hasText = Array.from(node.childNodes).some((child) =>
+            child.nodeType === Node.TEXT_NODE && /\S/.test(child.textContent ?? ""),
+          );
+          const isMedia = MEDIA.has(node.tagName.toUpperCase());
+          if (prefersSemantic ? !(isSemantic || hasText || isMedia) : !(hasText || isMedia)) continue;
+          if (chainOpacity(node) < 0.35) continue;
+          const nodeRect = node.getBoundingClientRect();
+          if (nodeRect.width < 4 || nodeRect.height < 4) continue;
+          left = Math.min(left, nodeRect.left);
+          top = Math.min(top, nodeRect.top);
+          right = Math.max(right, nodeRect.right);
+          bottom = Math.max(bottom, nodeRect.bottom);
+        }
+        const union = right > left && bottom > top
+          ? { left, top, right, bottom, width: right - left, height: bottom - top }
+          : (() => {
+              const fallback = framingElement.getBoundingClientRect();
+              return {
+                left: fallback.left,
+                top: fallback.top,
+                right: fallback.right,
+                bottom: fallback.bottom,
+                width: fallback.width,
+                height: fallback.height,
+              };
+            })();
+        framingCollapsed =
+          Math.abs(union.left - rect.left) <= 4 &&
+          Math.abs(union.top - rect.top) <= 4 &&
+          Math.abs(union.width - rect.width) <= 4 &&
+          Math.abs(union.height - rect.height) <= 4;
+        framingOccupancyFraction = visibleAreaOf(union) / frameArea;
+      }
       return {
         missing: false,
         opacity,
         visibleFraction: area > 0 ? visibleArea / area : 0,
-        occupancyFraction: frame.width * frame.height > 0
-          ? visibleArea / (frame.width * frame.height)
-          : 0,
+        occupancyFraction: visibleArea / frameArea,
+        framingOccupancyFraction,
+        framingCollapsed,
       };
-    }, { sceneId: block.sceneId, part: block.target.id });
+    }, {
+      sceneId: block.sceneId,
+      part: block.target.id,
+      framing: block.framingTarget ?? null,
+    });
     const visible = !measured.missing && measured.opacity >= 0.35 && measured.visibleFraction >= 0.85;
-    const inRange = measured.occupancyFraction >= block.occupancy.min - 1e-6 &&
+    const subjectInRange = measured.occupancyFraction >= block.occupancy.min - 1e-6 &&
       measured.occupancyFraction <= block.occupancy.max + 1e-6;
+    // An ensemble phrase (declared framingTarget) is satisfied when the camera
+    // frames the contextual station inside ITS occupancy contract and the
+    // subject stays fully readable. The runtime deliberately caps zoom so the
+    // context remains delivery-safe, which can legitimately hold a compact
+    // subject below its solo floor; judging the subject's solo range there
+    // burned paid attempts on a host-owned decision (motion-quality-verify-1).
+    const ensembleInRange = Boolean(
+      block.framingTarget && block.framingOccupancy &&
+      measured.framingOccupancyFraction >= 0 && !measured.framingCollapsed &&
+      measured.framingOccupancyFraction >= block.framingOccupancy.min - 1e-6 &&
+      measured.framingOccupancyFraction <= block.framingOccupancy.max + 1e-6 &&
+      measured.occupancyFraction <= block.occupancy.max + 1e-6,
+    );
+    const inRange = subjectInRange || ensembleInRange;
     if (visible && inRange) continue;
+    const framingNote = block.framingTarget && block.framingOccupancy
+      ? measured.framingCollapsed
+        ? ` (framing station "${block.framingTarget.id}" collapses to the subject, so the subject's own range binds)`
+        : `; ensemble framing "${block.framingTarget.id}" measured ` +
+          `${(Math.max(0, measured.framingOccupancyFraction) * 100).toFixed(1)}% against ` +
+          `${(block.framingOccupancy.min * 100).toFixed(1)}–` +
+          `${(block.framingOccupancy.max * 100).toFixed(1)}%`
+      : "";
     issues.push({
       code: "camera_blocking_landing",
       severity: "warning",
@@ -1835,7 +1942,7 @@ async function auditCameraBlockingLandings(
         `${Math.round(measured.visibleFraction * 100)}% visibility and ` +
         `${(measured.occupancyFraction * 100).toFixed(1)}% frame occupancy; expected ` +
         `>=85% visibility and ${(block.occupancy.min * 100).toFixed(1)}–` +
-        `${(block.occupancy.max * 100).toFixed(1)}% occupancy.`,
+        `${(block.occupancy.max * 100).toFixed(1)}% occupancy${framingNote}.`,
       fixHint:
         "Keep the blocking target visible through its dwell and adjust its station bounds or " +
         "component scale so the measured occupancy lands inside the declared range.",
@@ -3074,7 +3181,7 @@ export async function inspectDirectComposition(
       // after the loop used the final seek's DOM state and, more importantly,
       // mapped every compact `span` selector to the first span in the document.
       for (const issue of await enrichRepairEvidence(page, sampleIssues)) {
-        const key = `${issue.repairSelector ?? issue.selector} ${issue.text ?? ""}`;
+        const key = `${issue.repairSelector ?? issue.selector}\0${issue.text ?? ""}`;
         const existing = contrastWorst.get(key);
         if (!existing || (issue.contrast?.ratio ?? 999) < (existing.contrast?.ratio ?? 999)) {
           contrastWorst.set(key, issue);

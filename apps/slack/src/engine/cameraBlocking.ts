@@ -471,8 +471,14 @@ export function buildCameraBlockingEvidence(
       measured,
       visibleFraction: round(sample?.focal.visibleFraction ?? 0, 4),
       occupancyFraction: round(occupancy, 4),
+      // An ensemble phrase (declared framingTarget) lets the runtime cap zoom
+      // so the contextual station stays delivery-safe; the subject may then
+      // legitimately sit below its solo floor. Continuous-motion samples only
+      // track the subject, so the floor is waived rather than mis-charged.
       occupancyInRange: measured &&
-        occupancy >= block.occupancy.min * 0.9 && occupancy <= block.occupancy.max * 1.1,
+        (block.framingTarget
+          ? occupancy <= block.occupancy.max * 1.1
+          : occupancy >= block.occupancy.min * 0.9 && occupancy <= block.occupancy.max * 1.1),
       anchorError: round(anchorError, 4),
       speed: round(sample?.focal.speed ?? 0, 4),
       dwellSec: round(block.dwell.readableSec),
