@@ -18,6 +18,7 @@ import {
   downscaleSupersampledRender,
   ensureFfmpegOnPath,
   findBrowserExecutable,
+  renderProducerOverrides,
   resolveSupersamplePlan,
   supersampleJobFields,
 } from "./render.ts";
@@ -1585,11 +1586,7 @@ export async function renderDirectComposition(
       entryFile: "index.html",
       logger: options.quiet ? undefined : producer.createConsoleLogger?.("info"),
       ...(supersample ? supersampleJobFields(supersample) : {}),
-      producerConfig: producer.resolveConfig({
-        browserGpuMode: "software",
-        forceScreenshot: true,
-        ...(browserPath ? { chromePath: browserPath } : {}),
-      }),
+      producerConfig: producer.resolveConfig(renderProducerOverrides(browserPath)),
     });
   const onProgress = options.quiet
     ? undefined

@@ -56,6 +56,8 @@ function round(value: number): number {
 export const DEVELOPMENT_SEC_PER_INTRODUCTION = 0.9;
 /** The last introduction must land by this fraction of the scene window. */
 export const LAST_INTRODUCTION_MAX_FRACTION = 0.65;
+/** A judge-facing cold open must establish its first declared subject promptly. */
+export const OPENING_SUBJECT_MAX_SEC = 1.25;
 /** Reading floor per word for typed copy, and its clamp bounds. */
 export const READING_SEC_PER_WORD = 0.3;
 export const READING_MIN_SEC = 1.2;
@@ -361,6 +363,19 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
     // landing late is the genre's signature, not a defect. A dense kind in
     // the same slot stays judged.
     const introductions = sceneIntroductionTimes(scene);
+    if (
+      isFirstScene &&
+      introductions.length &&
+      introductions[0]! > scene.startSec + OPENING_SUBJECT_MAX_SEC
+    ) {
+      findings.push(
+        `storyboard/opening-subject: first scene "${scene.id}" keeps its first declared ` +
+          `subject hidden until ${introductions[0]!.toFixed(1)}s (` +
+          `${(introductions[0]! - scene.startSec).toFixed(1)}s into the film) — establish the ` +
+          `focal product object within ${OPENING_SUBJECT_MAX_SEC.toFixed(2)}s, then develop it; ` +
+          `a prolonged empty void becomes a near_blank_film browser failure and reads as dead air`,
+      );
+    }
     const isShortFinalResolve =
       scene === storyboard[storyboard.length - 1] &&
       scene.durationSec <= FINAL_RESOLVE_ALLOWANCE_SEC &&

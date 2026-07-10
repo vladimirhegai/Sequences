@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeContinuousMotionSnapshots,
+  continuousMotionAttentionAt,
   continuousMotionSampleTimes,
   type ContinuousMotionRawSnapshotV1,
 } from "../src/engine/continuousMotion.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
+import { resolveFilmDirectionScore } from "../src/engine/directionScore.ts";
 
 const scene: DirectScene = {
   id: "proof",
@@ -126,6 +128,50 @@ describe("continuous motion evidence", () => {
       4,
     );
     expect(evidence.summary.peakSpeed).toBeGreaterThan(0.02);
+  });
+
+  it("prefers phrase-directed regions over a scene's generic focal part", () => {
+    const routed: DirectScene = {
+      ...scene,
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "pan",
+          toRegion: "ci-station",
+          startSec: 0,
+          durationSec: 2,
+        }],
+      },
+      moments: [{
+        ...scene.moments![0]!,
+        atSec: 1,
+        title: "Camera pans through CI",
+        change: "Camera pans to CI",
+        motionIntent: "camera pan",
+      }],
+    };
+    const attention = continuousMotionAttentionAt(
+      [routed],
+      resolveFilmDirectionScore([routed]),
+      1,
+    );
+    expect(attention?.attention).toEqual({ kind: "region", id: "ci-station" });
+  });
+
+  it("does not derive jerk from boundary micro-samples", () => {
+    const evidence = analyzeContinuousMotionSnapshots(
+      [scene],
+      [
+        snapshot(0, 100),
+        snapshot(0.25, 110),
+        snapshot(0.26, 180),
+        snapshot(0.5, 190),
+      ],
+      { width: 1000, height: 1000 },
+      4,
+    );
+    expect(evidence.summary.jerkMarkerCount).toBe(0);
   });
 
   it("measures focal continuity, reversals, jerk, settle, and independent voices", () => {

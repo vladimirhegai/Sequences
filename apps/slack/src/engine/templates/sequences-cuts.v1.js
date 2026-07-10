@@ -489,18 +489,21 @@
     timeline.set(fromPart, { opacity: 0 }, start);
     timeline.set(bridgeA, { opacity: 1 }, start);
     timeline.set(toPart, { opacity: 0 }, Math.max(0, start - 0.001));
-    // The morph-twin overlap hoisted across the scene boundary: A dies while
-    // B is already visible on the same flight path.
+    // The morph-twin overlap STRADDLES the scene boundary: the shared element
+    // begins changing before the cut instead of waiting until the underlying
+    // scene swap. This matters when A/B geometry already matches — geometry
+    // alone then carries no outgoing anticipation, but the crossfade still
+    // hands the viewer's eye continuously across the boundary.
     tween(timeline, bridgeA, { opacity: 1 }, {
       opacity: 0,
-      duration: total * 0.3,
+      duration: total * 0.5,
       ease: "power2.in",
-    }, start + total * 0.35);
+    }, start + total * 0.12);
     tween(timeline, bridgeB, { opacity: 0 }, {
       opacity: 1,
-      duration: total * 0.3,
+      duration: total * 0.5,
       ease: "power2.out",
-    }, start + total * 0.35);
+    }, start + total * 0.12);
     timeline.to(proxy, {
       p: 1,
       duration: total,

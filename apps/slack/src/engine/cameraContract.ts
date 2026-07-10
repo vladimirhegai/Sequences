@@ -139,6 +139,15 @@ export const FOCUS_BLUR_MAX_PX = 10;
 export const FOCUS_BLUR_DEFAULT_PX = 6;
 
 /**
+ * Minimum destination dwell when a substantial final reframe would otherwise
+ * land exactly on the scene cut. Kept below the moment binder's 0.45s look-back
+ * so existing camera evidence remains bindable; the resolver fills the freed
+ * tail with its gentle destination drift rather than a frozen frame.
+ */
+export const CAMERA_LANDING_RESERVE_SEC = 0.42;
+const CAMERA_MIN_RETIMED_TRAVEL_SEC = 0.35;
+
+/**
  * Curated motion-graphics ease vocabulary registered by the camera runtime at
  * script load, usable by both the camera plan and authored GSAP beats.
  */
@@ -433,6 +442,74 @@ export function normalizeStoryboardCameraIntent(
       ? { depth3d: true as const }
       : {}),
   };
+}
+
+/**
+ * Canonicalize post-retime paths before the resolver turns them into segments.
+ * Connective drift/hold is subordinate to decisive full moves: if a planner or
+ * pacing retime leaves connective motion spanning a full move, trim it to the
+ * nearest free interval (or drop a sub-150ms remnant). Also restore chronological
+ * ordering after retimers mutate `startSec` in place. Probe 7 otherwise squeezed
+ * a 2s parallax pass into 300ms because an earlier array entry had been delayed
+ * past it, producing the film's largest jerk spike.
+ */
+export function normalizeConnectiveCameraSchedule(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path?.length) return scene;
+    const decorated = path.map((move, index) => ({ move, index }));
+    const fullMoves = decorated
+      .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move))
+      .sort((a, b) => a.move.startSec - b.move.startSec || a.index - b.index);
+    let trimmed = 0;
+    let dropped = 0;
+    const adjusted = decorated.flatMap(({ move, index }) => {
+      if (move.move !== "drift" && move.move !== "hold") return [{ move, index }];
+      let start = move.startSec;
+      let end = move.startSec + move.durationSec;
+      for (const full of fullMoves) {
+        const fullStart = full.move.startSec;
+        const fullEnd = full.move.startSec + full.move.durationSec;
+        if (end <= fullStart + 1e-6 || start >= fullEnd - 1e-6) continue;
+        if (start < fullStart - 1e-6) {
+          end = fullStart;
+          break;
+        }
+        start = fullEnd;
+      }
+      const durationSec = round(end - start);
+      if (durationSec < 0.15) {
+        dropped += 1;
+        return [];
+      }
+      const changed = Math.abs(start - move.startSec) > 1e-6 ||
+        Math.abs(durationSec - move.durationSec) > 1e-6;
+      if (changed) trimmed += 1;
+      return [{
+        index,
+        move: changed ? { ...move, startSec: round(start), durationSec } : move,
+      }];
+    });
+    const ordered = adjusted.sort((a, b) =>
+      a.move.startSec - b.move.startSec || a.index - b.index
+    );
+    const reordered = ordered.some((entry, index) => entry.index !== index);
+    if (!trimmed && !dropped && !reordered) return scene;
+    const note =
+      `canonicalized camera schedule after retiming (` +
+      `${trimmed} connective trim(s), ${dropped} sub-150ms drop(s), ` +
+      `${reordered ? "chronological reorder" : "order already chronological"})`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera!, path: ordered.map((entry) => entry.move) },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
 }
 
 /**
@@ -1098,6 +1175,127 @@ export function liftCameraEnergyPeak(
     const note =
       `lifted the ${move.move} zoom from ${target.zoom.toFixed(2)} to ${HIGH_ENERGY_PUSH_ZOOM} ` +
       `to give the ${durationSec.toFixed(0)}s film its required high-energy peak`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera, path },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+/**
+ * Satisfy an explicit rack-focus brief from camera intent the planner already
+ * supplied. A focus pull is a modifier, not a new action: when no move carries
+ * one, attach it to the strongest existing non-whip move that can name a real
+ * part (its own `toPart`, otherwise the scene focal). No move/part means the
+ * request remains a genuine planner deficit. This runs inside the storyboard
+ * normalizers' atomic commit/revert boundary.
+ */
+export function topUpRequiredRackFocus(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  if (storyboard.some((scene) => scene.camera?.path.some((move) => move.focus))) {
+    return { storyboard, normalized };
+  }
+  const preferredMoves = new Set<CameraMoveStyle>([
+    "track-to-anchor",
+    "push-in",
+    "pull-back",
+    "parallax-pass",
+    "orbit-lite",
+    "orbit",
+    "dive",
+  ]);
+  let best: {
+    sceneIndex: number;
+    moveIndex: number;
+    part: string;
+    score: number;
+  } | undefined;
+  storyboard.forEach((scene, sceneIndex) => {
+    (scene.camera?.path ?? []).forEach((move, moveIndex) => {
+      if (!CAMERA_FULL_MOVES.has(move.move) || move.move === "whip") return;
+      const part = move.toPart ?? scene.spatialIntent?.focalPart;
+      if (!part) return;
+      const arrival = move.startSec + move.durationSec;
+      const primaryNearArrival = (scene.moments ?? []).some((moment) =>
+        moment.importance === "primary" && Math.abs(moment.atSec - arrival) <= 1,
+      );
+      const score = Number(Boolean(move.toPart)) * 6 +
+        Number(preferredMoves.has(move.move)) * 3 +
+        Number(primaryNearArrival) * 2 +
+        sceneIndex / Math.max(1, storyboard.length);
+      if (!best || score > best.score) best = { sceneIndex, moveIndex, part, score };
+    });
+  });
+  if (!best) return { storyboard, normalized };
+  const target = best;
+  const scenes = storyboard.map((scene, sceneIndex) => {
+    if (sceneIndex !== target.sceneIndex || !scene.camera) return scene;
+    const selected = scene.camera.path[target.moveIndex]!;
+    const path = scene.camera.path.map((move, moveIndex) =>
+      moveIndex === target.moveIndex
+        ? { ...move, focus: { part: target.part, blurMaxPx: 6 } }
+        : move
+    );
+    const note =
+      `attached the required rack-focus pull to the ${selected.move} landing on ` +
+      `"${target.part}"`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera, path },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+/**
+ * Let the audience actually see the destination of a final camera move.
+ * Planner paths frequently spend the entire remaining scene travelling and
+ * arrive on the cut, which makes a spatial journey read like blank connective
+ * motion. Shorten only a substantial, non-dive final full move that ends on
+ * the scene boundary; the camera resolver turns the reclaimed tail into its
+ * normal low-amplitude destination drift. No cue, target, scene duration, or
+ * ordering changes, and short impact moves remain untouched.
+ */
+export function reserveFinalCameraLanding(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    if (!scene.camera?.path.length) return scene;
+    const sceneEnd = scene.startSec + scene.durationSec;
+    let candidateIndex = -1;
+    let candidateEnd = -Infinity;
+    scene.camera.path.forEach((move, index) => {
+      if (!CAMERA_FULL_MOVES.has(move.move) || move.move === "dive") return;
+      const end = move.startSec + move.durationSec;
+      if (end > candidateEnd) {
+        candidateIndex = index;
+        candidateEnd = end;
+      }
+    });
+    if (candidateIndex < 0 || Math.abs(candidateEnd - sceneEnd) > 0.03) return scene;
+    const selected = scene.camera.path[candidateIndex]!;
+    if (selected.durationSec < CAMERA_LANDING_RESERVE_SEC + CAMERA_MIN_RETIMED_TRAVEL_SEC) {
+      return scene;
+    }
+    const durationSec = round(sceneEnd - CAMERA_LANDING_RESERVE_SEC - selected.startSec);
+    if (durationSec < CAMERA_MIN_RETIMED_TRAVEL_SEC || durationSec >= selected.durationSec - 0.01) {
+      return scene;
+    }
+    const path = scene.camera.path.map((move, index) =>
+      index === candidateIndex ? { ...move, durationSec } : move
+    );
+    const target = selected.toPart ?? selected.toRegion ?? "declared framing";
+    const note =
+      `reserved ${CAMERA_LANDING_RESERVE_SEC.toFixed(2)}s of destination dwell after the ` +
+      `${selected.move} landing on "${target}"`;
     normalized.push(`scene "${scene.id}": ${note}`);
     return {
       ...scene,

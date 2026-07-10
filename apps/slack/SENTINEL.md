@@ -119,6 +119,7 @@ rung) · **advisory** (never blocks).
 | --- | --- | --- | --- | --- | --- |
 | camera | `camera.world-plane` | L1 scaffold | blocking | `camera_region_missing`, `camera_part_missing` | authorReliability |
 | components | `components.root` | L1 scaffold | blocking | `component_root_missing`, `component_beat_unbound` | authorReliability |
+| layout | `layout.scene-stack` | L1 scaffold | det-repair | — (host-locks root size, absolute scene stacking, clip containment, and overlay geometry while leaving art direction authorable) | sceneSlots.browser |
 | interactions | `normalize.host-plan-islands` | L2 normalize | det-repair | — (prevents island contract-parse errors) | authorReliability |
 | interactions | `normalize.source-bindings` | L2 normalize | det-repair | — (reconciles near-miss data-part/region) | authorReliability |
 | normalize | `normalize.camera-budget-clamp` | L2 normalize | det-repair | — (prevents `pacing/camera-budget`) | pacingAudit |
@@ -127,6 +128,9 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.component-trim` | L2 normalize | det-repair | — (prevents `components/complexity`: an over-count by 1–2 drops the fewest-beat surface binding no moment/interaction/camera-cut focal; ≥3 over or nothing safely droppable stays a finding) | componentContract |
 | normalize | `normalize.framing-floor-topup` | L2 normalize | det-repair | — (prevents the framing-density floor error when short by EXACTLY one: adds one gentle establishing push-in on the longest single-framing shot with content to frame; short by ≥2 stays a finding) | pacingAudit |
 | normalize | `normalize.camera-energy-lift` | L2 normalize | det-repair | — (prevents `camera/energy`: a 12s+ peak-less film with a push-in/pull-back/dive at zoom [1.15,1.3) lifts the largest to 1.3; a peak-less film with only pans/drifts stays a finding) | cameraContract |
+| normalize | `normalize.rack-focus-topup` | L2 normalize | det-repair | — (when a brief explicitly requires rack focus, attaches it to the strongest existing non-whip full move with an already-declared part target; never invents a move or target, so a plan without either stays blocking) | cameraContract |
+| normalize | `normalize.camera-landing-reserve` | L2 normalize | det-repair | — (a substantial non-dive final reframe that lands exactly on the cut arrives 0.42s earlier; the resolver fills the tail with destination drift so the audience gets readable dwell without a camera freeze) | cameraContract |
+| normalize | `normalize.camera-connective-yield` | L2 normalize | det-repair | — (after pacing retimes, drift/hold yields to decisive full moves, sub-150ms remnants drop, and camera paths return to chronological order; prevents crushed moves and manufactured jerk) | cameraContract |
 | normalize | `normalize.root-data-start` | L2 normalize | det-repair | — (inserts `data-start="0"` on a model-authored composition root that omits it; idempotent) | authorReliability |
 | normalize | `normalize.timeramp-retime` | L2 normalize | det-repair | — (prevents ramp motivation/solvability vetoes) | directComposition |
 | normalize | `normalize.dive-window` | L2 normalize | det-repair | — (derives `dive` in/hold/out legs from the beats on its target; a beat-less dive degrades to push-in) | cameraDive |
@@ -138,7 +142,10 @@ rung) · **advisory** (never blocks).
 | normalize | `normalize.auto-grade-shift` | L2 normalize | det-repair | — (HOST-derives ONE MD4 scene `gradeShift`/film from a primary moment naming a temperature GLM narrates but leaves untyped; feeds normalize.grade-shift) | motionAutoStyle |
 | normalize | `normalize.grade-shift` | L2 normalize | det-repair | — (drops an undisciplined MD4 scene `gradeShift`; a surviving one is `grade-shift` moment evidence) | directComposition |
 | normalize | `normalize.morph-twin-reconcile` | L2 normalize | det-repair | — (prevents morph-to-undeclared-twin vetoes) | directComposition |
-| normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites malformed `fromTo(t, vars, <number>)` to `.to` only after an earlier opposite-state initialization; entrance-looking, mixed, and cue-less direction stays blocking) | authorReliability |
+| normalize | `normalize.embedded-development-fold` | L2 normalize | det-repair | — (folds a fully contained findings-retry scene back into its parent only when it reuses the parent's exact components/focal and adds only in-window beats/moments plus hold/drift; any creative delta stays blocking) | authorReliability |
+| normalize | `normalize.gsap-call-shape` | L2 normalize | det-repair | — (rewrites malformed `fromTo(t, vars, <number>)` to `.to` after an earlier opposite-state initialization or for a visible/settled ≤50ms pin; entrance-looking, mixed, and ordinary-duration lone-final direction stays blocking) | authorReliability |
+| normalize | `normalize.slot-script-envelope` | L2 normalize | det-repair | — (binds only mechanically certain slot envelopes/aliases/positions to the host timeline, root, and absolute film clock; visual vars and durations remain authored) | sceneSlots |
+| normalize | `normalize.inline-source-syntax` | L2 normalize | det-repair | — (quotes bare CSS `var()` values only in executable scripts and removes only unbound decorative SVG ellipsis paths; ambiguous/load-bearing syntax stays blocking) | authorReliability |
 | normalize | `normalize.moment-demote-last-resort` | L2 normalize | det-repair | — (pre-throw salvage: unbound PRIMARY moments demote to supporting; run records `published-degraded`) | directComposition |
 | normalize | `normalize.camera-sparse-zoom` | L2 normalize | det-repair | — (repairs `camera_framed_sparse`: bounded zoom-in `sqrt(0.18/fraction)`, clamp 1.0..2.8, on the framing move, marked `framingCorrection` so browser QA keeps auditing the zoomed landing; adopted only if the finding clears, no new `camera_framed_clipped`, penalty strictly drops; the adopted storyboard replaces `lockedStoryboard`) | framingCoverage.browser |
 | layout | `normalize.focal-late-sample` | L2 normalize | det-repair | — (measurement honesty: `spatial_focal_invisible` re-samples ≤2 later instants in the same shot before reporting — a late-entering focal is choreography, not absence; a subject visible at NO sample still fires) | layoutInspector |
@@ -154,6 +161,7 @@ rung) · **advisory** (never blocks).
 | components | `components.complexity` | L3 static | blocking | `components/complexity` | componentContract |
 | coherence | `cuts.coherence` | L3 static | advisory-late | `cuts/coherence` | cutContract |
 | exits | `exits.discipline` | L3 static | advisory-late | `components/exit` | componentContract |
+| pacing | `pacing.opening-subject` | L3 static | blocking | `storyboard/opening-subject` | pacingAudit |
 | pacing | `pacing.holds` | L3 static | advisory-late | `pacing/` | pacingAudit |
 | moments | `moments.plan` | L3 static | blocking | `storyboard/moments`, `moment_unbound` | storyboardMoments |
 | liveness | `liveness` | L3 static | blocking | `motion/` | motionDensity |
@@ -187,7 +195,7 @@ recorded `published-degraded`, never clean.
 
 `reconcileUndeclaredMorphTargets`, `trimOverBudgetComponents`,
 `normalizeCameraBudget`, `topUpFramingFloor`, `liftCameraEnergyPeak`,
-`delayConflictingCameraMoves`, `retimeCameraOverInteractions`,
+`topUpRequiredRackFocus`, `reserveFinalCameraLanding`, `delayConflictingCameraMoves`, `retimeCameraOverInteractions`,
 `spaceStackedCameraMoves`, `delayEarlySwapBeats`, and
 `stretchMarginalPacingMisses` run in
 `parseStoryboardResponse` **before** `validateStoryboardPlan` and commit
@@ -210,9 +218,17 @@ with its own per-scene convergence check: a retime commits only when the ramp
 provably resolves AND covers a declared moment. Every normalization is logged
 `[storyboard] sentinel-normalized: …`, recorded in telemetry
 (`morph-twin-reconcile` / `component-trim` / `camera-budget-clamp` /
-`framing-floor-topup` / `camera-energy-lift` / `camera-move-delay` /
+`framing-floor-topup` / `camera-energy-lift` / `rack-focus-topup` /
+`camera-landing-reserve` / `camera-move-delay` /
 `pacing-stretch` / `timeramp-retime` tags), and rendered into STORYBOARD.md as
 `- Sentinel normalized: …` lines.
+
+`normalizeConnectiveCameraSchedule` runs after those timing normalizers and
+before final validation. It is intentionally outside the atomic creative-plan
+comparison: it changes no full move, cue target, or scene duration; it only
+makes connective drift/hold yield to decisive travel and restores chronological
+path order. Its `camera-connective-yield` telemetry and storyboard note expose
+every trim, drop, or reorder.
 
 ### The findings-retry is a minimal edit, not a redesign
 

@@ -47,6 +47,24 @@ interface ProducerModule {
   resolveConfig: (config: Record<string, unknown>) => unknown;
 }
 
+/**
+ * Production capture uses the host GPU whenever Chrome can reach it.
+ * SwiftShader is the producer's compatibility fallback and is documented as
+ * 5–50× slower; forcing it made a 28s film calibrate at 1.7s per frame and
+ * time out after sixteen minutes. `auto` probes once, selects the native GPU
+ * when available, and safely falls back. Capture mode remains owned by the
+ * producer's compiled compatibility hints (alpha still forces screenshot).
+ */
+export function renderProducerOverrides(
+  browserPath?: string,
+): Record<string, unknown> {
+  return {
+    browserGpuMode: "auto",
+    forceScreenshot: false,
+    ...(browserPath ? { chromePath: browserPath } : {}),
+  };
+}
+
 const FORMAT_EXT: Record<RenderFormat, string> = {
   mp4: ".mp4",
   webm: ".webm",
@@ -57,7 +75,7 @@ const FORMAT_EXT: Record<RenderFormat, string> = {
 /**
  * Supersampled MP4 rendering (probe-audit render shakiness, 2026-07-08).
  *
- * The producer captures software-GPU screenshots at deviceScaleFactor 1, so
+ * A 1× screenshot at deviceScaleFactor 1 can
  * slow sub-pixel motion — letter drift, camera push-ins, 0.3px/frame pans —
  * quantizes to whole pixels and stair-steps in the MP4 while looking smooth
  * in a live browser (Chrome's compositor antialiases live, the screenshot
@@ -68,7 +86,7 @@ const FORMAT_EXT: Record<RenderFormat, string> = {
  * shading. The 4K master is encoded near-lossless so the downscale encode is
  * the only quality decision.
  *
- * Cost: a 4K software-GPU frame buffer is ~4× the memory and capture time, so
+ * Cost: a 4K frame buffer is ~4× the memory and capture time, so
  * this is GATED to the HD tier (`quality === "high"`, the Render HD button)
  * by default for Railway. `SLACK_SEQUENCES_RENDER_SUPERSAMPLE=1` forces it on
  * for every tier (local verification), `=0` disables it everywhere. Any
@@ -336,11 +354,7 @@ export async function renderProject(
         entryFile: "index.html",
         logger,
         ...(supersample ? supersampleJobFields(supersample) : {}),
-        producerConfig: producer.resolveConfig({
-          browserGpuMode: "software",
-          forceScreenshot: true,
-          ...(browserPath ? { chromePath: browserPath } : {}),
-        }),
+        producerConfig: producer.resolveConfig(renderProducerOverrides(browserPath)),
       });
     const onProgress = (progressJob: { progress: number }, message: string): void => {
       if (options.quiet) return;

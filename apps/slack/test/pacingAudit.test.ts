@@ -17,6 +17,7 @@ import {
   MOVE_SETTLE_GAP_SEC,
   PACING_TOLERANCE_SEC,
   MAX_PACING_STRETCH_SEC,
+  OPENING_SUBJECT_MAX_SEC,
 } from "../src/engine/pacingAudit.ts";
 import { CAMERA_FULL_MOVES } from "../src/engine/cameraContract.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
@@ -135,6 +136,37 @@ describe("auditPacing camera budget", () => {
     ]);
     expect(findings.some((finding) => finding.includes("3 whips"))).toBe(true);
     expect(auditPacing([whipScene("a", 0), whipScene("b", 5)])).toEqual([]);
+  });
+});
+
+describe("auditPacing opening subject", () => {
+  const opening = (atSec: number): DirectScene => scene({
+    id: "cold-hook",
+    startSec: 0,
+    durationSec: 4,
+    components: [{ version: 1, id: "trace-chip", kind: "button", role: "hero" }],
+    beats: [beat("cold-hook", {
+      id: "chip-birth",
+      component: "trace-chip",
+      kind: "open",
+      atSec,
+      durationSec: 0.8,
+    })],
+  });
+
+  it("blocks Probe 6's prolonged empty cold open before source authoring", () => {
+    const findings = auditPacing([opening(2.8)]);
+    expect(findings.some((finding) =>
+      finding.startsWith("storyboard/opening-subject:") && finding.includes("2.8s")
+    )).toBe(true);
+  });
+
+  it("allows the subject to establish inside the opening window", () => {
+    expect(
+      auditPacing([opening(OPENING_SUBJECT_MAX_SEC)]).some((finding) =>
+        finding.startsWith("storyboard/opening-subject:")
+      ),
+    ).toBe(false);
   });
 });
 

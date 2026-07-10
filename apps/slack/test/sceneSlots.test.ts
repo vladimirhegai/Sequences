@@ -6,6 +6,7 @@ import {
   assembleSlotComposition,
   attributeFindingsToScenes,
   extractSceneSlots,
+  normalizeSceneSlotScript,
 } from "../src/engine/sceneSlots.ts";
 import {
   authorSlotDraft,
@@ -123,8 +124,12 @@ describe("assembleSlotComposition", () => {
     // injected BEFORE the model's film style so the model may extend it but
     // positioning never depends on it.
     expect(html).toContain('<style id="sequences-slot-stage">');
-    expect(html).toContain("#root{position:relative;width:1920px;height:1080px;overflow:hidden}");
-    expect(html).toContain(".scene{position:absolute;inset:0;opacity:0}");
+    expect(html).toContain(
+      "#root{position:relative!important;width:1920px!important;height:1080px!important;overflow:hidden!important}",
+    );
+    expect(html).toContain(
+      ".scene{position:absolute!important;inset:0!important;box-sizing:border-box;opacity:0}",
+    );
     expect(html.indexOf("sequences-slot-stage")).toBeLessThan(html.indexOf(".hero{font-size:96px"));
     // Host-owned visibility: reveal at data-start, clear at window end, for
     // every scene — emitted AFTER the authored scene blocks so host sets win
@@ -167,6 +172,9 @@ describe("assembleSlotComposition", () => {
       bareFromTo: 1,
       pseudoTimeline: 2,
       arrowEnvelope: 0,
+      timePosition: 0,
+      dataAttribute: 0,
+      localPosition: 0,
     });
   });
 
@@ -194,6 +202,85 @@ describe("assembleSlotComposition", () => {
     expect(result.html).toContain('tl.to(".x"');
     expect(result.html).not.toContain("(tl) =>");
     expect(result.scriptRepairs.arrowEnvelope).toBe(2);
+  });
+
+  it("binds a two-argument slot envelope to the host composition root", () => {
+    const result = normalizeSceneSlotScript([
+      "(tl, root) => {",
+      "  const chip = root.querySelector('[data-part=\"chip\"]');",
+      "  tl.to(chip, { opacity: 1 }, 4.2);",
+      "}",
+    ].join("\n"), { startSec: 4, durationSec: 4 });
+
+    expect(result.script).toContain(
+      'const root = document.querySelector("[data-composition-id]");',
+    );
+    expect(result.script).toContain("root.querySelector");
+    expect(result.script).not.toContain("(tl, root) =>");
+    expect(result.repairs.arrowEnvelope).toBe(1);
+  });
+
+  it("binds the Probe 4 window.__tl wrapper to the real host timeline", () => {
+    const result = normalizeSceneSlotScript([
+      "(tl => {",
+      "  tl.fromTo('.card', { opacity: 0 }, { opacity: 1, duration: .5 }, 7.1);",
+      "})(window.__tl);",
+    ].join("\n"));
+
+    expect(result.script).toContain("})(tl);");
+    expect(result.script).not.toContain("window.__tl");
+    expect(result.repairs.pseudoTimeline).toBe(1);
+  });
+
+  it("moves Probe 4's misplaced time keys into GSAP's position argument", () => {
+    const result = normalizeSceneSlotScript([
+      "tl.fromTo(card, { opacity: 0 }, " +
+        "{ opacity: 1, duration: .7, ease: 'power3.out', time: .2 }, 0);",
+      "tl.to(card, { innerText: 'Resolved', duration: .6, time: 17.4 }, 0);",
+    ].join("\n"), { startSec: 14.9, durationSec: 4.9 });
+
+    expect(result.script).not.toMatch(/\btime\s*:/);
+    expect(result.script).toContain("}, .2)");
+    expect(result.script).toContain("}, 17.4)");
+    expect(result.repairs.timePosition).toBe(2);
+    expect(result.repairs.localPosition).toBe(0);
+  });
+
+  it("converts authored data-state CSS tweens into discrete GSAP attributes", () => {
+    const result = normalizeSceneSlotScript([
+      "tl.to(btn, { 'data-state': 'loading' }, 25.3);",
+      "tl.set(btn, { 'data-state': 'success' }, 26.1);",
+    ].join("\n"), { startSec: 24.8, durationSec: 4.5 });
+
+    expect(result.script).toContain("tl.set(btn, { attr: { 'data-state': 'loading' } }, 25.3)");
+    expect(result.script).toContain("tl.set(btn, { attr: { 'data-state': 'success' } }, 26.1)");
+    expect(result.repairs.dataAttribute).toBe(2);
+  });
+
+  it("rebases an unmistakably scene-local slot onto the film timeline", () => {
+    const result = normalizeSceneSlotScript([
+      "tl.fromTo(pane, { opacity: 0 }, { opacity: 1, duration: .6 }, 0);",
+      "tl.fromTo(rows, { y: 18 }, { y: 0, duration: .4, stagger: .12 }, .3);",
+    ].join("\n"), { startSec: 4.9, durationSec: 5 });
+
+    expect(result.script).toContain("4.9 + (0)");
+    expect(result.script).toContain("4.9 + (.3)");
+    expect(result.repairs.localPosition).toBe(2);
+  });
+
+  it("does not rebase absolute scene timing or a deliberate absolute pre-roll", () => {
+    const absolute = normalizeSceneSlotScript(
+      "tl.fromTo(pane, { opacity: 0 }, { opacity: 1, duration: .6 }, 7.1);",
+      { startSec: 4.9, durationSec: 5 },
+    );
+    const preRoll = normalizeSceneSlotScript(
+      "tl.fromTo(pane, { opacity: 0 }, { opacity: 1, duration: .6 }, 4.8);",
+      { startSec: 4.9, durationSec: 5 },
+    );
+
+    expect(absolute.repairs.localPosition).toBe(0);
+    expect(preRoll.repairs.localPosition).toBe(0);
+    expect(preRoll.script).toContain("}, 4.8)");
   });
 
   it("reports scenes whose interior or script is missing", () => {

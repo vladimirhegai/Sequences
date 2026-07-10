@@ -112,6 +112,24 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "→ these codes as the L3 gate. Never labeled 'impossible' again while the " +
       "model authors the interiors.",
   },
+  {
+    id: "layout.scene-stack",
+    group: "layout",
+    layer: "scaffold",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/sceneSlots.browser.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-4: the authored film stylesheet loaded " +
+      "after the slot chassis and redefined `.scene` as position:relative. Every " +
+      "shot collapsed into a 116px grid row at y=580, which made camera targets, " +
+      "the CTA, and root-relative interaction geometry appear independently " +
+      "broken. slotStageStyle now locks only host-owned root sizing, absolute " +
+      "scene stacking, clip containment, and overlay geometry with important " +
+      "declarations; display, padding, background, and opacity remain authorable. " +
+      "The real-browser proof loads adversarial model CSS after the host floor.",
+  },
 
   // ── L2 normalize — deterministic repair, zero paid attempts ─────────────────
   {
@@ -336,6 +354,59 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "STORYBOARD.md.",
   },
   {
+    id: "normalize.rack-focus-topup",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-1: three consecutive storyboard " +
+      "attempts supplied a rich multi-station camera path but omitted the " +
+      "brief-required rack-focus modifier. topUpRequiredRackFocus attaches the " +
+      "focus pull to the strongest existing non-whip full move with an already " +
+      "declared part target (its toPart, otherwise the scene focal); it never " +
+      "invents a move or target, and a plan without either stays blocking. " +
+      "Telemetry tag: rack-focus-topup. Visible in STORYBOARD.md.",
+  },
+  {
+    id: "normalize.camera-landing-reserve",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-1 visual audit: multi-station pans " +
+      "and the final push-in landed exactly on the next cut/film end, so the " +
+      "audience saw travel but no readable destination. reserveFinalCameraLanding " +
+      "shortens only a substantial, non-dive final full move ending on the " +
+      "scene boundary by 0.42s; the ordinary resolver fills that tail with " +
+      "destination drift, preserving continuous movement. Targets, cues, scene " +
+      "timing, short impact moves, explicit holds, and dive envelopes stay " +
+      "unchanged. Telemetry tag: camera-landing-reserve. Visible in STORYBOARD.md.",
+  },
+  {
+    id: "normalize.camera-connective-yield",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-7 temporal audit: pacing retimers " +
+      "changed startSec values without restoring path order, while connective " +
+      "drift could overlap a decisive full move. The resolver consequently " +
+      "squeezed a declared 2s parallax pass into 0.3s and produced the film's " +
+      "largest jerk cluster. normalizeConnectiveCameraSchedule makes drift/hold " +
+      "yield to full moves, drops only remnants below 150ms, and chronologically " +
+      "sorts the path after every retime. Full moves and creative targets remain " +
+      "unchanged. Telemetry tag: camera-connective-yield. Visible in STORYBOARD.md.",
+  },
+  {
     id: "normalize.root-data-start",
     group: "normalize",
     layer: "normalize",
@@ -533,6 +604,27 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "Runs inside the atomic commit-or-revert (a twin that would breach " +
       "components/complexity reverts). Telemetry tag: morph-twin-reconcile.",
   },
+  {
+    id: "normalize.embedded-development-fold",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-2: a findings rescue supplied the " +
+      "missing metric development at the correct seconds but wrapped it in a " +
+      "new scene fully embedded inside the existing metric scene. Generic " +
+      "contiguous timing rebasing moved the patch later and recreated the same " +
+      "moment gap. mergeEmbeddedDevelopmentScenes folds only a contained scene " +
+      "whose exact component ids/kinds and focal part already exist on its " +
+      "parent, whose cues remain inside the parent, and whose only camera work " +
+      "is hold/drift. New surfaces, interactions, plugins, recipes, premium " +
+      "cuts, timed modifiers, full reframes, or escaped cues keep the ordinary " +
+      "blocking path. Telemetry tag: embedded-development-fold. Visible in " +
+      "STORYBOARD.md.",
+  },
 
   {
     id: "normalize.gsap-call-shape",
@@ -547,12 +639,14 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "<number>)` call (toVars omitted) makes GSAP treat the position number as " +
       "the to-object and the compile throws 'Cannot create property parent on " +
       "number' — a runtime_bind_exception and a burned paid attempt for a " +
-      "call-shape typo. repairMalformedFromToCalls rewrites only a settled `.to` " +
-      "state when the same selector has an earlier opposite-state initialization; " +
-      "hidden/off-position could mean entrance or exit, so it and every mixed, " +
-      "cue-less, or lone-final call stays blocking rather than " +
-      "silently reversing motion. Only string-literal targets with a flat vars " +
-      "object match (conservative). " +
+      "call-shape typo. repairMalformedFromToCalls rewrites a settled `.to` " +
+      "state when the same selector has an earlier opposite-state initialization. " +
+      "The 2026-07-10 Vectorline probe proved a second unambiguous shape: a " +
+      "visible/settled <=50ms pin is also `.to`, because it has no perceptible " +
+      "entrance/exit and preserves its sole declared state at the declared cue. " +
+      "Hidden/off-position, mixed, and ordinary-duration lone-final calls stay " +
+      "blocking rather than silently reversing motion. Only string-literal " +
+      "targets with a flat vars object match (conservative). " +
       "It PREVENTS the runtime.invariants row's runtime_bind_exception.",
   },
   {
@@ -571,11 +665,32 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "the wrapper received undefined and threw on tl.fromTo. The later " +
       "direction-live-b probe wrapped every otherwise-valid slot in an uninvoked " +
       "(tl) => {...} expression (including a const-assigned variant), making all " +
-      "authored motion a silent no-op. " +
-      "normalizeSceneSlotScript binds only those impossible shapes to the existing " +
-      "host-owned tl or unwraps the complete redundant arrow envelope; it preserves " +
-      "all targets, vars, positions, and locally declared fromTo helpers. Telemetry " +
-      "tag: slot-script-envelope.",
+      "authored motion a silent no-op. Probes 4 and 6 added the equally mechanical " +
+      "forms: window.__tl, two-argument `(tl, root) => {...}` envelopes, top-level " +
+      "`time` variables used as GSAP positions, data-* names inside JS vars, and " +
+      "later-scene cues expressed in unmistakably scene-local time. " +
+      "normalizeSceneSlotScript binds or rewrites only those complete shapes to the " +
+      "host-owned timeline/root/absolute film clock; it preserves targets, visual " +
+      "vars, durations, and locally declared fromTo helpers. Telemetry tag: " +
+      "slot-script-envelope.",
+  },
+  {
+    id: "normalize.inline-source-syntax",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/authorReliability.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-6: one otherwise usable source put a " +
+      "bare CSS `var(--positive)` token in a GSAP object and another used a " +
+      "literal ellipsis as decorative SVG path geometry. The first cannot parse " +
+      "as JavaScript; the second is not SVG geometry. Executable inline scripts " +
+      "now quote only bare var() values, leaving styles/JSON untouched. Invalid " +
+      "ellipsis paths are removed only when decorative; any path carrying a part, " +
+      "component, or important-layout binding stays blocking. Telemetry tags: " +
+      "bare-css-var and invalid-svg-placeholder.",
   },
   {
     id: "normalize.moment-demote-last-resort",
@@ -952,6 +1067,22 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "(command-palette/modal/dropdown/context-menu) whose open windows overlap in " +
       "one station without the first closing/swapping/morphing. Overlay-over-BASE " +
       "is the designed pattern and never flagged. Late-attempt polish demotion.",
+  },
+  {
+    id: "pacing.opening-subject",
+    group: "pacing",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["storyboard/opening-subject"],
+    promptCostChars: 0,
+    test: "test/pacingAudit.test.ts",
+    addedBecause:
+      "2026-07-10 session26-camera-probe-6: a 4s cold open withheld its first " +
+      "declared product subject until 2.8s, so browser QA correctly rejected the " +
+      "film as near-blank only after source authoring. auditPacing now requires " +
+      "the first declared subject within 1.25s. This story-structure failure is " +
+      "always blocking and intentionally does not share the advisory-late pacing/ " +
+      "prefix used for marginal hold arithmetic.",
   },
   {
     id: "pacing.holds",

@@ -13,11 +13,14 @@ import {
   findingSignature,
   HOST_PLAN_ISLAND_IDS,
   injectMissingLivenessBeats,
+  mergeEmbeddedDevelopmentScenes,
   reconcileCameraWorldPlanes,
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
   reconcileContractBindings,
   repairMalformedFromToCalls,
+  quoteBareCssVarsInInlineScripts,
+  stripInvalidSvgPathPlaceholders,
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
   stripAllHostPlanIslands,
@@ -38,6 +41,67 @@ import { validateInteractionContract } from "../src/engine/interactionContract.t
 import { analyzeMotionDensity } from "../src/engine/motionDensity.ts";
 
 const roots: string[] = [];
+
+describe("embedded development scene repair", () => {
+  const component = (id: string, kind: string) => ({ version: 1, id, kind });
+  const parent = () => ({
+    id: "metric-payoff",
+    startSec: 18.5,
+    durationSec: 8,
+    components: [component("metric-number", "stat-card"), component("ring", "progress-ring")],
+    beats: [{ version: 1, id: "count", component: "metric-number", kind: "count", atSec: 19.5 }],
+    moments: [{ id: "count-start", atSec: 19.5 }],
+    spatialIntent: { focalPart: "metric-number" },
+  });
+  const continuation = (overrides: Record<string, unknown> = {}) => ({
+    id: "metric-develop",
+    startSec: 22.4,
+    durationSec: 3.5,
+    components: [component("metric-number", "stat-card"), component("ring", "progress-ring")],
+    beats: [
+      { version: 1, id: "label-swap", component: "metric-number", kind: "swap", atSec: 23 },
+      { version: 1, id: "ring-pulse", component: "ring", kind: "highlight", atSec: 24.5 },
+    ],
+    moments: [
+      { id: "label-develop", atSec: 23 },
+      { id: "ring-develop", atSec: 24.5 },
+    ],
+    camera: { path: [{ move: "drift", startSec: 22.4, durationSec: 1.5 }] },
+    interactions: [],
+    plugins: [],
+    recipes: [],
+    spatialIntent: { focalPart: "metric-number" },
+    ...overrides,
+  });
+
+  it("folds an embedded duplicate-surface beat patch into its containing scene", () => {
+    const cta = { id: "cta", startSec: 26.5, durationSec: 6 };
+    const result = mergeEmbeddedDevelopmentScenes([parent(), continuation(), cta]);
+    expect(result.storyboard).toHaveLength(2);
+    expect(result.normalized[0]).toContain('"metric-develop" into "metric-payoff"');
+    const merged = result.storyboard[0] as Record<string, unknown>;
+    expect((merged.beats as Array<{ id: string }>).map((beat) => beat.id))
+      .toEqual(["count", "label-swap", "ring-pulse"]);
+    expect((merged.moments as Array<{ id: string }>).map((moment) => moment.id))
+      .toEqual(["count-start", "label-develop", "ring-develop"]);
+    expect(merged.sentinelNormalizations).toEqual([expect.stringContaining("2 beat(s)")]);
+  });
+
+  it("does not fold creative changes or cues outside the containing window", () => {
+    const cases = [
+      continuation({ components: [component("new-chart", "chart")] }),
+      continuation({ camera: { path: [{ move: "push-in", startSec: 23, durationSec: 1 }] } }),
+      continuation({ interactions: [{ id: "click" }] }),
+      continuation({ spatialIntent: { focalPart: "other" } }),
+      continuation({ moments: [{ id: "late", atSec: 27 }] }),
+      continuation({ cut: { style: "morph" } }),
+      continuation({ gradeShift: { atSec: 23, toGrade: "warm" } }),
+    ];
+    for (const child of cases) {
+      expect(mergeEmbeddedDevelopmentScenes([parent(), child]).normalized).toEqual([]);
+    }
+  });
+});
 
 afterEach(() => {
   while (roots.length) {
@@ -1430,6 +1494,18 @@ describe("repairMalformedFromToCalls — the s5-interactions call-shape class", 
     expect(result.html).toBe(source);
   });
 
+  it("replays the Vectorline live failure as a settled micro-pin .to()", () => {
+    const source =
+      `tl.fromTo("[data-part='hero-stat-card']", ` +
+      `{ y: 0, opacity: 1, duration: 0.01, ease: "power3.out" }, 26.1);`;
+    const result = repairMalformedFromToCalls(source);
+    expect(result).toMatchObject({ repairs: 1, toRepairs: 1, ambiguous: 0 });
+    expect(result.html).toBe(
+      `tl.to("[data-part='hero-stat-card']", ` +
+      `{ y: 0, opacity: 1, duration: 0.01, ease: "power3.out" }, 26.1);`,
+    );
+  });
+
   it("leaves mixed/cue-less direction ambiguous and blocking", () => {
     const source =
       'tl.fromTo("#mixed", { opacity: 1, y: 40, duration: 0.6 }, 1.2);\n' +
@@ -1448,6 +1524,37 @@ describe("repairMalformedFromToCalls — the s5-interactions call-shape class", 
     const result = repairMalformedFromToCalls(wellFormed);
     expect(result.repairs).toBe(0);
     expect(result.html).toBe(wellFormed);
+  });
+});
+
+describe("Probe 6 mechanical source syntax repairs", () => {
+  it("quotes bare CSS var() values only inside executable inline scripts", () => {
+    const source = [
+      "<style>.button{color:var(--positive)}</style>",
+      '<script type="application/json">{"css":"var(--positive)"}</script>',
+      "<script>",
+      "tl.to(button, { borderColor: var(--positive), color: var( --accent-soft ) }, 24.5);",
+      "</script>",
+    ].join("\n");
+    const result = quoteBareCssVarsInInlineScripts(source);
+
+    expect(result.repairs).toBe(2);
+    expect(result.html).toContain(".button{color:var(--positive)}");
+    expect(result.html).toContain('{"css":"var(--positive)"}');
+    expect(result.html).toContain('borderColor: "var(--positive)"');
+    expect(result.html).toContain('color: "var(--accent-soft)"');
+  });
+
+  it("removes an unbound SVG ellipsis path but preserves binding-bearing paths", () => {
+    const source = [
+      '<svg><path d="M0,100 C...,120 100" fill="url(#fill)"/>',
+      '<path data-part="hero-line" d="M0,100 C...,120 100"/></svg>',
+    ].join("");
+    const result = stripInvalidSvgPathPlaceholders(source);
+
+    expect(result.repairs).toBe(1);
+    expect(result.html).not.toContain('fill="url(#fill)"');
+    expect(result.html).toContain('data-part="hero-line"');
   });
 });
 

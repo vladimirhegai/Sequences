@@ -349,6 +349,7 @@ export function analyzeContinuousMotionSnapshots(
     independentMotionCount: 0,
   }));
   const velocities: Array<Vector | undefined> = new Array(samples.length);
+  const velocitySteps: Array<number | undefined> = new Array(samples.length);
   const accelerations: Array<Vector | undefined> = new Array(samples.length);
   const reversals: ContinuousMotionMarkerV1[] = [];
   const jerkMarkers: ContinuousMotionMarkerV1[] = [];
@@ -375,9 +376,19 @@ export function analyzeContinuousMotionSnapshots(
       ) * FOCAL_SCALE_WEIGHT / dt,
     };
     velocities[index] = velocity;
+    velocitySteps[index] = dt;
     sample.focal.speed = round(Math.hypot(velocity.x, velocity.y, velocity.z));
     const previousVelocity = velocities[index - 1];
     if (!previousVelocity) continue;
+    // Exact cue/settle/cut boundaries can sit only 10ms apart. First and
+    // second derivatives across those nonuniform micro-steps explode even for
+    // smooth GSAP travel, so keep velocity evidence but require at least half
+    // an ordinary sampling interval for acceleration/jerk.
+    const minimumDerivativeStep = 0.5 / Math.max(1, sampleHz);
+    if (
+      dt < minimumDerivativeStep ||
+      (velocitySteps[index - 1] ?? 0) < minimumDerivativeStep
+    ) continue;
     const acceleration = {
       x: (velocity.x - previousVelocity.x) / dt,
       y: (velocity.y - previousVelocity.y) / dt,
@@ -507,7 +518,7 @@ export function analyzeContinuousMotionSnapshots(
   };
 }
 
-function attentionAt(
+export function continuousMotionAttentionAt(
   scenes: DirectScene[],
   score: ReturnType<typeof resolveFilmDirectionScore>,
   time: number,
@@ -520,14 +531,15 @@ function attentionAt(
   if (!scene) return undefined;
   const scoreScene = score.scenes.find((entry) => entry.sceneId === scene.id);
   const phrase = phraseAt(scoreScene?.phrases ?? [], time);
-  const part = phrase?.attention?.part ?? scene.spatialIntent?.focalPart;
-  const attention = part
-    ? { kind: "part" as const, id: part }
+  const attention = phrase?.attention?.part
+    ? { kind: "part" as const, id: phrase.attention.part }
     : phrase?.attention?.region
       ? { kind: "region" as const, id: phrase.attention.region }
       : phrase?.attention?.selector
         ? { kind: "selector" as const, id: phrase.attention.selector }
-        : undefined;
+        : scene.spatialIntent?.focalPart
+          ? { kind: "part" as const, id: scene.spatialIntent.focalPart }
+          : undefined;
   return { scene, ...(phrase ? { phrase } : {}), ...(attention ? { attention } : {}) };
 }
 
@@ -557,7 +569,7 @@ export async function captureContinuousMotionEvidence(
   const score = resolveFilmDirectionScore(scenes);
   const raw: ContinuousMotionRawSnapshotV1[] = [];
   for (const time of times) {
-    const directed = attentionAt(scenes, score, time);
+    const directed = continuousMotionAttentionAt(scenes, score, time);
     if (!directed) continue;
     const snapshot = await page.evaluate(
       (payload: {

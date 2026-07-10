@@ -170,4 +170,49 @@ describe("resolveFilmDirectionScore", () => {
     )!;
     expect(directionAccentSlot(crowdedPhrase, 0.7)).toBeUndefined();
   });
+
+  it("routes camera attention through the move carrying the cue, not the prior arrival", () => {
+    const route = scene({
+      id: "route",
+      startSec: 0,
+      durationSec: 6,
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "pan", toRegion: "pr", startSec: 0, durationSec: 2.5 },
+          { version: 1, move: "pan", toRegion: "ci", startSec: 2.5, durationSec: 2 },
+          { version: 1, move: "pan", toRegion: "chat", startSec: 4.5, durationSec: 1.5 },
+        ],
+      },
+      moments: [
+        {
+          version: 1,
+          id: "ci-cue",
+          sceneId: "route",
+          atSec: 3,
+          title: "Camera pans to CI",
+          visualState: "CI fills the frame",
+          change: "Camera pans into the CI station",
+          motionIntent: "camera pan",
+          importance: "primary",
+        },
+        {
+          version: 1,
+          id: "chat-cue",
+          sceneId: "route",
+          atSec: 4.5,
+          title: "Camera starts toward chat",
+          visualState: "Chat becomes the destination",
+          change: "Camera pans toward chat",
+          motionIntent: "camera pan",
+          importance: "supporting",
+        },
+      ],
+    });
+    const score = resolveFilmDirectionScore([route]);
+    expect(directionPhraseForMoment(score, "route", "ci-cue")?.attention)
+      .toEqual({ region: "ci" });
+    expect(directionPhraseForMoment(score, "route", "chat-cue")?.attention)
+      .toEqual({ region: "chat" });
+  });
 });

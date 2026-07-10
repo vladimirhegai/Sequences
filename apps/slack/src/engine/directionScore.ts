@@ -343,6 +343,24 @@ function chooseMomentAction(
   const ordered = [...candidates].sort((a, b) => {
     const preferredDelta = Number(b.system === preferred) - Number(a.system === preferred);
     if (preferredDelta) return preferredDelta;
+    // A camera cue often names what is happening DURING travel rather than
+    // its later arrival. Prefer the preferred-system action actually carrying
+    // the cue over the move that happened to finish nearest it; at a shared
+    // boundary, the newly starting move wins via start-distance below. This
+    // keeps attention moving forward through multi-station routes instead of
+    // snapping back to the station the camera just left (Vectorline probe 1).
+    const active = (action: DirectionActionV1): number => Number(
+      action.system === preferred &&
+      moment.atSec >= action.startSec - 0.001 &&
+      moment.atSec <= action.endSec + 0.001,
+    );
+    const activeDelta = active(b) - active(a);
+    if (activeDelta) return activeDelta;
+    if (active(a) && active(b)) {
+      const startDelta = Math.abs(a.startSec - moment.atSec) -
+        Math.abs(b.startSec - moment.atSec);
+      if (startDelta) return startDelta;
+    }
     // A full-frame grade or an entry cut is already a large authored action;
     // when the moment did not name another owner, it commands the cue.
     const majorDelta = Number(["grade", "cut"].includes(b.system)) -

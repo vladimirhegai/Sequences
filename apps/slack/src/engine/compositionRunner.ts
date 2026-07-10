@@ -53,8 +53,11 @@ import {
   injectCameraRuntimeTag,
   liftCameraEnergyPeak,
   normalizeStoryboardCameraIntent,
+  normalizeConnectiveCameraSchedule,
+  reserveFinalCameraLanding,
   resolveCameraPlan,
   sceneScopes,
+  topUpRequiredRackFocus,
 } from "./cameraContract.ts";
 import {
   CINEMA_KIT_FILE,
@@ -3421,11 +3424,14 @@ export function ensureRuntimeScriptOrdering(source: string): { html: string; cha
  * "Cannot create property 'parent' on number '…'" — a runtime_bind_exception
  * (and the whole paid attempt) spent on a call-shape typo (the
  * sentinel-s5-interactions probe class, 2026-07-06). The remaining vars do not
- * reveal which object was omitted. The only safe rewrite currently proven is
- * `.to`: visible/settled vars after the same selector was explicitly initialized
- * to an opposite state. Hidden/off-position could be either an entrance `.from`
- * or an exit `.to`, so it stays blocking too. Only a string-literal target and
- * a flat vars object are considered.
+ * reveal which object was omitted. The safe rewrites currently proven are
+ * `.to`: (1) visible/settled vars after the same selector was explicitly
+ * initialized to an opposite state, or (2) a <=50ms visible/settled pin. The
+ * latter is not a perceptible entrance/exit; it is the exact Vectorline live
+ * probe shape (`{y:0,opacity:1,duration:0.01}`) and preserves the only declared
+ * state at the declared position. Hidden/off-position could still be either
+ * an entrance `.from` or an exit `.to`, so it stays blocking. Only a
+ * string-literal target and a flat vars object are considered.
  */
 export function repairMalformedFromToCalls(
   source: string,
@@ -3483,27 +3489,35 @@ export function repairMalformedFromToCalls(
       const state = classifyState(vars);
       let direction: "from" | "to" | undefined;
       if (state === "to") {
+        const duration = /(?:^|[,\s])duration\s*:\s*(-?\d*\.?\d+)/i.exec(
+          vars.slice(1, -1),
+        )?.[1];
+        if (duration !== undefined && Number(duration) >= 0 && Number(duration) <= 0.05) {
+          direction = "to";
+        }
         // A settled state is safe as `.to` only when this same selector was
         // explicitly initialized earlier to an opposite state. This is the
         // exact s5 failure shape; a lone opacity:1 object remains ambiguous.
-        const before = source.slice(0, offset);
-        const escapedTarget = regexpEscape(target);
-        const candidates: Array<{ index: number; vars: string }> = [];
-        for (const match of before.matchAll(
-          new RegExp(`\\.(?:set|to)\\(\\s*${escapedTarget}\\s*,\\s*(\\{[^{}]*\\})`, "g"),
-        )) {
-          candidates.push({ index: match.index, vars: match[1]! });
+        if (!direction) {
+          const before = source.slice(0, offset);
+          const escapedTarget = regexpEscape(target);
+          const candidates: Array<{ index: number; vars: string }> = [];
+          for (const match of before.matchAll(
+            new RegExp(`\\.(?:set|to)\\(\\s*${escapedTarget}\\s*,\\s*(\\{[^{}]*\\})`, "g"),
+          )) {
+            candidates.push({ index: match.index, vars: match[1]! });
+          }
+          for (const match of before.matchAll(
+            new RegExp(
+              `\\.fromTo\\(\\s*${escapedTarget}\\s*,\\s*\\{[^{}]*\\}\\s*,\\s*(\\{[^{}]*\\})`,
+              "g",
+            ),
+          )) {
+            candidates.push({ index: match.index, vars: match[1]! });
+          }
+          const prior = candidates.sort((a, b) => b.index - a.index)[0];
+          if (prior && classifyState(prior.vars) === "from") direction = "to";
         }
-        for (const match of before.matchAll(
-          new RegExp(
-            `\\.fromTo\\(\\s*${escapedTarget}\\s*,\\s*\\{[^{}]*\\}\\s*,\\s*(\\{[^{}]*\\})`,
-            "g",
-          ),
-        )) {
-          candidates.push({ index: match.index, vars: match[1]! });
-        }
-        const prior = candidates.sort((a, b) => b.index - a.index)[0];
-        if (prior && classifyState(prior.vars) === "from") direction = "to";
       }
       if (!direction) {
         ambiguous += 1;
@@ -3516,6 +3530,61 @@ export function repairMalformedFromToCalls(
     },
   );
   return { html, repairs, fromRepairs, toRepairs, ambiguous };
+}
+
+/**
+ * Models occasionally paste CSS custom-property syntax directly into a GSAP
+ * vars object (`borderColor: var(--positive)`). `var` is a JavaScript keyword,
+ * so the inline script cannot parse. Inside JavaScript the only meaningful
+ * representation of a CSS `var(...)` value is its string form. Restrict the
+ * rewrite to inline executable scripts; styles and JSON islands are untouched.
+ */
+export function quoteBareCssVarsInInlineScripts(
+  source: string,
+): { html: string; repairs: number } {
+  let repairs = 0;
+  const html = source.replace(
+    /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    (block, attrs: string, body: string) => {
+      if (/\bsrc\s*=/i.test(attrs) || /\btype\s*=\s*(["'])application\/json\1/i.test(attrs)) {
+        return block;
+      }
+      const normalized = body.replace(
+        /(:\s*)var\(\s*(--[A-Za-z0-9_-]+)\s*\)(?=\s*[,}])/g,
+        (_match, prefix: string, token: string) => {
+          repairs += 1;
+          return `${prefix}"var(${token})"`;
+        },
+      );
+      return `<script${attrs}>${normalized}</script>`;
+    },
+  );
+  return { html, repairs };
+}
+
+/**
+ * Remove only decorative SVG path tags whose `d` contains a literal ellipsis
+ * placeholder. Browsers reject `C...` as geometry and emit a runtime error.
+ * A path carrying a binding or important-layout marker stays blocking because
+ * removing it could erase promised evidence.
+ */
+export function stripInvalidSvgPathPlaceholders(
+  source: string,
+): { html: string; repairs: number } {
+  let repairs = 0;
+  const html = source.replace(/<path\b[^>]*>/gi, (tag) => {
+    const d = htmlAttr(tag, "d");
+    if (
+      !d ||
+      !/(?:\.\.\.|…)/.test(d) ||
+      /\b(?:data-part|data-component|data-layout-important)\b/i.test(tag)
+    ) {
+      return tag;
+    }
+    repairs += 1;
+    return "";
+  });
+  return { html, repairs };
 }
 
 function ensureRootDataStart(html: string): { html: string; repaired: boolean } {
@@ -3648,6 +3717,22 @@ export function applyDeterministicSourceRepairs(
     html = rootTiming.html;
     recordSentinelNormalization("root-data-start", 1);
     process.stderr.write("[author] inserted root data-start=\"0\"\n");
+  }
+  const cssVars = quoteBareCssVarsInInlineScripts(html);
+  if (cssVars.repairs) {
+    html = cssVars.html;
+    recordSentinelNormalization("bare-css-var", cssVars.repairs);
+    process.stderr.write(
+      `[author] quoted ${cssVars.repairs} bare CSS var() value(s) inside inline JavaScript\n`,
+    );
+  }
+  const svgPlaceholders = stripInvalidSvgPathPlaceholders(html);
+  if (svgPlaceholders.repairs) {
+    html = svgPlaceholders.html;
+    recordSentinelNormalization("invalid-svg-placeholder", svgPlaceholders.repairs);
+    process.stderr.write(
+      `[author] removed ${svgPlaceholders.repairs} decorative SVG path placeholder(s) with invalid geometry\n`,
+    );
   }
   const visibilityTweens = normalizeGsapDisplayVisibilityTweens(html);
   if (visibilityTweens.repairs) {
@@ -4898,6 +4983,137 @@ export function normalizeWorldLayout(
   return entries;
 }
 
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Record<string, unknown> =>
+        Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)
+      )
+    : [];
+}
+
+/**
+ * Rescue a findings retry that expresses an in-shot development patch as a
+ * new scene embedded inside the existing scene's authored time window.
+ *
+ * The fold is intentionally closed-world: the embedded scene may only reuse
+ * the containing scene's exact component ids/kinds and focal part, add
+ * in-window beats/moments, and carry hold/drift camera. Any new surface,
+ * interaction, plugin, recipe, full reframe, or escaped cue makes it a real
+ * creative scene and leaves it to ordinary contiguous rebasing/validation.
+ */
+export function mergeEmbeddedDevelopmentScenes(
+  input: unknown[],
+): { storyboard: unknown[]; normalized: string[] } {
+  const storyboard: unknown[] = [];
+  const normalized: string[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !storyboard.length) {
+      storyboard.push(item);
+      continue;
+    }
+    const current = item as Record<string, unknown>;
+    const previous = storyboard.at(-1);
+    if (!previous || typeof previous !== "object" || Array.isArray(previous)) {
+      storyboard.push(item);
+      continue;
+    }
+    const parent = previous as Record<string, unknown>;
+    const parentStart = Number(parent.startSec);
+    const parentDuration = Number(parent.durationSec);
+    const childStart = Number(current.startSec);
+    const childDuration = Number(current.durationSec);
+    const parentEnd = parentStart + parentDuration;
+    const childEnd = childStart + childDuration;
+    const parentComponents = recordArray(parent.components);
+    const childComponents = recordArray(current.components);
+    const parentKinds = new Map(parentComponents.map((component) => [
+      String(component.id ?? ""),
+      String(component.kind ?? ""),
+    ]));
+    const childBeats = recordArray(current.beats);
+    const childMoments = recordArray(current.moments);
+    const childMoves = recordArray(
+      current.camera && typeof current.camera === "object" && !Array.isArray(current.camera)
+        ? (current.camera as Record<string, unknown>).path
+        : undefined,
+    );
+    const parentFocal = parent.spatialIntent && typeof parent.spatialIntent === "object" &&
+        !Array.isArray(parent.spatialIntent)
+      ? String((parent.spatialIntent as Record<string, unknown>).focalPart ?? "")
+      : "";
+    const childFocal = current.spatialIntent && typeof current.spatialIntent === "object" &&
+        !Array.isArray(current.spatialIntent)
+      ? String((current.spatialIntent as Record<string, unknown>).focalPart ?? "")
+      : "";
+    const childCutStyle = current.cut && typeof current.cut === "object" && !Array.isArray(current.cut)
+      ? String((current.cut as Record<string, unknown>).style ?? "")
+      : "";
+    const hasTimedModifier = (key: "timeRamp" | "gradeShift"): boolean => {
+      const modifier = current[key];
+      return Boolean(
+        modifier && typeof modifier === "object" && !Array.isArray(modifier) &&
+        Number.isFinite(Number((modifier as Record<string, unknown>).atSec)),
+      );
+    };
+    const empty = (key: string): boolean => recordArray(current[key]).length === 0;
+    const contained = Number.isFinite(parentStart) && Number.isFinite(parentDuration) &&
+      Number.isFinite(childStart) && Number.isFinite(childDuration) &&
+      childStart > parentStart + 0.05 && childEnd <= parentEnd + 0.05;
+    const reusesSurfaces = childComponents.length > 0 && childComponents.every((component) => {
+      const id = String(component.id ?? "");
+      return Boolean(id) && parentKinds.get(id) === String(component.kind ?? "");
+    });
+    const inParentWindow = (entry: Record<string, unknown>): boolean => {
+      const atSec = Number(entry.atSec);
+      return Number.isFinite(atSec) && atSec >= childStart - 0.01 && atSec <= parentEnd + 0.01;
+    };
+    const beatsReuseSurfaces = childBeats.length > 0 && childBeats.every((beat) =>
+      parentKinds.has(String(beat.component ?? "")) && inParentWindow(beat)
+    );
+    const momentsStayInside = childMoments.every(inParentWindow);
+    const connectiveCameraOnly = childMoves.every((move) =>
+      move.move === "hold" || move.move === "drift"
+    );
+    if (
+      !contained || !reusesSurfaces || !beatsReuseSurfaces || !momentsStayInside ||
+      !connectiveCameraOnly || !empty("interactions") || !empty("plugins") || !empty("recipes") ||
+      !parentFocal || childFocal !== parentFocal ||
+      (childCutStyle !== "" && childCutStyle !== "hard") ||
+      hasTimedModifier("timeRamp") || hasTimedModifier("gradeShift")
+    ) {
+      storyboard.push(item);
+      continue;
+    }
+    const mergeUnique = (left: unknown, right: Record<string, unknown>[], key: string): unknown[] => {
+      const combined: unknown[] = Array.isArray(left) ? [...left] : [];
+      const ids = new Set(recordArray(left).map((entry) => String(entry[key] ?? "")));
+      for (const entry of right) {
+        const id = String(entry[key] ?? "");
+        if (!id || ids.has(id)) continue;
+        ids.add(id);
+        combined.push(entry);
+      }
+      return combined;
+    };
+    parent.beats = mergeUnique(parent.beats, childBeats, "id");
+    parent.moments = mergeUnique(parent.moments, childMoments, "id");
+    const parentId = String(parent.id ?? "parent");
+    const childId = String(current.id ?? "development");
+    const note =
+      `folded embedded duplicate-surface scene "${childId}" into "${parentId}" ` +
+      `(${childBeats.length} beat(s), ${childMoments.length} moment(s))`;
+    parent.sentinelNormalizations = [
+      ...(Array.isArray(parent.sentinelNormalizations)
+        ? parent.sentinelNormalizations.filter((entry): entry is string => typeof entry === "string")
+        : []),
+      note,
+    ];
+    normalized.push(note);
+    process.stderr.write(`[storyboard] embedded-development-fold: ${note}\n`);
+  }
+  return { storyboard, normalized };
+}
+
 function parseStoryboard(raw: string): DirectScene[] {
   let value: unknown;
   try {
@@ -4906,6 +5122,14 @@ function parseStoryboard(raw: string): DirectScene[] {
     throw new Error(`storyboard_json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (!Array.isArray(value)) throw new Error("storyboard_json must be an array");
+  const embeddedDevelopment = mergeEmbeddedDevelopmentScenes(value);
+  const normalizedValue = embeddedDevelopment.storyboard;
+  if (embeddedDevelopment.normalized.length) {
+    recordSentinelNormalization(
+      "embedded-development-fold",
+      embeddedDevelopment.normalized.length,
+    );
+  }
   // Host-owned scene-timing arithmetic: shots are contiguous BY CONSTRUCTION.
   // Models routinely fumble the startSec addition (a live rescue attempt died
   // solely on "shot must start at 2.70s" findings), so every startSec is
@@ -4913,7 +5137,7 @@ function parseStoryboard(raw: string): DirectScene[] {
   // clamped into the contract range — a model never spends a paid attempt on
   // addition the host can do.
   let rebasedCursor = 0;
-  const scenes = value.map((item, index) => {
+  const scenes = normalizedValue.map((item, index) => {
     if (!item || typeof item !== "object") throw new Error(`storyboard_json[${index}] must be an object`);
     const scene = item as Record<string, unknown>;
     const id = typeof scene.id === "string" ? scene.id.trim() : "";
@@ -5044,6 +5268,12 @@ function parseStoryboard(raw: string): DirectScene[] {
       ...(spatialIntent ? { spatialIntent } : {}),
       ...(interactions.length ? { interactions } : {}),
       ...(moments.length ? { moments } : {}),
+      ...(Array.isArray(scene.sentinelNormalizations)
+        ? {
+            sentinelNormalizations: scene.sentinelNormalizations
+              .filter((entry): entry is string => typeof entry === "string"),
+          }
+        : {}),
     };
   });
   const usedInteractionIds = new Set<string>();
@@ -5399,6 +5629,8 @@ export interface StoryboardPlanRequirements {
   requireShapeMatch?: boolean;
   requireRackFocus?: boolean;
   requireTimeRamp?: boolean;
+  requireOrbit?: boolean;
+  requireSharedElementCut?: boolean;
 }
 
 export function validateStoryboardPlan(
@@ -5533,6 +5765,17 @@ export function validateStoryboardPlan(
     );
   }
   if (
+    requirements.requireOrbit &&
+    !storyboard.some((scene) =>
+      scene.camera?.path.some((move) => move.move === "orbit" || move.move === "orbit-lite")
+    )
+  ) {
+    errors.push(
+      "the brief explicitly requests a true orbit/orbit-lite peak, but no typed camera " +
+        "path contains orbit or orbit-lite — prose cameraIntent does not execute",
+    );
+  }
+  if (
     requirements.requireMultiStationWorld &&
     !storyboard.some((scene) =>
       (scene.camera?.path.filter((move) => CAMERA_FULL_MOVES.has(move.move)).length ?? 0) >= 2
@@ -5556,6 +5799,18 @@ export function validateStoryboardPlan(
     errors.push(
       "the brief explicitly requests a match cut that carries an object across the " +
         "boundary, but none is planned with both focal part names",
+    );
+  }
+  if (
+    requirements.requireSharedElementCut &&
+    !storyboard.some((scene) =>
+      scene.cut?.style === "morph" ||
+      (scene.cut?.style === "match" && scene.cut.focalPartOut && scene.cut.focalPartIn)
+    )
+  ) {
+    errors.push(
+      "the brief explicitly requests a shared-element morph or match, but no boundary " +
+        "declares an executable morph or a match with both focal part names",
     );
   }
   if (
@@ -6157,14 +6412,7 @@ export function parseStoryboardResponse(
   // mints a DIFFERENT blocking finding (the framing-density floor, an explicit
   // brief requirement like minCameraMoves, moment spacing, the 60s film cap)
   // reverts to the model's own artifact so the findings-retry describes what the
-  // model actually wrote (the degradeVolunteeredBridgedCuts precedent). Kept in
-  // one atomic group:
-  // the normalized plan is kept only when it validates clean — a fix for the
-  // pacing arithmetic that mints a DIFFERENT blocking finding (the
-  // framing-density floor, an explicit brief requirement like minCameraMoves,
-  // moment spacing, the 60s film cap) reverts to the model's own artifact so
-  // the findings-retry describes what the model actually wrote (the
-  // degradeVolunteeredBridgedCuts commit-only-if-clean precedent).
+  // model actually wrote (the degradeVolunteeredBridgedCuts precedent).
   const preNormalization = storyboard;
   const morphFix = reconcileUndeclaredMorphTargets(storyboard);
   // Component trim first — dropping a set-dressing surface changes both the
@@ -6177,7 +6425,13 @@ export function parseStoryboardResponse(
   const cameraBudget = normalizeCameraBudget(componentTrim.storyboard);
   const framingTopUp = topUpFramingFloor(cameraBudget.storyboard);
   const energyLift = liftCameraEnergyPeak(framingTopUp.storyboard);
-  const moveDelay = delayConflictingCameraMoves(energyLift.storyboard);
+  const rackFocusTopUp = requirements.requireRackFocus
+    ? topUpRequiredRackFocus(energyLift.storyboard)
+    : { storyboard: energyLift.storyboard, normalized: [] };
+  let committedRackFocusTopUps = rackFocusTopUp.normalized.length;
+  let atomicNormalizationCommitted = true;
+  const landingReserve = reserveFinalCameraLanding(rackFocusTopUp.storyboard);
+  const moveDelay = delayConflictingCameraMoves(landingReserve.storyboard);
   // Choreography spacing next (2026-07-08 probe set): moves out of interaction
   // arrive→result windows, then entry/stack settles — both pure retimes over
   // the surviving move set, before the marginal-miss stretch sees final times.
@@ -6188,19 +6442,23 @@ export function parseStoryboardResponse(
   // the marginal-miss stretch sees final times.
   const earlySwap = delayEarlySwapBeats(moveSpacing.storyboard);
   const pacingStretch = stretchMarginalPacingMisses(earlySwap.storyboard);
+  const connectiveSchedule = normalizeConnectiveCameraSchedule(pacingStretch.storyboard);
   const normalizationLines = [
     ...morphFix.changed,
     ...componentTrim.normalized,
     ...cameraBudget.normalized,
     ...framingTopUp.normalized,
     ...energyLift.normalized,
+    ...rackFocusTopUp.normalized,
+    ...landingReserve.normalized,
     ...moveDelay.normalized,
     ...interactionHold.normalized,
     ...moveSpacing.normalized,
     ...earlySwap.normalized,
     ...pacingStretch.normalized,
+    ...connectiveSchedule.normalized,
   ];
-  if (normalizationLines.length) storyboard = pacingStretch.storyboard;
+  if (normalizationLines.length) storyboard = connectiveSchedule.storyboard;
 
   // Moment paperwork the plan already proves is filled in by the host, not
   // retried: a marginal dead interval that has a typed beat/camera/cut in it
@@ -6277,41 +6535,67 @@ export function parseStoryboardResponse(
       storyboard = originalPlan;
       errors = originalErrors;
       normalizationLines.length = 0;
+      atomicNormalizationCommitted = false;
+      // A rack-focus top-up is an explicit brief-contract repair on an
+      // existing move/part, independent of the arithmetic group that was just
+      // reverted. Probe 5 had a valid target, received the modifier, then lost
+      // it because an unrelated camera retime minted a moment-gap class; the
+      // final attempt consequently failed only for the now-missing focus.
+      // Reapply this monotonic modifier to the reverted model plan and validate
+      // that honest baseline. It cannot add, drop, or retime a beat/move/scene.
+      if (requirements.requireRackFocus) {
+        const recoveredFocus = topUpRequiredRackFocus(storyboard);
+        storyboard = recoveredFocus.storyboard;
+        errors = resolveErrors(storyboard);
+        normalizationLines.push(...recoveredFocus.normalized);
+        committedRackFocusTopUps = recoveredFocus.normalized.length;
+      } else {
+        committedRackFocusTopUps = 0;
+      }
     }
   }
   if (normalizationLines.length) {
     for (const line of normalizationLines) {
       process.stderr.write(`[storyboard] sentinel-normalized: ${line}\n`);
     }
-    if (morphFix.changed.length) {
+    if (atomicNormalizationCommitted && morphFix.changed.length) {
       recordSentinelNormalization("morph-twin-reconcile", morphFix.changed.length);
     }
-    if (componentTrim.normalized.length) {
+    if (atomicNormalizationCommitted && componentTrim.normalized.length) {
       recordSentinelNormalization("component-trim", componentTrim.normalized.length);
     }
-    if (cameraBudget.normalized.length) {
+    if (atomicNormalizationCommitted && cameraBudget.normalized.length) {
       recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);
     }
-    if (framingTopUp.normalized.length) {
+    if (atomicNormalizationCommitted && framingTopUp.normalized.length) {
       recordSentinelNormalization("framing-floor-topup", framingTopUp.normalized.length);
     }
-    if (energyLift.normalized.length) {
+    if (atomicNormalizationCommitted && energyLift.normalized.length) {
       recordSentinelNormalization("camera-energy-lift", energyLift.normalized.length);
     }
-    if (moveDelay.normalized.length) {
+    if (committedRackFocusTopUps) {
+      recordSentinelNormalization("rack-focus-topup", committedRackFocusTopUps);
+    }
+    if (atomicNormalizationCommitted && landingReserve.normalized.length) {
+      recordSentinelNormalization("camera-landing-reserve", landingReserve.normalized.length);
+    }
+    if (atomicNormalizationCommitted && moveDelay.normalized.length) {
       recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);
     }
-    if (interactionHold.normalized.length) {
+    if (atomicNormalizationCommitted && interactionHold.normalized.length) {
       recordSentinelNormalization("interaction-hold-retime", interactionHold.normalized.length);
     }
-    if (moveSpacing.normalized.length) {
+    if (atomicNormalizationCommitted && moveSpacing.normalized.length) {
       recordSentinelNormalization("move-spacing", moveSpacing.normalized.length);
     }
-    if (earlySwap.normalized.length) {
+    if (atomicNormalizationCommitted && earlySwap.normalized.length) {
       recordSentinelNormalization("early-swap-delay", earlySwap.normalized.length);
     }
-    if (pacingStretch.normalized.length) {
+    if (atomicNormalizationCommitted && pacingStretch.normalized.length) {
       recordSentinelNormalization("pacing-stretch", pacingStretch.normalized.length);
+    }
+    if (atomicNormalizationCommitted && connectiveSchedule.normalized.length) {
+      recordSentinelNormalization("camera-connective-yield", connectiveSchedule.normalized.length);
     }
   }
   if (errors.length) throw new StoryboardValidationError(errors, storyboard);
@@ -6833,6 +7117,24 @@ export function inferStoryboardPlanRequirements(
       .test(brief);
   const explicitCamera =
     explicitWorld || /\bcamera (?:push|pan|whip|move|travel)/i.test(brief);
+  const cameraCountToken = brief.match(
+    /\bat least\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+(?:purposeful\s+)?(?:full\s+)?(?:typed\s+)?camera moves?\b/i,
+  )?.[1]?.toLowerCase();
+  const numberWords: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+  };
+  const explicitCameraCount = cameraCountToken
+    ? Math.min(12, Math.max(1, numberWords[cameraCountToken] ?? Number(cameraCountToken)))
+    : undefined;
   return {
     ...(targetDurationSec ? { targetDurationSec } : {}),
     ...(requestedComponentKinds.length ? { requestedComponentKinds } : {}),
@@ -6849,7 +7151,7 @@ export function inferStoryboardPlanRequirements(
       : {}),
     ...(explicitCamera
       ? {
-          minCameraMoves: 2,
+          minCameraMoves: explicitCameraCount ?? 2,
           ...(explicitWorld ? { requireMultiStationWorld: true } : {}),
         }
       : {}),
@@ -6865,6 +7167,13 @@ export function inferStoryboardPlanRequirements(
     ...(/\bspeed[\s-]?ramp(?:ing)?\b|\btime[\s-]?remap(?:ping)?\b|\bslow[\s-]?motion\b|\bslow[\s-]?mo\b/i
       .test(brief)
       ? { requireTimeRamp: true }
+      : {}),
+    ...(/\btrue orbit\b|\borbit[\s-]?lite\b|\borbit peak\b/i.test(brief)
+      ? { requireOrbit: true }
+      : {}),
+    ...(/\bshared[\s-]?element\b.{0,48}\b(?:morph|match)\b|\b(?:morph|match)\b.{0,48}\bshared[\s-]?element\b/i
+      .test(brief)
+      ? { requireSharedElementCut: true }
       : {}),
   };
 }
@@ -7416,6 +7725,18 @@ export async function requestStoryboardPlan(
           "The brief explicitly asks for a morph transition; plan at least one",
           "typed morph boundary with both focal part names and shapeOut/shapeIn",
           "silhouette hints, at the story beat where the two elements' meanings connect.",
+        ]
+      : []),
+    ...(requirements.requireSharedElementCut
+      ? [
+          "The brief explicitly asks for shared-element continuity; plan at least one",
+          "typed morph boundary, or a typed match boundary with BOTH focal part names.",
+        ]
+      : []),
+    ...(requirements.requireOrbit
+      ? [
+          "The brief explicitly asks for an orbit peak; one camera path must contain a",
+          "typed orbit or orbit-lite move. Describing an orbit only in prose does not count.",
         ]
       : []),
     ...(requirements.requireTimeRamp
@@ -9809,14 +10130,19 @@ function recordSlotScriptRepairs(repairs: {
   bareFromTo: number;
   pseudoTimeline: number;
   arrowEnvelope: number;
+  timePosition: number;
+  dataAttribute: number;
+  localPosition: number;
 }): void {
-  const total = repairs.bareFromTo + repairs.pseudoTimeline + repairs.arrowEnvelope;
+  const total = repairs.bareFromTo + repairs.pseudoTimeline + repairs.arrowEnvelope +
+    repairs.timePosition + repairs.dataAttribute + repairs.localPosition;
   if (!total) return;
   recordSentinelNormalization("slot-script-envelope", total);
   process.stderr.write(
     `[author] normalized ${total} invalid scene-slot timeline binding(s) ` +
       `(${repairs.bareFromTo} bare fromTo, ${repairs.pseudoTimeline} pseudo timeline, ` +
-      `${repairs.arrowEnvelope} uninvoked arrow envelope)\n`,
+      `${repairs.arrowEnvelope} uninvoked arrow envelope, ${repairs.timePosition} misplaced time, ` +
+      `${repairs.dataAttribute} data attribute, ${repairs.localPosition} local position)\n`,
   );
 }
 

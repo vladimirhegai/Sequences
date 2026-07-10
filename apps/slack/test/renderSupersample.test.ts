@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveSupersamplePlan, supersampleJobFields } from "../src/engine/render.ts";
+import {
+  renderProducerOverrides,
+  resolveSupersamplePlan,
+  supersampleJobFields,
+} from "../src/engine/render.ts";
 
 const FLAG = "SLACK_SEQUENCES_RENDER_SUPERSAMPLE";
 const saved = process.env[FLAG];
@@ -10,6 +14,14 @@ afterEach(() => {
 });
 
 describe("supersampled render gate (probe-audit render shakiness)", () => {
+  it("probes native GPU acceleration and lets compatibility hints own capture mode", () => {
+    expect(renderProducerOverrides("C:/chrome.exe")).toEqual({
+      browserGpuMode: "auto",
+      forceScreenshot: false,
+      chromePath: "C:/chrome.exe",
+    });
+  });
+
   it("engages for the HD tier on the three canonical canvases", () => {
     delete process.env[FLAG];
     expect(resolveSupersamplePlan(1920, 1080, "high")).toEqual({

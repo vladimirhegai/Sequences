@@ -58,6 +58,20 @@ export interface TemporalReport {
   continuousMotion?: ContinuousMotionEvidenceV1;
 }
 
+/** DOM target whose visible state should change on the outgoing cut leg. */
+export function temporalOutgoingCutSelector(
+  cut: Pick<CutIntentV1, "style" | "fromScene">,
+): string {
+  // Resolved plans speak canonical `match`/`morph`; retain the legacy aliases
+  // for exact replays of older persisted plans. Both bridge styles animate the
+  // host runtime clone, not the outgoing scene wrapper itself.
+  if (["match", "morph", "object-match", "shape-match"].includes(cut.style)) {
+    return '[data-sequences-runtime-cut="bridge"]';
+  }
+  if (cut.style === "flash-white") return '[data-sequences-runtime-cut="flash"]';
+  return `[data-scene="${cut.fromScene}"]`;
+}
+
 function serveDir(dir: string): Promise<{ url: string; close: () => void }> {
   const mime: Record<string, string> = {
     ".html": "text/html; charset=utf-8",
@@ -273,13 +287,8 @@ export async function reportTemporalEvidence(
     // state on both sides of its motion window before any screenshot pass.
     const cutObservations: Array<{ cut: CutIntentV1; outgoingMoved: boolean; incomingMoved: boolean }> = [];
     for (const cut of cuts) {
-      const fromSelector = `[data-scene="${cut.fromScene}"]`;
       const toSelector = `[data-scene="${cut.toScene}"]`;
-      const outgoingSelector = cut.style === "object-match" || cut.style === "shape-match"
-        ? '[data-sequences-runtime-cut="bridge"]'
-        : cut.style === "flash-white"
-          ? '[data-sequences-runtime-cut="flash"]'
-          : fromSelector;
+      const outgoingSelector = temporalOutgoingCutSelector(cut);
       await seekTo(page, toOutputTime(Math.max(0, cut.atSec - cut.exitSec + 0.02)));
       const outgoingBefore = await wrapperState(page, outgoingSelector);
       await seekTo(page, toOutputTime(cut.atSec - 0.02));

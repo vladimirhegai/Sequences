@@ -235,12 +235,69 @@ the motion-heavy incident film improved settle and motion competition, while
 the quiet approval film and consumer-free golden retained their own rhythm.
 See [PROBE_LOG.md](PROBE_LOG.md) for the exact measurements and attempt accounting.
 
+Measurement invariants from the 2026-07-10 Vectorline audit: phrase-level
+attention (`part`, then `region`, then `selector`) takes precedence over a
+scene's generic `focalPart`; at a cue inside a camera move, that active move
+owns attention (a newly starting move wins a shared boundary); derivative
+metrics ignore sub-half-sample boundary intervals so 10ms cue/cut samples do
+not manufacture acceleration/jerk spikes. These are evaluator corrections,
+not choreography rewrites.
+
 The same probes added four deterministic attempt-economy rules: an immediate
 first camera segment owns the entry target; primary focal review follows typed
 component/interaction evidence; static liveness resolves recognized indexed
 `forEach` staggers; and a complete uninvoked `(tl) => {...}` slot envelope is
 unwrapped before assembly. Do not extend the last repair into a general source
 rewriter; widespread authored layout redesign remains architectural.
+
+An explicitly required rack focus is a modifier rather than a new creative
+action: when the planner already supplied a non-whip full camera move and a
+real part target, `topUpRequiredRackFocus` attaches the focus pull to the
+strongest existing landing. It never invents a move or part; missing camera
+intent remains a findings retry. A malformed `fromTo(target, settledVars,
+position)` may likewise normalize to `.to` only with an earlier opposite-state
+initialization or when it is a visible/settled ≤50ms pin; all ambiguous motion
+direction stays blocking.
+
+Final camera travel must expose its destination before the cut. When a
+substantial non-dive full move would land exactly on the scene boundary,
+`reserveFinalCameraLanding` reclaims the last 0.42s for the resolver's gentle
+destination drift. This is deliberately below the moment binder's look-back:
+camera evidence stays bindable, the world never freezes, and the audience gets
+a readable landing. Explicit holds, short whips, and dive envelopes win.
+
+A findings retry sometimes expresses the requested in-shot development as a
+new scene embedded inside the existing scene's authored time window. Before
+contiguous timing rebasing, `mergeEmbeddedDevelopmentScenes` folds that patch
+into the containing scene only when it reuses the exact component ids/kinds
+and focal part, adds only in-window beats/moments, and carries at most
+hold/drift camera. New surfaces, interactions, plugins, recipes, premium cuts,
+timed modifiers, full reframes, or escaped cues remain a real scene and follow
+the ordinary validation path.
+
+Camera-path order is a runtime invariant after any pacing retime. Connective
+`drift`/`hold` yields to a decisive full move, remnants below 150ms drop, and
+`normalizeConnectiveCameraSchedule` restores chronological order before the
+resolver runs. It never retimes or removes a full move. This prevents an old
+array position from crushing a later two-second pass into a few frames and
+manufacturing a jerk spike.
+
+Slot assembly owns structural stage geometry even though authored film CSS is
+loaded later: root bounds, absolute scene stacking, clip containment, and
+camera-overlay bounds are locked; display, spacing, color, and opacity remain
+authorable. Slot-script normalization also binds only mechanically certain
+aliases/envelopes to the host timeline and film clock. Source repair may quote
+a bare CSS `var()` token in executable JavaScript or remove an unbound
+decorative SVG ellipsis path; binding-bearing or ambiguous geometry still
+fails loud. The first scene's declared subject must appear within 1.25s, so a
+long empty cold open is rejected at storyboard time instead of after a paid
+source pass.
+
+Rendering must leave GPU/capture compatibility to HyperFrames producer:
+`browserGpuMode:"auto"`, never a host-forced software GPU or screenshot path.
+Software is the producer's compatibility fallback, not the production default.
+A CLI run requested with `--render` is a failure when no non-empty MP4 exists;
+thumbnails do not relabel a failed render as a warning.
 
 ## Live-probe policy — fix the attempt before continuing
 
@@ -251,6 +308,48 @@ current task, fix it deterministically (SENTINEL.md placement tree — usually
 an L2 normalizer), add the regression test, log one row in
 [PROBE_LOG.md](PROBE_LOG.md), then resume. Architectural causes: log +
 park in ROADMAP instead. Never loosen a gate as the "fix".
+
+### Probe triage playbook (2026-07-10 camera session)
+
+Treat the process exit and `status-report.json` as the result. A thumbnail-ready
+message is not render success; when `--render` was requested, the report must be
+`fail` unless a non-empty MP4 exists. Do not repeatedly poll a long probe or
+send timer updates: keep the process handle open and wait for its completion
+event, which returns immediately on exit. Stage receipts then identify where
+the time went.
+
+Use persisted artifacts before paying for another model call:
+
+```powershell
+npm run storyboard:replay -- <raw-response-file>
+npm run temporal:replay -- <project-dir>
+npm run render:existing -- <project-dir>
+```
+
+The replay tools use current normalization/evaluation code. `render:existing`
+rebuilds and renders the accepted source without planning or authoring, so it
+isolates renderer speed from model latency. During this session a 28s film's
+software capture failed after ~16.5m; the same exact project rendered through
+the corrected hardware-auto path in 38–41s. A final healthy live run took
+6.3m total: ~4s frame setup, ~112s storyboard, ~199s source/critic, and ~42s
+render. If a future run is slow, inspect stage receipts before changing a
+global timeout.
+
+Symptom clusters learned from the seven probes:
+
+- camera, CTA, and cursor geometry failing together usually means the shared
+  stage/containing block is wrong; inspect the scene wrapper cascade first;
+- “PowerPointy” is not equivalent to too few camera moves—look for tiny product
+  occupancy, reset-to-title shots, disconnected HTML islands, late subjects,
+  no landing dwell, and connective moves overlapping decisive travel;
+- array order is observable choreography after any cue retime; sort before the
+  camera resolver and make drift/hold subordinate to full moves;
+- a passing source can still be a poor film. Review the MP4/contact strip plus
+  continuous-motion evidence, then correct the exact accepted project before
+  drawing conclusions from a new random generation;
+- `published-degraded`, deterministic fallback, missing render, or a least-bad
+  draft with unresolved visual penalties is internal evidence, never a
+  judge-ready success label.
 
 ## The two bots
 

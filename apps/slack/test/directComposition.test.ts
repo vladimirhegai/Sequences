@@ -888,6 +888,50 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     expect(message).not.toContain("typed camera moves");
   });
 
+  it("keeps an explicit rack-focus top-up when unrelated arithmetic is reverted", () => {
+    const scenes = storyboard();
+    const raw = scenes.map((scene, index) =>
+      index === 1
+        ? {
+            ...scene,
+            spatialIntent: {
+              version: 1 as const,
+              focalPart: "chip",
+              composition: "product route",
+              relationships: ["chip leads the route"],
+            },
+            camera: {
+              version: 1 as const,
+              path: [
+                { version: 1 as const, move: "pan" as const, toRegion: "left", startSec: 3.2, durationSec: 0.5 },
+                {
+                  version: 1 as const,
+                  move: "track-to-anchor" as const,
+                  toPart: "chip",
+                  startSec: 4.0,
+                  durationSec: 0.5,
+                },
+                { version: 1 as const, move: "pull-back" as const, toRegion: "wide", startSec: 4.8, durationSec: 0.5 },
+              ],
+            },
+          }
+        : scene
+    );
+    const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+    let failure: StoryboardValidationError | undefined;
+    try {
+      parseStoryboardResponse(response, { minCameraMoves: 3, requireRackFocus: true });
+    } catch (error) {
+      if (error instanceof StoryboardValidationError) failure = error;
+      else throw error;
+    }
+
+    expect(failure?.findings.some((finding) => finding.includes("pacing/camera-budget"))).toBe(true);
+    expect(failure?.findings.some((finding) => finding.includes("rack-focus"))).toBe(false);
+    const focused = failure?.storyboard[1]?.camera?.path.find((move) => move.toPart === "chip");
+    expect(focused?.focus).toEqual({ part: "chip", blurMaxPx: 6 });
+  });
+
   it("stretches a marginal scene-boundary reading miss and cascade-shifts later scenes", () => {
     // The 3s middle scene types a headline that lands too late to read before
     // its own cut — a marginal miss the host closes by extending the cut,
@@ -2291,6 +2335,22 @@ describe("direct HyperFrames composition", () => {
     expect(requirements.requestedComponentKinds).toHaveLength(3);
     // The floor is capped at the requested count so the brief stays satisfiable.
     expect(requirements.minRequestedComponentKinds).toBe(3);
+  });
+
+  it("preserves explicit camera count, orbit, and shared-element demands", () => {
+    const requirements = inferStoryboardPlanRequirements(
+      "Use at least five purposeful full camera moves, one true orbit or orbit-lite peak, " +
+        "and a genuine shared-element morph or match.",
+      32,
+    );
+    expect(requirements).toMatchObject({
+      minCameraMoves: 5,
+      requireOrbit: true,
+      requireSharedElementCut: true,
+    });
+    const plan = storyboard();
+    expect(() => parseStoryboardResponse(JSON.stringify(plan), requirements))
+      .toThrow(/5 FULL typed camera moves/);
   });
 
   it("keeps typed boundary cuts and canonicalizes legacy names before source authoring", () => {

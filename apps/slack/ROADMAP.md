@@ -62,6 +62,56 @@ point an agent at the listed file.
 
 ---
 
+## Next Major Motion Feature: Continuity Graph + Camera Blocking Director
+
+This is the single highest-leverage architectural feature after the 2026-07-10
+live-probe session. Do not solve it by adding more camera verbs or prompt prose.
+The current engine can validate many typed moves, but each shot is still an
+independently authored HTML island. The model can therefore satisfy move counts
+while producing tiny product surfaces, title-card resets, brittle hand-drawn
+match cuts, and camera travel with no coherent screen-space route.
+
+Build a persistent semantic scene graph and a previsualization solver:
+
+1. Give important product objects stable entity ids across scenes (product
+   shell, trace chip, alert, metric, CTA), with one continuity identity even
+   when their rendered representation changes.
+2. Compile a shot-blocking graph for each phrase: entity target, desired
+   screen-space occupancy/anchor, arrival pose, travel corridor, lens/zoom,
+   readable dwell, and the next handoff.
+3. Measure real DOM bounds, then solve a continuous camera spline with bounded
+   velocity, acceleration, and jerk. Connective drift must fill free intervals;
+   it may never compete with a decisive reframe or interaction result.
+4. Execute shared-element handoffs from measured transforms instead of asking
+   the author to redraw twins. A persistent product world should survive cuts,
+   match/morph endpoints, and camera travel.
+5. Add a previsualization artifact that overlays focal trajectory, occupancy,
+   camera speed, landings, dwell windows, and continuity edges on a contact
+   strip. The critic repairs this blocking graph, not arbitrary source pixels.
+
+Suggested owners: a new `src/engine/continuityGraph.ts` for identities and
+handoffs, `src/engine/cameraBlocking.ts` for the measured solver, extensions to
+`componentContract.ts`/`cameraContract.ts`, and a temporal-inspector overlay.
+Ship behind one default-off flag until the golden Slack ad plus three distinct
+SaaS briefs prove it.
+
+Acceptance bar:
+
+- the same important object remains visually traceable across at least three
+  shots without a reset-to-slide composition;
+- every primary phrase has an explicit screen-space target and readable landing;
+- product/UI occupancy stays inside a brief-aware range rather than passing as
+  a tiny island in empty space;
+- camera acceleration/jerk improves on exact-project A/B replays without
+  lowering moment visibility or settles;
+- no new author retry is required when deterministic DOM geometry is sufficient.
+
+This is intentionally out of scope for the current architecture-hardening
+session. The implemented fixes make today's pipeline honest and reliable; this
+feature changes what the pipeline is capable of composing.
+
+---
+
 ## What is Built
 
 ### Slack Surface & Two-Tier Delivery
@@ -1675,23 +1725,22 @@ Legend: `[x]` done · `[~]` partial · `[ ]` not started
 
 ## Build Order (Hackathon-Pragmatic)
 
-**Current Fable queue (2026-07-02, after `cf0094b`):**
+**Current queue (2026-07-10, after seven camera-intensive live probes):**
 
-1. **Prove the component system on a paid live create** — one OpenRouter smoke
-   confirming GLM plans components/beats and DeepSeek authors kit markup that
-   passes the gate (the deterministic paths are proven; model selection is not).
-2. **Capability materialization + in-Slack audition** - instantiate known-good
+1. **Continuity Graph + Camera Blocking Director** — the next major motion
+   feature and the detailed section near the top of this file. Build persistent
+   semantic entities, measured screen-space blocking, and a constrained camera
+   spline before adding more verbs or prompt rules.
+2. **Capability materialization + in-Slack audition** — instantiate known-good
    blocks/components instead of citing metadata and rebuilding them, then let
    the user audition candidates in Slack.
-3. **Live temporal evidence + bounded visual critic** - put compact strips/cut
-   sheets/change curves behind an opt-in live flag, then let a critic request
-   one shot-specific repair for rendered dead zones or weak focal hierarchy.
-4. **Component contracts v2** - source-derived contracts for non-kit
-   components, cross-scene morph continuity groups, and new kit kinds
-   (file-upload, settings panel, tooltip) as briefs demand them.
+3. **Component contracts v2** — source-derived contracts for non-kit components
+   and the stable identities the continuity graph needs.
 
-Done from the previous queue: **component contracts + morph continuity v1**
-(2026-07-02, the motion-native component system above).
+Done from the previous queue: paid component/camera live creates, live temporal
+evidence with a bounded critic, component contracts, and morph continuity v1.
+The 2026-07-10 renderer/choreography closeout is in
+[PROBE_LOG.md](PROBE_LOG.md); do not rerun those seven probes to rediscover it.
 
 Historical backlog order:
 
