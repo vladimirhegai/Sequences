@@ -230,6 +230,21 @@ function cameraArrivalSec(
       : { part: first.toPart, region: first.toRegion };
     if (framesUnit(entry.part, entry.region)) return undefined;
   }
+  // A scene whose camera path never names any OTHER station can never be
+  // "away" from the unit: a target-less opening drift is already framing the
+  // unit's world, so a later push-in to its station is a re-frame, not an
+  // arrival (motion-quality-verify-2-quillsign: "drift, push-in→cta-stage"
+  // anchored the final CTA lockup's entrance at 24.85s of a 25.7s film,
+  // holding the scene's hero invisible for 3.6s of its 4.5s scene and
+  // stranding the declared 22.2s assemble moment without evidence).
+  if (declaration.region !== undefined) {
+    const mentioned = path.flatMap((move) =>
+      [move.fromRegion, move.toRegion].filter((region): region is string => Boolean(region)),
+    );
+    if (mentioned.length && mentioned.every((region) => region === declaration.region)) {
+      return undefined;
+    }
+  }
   let arrival: number | undefined;
   for (const move of path) {
     if (move.move === "hold") continue;

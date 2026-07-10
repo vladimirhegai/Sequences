@@ -137,7 +137,9 @@ import { analyzeMotionDensity } from "./motionDensity.ts";
 import {
   ASSEMBLE_HOLD_SEC,
   FRAMING_FLOOR_MIN_FILM_SEC,
+  OUTCOME_HOLD_SEC,
   PACING_TOLERANCE_SEC,
+  PAYOFF_BEAT_KINDS,
   READING_MAX_SEC,
   READING_MIN_SEC,
   READING_SEC_PER_WORD,
@@ -6149,7 +6151,7 @@ export function deriveDiveWindows(
     const newPath = path.map((move) => {
       if (move.move !== "dive" || !move.toPart) return move;
       const start = move.startSec;
-      const end = move.startSec + move.durationSec;
+      let end = move.startSec + move.durationSec;
       const overlappingBeats = beats.filter((beat) =>
         beat.component === move.toPart &&
         beat.endSec > start + 0.01 && beat.startSec < end - 0.01
@@ -6193,17 +6195,69 @@ export function deriveDiveWindows(
         }
       }
       holdStart = Math.max(start, Math.min(holdStart, end));
+      // Outcome-hold parity with `auditPacing` (motion-quality-verify-2-quillsign):
+      // the dive's own pull-back leg IS the next framing change the gate
+      // measures, so a press/set-state/toast payoff the dive covers needs its
+      // >=OUTCOME_HOLD_SEC settle BEFORE that leg fires. The host derives the
+      // legs — leaving the hold short mints a `pacing/outcome` finding the
+      // model cannot repair (both quillsign storyboard attempts died
+      // re-earning it). Extend the held window, growing the dive itself when
+      // the scene has free time before its next full move or its own cut.
+      const componentKindById = new Map(
+        (scene.components ?? []).map((component) => [component.id, component.kind]),
+      );
+      const laterFullMoveStarts = path
+        .filter((other) =>
+          other !== move && CAMERA_FULL_MOVES.has(other.move) &&
+          other.startSec > move.startSec + 0.01
+        )
+        .map((other) => other.startSec);
+      const windowCap = Math.min(
+        scene.startSec + scene.durationSec,
+        ...laterFullMoveStarts,
+      );
+      const plannedOutLeg = Math.max(
+        0.15,
+        Math.min(diveLegCap(move.durationSec), end - Math.min(holdEnd, end)),
+      );
+      let outcomeHoldEnd = Math.min(holdEnd, end);
+      for (const beat of overlappingBeats) {
+        const isToastOpen = beat.kind === "open" &&
+          componentKindById.get(beat.component) === "toast";
+        if (!PAYOFF_BEAT_KINDS.has(beat.kind) && !isToastOpen) continue;
+        outcomeHoldEnd = Math.max(
+          outcomeHoldEnd,
+          contentTimeAfterViewerSpan(
+            toViewer,
+            beat.endSec,
+            OUTCOME_HOLD_SEC,
+            Math.max(beat.endSec, windowCap - plannedOutLeg),
+          ),
+        );
+      }
+      let extendedNote = "";
+      if (outcomeHoldEnd > Math.min(holdEnd, end) + 0.001) {
+        holdEnd = outcomeHoldEnd;
+        const grownEnd = Math.min(windowCap, Math.max(end, holdEnd + plannedOutLeg));
+        if (grownEnd > end + 0.001) {
+          extendedNote = ` (window grown ${(grownEnd - end).toFixed(2)}s for the payoff's ` +
+            `${OUTCOME_HOLD_SEC}s outcome hold)`;
+          end = grownEnd;
+        }
+      }
+      const newDuration = Math.round((end - start) * 1000) / 1000;
       holdEnd = Math.max(holdStart, Math.min(holdEnd, end));
-      const legCap = diveLegCap(move.durationSec);
+      const legCap = diveLegCap(newDuration);
       const inSec = Math.round(Math.max(0.15, Math.min(legCap, holdStart - start)) * 1000) / 1000;
       const outSec = Math.round(Math.max(0.15, Math.min(legCap, end - holdEnd)) * 1000) / 1000;
       const note =
         `dive on "${move.toPart}": in ${inSec.toFixed(2)}s / hold ` +
-        `${(move.durationSec - inSec - outSec).toFixed(2)}s / out ${outSec.toFixed(2)}s ` +
-        `covering ${overlappingBeats.length} beat(s) + ${overlappingInteractions.length} interaction(s)`;
+        `${(newDuration - inSec - outSec).toFixed(2)}s / out ${outSec.toFixed(2)}s ` +
+        `covering ${overlappingBeats.length} beat(s) + ${overlappingInteractions.length} ` +
+        `interaction(s)${extendedNote}`;
       notes.push(note);
       normalized.push(`scene "${scene.id}": ${note}`);
-      return { ...move, inSec, outSec };
+      return { ...move, inSec, outSec, durationSec: newDuration };
     });
     return withNormalizationNotes(
       { ...scene, camera: { ...scene.camera!, path: newPath } },
@@ -8318,8 +8372,12 @@ export async function requestStoryboardPlan(
     // asset-probe-1 manufactured pacing/holds rejection); v22: the default-off
     // continuity graph adds stable component/entity identities plus explicit
     // scene appearance declarations. The flag keys the cache so off/on plans
-    // never cross the experiment boundary.
-    contract: 22,
+    // never cross the experiment boundary; v23: dive windows extend for a
+    // covered payoff's OUTCOME_HOLD_SEC before the pull-back leg (the
+    // quillsign pacing/outcome parity fix), and a camera path naming no
+    // station other than a plugin unit's own anchors the unit at the default
+    // entrance (a target-less drift is not an away-frame).
+    contract: 23,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,

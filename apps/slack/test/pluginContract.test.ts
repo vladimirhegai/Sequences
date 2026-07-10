@@ -788,6 +788,34 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
     expect(firstBeatAt(result.scenes)).toBeCloseTo(0.6, 2);
   });
 
+  it("keeps the default entrance when a target-less drift opens a single-station scene (quillsign)", () => {
+    // motion-quality-verify-2-quillsign ship-it shape: "drift, push-in→cta-stage".
+    // The drift has no target, but the camera path never names any OTHER
+    // station — the world IS the unit's station, so the push-in is a re-frame.
+    // Reading it as a late arrival anchored the final CTA lockup's entrance at
+    // 24.85s of a 25.7s film and stranded the declared assemble moment.
+    const result = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations(DECL),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "drift", startSec: 0, durationSec: 2 },
+            {
+              version: 1,
+              move: "push-in",
+              toRegion: "metric-station",
+              zoom: 1.15,
+              startSec: 3.2,
+              durationSec: 1.6,
+            },
+          ],
+        },
+      }),
+    ]);
+    expect(firstBeatAt(result.scenes)).toBeCloseTo(0.6, 2);
+  });
+
   it("honors a from-target entry: a pan FROM elsewhere TO the unit still delays", () => {
     const result = reconcileAndLowerPlugins([
       scene({

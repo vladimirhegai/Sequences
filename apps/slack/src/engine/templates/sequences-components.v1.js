@@ -171,7 +171,7 @@
       return;
     }
     if (mechanism === "class") {
-      var base = (item.className || "").replace(/(^|\s)active(?=\s|$)/g, "").replace(/\s+/g, " ").trim();
+      var base = classString(item).replace(/(^|\s)active(?=\s|$)/g, "").replace(/\s+/g, " ").trim();
       timeline.set(item, { className: active ? (base ? base + " active" : "active") : base }, atSec);
       return;
     }
@@ -202,6 +202,16 @@
     }
   }
 
+  // `className` is only a string on HTML elements — on inline SVG it is an
+  // SVGAnimatedString whose `.trim` does not exist, and one decorative icon
+  // sibling crashed the whole compile (motion-quality-verify-2-quillsign
+  // burned a paid author attempt on exactly that). Read classes safely.
+  function classString(element) {
+    var value = element && element.className;
+    if (typeof value === "string") return value;
+    return (element && element.getAttribute && element.getAttribute("class")) || "";
+  }
+
   // The item's exclusive-selection peers: same-signature direct siblings under
   // one parent. childItems() only knows kit classes (.cmp-row/.cmp-item/…), but
   // authored navs use their own class (.sidebar-item), so match on the item's
@@ -209,13 +219,15 @@
   function listSiblings(item) {
     var parent = item.parentElement;
     if (!parent) return [item];
-    var token = (item.className || "").trim().split(/\s+/)[0] || "";
+    var token = classString(item).trim().split(/\s+/)[0] || "";
     var out = [];
     var kids = parent.children;
     for (var i = 0; i < kids.length; i += 1) {
       var kid = kids[i];
       if (kid === item) { out.push(kid); continue; }
-      var kidToken = (kid.className || "").trim().split(/\s+/)[0] || "";
+      // Inline SVG/foreign decorations are ornaments, never selection peers.
+      if (typeof kid.className !== "string") continue;
+      var kidToken = classString(kid).trim().split(/\s+/)[0] || "";
       if (token ? kidToken === token : kid.tagName === item.tagName) out.push(kid);
     }
     return out.length ? out : [item];

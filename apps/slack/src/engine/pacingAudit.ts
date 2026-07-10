@@ -234,7 +234,7 @@ const COMPACT_RESOLVE_KINDS = new Set([
   "button", "stat-card", "toast", "toggle", "progress", "progress-ring", "avatar-stack",
 ]);
 /** Beat kinds whose landing is a payoff the viewer must see resolve. */
-const PAYOFF_BEAT_KINDS = new Set(["press", "set-state"]);
+export const PAYOFF_BEAT_KINDS = new Set(["press", "set-state"]);
 
 function words(text: string): number {
   const trimmed = text.trim();
