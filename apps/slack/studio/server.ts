@@ -60,6 +60,11 @@ const RECIPES_LIBRARY_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../skills/sequences-recipes",
 );
+const PROBE_PROJECTS_DIR = path.join(
+  process.env.SLACK_SEQUENCES_DATA_DIR ??
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.data"),
+  "projects",
+);
 const WALLPAPERS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../vendor/wallpapers",
@@ -111,6 +116,52 @@ function sendWithin(res: http.ServerResponse, root: string, rel: string): void {
     return;
   }
   sendFile(res, resolved);
+}
+
+/** Like sendWithin, but honors HTTP Range so <video> can seek MP4s. */
+function sendMediaWithin(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  root: string,
+  rel: string,
+): void {
+  const resolved = path.resolve(root, rel.replace(/^\/+/, ""));
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    res.writeHead(403, { "content-type": "text/plain" });
+    res.end("forbidden");
+    return;
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    res.writeHead(404, { "content-type": "text/plain" });
+    res.end("not found");
+    return;
+  }
+  const size = fs.statSync(resolved).size;
+  const type = MIME[path.extname(resolved).toLowerCase()] ?? "application/octet-stream";
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.writeHead(416, { "content-range": `bytes */${size}` });
+      res.end();
+      return;
+    }
+    res.writeHead(206, {
+      "content-type": type,
+      "content-range": `bytes ${start}-${end}/${size}`,
+      "content-length": end - start + 1,
+      "accept-ranges": "bytes",
+    });
+    fs.createReadStream(resolved, { start, end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, {
+    "content-type": type,
+    "content-length": size,
+    "accept-ranges": "bytes",
+  });
+  fs.createReadStream(resolved).pipe(res);
 }
 
 async function readBody(req: http.IncomingMessage): Promise<unknown> {
@@ -287,6 +338,84 @@ function recipesState(): unknown {
   return { version: library.version, warnings: library.warnings, entries, issues };
 }
 
+/* ------------------------------------------------------------ probes */
+
+/**
+ * Live-probe viewer state: every local `.data/projects/<id>` that produced a
+ * non-empty rendered MP4 (fail-loud runs and rejected attempts never render,
+ * so they are excluded by construction). The operator audits the actual film
+ * plus the temporal strip / blocking overlay QA already persists.
+ */
+function probesState(): unknown {
+  if (!fs.existsSync(PROBE_PROJECTS_DIR)) return { entries: [] };
+  const entries = fs.readdirSync(PROBE_PROJECTS_DIR, { withFileTypes: true })
+    .filter((dirent) => dirent.isDirectory())
+    .map((dirent) => {
+      const dir = path.join(PROBE_PROJECTS_DIR, dirent.name);
+      const rendersDir = path.join(dir, "renders");
+      const renders = fs.existsSync(rendersDir)
+        ? fs.readdirSync(rendersDir)
+            .filter((name) => name.endsWith(".mp4"))
+            .map((name) => ({ name, stat: fs.statSync(path.join(rendersDir, name)) }))
+            .filter((render) => render.stat.size > 0)
+            .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)
+        : [];
+      if (!renders.length) return undefined;
+      const latest = renders[0]!;
+      let sentinel: {
+        disposition?: string;
+        durationMs?: number;
+        degradations?: string[];
+        stages?: Array<{ stage: string; status: string; durationMs: number; attempts?: number }>;
+      } | undefined;
+      try {
+        sentinel = JSON.parse(
+          fs.readFileSync(path.join(dir, "planning", "sentinel-run.json"), "utf8"),
+        );
+      } catch {
+        sentinel = undefined;
+      }
+      const mediaUrl = (rel: string): string | undefined =>
+        fs.existsSync(path.join(dir, rel))
+          ? `/probe-media/${encodeURIComponent(dirent.name)}/${rel.replace(/\\/g, "/")}`
+          : undefined;
+      const thumbsDir = path.join(dir, "build", "thumbs");
+      const thumbnails = fs.existsSync(thumbsDir)
+        ? fs.readdirSync(thumbsDir)
+            .filter((name) => name.endsWith(".png"))
+            .sort()
+            .map((name) => `/probe-media/${encodeURIComponent(dirent.name)}/build/thumbs/${name}`)
+        : [];
+      return {
+        id: dirent.name,
+        renderedAt: latest.stat.mtime.toISOString(),
+        mp4: `/probe-media/${encodeURIComponent(dirent.name)}/renders/${encodeURIComponent(latest.name)}`,
+        mp4Bytes: latest.stat.size,
+        renders: renders.map((render) => ({
+          name: render.name,
+          url: `/probe-media/${encodeURIComponent(dirent.name)}/renders/${encodeURIComponent(render.name)}`,
+          bytes: render.stat.size,
+          at: render.stat.mtime.toISOString(),
+        })),
+        strip: mediaUrl(path.join("build", "qa", "temporal", "strip.png")),
+        blocking: mediaUrl(path.join("build", "qa", "temporal", "blocking.png")),
+        thumbnails,
+        disposition: sentinel?.disposition,
+        degradations: sentinel?.degradations ?? [],
+        stages: (sentinel?.stages ?? []).map((stage) => ({
+          stage: stage.stage,
+          status: stage.status,
+          attempts: stage.attempts ?? 1,
+          durationMs: stage.durationMs,
+        })),
+        wallClockMs: sentinel?.durationMs,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .sort((a, b) => (a.renderedAt < b.renderedAt ? 1 : -1));
+  return { entries };
+}
+
 // One long-running job at a time: gates run a real browser and the library
 // env override is process-global. A simple promise chain keeps handlers honest.
 let queue: Promise<unknown> = Promise.resolve();
@@ -339,6 +468,21 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   }
   if (req.method === "GET" && url.pathname === "/api/recipes") {
     return sendJson(res, 200, { recipes: recipesState() });
+  }
+  if (req.method === "GET" && url.pathname === "/api/probes") {
+    return sendJson(res, 200, { probes: probesState() });
+  }
+  if (req.method === "GET" && segments[0] === "probe-media" && segments[1]) {
+    const probeRoot = path.resolve(PROBE_PROJECTS_DIR, decodeURIComponent(segments[1]));
+    if (
+      probeRoot !== PROBE_PROJECTS_DIR &&
+      !probeRoot.startsWith(PROBE_PROJECTS_DIR + path.sep)
+    ) {
+      res.writeHead(403, { "content-type": "text/plain" });
+      res.end("forbidden");
+      return;
+    }
+    return sendMediaWithin(req, res, probeRoot, segments.slice(2).map(decodeURIComponent).join("/"));
   }
   if (req.method === "POST" && url.pathname === "/api/render") {
     const body = (await readBody(req)) as {

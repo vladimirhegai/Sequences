@@ -287,6 +287,16 @@
   .background-safe-zone span { position: absolute; top: 8px; left: 10px; color: #fff; font: 10px Consolas, monospace; text-transform: uppercase; text-shadow: 0 1px 3px #000; }
   .moodboard-ribbon { position: absolute; right: 14px; bottom: 14px; padding: 5px 9px; border-radius: 999px; background: rgba(5,7,11,0.76); color: #ffd479; border: 1px solid rgba(255,212,121,0.45); font-size: 10px; letter-spacing: 0.08em; }
   .license-warning { color: var(--lab-warn); border: 1px solid rgba(240,180,41,0.35); background: rgba(240,180,41,0.07); padding: 8px 10px; border-radius: 8px; font-size: 11px; }
+  .probe-stage { display: flex; flex-direction: column; gap: 14px; padding: 14px; overflow-y: auto; min-height: 0; flex: 1; }
+  .probe-stage video { width: 100%; max-height: 62vh; background: #000; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); }
+  .probe-strip-block h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--lab-muted); margin: 0 0 6px; }
+  .probe-strip-block img { width: 100%; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: #06080c; }
+  .probe-render-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+  .probe-render-row:hover { background: rgba(255,255,255,0.05); }
+  .probe-render-row.active { background: rgba(110,168,255,0.14); }
+  .probe-render-row span { color: var(--lab-muted); }
+  .probe-badge-clean { color: #5ce6a8; }
+  .probe-badge-degraded { color: var(--lab-warn); }
 </style>
 </head>
 <body>
@@ -299,6 +309,7 @@
     <button class="tab" data-view="looks">Looks</button>
     <button class="tab" data-view="camera">Camera</button>
     <button class="tab" data-view="plugins">Plugins</button>
+    <button class="tab" data-view="probes">Probes</button>
   </div>
   <div class="theme-row">
     <label>Brand theme</label>
@@ -534,6 +545,46 @@
       </div>
     </aside>
   </section>
+
+  <!-- ============================== PROBES ============================== -->
+  <section class="view" id="view-probes">
+    <nav>
+      <h2>Rendered live probes</h2>
+      <div id="probe-list"></div>
+    </nav>
+    <div class="stage-wrap">
+      <div class="probe-stage" id="probe-stage">
+        <video id="probe-video" controls preload="metadata" playsinline></video>
+        <div class="probe-strip-block" id="probe-strip-block">
+          <h3>Temporal contact strip</h3>
+          <img id="probe-strip" alt="temporal contact strip" />
+        </div>
+        <div class="probe-strip-block" id="probe-blocking-block">
+          <h3>Camera blocking overlay</h3>
+          <img id="probe-blocking" alt="camera blocking overlay" />
+        </div>
+      </div>
+      <div class="stage-note" id="probe-note">Only probes with a rendered MP4 appear here — rejected attempts and fail-loud runs never render.</div>
+    </div>
+    <aside>
+      <div class="panel">
+        <h2>Run <span class="badge" id="probe-disposition"></span></h2>
+        <p class="desc" id="probe-summary"></p>
+      </div>
+      <div class="panel">
+        <h2>Stages <span class="badge">attempts · duration</span></h2>
+        <table class="params" id="probe-stages"></table>
+      </div>
+      <div class="panel">
+        <h2>Degradations</h2>
+        <div id="probe-degradations" class="desc"></div>
+      </div>
+      <div class="panel">
+        <h2>Renders</h2>
+        <div id="probe-renders"></div>
+      </div>
+    </aside>
+  </section>
 </main>
 <script>
 "use strict";
@@ -554,6 +605,7 @@ const state = {
   morphSpring: "settle", morphDurationMs: null,
   recipe: null, busy: false,
   look: null, background: null, cameraPattern: null, plugin: null,
+  probes: { entries: [] }, probe: null,
   theme: "Midnight",
 };
 window.__labState = state; // read-only debug handle for scripted proof drives
@@ -1546,6 +1598,95 @@ el("recipe-export").onclick = () => runRecipeAction("export");
 
 /* ------------------------------------------------------------ boot */
 
+/* ------------------------------------------------------------ probes */
+
+function formatMs(ms) {
+  if (!Number.isFinite(ms)) return "—";
+  return ms >= 60000 ? (ms / 60000).toFixed(1) + "m" : (ms / 1000).toFixed(1) + "s";
+}
+
+function buildProbeList() {
+  const list = el("probe-list");
+  list.innerHTML = "";
+  for (const probe of state.probes.entries) {
+    const item = document.createElement("div");
+    item.className = "nav-item";
+    item.dataset.id = probe.id;
+    const attempts = probe.stages.reduce((sum, stage) => sum + Math.max(0, (stage.attempts || 1) - 1), 0);
+    const when = new Date(probe.renderedAt);
+    const flag = probe.disposition === "published-degraded" ? " · degraded" : "";
+    item.innerHTML = `<div class="t">${esc(probe.id)}</div>` +
+      `<div class="f">${esc(when.toLocaleString())} · ${attempts ? attempts + " retr" + (attempts === 1 ? "y" : "ies") : "clean attempts"}${esc(flag)}</div>`;
+    item.onclick = () => selectProbe(probe);
+    list.appendChild(item);
+  }
+  if (!state.probes.entries.length) {
+    list.innerHTML = '<div class="f" style="padding:8px">No rendered probes under .data/projects yet.</div>';
+  }
+}
+
+function selectProbe(probe, renderUrl) {
+  state.probe = probe;
+  for (const item of el("probe-list").children) {
+    if (item.dataset) item.classList.toggle("active", item.dataset.id === probe.id);
+  }
+  const video = el("probe-video");
+  video.src = renderUrl || probe.mp4;
+  video.load();
+  const strip = el("probe-strip");
+  el("probe-strip-block").style.display = probe.strip ? "" : "none";
+  if (probe.strip) strip.src = probe.strip;
+  const blocking = el("probe-blocking");
+  el("probe-blocking-block").style.display = probe.blocking ? "" : "none";
+  if (probe.blocking) blocking.src = probe.blocking;
+  const badge = el("probe-disposition");
+  badge.textContent = probe.disposition || "no sentinel receipt";
+  badge.className = "badge " + (probe.disposition === "published-degraded" ? "probe-badge-degraded" : "probe-badge-clean");
+  el("probe-summary").textContent =
+    `${(probe.mp4Bytes / 1048576).toFixed(1)} MB MP4 · wall clock ${formatMs(probe.wallClockMs)} · ` +
+    `${probe.thumbnails.length} moment thumbnails`;
+  const stages = el("probe-stages");
+  stages.innerHTML = "";
+  for (const stage of probe.stages) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${esc(stage.stage)}</td><td>${esc(String(stage.attempts))}</td>` +
+      `<td>${esc(formatMs(stage.durationMs))}</td>`;
+    stages.appendChild(row);
+  }
+  el("probe-degradations").innerHTML = probe.degradations.length
+    ? probe.degradations.map((entry) => `<div>· ${esc(entry)}</div>`).join("")
+    : "none — clean publish";
+  const renders = el("probe-renders");
+  renders.innerHTML = "";
+  const activeUrl = renderUrl || probe.mp4;
+  for (const render of probe.renders) {
+    const row = document.createElement("div");
+    row.className = "probe-render-row" + (render.url === activeUrl ? " active" : "");
+    row.innerHTML = `<b>${esc(render.name)}</b><span>${(render.bytes / 1048576).toFixed(1)} MB</span>`;
+    row.onclick = () => selectProbe(probe, render.url);
+    renders.appendChild(row);
+  }
+}
+
+async function refreshProbes() {
+  const data = await api("/api/probes");
+  state.probes = data.probes;
+  const selected = state.probe?.id;
+  buildProbeList();
+  const keep = selected && state.probes.entries.find((entry) => entry.id === selected);
+  if (keep) selectProbe(keep);
+  else if (state.probes.entries.length) selectProbe(state.probes.entries[0]);
+}
+
+// Refresh the list every time the tab is shown (probes finish while the
+// studio is open) and pause playback when leaving it.
+for (const tab of document.querySelectorAll(".tab")) {
+  tab.addEventListener("click", () => {
+    if (tab.dataset.view === "probes") refreshProbes().catch(() => undefined);
+    else el("probe-video")?.pause();
+  });
+}
+
 async function boot() {
   const themeSelect = el("theme-select");
   for (const name of Object.keys(THEMES)) {
@@ -1587,6 +1728,7 @@ async function boot() {
   if (state.camera.entries.length) selectCameraPattern(state.camera.entries[0]);
   buildPluginList();
   if (state.plugins.entries.length) selectPlugin(state.plugins.entries[0]);
+  await refreshProbes().catch(() => undefined);
 
   const wanted = location.hash.replace("#", "");
   const tab = document.querySelector(`.tab[data-view="${wanted}"]`);
