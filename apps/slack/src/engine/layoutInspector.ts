@@ -384,7 +384,9 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // v20: contrast evidence resolves the exact sampled text node before the next
 // seek, so compact audit selectors (for example plain `span`) cannot all enrich
 // to the first matching element and mint one shared, ineffective repair rule.
-const QA_CACHE_VERSION = 20;
+// v21: interaction seek stability compares the cursor-to-anchor relationship,
+// not absolute viewport coordinates that legitimately move with the camera.
+const QA_CACHE_VERSION = 21;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -3100,11 +3102,26 @@ export async function inspectDirectComposition(
       await seekContent(intent.arriveSec);
       const replay = await auditInteractions(page, [intent], intent.arriveSec);
       const endpoint = replay.evidence.find((entry) => entry.phase === "arrival");
+      // Screen-space coordinates are not an interaction invariant: a cursor
+      // and its target can move together when a camera world is re-rendered.
+      // What the pointer owns is its relationship to the live measured anchor.
+      // Comparing those two vectors still catches a stale/independently moved
+      // cursor, without charging a camera-world excursion to the interaction.
+      const baselineOffset = {
+        x: baseline.cursor.x - baseline.target.x,
+        y: baseline.cursor.y - baseline.target.y,
+      };
+      const endpointOffset = endpoint
+        ? {
+          x: endpoint.cursor.x - endpoint.target.x,
+          y: endpoint.cursor.y - endpoint.target.y,
+        }
+        : undefined;
       if (
-        endpoint &&
+        endpointOffset &&
         Math.hypot(
-          endpoint.cursor.x - baseline.cursor.x,
-          endpoint.cursor.y - baseline.cursor.y,
+          endpointOffset.x - baselineOffset.x,
+          endpointOffset.y - baselineOffset.y,
         ) > 0.5
       ) {
         rawIssues.push({
@@ -3112,7 +3129,9 @@ export async function inspectDirectComposition(
           severity: "error",
           time: intent.arriveSec,
           selector: `[data-cursor-id="${intent.cursorId}"]`,
-          message: `Interaction "${intent.id}" changes position when frames are sought out of order.`,
+          message:
+            `Interaction "${intent.id}" changes its measured-target relationship when frames ` +
+            "are sought out of order.",
           fixHint: "Derive cursor position only from timeline time and measured anchors.",
           source: "sequences",
         });

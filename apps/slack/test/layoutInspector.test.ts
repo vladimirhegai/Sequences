@@ -369,6 +369,7 @@ function interactionDraft(
   revealTargetOnArrival = false,
   moveTargetOnRelease = false,
   item?: number,
+  postBaselineShift?: "target" | "cursor",
 ): DirectCompositionDraft {
   const interaction = {
     version: 1 as const,
@@ -461,6 +462,14 @@ ${revealTargetOnArrival
   ? 'tl.fromTo("#target",{opacity:0},{opacity:1,duration:.1,ease:"none"},1.35);'
   : ""}
 ${moveTargetOnRelease ? 'tl.set("#target",{x:4},1.75);' : ""}
+${postBaselineShift
+  ? `const postBaselineShift={p:0};
+tl.to(postBaselineShift,{p:1,duration:.1,ease:"none",onUpdate(){
+  if(postBaselineShift.p>.5)document.querySelector("#${
+    postBaselineShift === "target" ? "target" : "cursor"
+  }").style.left="${postBaselineShift === "target" ? "360px" : "40px"}";
+}},2.7);`
+  : ""}
 SequencesInteractions.compile(tl,document.getElementById("root"));
 ${endpointNudge ? `tl.set("#cursor",{x:"+=${endpointNudge}"},1.6);` : ""}
 window.__timelines["interaction-test"]=tl;
@@ -683,6 +692,37 @@ describe("direct layout inspector", () => {
       expect(press?.hit).toBe(true);
       expect(press?.deltaPx).toBeLessThanOrEqual(2);
       expect(result.guidePngBase64?.length).toBeGreaterThan(100);
+    },
+    60_000,
+  );
+
+  it.skipIf(!findBrowserExecutable())(
+    "keeps seek stability target-relative when the measured anchor moves after baseline",
+    async () => {
+      const result = await inspectDirectComposition(
+        projectDir(),
+        interactionDraft(0, "power3.out", false, false, false, undefined, "target"),
+      );
+      expect(
+        result.ok,
+        JSON.stringify({ errors: result.errors, issues: result.issues, evidence: result.interactions }),
+      ).toBe(true);
+      expect(result.issues.some((issue) => issue.code === "interaction_seek_instability"))
+        .toBe(false);
+    },
+    60_000,
+  );
+
+  it.skipIf(!findBrowserExecutable())(
+    "still rejects an independently shifted cursor after an out-of-order seek",
+    async () => {
+      const result = await inspectDirectComposition(
+        projectDir(),
+        interactionDraft(0, "power3.out", false, false, false, undefined, "cursor"),
+      );
+      expect(result.ok).toBe(false);
+      expect(result.issues.some((issue) => issue.code === "interaction_seek_instability"))
+        .toBe(true);
     },
     60_000,
   );
