@@ -175,12 +175,36 @@ spec → Terra implements → probe → fix-first → PROBE_LOG.
 
 ### WS-A — Composed frames: kill the void
 
-- **A1. Host-owned environments.** The uncommitted-at-audit-time
-  `backgroundCatalog.ts` (18 wallpapers) + `designDialects.ts` are the start:
-  every scene gets a frame.md-derived environment layer (tinted texture /
-  gradient field / depth cards) injected host-side like cinemaKit, so "empty
-  canvas" becomes unrepresentable rather than detected. Brand-token tinted,
-  never pure white/black, H.264-safe.
+- **A1. Host-owned environments.** The committed `backgroundCatalog.ts`
+  (18 wallpapers with per-image crop/focal/scrim/motion art direction) +
+  `designDialects.ts` are the start: every scene gets a frame.md-derived
+  environment layer (tinted texture / gradient field / depth cards) injected
+  host-side like cinemaKit, so "empty canvas" becomes unrepresentable rather
+  than detected. Brand-token tinted, never pure white/black, H.264-safe.
+- **A1b. Wallpaper staging patterns (owner mandate, 2026-07-10).** The
+  `vendor/wallpapers` images are to be USED in films, in three scene shapes:
+  1. **Desktop stage** — the scene is a simulated desktop: wallpaper
+     full-bleed, "desktop" furniture (dock/taskbar of app icons, floating
+     app windows) composed over it. Kill-shot for empty-canvas app scenes.
+  2. **Screen-over-wallpaper** — the product UI lives inside ONE framed
+     screen (white/branded surface, rounded corners, real shadow) floating
+     over the wallpaper; the wallpaper fills every margin. This directly
+     fixes the verify-1 lateral-entry class: a small app window drifting in
+     an empty lavender void becomes a screen composed over a rich field.
+  3. **Full app view** — the app fills most of the frame; the wallpaper
+     survives as deep margins/backdrop so edges are never bare `--canvas`.
+  Use each image's catalog metadata (objectPosition crop, textSafeSide,
+  scrim mode/opacity, motion mode + maxTravel/maxScale — several are
+  deliberately `static`). Respect the catalog's ambient-motion caps; the
+  wallpaper drifts, the SCREEN and its text do not (see WS-B evidence).
+  ⚠ Provenance: the catalog is still marked `moodboard-only` (no license
+  manifest). The owner has mandated production use for the hackathon demo —
+  flip the provenance policy deliberately in one commit (and record it) or
+  swap in licensed equivalents; do not ship customer-facing films on
+  silently-un-flipped assets. Likely mechanism: a `data-depth` environment
+  layer + a new `wallpaper-stage` / `desktop-stage` plugin kind (or frame.md
+  background policy) so the pattern rides existing rails — decide placement
+  with the SENTINEL tree.
 - **A2. Station sizing discipline.** When a declared station's content union is
   a fraction of its cell, world-layout derivation shrinks the cell or scales
   the cluster (L2, sibling of `normalize.world-layout-derive`) so fit zoom
@@ -192,6 +216,22 @@ spec → Terra implements → probe → fix-first → PROBE_LOG.
   calibrated probe. Register the finding class in sentinel.ts.
 
 ### WS-B — Ambient life: constant movement, hierarchically
+
+**Shaky-text evidence (2026-07-10 evening, owner-reported and measured).** The
+"shaky text/assets/components" the owner sees in renders was the operated-hold
+lens float: the camera drifted ~6.5px AND scale-breathed 0.35% through every
+readable dwell, putting every glyph in constant subpixel re-raster (measured
+31–38dB consecutive-frame PSNR at "rest" on the verify-1 render; H.264 turns
+that into visible edge churn). Fixed at the runtime: scale breathing is
+REMOVED everywhere, dwells under 1.2s now rest completely (43–52dB after), and
+holds ≥1.2s keep a translate-only drift ONLY because the quiet-window liveness
+metric still needs a moving lens. **B1 is therefore also the shakiness
+endgame:** once ambient life exists off the text block (parallax layers,
+wallpaper drift, shadow/light breathing), delete the long-hold lens drift
+entirely and let the FRAME hold while the environment lives. Any drifting
+layer that contains text must move in whole pixels or not at all; drift
+belongs to imagery/depth layers (the wallpaper catalog's motion modes are the
+vocabulary).
 
 - **B1. Living-canvas runtime.** Seek-safe ambient drift as a pure function of
   timeline time — slow parallax on `data-depth` layers, ±2–4px float on
@@ -329,6 +369,21 @@ isn't spending its directives on mechanizable classes.
   cap on a stat target, `contrast_aa` 1.09:1 at a payoff, rescue-rung
   `invalid_inline_script_syntax`. If any reappear they are host-side — fix in
   QA/blocking compiler, not by re-prompting.
+- **Fixed 2026-07-10 evening (verify probes 1–2, PROBE_LOG has full rows):**
+  `camera_blocking_landing` now judges ENSEMBLE phrases by the framing
+  station's contract (subject-solo range only binds on collapse);
+  `deriveDiveWindows` extends the held window for a covered payoff's
+  `OUTCOME_HOLD_SEC` before the pull-back; the component kit survives inline
+  SVG siblings (`classString`); a single-station camera path is never a late
+  plugin "arrival"; storyboard cache contract v23. The operator can now audit
+  every rendered probe (video + strip + blocking overlay + attempt table) in
+  the Studio **Probes tab** (`npm run studio` → Probes).
+- Fresh art evidence for WS-A/E from the same probes: verify-1 lateral-entry
+  is the void classic (tiny app window drifting a lavender bloom for 6.5s);
+  quillsign's light treatment washes out (pale-gray contract copy on white),
+  inverts to a strong dark "signed" scene whose toast is microscopic, and
+  clips its closing sub-headline at the frame edge. The wallpaper staging
+  patterns (WS-A1b) are the highest-leverage single fix for all of these.
 
 ## 5. Docs cleanup charter (fold into WS-F6)
 
