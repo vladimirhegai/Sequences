@@ -50,6 +50,38 @@ an unregistered class). Flags: `SLACK_SEQUENCES_SENTINEL_SKELETON` /
 > judges test the bot** — see [FALLBACKS.md](FALLBACKS.md). Read FALLBACKS.md
 > before changing the authoring pipeline.
 
+## Current motion-polish invariants (2026-07-09)
+
+These rules supersede older historical descriptions later in this file:
+
+- Camera fit targets actual painted/text/media content inside a station, not
+  the raw station rectangle. `data-camera-frame="region"` is the explicit
+  region-framing escape. Part shots include same-station
+  `data-layout-important` companions, which is how injected lockup copy stays
+  with its focal asset. Delayed entry moves receive a real origin, and only a
+  whip may use the reverse `seqAnticipate` wind-up. `seqSwoosh` is a continuous
+  cubic in/out phrase rather than a wait-rush-wait quintic.
+- Component morphs use a seek-safe cloned material-shell bridge. Never restore
+  `scaleX`/`scaleY` on live source DOM: source detail fades before a large
+  aspect change, target detail reveals after the shell lands, and reverse seek
+  must restore both endpoints (`test/componentMorph.browser.test.ts`).
+- `camera_framed_sparse` requires both an 18% content-union bbox and a 5.5%
+  exact painted rectangle-union occupancy. Only true thin bands/rails receive
+  the axis escape. The repair target is 22%; a camera-less sparse scene with a
+  declared focal may receive a restrained corrective path.
+- Primary focal QA follows a completed morph to its settled target. Primary
+  `moment_static_frame` findings block `strictOk`, remain in repair feedback,
+  and affect least-bad selection; supporting static moments are diagnostic.
+- Moment evidence ranks semantic affinity before generic major events.
+  Review thumbnails capture settled evidence, can walk backward when a subject
+  has departed, and require a normal-sized named subject inside a 2.5% safe
+  inset. A contact-sheet frame that is merely "mostly intersecting" is not
+  considered editorially framed.
+- Slot assembly canonicalizes bare `fromTo(...)` calls and model-invented
+  `window.__tl_scene_*` timeline references onto the host `tl`. Component
+  reconciliation may move one hidden `stat-card` binding to one unambiguous
+  visible stat/metric root with `data-cmp-value`; ambiguity remains blocking.
+
 ## Recipe Studio + the recipe library (2026-07-07)
 
 `apps/slack/studio/` is the operator-local Recipe Studio
@@ -164,7 +196,7 @@ island): each declared asset lowers to one internal `asset`-kind component +
 host-derived typed `animate` beats (spring `enter` at the camera-arrival
 anchor, `payoff`s sequenced after), so every existing gate binds for free —
 Sentinel rows `normalize.asset-lower` / `assets.contract`. Operator
-webview: `npm run assets` → the Asset Lab on `http://127.0.0.1:4322` (never
+webview: `npm run assets` → the Asset Lab on `http://127.0.0.1:4747` (never
 Railway; trigger badges + morph spring/duration tweaks). Brand intake:
 **`/sequences asset`** opens a modal (`file_input` screenshots + notes) →
 `src/assetBrief.ts` extracts a palette deterministically (chromium canvas
@@ -183,6 +215,32 @@ typed `STORYBOARD_SHAPES` segments, scaled to the target; deterministic
 keyword pick when the light-model hint is off). **There is deliberately no
 duration veto: a time miss must never burn an attempt** (storyboard cache
 contract v19).
+
+## Film direction + continuous playback evidence (2026-07-09)
+
+`src/engine/directionScore.ts` derives a deterministic, versioned film score
+from the locked storyboard: phrase roles/bounds, attention, dominant action,
+competition, energy, entry continuity, and settle windows. Automatic camera
+drift and FX may consume it; explicit authored actions are not broadly retimed.
+`SLACK_SEQUENCES_DIRECTION_SCORE=0` is the A/B rollback for consumers, and
+`motion-plan.json` records whether consumers were enabled.
+
+`src/engine/continuousMotion.ts` samples browser playback and persists advisory
+focal visibility/occupancy, center-and-apparent-scale
+velocity/acceleration/jerk, reversal, independent motion, and measured settle
+evidence through browser QA and temporal reports.
+It must not affect `ok`/`strictOk` until thresholds have cross-film evidence;
+`SLACK_SEQUENCES_CONTINUOUS_MOTION=0` disables collection. Paid A/B evidence:
+the motion-heavy incident film improved settle and motion competition, while
+the quiet approval film and consumer-free golden retained their own rhythm.
+See [PROBE_LOG.md](PROBE_LOG.md) for the exact measurements and attempt accounting.
+
+The same probes added four deterministic attempt-economy rules: an immediate
+first camera segment owns the entry target; primary focal review follows typed
+component/interaction evidence; static liveness resolves recognized indexed
+`forEach` staggers; and a complete uninvoked `(tl) => {...}` slot envelope is
+unwrapped before assembly. Do not extend the last repair into a general source
+rewriter; widespread authored layout redesign remains architectural.
 
 ## Live-probe policy — fix the attempt before continuing
 

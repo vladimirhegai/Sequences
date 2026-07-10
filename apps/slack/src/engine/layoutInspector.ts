@@ -58,6 +58,11 @@ import {
   scorePingPongPair,
 } from "./eyeTrace.ts";
 import { findBrowserExecutable } from "./render.ts";
+import {
+  captureContinuousMotionEvidence,
+  continuousMotionEvidenceEnabled,
+  type ContinuousMotionEvidenceV1,
+} from "./continuousMotion.ts";
 
 export type LayoutSeverity = "error" | "warning" | "info";
 
@@ -93,6 +98,8 @@ export interface DirectLayoutIssue {
   sceneId?: string;
   part?: string;
   componentRootPart?: string;
+  /** Importance of a storyboard moment when this issue is moment-scoped. */
+  momentImportance?: "primary" | "supporting";
   insideCameraWorld?: boolean;
   /** The subject IS a data-camera-world plane (overflow there is by design). */
   isCameraWorld?: boolean;
@@ -116,7 +123,10 @@ export interface DirectLayoutIssue {
    */
   framing?: {
     sceneId: string;
+    /** Bounding footprint of the composed content in the frame. */
     fraction: number;
+    /** Union area of actual painted/text/media rectangles in the frame. */
+    occupiedFraction?: number;
     part?: string;
     region?: string;
   };
@@ -136,6 +146,8 @@ export interface DirectBrowserQaResult {
   boundaries?: DirectBoundaryInventory[];
   /** Rendered temporal judge: per-moment before/after frame-difference evidence. */
   temporalJudge?: TemporalJudgeMomentEvidence[];
+  /** Advisory playback time series; never contributes to ok/strictOk. */
+  continuousMotion?: ContinuousMotionEvidenceV1;
   errors: string[];
   warnings: string[];
   guidePngBase64?: string;
@@ -339,7 +351,9 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 //     sampled hero frame.
 // v13: layout findings preserve structured geometry and repair selectors.
 // v14: Sequences safe-area evidence serializes plain root rects, not DOMRect.
-const QA_CACHE_VERSION = 16;
+// v17: sparse framing includes painted rectangle-union occupancy and primary
+//      static moments participate in strict visual acceptance.
+const QA_CACHE_VERSION = 17;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -1369,6 +1383,54 @@ async function renderSpatialGuide(
   return String(image);
 }
 
+/** Follow a declared focal through completed component morphs in one scene. */
+export function spatialFocalPartAt(scene: DirectScene, time: number): string | undefined {
+  let focalPart = scene.spatialIntent?.focalPart;
+  if (!focalPart) return undefined;
+  const morphs = (scene.beats ?? [])
+    .filter((beat) => beat.kind === "morph" && beat.morphTo)
+    .sort((a, b) => a.atSec - b.atSec);
+  for (const beat of morphs) {
+    const endSec = beat.atSec + (beat.durationSec ?? 0.8);
+    if (beat.component === focalPart && time >= endSec) focalPart = beat.morphTo!;
+  }
+  return focalPart;
+}
+
+/** Review a primary morph on its settled target, not its hidden source shell. */
+export function primaryFocalReview(
+  scene: DirectScene,
+  momentAtSec: number,
+  momentSubjectPart?: string,
+): { focalPart?: string; sampleAt: number } {
+  const sceneEnd = scene.startSec + scene.durationSec;
+  let sampleAt = Math.min(
+    Math.max(momentAtSec + 0.15, scene.startSec + 0.15),
+    sceneEnd - 0.08,
+  );
+  // A primary moment may concern a supporting component rather than the
+  // scene-level hero (direction-live-a: feed rows at 4.5s while the later
+  // mttr counter was still correctly hidden). Prefer its executable evidence
+  // target; the spatial focal remains the scene-level fallback.
+  let focalPart = momentSubjectPart ?? scene.spatialIntent?.focalPart;
+  if (!focalPart) return { sampleAt };
+  const morph = (scene.beats ?? []).find((beat) => {
+    if (beat.kind !== "morph" || beat.component !== focalPart || !beat.morphTo) return false;
+    const endSec = beat.atSec + (beat.durationSec ?? 0.8);
+    return momentAtSec >= beat.atSec - 0.1 && momentAtSec <= endSec + 0.1;
+  });
+  if (morph?.morphTo) {
+    sampleAt = Math.min(
+      Math.max(sampleAt, morph.atSec + (morph.durationSec ?? 0.8) + 0.08),
+      sceneEnd - 0.08,
+    );
+    focalPart = morph.morphTo;
+  } else if (!momentSubjectPart) {
+    focalPart = spatialFocalPartAt(scene, sampleAt) ?? focalPart;
+  }
+  return { focalPart, sampleAt };
+}
+
 async function auditFocalParts(
   page: import("puppeteer-core").Page,
   scenes: DirectScene[],
@@ -1381,6 +1443,7 @@ async function auditFocalParts(
     Math.abs(time - (scene.startSec + scene.durationSec * 0.58)) <= 0.04
   );
   if (!active?.spatialIntent) return [];
+  const focalPart = spatialFocalPartAt(active, time) ?? active.spatialIntent.focalPart;
   return page.evaluate((payload) => {
     const scene = document.querySelector<HTMLElement>(
       `[data-scene="${CSS.escape(payload.sceneId)}"]`,
@@ -1462,9 +1525,106 @@ async function auditFocalParts(
     return [];
   }, {
     sceneId: active.id,
-    focalPart: active.spatialIntent.focalPart,
+    focalPart,
     time,
   });
+}
+
+/**
+ * A scene-level hero sample cannot protect the exact frames the storyboard
+ * calls primary. Measure each primary moment's declared focal after a short
+ * settle allowance, under the active camera transform. This catches entrances
+ * that begin at the promised "resolve" moment and assets still hanging outside
+ * the viewport even though they become healthy later in the scene.
+ */
+async function auditPrimaryMomentFocals(
+  page: import("puppeteer-core").Page,
+  scenes: DirectScene[],
+  seekContent: (time: number) => Promise<void>,
+): Promise<DirectLayoutIssue[]> {
+  const issues: DirectLayoutIssue[] = [];
+  const failed = new Set<string>();
+  for (const scene of scenes) {
+    const sceneEnd = scene.startSec + scene.durationSec;
+    for (const moment of (scene.moments ?? []).filter((entry) => entry.importance === "primary")) {
+      const evidenceTarget = moment.evidence &&
+          (moment.evidence.kind === "component" || moment.evidence.kind === "interaction")
+        ? moment.evidence.detail.split("→").at(-1)?.trim()
+        : undefined;
+      const momentSubject = evidenceTarget && /^[a-z0-9][a-z0-9-]*$/i.test(evidenceTarget)
+        ? evidenceTarget
+        : undefined;
+      const review = primaryFocalReview(scene, moment.atSec, momentSubject);
+      const focalPart = review.focalPart;
+      if (!focalPart) continue;
+      const key = `${scene.id}\u0000${focalPart}`;
+      if (failed.has(key)) break;
+      const sampleAt = review.sampleAt;
+      if (sampleAt <= scene.startSec || sampleAt >= sceneEnd) continue;
+      await seekContent(sampleAt);
+      const measured = await page.evaluate((payload: { sceneId: string; focalPart: string }) => {
+        const root = document.querySelector<HTMLElement>(
+          "[data-composition-id][data-width][data-height]",
+        );
+        const sceneElement = document.querySelector<HTMLElement>(
+          `[data-scene="${CSS.escape(payload.sceneId)}"]`,
+        );
+        const focal = sceneElement?.querySelector<HTMLElement>(
+          `[data-part="${CSS.escape(payload.focalPart)}"]`,
+        );
+        if (!root || !focal) return { missing: true, opacity: 0, onFrame: 0, frameFraction: 0 };
+        const rootRect = root.getBoundingClientRect();
+        const rect = focal.getBoundingClientRect();
+        let opacity = 1;
+        let node: Element | null = focal;
+        while (node) {
+          const style = getComputedStyle(node);
+          if (style.display === "none" || style.visibility === "hidden") opacity = 0;
+          opacity *= Number.parseFloat(style.opacity) || 0;
+          node = node.parentElement;
+        }
+        const width = Math.max(
+          0,
+          Math.min(rect.right, rootRect.right) - Math.max(rect.left, rootRect.left),
+        );
+        const height = Math.max(
+          0,
+          Math.min(rect.bottom, rootRect.bottom) - Math.max(rect.top, rootRect.top),
+        );
+        const area = rect.width * rect.height;
+        const frameArea = rootRect.width * rootRect.height;
+        return {
+          missing: false,
+          opacity,
+          onFrame: area > 0 ? (width * height) / area : 0,
+          frameFraction: frameArea > 0 ? (width * height) / frameArea : 0,
+        };
+      }, { sceneId: scene.id, focalPart });
+      if (!measured.missing && measured.opacity >= 0.35 && measured.onFrame >= 0.85) continue;
+      failed.add(key);
+      const invisible = measured.missing || measured.opacity < 0.35;
+      issues.push({
+        code: invisible ? "spatial_focal_invisible" : "spatial_focal_offframe",
+        severity: "warning",
+        time: sampleAt,
+        selector: `[data-part="${focalPart}"]`,
+        sceneId: scene.id,
+        part: focalPart,
+        momentImportance: "primary",
+        message: invisible
+          ? `Primary moment "${moment.id}" promises focal part "${focalPart}", but it is not ` +
+            `visibly ready at the review frame (${sampleAt.toFixed(2)}s).`
+          : `Primary moment "${moment.id}" promises focal part "${focalPart}", but only ` +
+            `${Math.round(measured.onFrame * 100)}% is inside the frame at its review frame ` +
+            `(${sampleAt.toFixed(2)}s).`,
+        fixHint:
+          "Finish the focal entrance before the primary moment, move the moment to the settled " +
+          "state, or reframe the subject so at least 85% is visible at that exact review frame.",
+        source: "sequences",
+      });
+    }
+  }
+  return issues;
 }
 
 /**
@@ -1820,6 +1980,11 @@ async function auditStaleAssets(
  */
 const SPARSE_COVERAGE_MIN = 0.18;
 /**
+ * A large union bbox can be faked by a few tiny fragments in opposite corners.
+ * Require a modest amount of actually painted/text/media area as well.
+ */
+const SPARSE_OCCUPANCY_MIN = 0.055;
+/**
  * Lower floor for camera landings in the film's FINAL scene: a deliberate
  * compact resolve (badge + CTA pair ~10-15%) reached by a pull-back is the
  * genre's signature and must pass, while a true disaster (a 2% lone CTA — the
@@ -1830,6 +1995,8 @@ const SPARSE_COVERAGE_MIN = 0.18;
 const SPARSE_COVERAGE_MIN_FINAL = 0.08;
 /** Content spanning this much of one frame axis is a deliberate composition. */
 const SPARSE_AXIS_ESCAPE = 0.6;
+/** A true band/rail stays compact on the perpendicular axis. */
+const SPARSE_AXIS_ESCAPE_THICKNESS = 0.35;
 /** Scenes shorter than this are stings/flashes — never judged for coverage. */
 const SPARSE_MIN_SCENE_SEC = 2;
 
@@ -3028,7 +3195,12 @@ export async function inspectDirectComposition(
       time: number,
       sceneId: string,
     ): Promise<
-      { fraction: number; widthFraction: number; heightFraction: number } | undefined
+      {
+        fraction: number;
+        occupiedFraction: number;
+        widthFraction: number;
+        heightFraction: number;
+      } | undefined
     > => {
       await seekContent(time);
       return page.evaluate((payload: { sceneId: string }) => {
@@ -3060,15 +3232,36 @@ export async function inspectDirectComposition(
         let top = Infinity;
         let right = -Infinity;
         let bottom = -Infinity;
+        const rects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+        const colorHasAlpha = (value: string): boolean => {
+          if (!value || value === "transparent") return false;
+          const match = value.match(/rgba?\(([^)]+)\)/i);
+          if (!match) return true;
+          const channels = match[1]!.split(",");
+          return channels.length < 4 || Number(channels[3]) > 0.02;
+        };
+        const stylePaints = (style: CSSStyleDeclaration): boolean =>
+          colorHasAlpha(style.backgroundColor) ||
+          style.backgroundImage !== "none" ||
+          style.boxShadow !== "none" ||
+          style.outlineStyle !== "none" ||
+          (Number.parseFloat(style.borderTopWidth) || 0) > 0 ||
+          (Number.parseFloat(style.borderRightWidth) || 0) > 0 ||
+          (Number.parseFloat(style.borderBottomWidth) || 0) > 0 ||
+          (Number.parseFloat(style.borderLeftWidth) || 0) > 0;
         for (const element of [scope, ...Array.from(scope.querySelectorAll<HTMLElement>("*"))]) {
           if (element.closest("[data-layout-ignore]")) continue;
           const hasText = Array.from(element.childNodes).some((node) =>
             node.nodeType === Node.TEXT_NODE && /\S/.test(node.textContent ?? ""),
           );
+          const style = getComputedStyle(element);
+          const before = getComputedStyle(element, "::before");
+          const after = getComputedStyle(element, "::after");
+          const pseudoPaints = (pseudo: CSSStyleDeclaration) =>
+            pseudo.content !== "none" && pseudo.content !== "normal" && stylePaints(pseudo);
           const isContent = hasText ||
             MEDIA.has(element.tagName.toUpperCase()) ||
-            element.hasAttribute("data-part") ||
-            element.hasAttribute("data-layout-important");
+            stylePaints(style) || pseudoPaints(before) || pseudoPaints(after);
           if (!isContent) continue;
           const rect = element.getBoundingClientRect();
           if (rect.width < 12 || rect.height < 12) continue;
@@ -3082,28 +3275,88 @@ export async function inspectDirectComposition(
           top = Math.min(top, t);
           right = Math.max(right, r);
           bottom = Math.max(bottom, b);
+          rects.push({ left: l, top: t, right: r, bottom: b });
         }
         if (right <= left || bottom <= top) {
-          return { fraction: 0, widthFraction: 0, heightFraction: 0 };
+          return { fraction: 0, occupiedFraction: 0, widthFraction: 0, heightFraction: 0 };
         }
+        // Exact rectangle-union area. Nested text inside a painted panel does
+        // not double-count, while widely separated tiny cards no longer earn
+        // the empty area between them as visual coverage.
+        const xs = [...new Set(rects.flatMap((rect) => [rect.left, rect.right]))]
+          .sort((a, b) => a - b);
+        let occupiedArea = 0;
+        for (let index = 0; index < xs.length - 1; index += 1) {
+          const x1 = xs[index]!;
+          const x2 = xs[index + 1]!;
+          if (x2 <= x1) continue;
+          const intervals = rects
+            .filter((rect) => rect.left < x2 && rect.right > x1)
+            .map((rect) => [rect.top, rect.bottom] as const)
+            .sort((a, b) => a[0] - b[0]);
+          let coveredY = 0;
+          let runStart = 0;
+          let runEnd = 0;
+          for (let interval = 0; interval < intervals.length; interval += 1) {
+            const [start, end] = intervals[interval]!;
+            if (interval === 0) {
+              runStart = start;
+              runEnd = end;
+            } else if (start <= runEnd) {
+              runEnd = Math.max(runEnd, end);
+            } else {
+              coveredY += runEnd - runStart;
+              runStart = start;
+              runEnd = end;
+            }
+          }
+          if (intervals.length) coveredY += runEnd - runStart;
+          occupiedArea += (x2 - x1) * coveredY;
+        }
+        const frameArea = rootRect.width * rootRect.height;
         return {
-          fraction: ((right - left) * (bottom - top)) / (rootRect.width * rootRect.height),
+          fraction: ((right - left) * (bottom - top)) / frameArea,
+          occupiedFraction: occupiedArea / frameArea,
           widthFraction: (right - left) / rootRect.width,
           heightFraction: (bottom - top) / rootRect.height,
         };
       }, { sceneId });
     };
     const isSparseCoverage = (
-      coverage: { fraction: number; widthFraction: number; heightFraction: number } | undefined,
+      coverage: {
+        fraction: number;
+        occupiedFraction: number;
+        widthFraction: number;
+        heightFraction: number;
+      } | undefined,
       minFraction: number = SPARSE_COVERAGE_MIN,
-    ): coverage is { fraction: number; widthFraction: number; heightFraction: number } =>
+    ): coverage is {
+      fraction: number;
+      occupiedFraction: number;
+      widthFraction: number;
+      heightFraction: number;
+    } =>
       Boolean(
         coverage &&
-        coverage.fraction < minFraction &&
-        // A composition that spans most of one frame axis (a full-width
-        // headline band, a tall rail) is a deliberate shape, not sparseness.
-        coverage.widthFraction < SPARSE_AXIS_ESCAPE &&
-        coverage.heightFraction < SPARSE_AXIS_ESCAPE,
+        (
+          coverage.fraction < minFraction ||
+          coverage.occupiedFraction < (
+            minFraction === SPARSE_COVERAGE_MIN_FINAL ? 0.03 : SPARSE_OCCUPANCY_MIN
+          )
+        ) &&
+        // A composition that spans one axis while staying compact on the
+        // other (a full-width headline band, a tall rail) is deliberate. Two
+        // tiny islands in opposite corners span BOTH axes and are not a band.
+        !(
+          (
+            coverage.widthFraction >= SPARSE_AXIS_ESCAPE &&
+            coverage.heightFraction <= SPARSE_AXIS_ESCAPE_THICKNESS
+          ) ||
+          (
+            coverage.heightFraction >= SPARSE_AXIS_ESCAPE &&
+            coverage.widthFraction <= SPARSE_AXIS_ESCAPE_THICKNESS
+          )
+        ),
       );
     const finalSceneId = draft.storyboard[draft.storyboard.length - 1]?.id;
     for (const scenePlan of parseCameraPlan(draft.html).plan?.scenes ?? []) {
@@ -3205,14 +3458,16 @@ export async function inspectDirectComposition(
               framing: {
                 sceneId: scenePlan.sceneId,
                 fraction: confirmedCoverage.fraction,
+                occupiedFraction: confirmedCoverage.occupiedFraction,
                 ...(segment.toPart ? { part: segment.toPart } : {}),
                 ...(segment.toRegion ? { region: segment.toRegion } : {}),
               },
               message:
                 `Camera ${segment.move} lands on ${station} in scene "${scenePlan.sceneId}" at ` +
                 `${arriveSec.toFixed(1)}s, but the scene's visible content fills only ` +
-                `${Math.round(confirmedCoverage.fraction * 100)}% of the frame — a small subject ` +
-                `adrift in empty space.`,
+                `${Math.round(confirmedCoverage.fraction * 100)}% of the frame footprint and ` +
+                `${Math.round(confirmedCoverage.occupiedFraction * 100)}% painted area — a small ` +
+                `subject adrift in empty space.`,
               fixHint:
                 "Fill the framing: enlarge the framed content, tighten the station rect (the fit " +
                 "zoom follows the data-region box), or bring more of the scene's content into the " +
@@ -3345,11 +3600,16 @@ export async function inspectDirectComposition(
         severity: "warning",
         time: sampleAt,
         selector: `[data-scene="${scene.id}"]`,
-        framing: { sceneId: scene.id, fraction: confirmedCoverage.fraction },
+        framing: {
+          sceneId: scene.id,
+          fraction: confirmedCoverage.fraction,
+          occupiedFraction: confirmedCoverage.occupiedFraction,
+        },
         message:
           `Scene "${scene.id}" holds one framing whose visible content fills only ` +
-          `${Math.round(confirmedCoverage.fraction * 100)}% of the frame — a small subject ` +
-          `adrift in empty space.`,
+          `${Math.round(confirmedCoverage.fraction * 100)}% of the frame footprint and ` +
+          `${Math.round(confirmedCoverage.occupiedFraction * 100)}% painted area — a small ` +
+          `subject adrift in empty space.`,
         fixHint:
           "Fill the frame: scale the composition up (hero content at 60-80% of frame width), " +
           "or develop the safe area around the subject with supporting evidence instead of " +
@@ -3357,6 +3617,8 @@ export async function inspectDirectComposition(
         source: "sequences",
       });
     }
+
+    rawIssues.push(...await auditPrimaryMomentFocals(page, draft.storyboard, seekContent));
 
     // Exit discipline (WS4): a surface whose last beat has passed still sitting
     // at full opacity over the focal element is the "assets don't disappear and
@@ -3482,6 +3744,27 @@ export async function inspectDirectComposition(
       await seekContent(interactionIntents[0]!.arriveSec);
       guidePngBase64 = await renderSpatialGuide(page, interactionIntents);
     }
+    // Continuous playback evidence. It is deliberately advisory: losing this
+    // evidence never rejects a runnable draft, and its metrics do not feed
+    // strictOk until golden + live A/B calibration establishes useful bounds.
+    let continuousMotion: ContinuousMotionEvidenceV1 | undefined;
+    if (continuousMotionEvidenceEnabled() && duration >= 8) {
+      try {
+        continuousMotion = await captureContinuousMotionEvidence(
+          page,
+          draft.storyboard,
+          duration,
+          { width, height },
+          { mapSeekTime: toOutputTime },
+        );
+      } catch (error) {
+        process.stderr.write(
+          `[layout-qa] continuous motion evidence skipped: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
+      }
+    }
     // Rendered temporal judge — must run LAST: it drops the device scale for
     // cheap frame pairs, so every full-resolution capture is already done.
     // A judge failure is diagnostics lost, never a QA failure.
@@ -3502,12 +3785,14 @@ export async function inspectDirectComposition(
       );
     }
     const staticMoments = temporalJudge.filter((entry) => entry.verdict === "static");
+    const staticPrimaryMoments = staticMoments.filter((entry) => entry.importance === "primary");
     for (const flat of staticMoments) {
       const issue: DirectLayoutIssue = {
         code: "moment_static_frame",
         severity: "warning",
         time: flat.atSec,
         selector: `moment:${flat.momentId}`,
+        momentImportance: flat.importance,
         message:
           `moment "${flat.momentId}" (${flat.title}) claims a changed state at ${flat.atSec}s ` +
           `but rendered frames at ${flat.beforeSec}s and ${flat.afterSec}s are near-identical ` +
@@ -3538,12 +3823,14 @@ export async function inspectDirectComposition(
       strictOk:
         errors.length === 0 &&
         visualErrors.length === 0 &&
-        repairWarnings.length === 0,
+        repairWarnings.length === 0 &&
+        staticPrimaryMoments.length === 0,
       samples,
       issues,
       interactions: interactionEvidence,
       ...(boundaryInventories.length ? { boundaries: boundaryInventories } : {}),
       ...(temporalJudge.length ? { temporalJudge } : {}),
+      ...(continuousMotion ? { continuousMotion } : {}),
       errors: [...new Set(errors)],
       warnings: [...new Set(warnings)],
       ...(guidePngBase64 ? { guidePngBase64 } : {}),

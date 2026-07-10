@@ -45,15 +45,24 @@ function payoffScene(id: string, startSec: number): DirectScene {
 }
 
 describe("resolveFxPlan (the taste ladder)", () => {
-  it("answers a primary payoff moment with one sweep + one glow pulse at settle time", () => {
+  it("answers a primary payoff with one direction-slotted sweep after settle", () => {
     const plan = resolveFxPlan([payoffScene("proof", 0)]);
     const sweep = plan.effects.find((effect) => effect.kind === "sweep");
     const glow = plan.effects.find((effect) => effect.kind === "glow-pulse");
     expect(sweep).toMatchObject({ sceneId: "proof", target: "proof-stat" });
-    expect(glow).toMatchObject({ sceneId: "proof", target: "proof-stat" });
+    expect(glow).toBeUndefined();
     // Settle + ε: strictly after the temporal judge's after-frame
     // (evidence.endSec + 0.08), so a sweep can never fake a moment's change.
-    expect(sweep!.atSec).toBeGreaterThan(2.5 + 0.08);
+    expect(sweep!.atSec).toBeGreaterThan(3.05);
+  });
+
+  it("suppresses automatic payoff garnish when a grade owns the same phrase", () => {
+    const proof = payoffScene("proof", 0);
+    proof.gradeShift = { version: 1, atSec: 2.5, toGrade: "warm", fromPart: "proof-stat" };
+    proof.moments![0]!.motionIntent = "color temperature turns warm";
+    const effects = resolveFxPlan([proof]).effects;
+    expect(effects.some((effect) => effect.kind === "grade-shift")).toBe(true);
+    expect(effects.some((effect) => effect.kind === "sweep")).toBe(false);
   });
 
   it("caps sweeps at one per scene and three per film, none in the opening second", () => {

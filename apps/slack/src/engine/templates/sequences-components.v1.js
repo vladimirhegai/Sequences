@@ -742,13 +742,124 @@
     return el.querySelector(".cmp-dialog") || el;
   }
 
+  function commonMorphHost(scene, from, to) {
+    var ancestors = new Set();
+    var node = from.parentElement;
+    while (node && scene.contains(node)) {
+      ancestors.add(node);
+      node = node.parentElement;
+    }
+    node = to.parentElement;
+    while (node && node !== scene) {
+      if (ancestors.has(node) && getComputedStyle(node).position !== "static") return node;
+      node = node.parentElement;
+    }
+    return scene;
+  }
+
+  function positionWithin(element, host) {
+    var elementBox = layoutPosition(element);
+    var hostBox = layoutPosition(host);
+    return {
+      x: elementBox.x - hostBox.x,
+      y: elementBox.y - hostBox.y,
+      width: elementBox.width,
+      height: elementBox.height,
+    };
+  }
+
+  function stripMorphCloneBindings(root) {
+    var nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("*")));
+    for (var i = 0; i < nodes.length; i += 1) {
+      nodes[i].removeAttribute("id");
+      nodes[i].removeAttribute("data-part");
+      nodes[i].removeAttribute("data-component");
+      nodes[i].removeAttribute("data-layout-important");
+    }
+  }
+
+  function surfaceVars(element) {
+    var style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderTopColor,
+      borderRadius: style.borderTopLeftRadius,
+      borderWidth: style.borderTopWidth,
+      boxShadow: style.boxShadow,
+    };
+  }
+
+  function buildMorphBridge(host, fromElement, from, toElement) {
+    var bridge = document.createElement("div");
+    bridge.className = "seq-component-morph-bridge";
+    bridge.setAttribute("aria-hidden", "true");
+    bridge.style.cssText =
+      "position:absolute;pointer-events:none;overflow:hidden;box-sizing:border-box;" +
+      "z-index:70;opacity:0;visibility:hidden;margin:0;transform-origin:0 0;";
+    bridge.style.left = from.x + "px";
+    bridge.style.top = from.y + "px";
+    bridge.style.width = from.width + "px";
+    bridge.style.height = from.height + "px";
+    var fromSurface = surfaceVars(fromElement);
+    for (var key in fromSurface) bridge.style[key] = fromSurface[key];
+
+    // The clone preserves the first frame exactly, then its internals leave
+    // before the shell changes aspect. It owns no ids/contracts, so runtime
+    // selectors and browser QA continue addressing only the live components.
+    var content = fromElement.cloneNode(true);
+    stripMorphCloneBindings(content);
+    content.classList.add("seq-component-morph-content");
+    content.style.cssText +=
+      ";position:absolute!important;left:0!important;top:0!important;margin:0!important;" +
+      "width:" + from.width + "px!important;height:" + from.height + "px!important;" +
+      "transform:none!important;transform-origin:0 0!important;pointer-events:none!important;";
+    bridge.appendChild(content);
+    host.appendChild(bridge);
+    return { bridge: bridge, content: content, targetSurface: surfaceVars(toElement) };
+  }
+
   function compileMorph(timeline, scene, el, beat) {
     var target = scene.querySelector('[data-part="' + CSS.escape(beat.morphTo) + '"]');
     if (!target) fail(beat.id, 'morph target "' + beat.morphTo + '" is absent');
-    var from = layoutPosition(morphVisualBox(el));
-    var to = layoutPosition(morphVisualBox(target));
+    var fromElement = morphVisualBox(el);
+    var toElement = morphVisualBox(target);
+    var host = commonMorphHost(scene, fromElement, toElement);
+    var from = positionWithin(fromElement, host);
+    var to = positionWithin(toElement, host);
     var duration = beat.endSec - beat.startSec;
-    var revealAt = beat.startSec + duration * 0.45;
+    var revealAt = beat.startSec + duration * 0.56;
+    var handoffAt = beat.startSec + duration * 0.72;
+    var built = buildMorphBridge(host, fromElement, from, toElement);
+
+    // Swap the live source for a pixel-identical bridge on one frame. The
+    // bridge's source content fades before the aspect ratio changes enough to
+    // distort it; only the empty material shell interpolates width/height.
+    timeline.set(built.bridge, { autoAlpha: 1 }, beat.startSec);
+    timeline.set(el, { opacity: 0 }, beat.startSec);
+    move(timeline, built.content, { opacity: 1, filter: "blur(0px)" }, {
+      opacity: 0,
+      filter: "blur(5px)",
+      duration: duration * 0.3,
+      ease: "power2.in",
+    }, beat.startSec + duration * 0.08);
+    move(timeline, built.bridge, {
+      left: from.x,
+      top: from.y,
+      width: from.width,
+      height: from.height,
+    }, {
+      left: to.x,
+      top: to.y,
+      width: to.width,
+      height: to.height,
+      backgroundColor: built.targetSurface.backgroundColor,
+      borderColor: built.targetSurface.borderColor,
+      borderRadius: built.targetSurface.borderRadius,
+      borderWidth: built.targetSurface.borderWidth,
+      boxShadow: built.targetSurface.boxShadow,
+      duration: duration * 0.82,
+      ease: beat.ease,
+    }, beat.startSec);
     // The twin arrives only through this morph: pre-rendered hidden at build.
     // A morph IS the twin's entrance, so it must do everything `open` would —
     // kit CSS keeps an overlay's scrim/panel/items at opacity 0 until opened,
@@ -756,7 +867,7 @@
     // (it would re-run the entrance over this reveal and flash).
     reveal(timeline, target, { opacity: 0 }, {
       opacity: 1,
-      duration: duration * 0.45,
+      duration: duration * 0.34,
       ease: "power2.out",
     }, revealAt);
     setState(timeline, target, "open", revealAt);
@@ -786,25 +897,15 @@
         ease: "power3.out",
       }, revealAt + itemStep * i);
     }
-    move(timeline, el, {
-      x: 0,
-      y: 0,
-      scaleX: 1,
-      scaleY: 1,
-      transformOrigin: "0 0",
-    }, {
-      x: to.x - from.x,
-      y: to.y - from.y,
-      scaleX: to.width / from.width,
-      scaleY: to.height / from.height,
-      duration: duration,
-      ease: beat.ease,
-    }, beat.startSec);
-    move(timeline, el, { opacity: 1 }, {
+    move(timeline, built.bridge, { opacity: 1 }, {
       opacity: 0,
-      duration: duration * 0.4,
-      ease: "power2.in",
-    }, beat.startSec + duration * 0.55);
+      duration: duration * 0.28,
+      ease: "power2.out",
+    }, handoffAt);
+    // Visibility belongs only to the start swap. A second autoAlpha set here
+    // leaves visibility:hidden behind when the timeline seeks backward even
+    // though opacity restores, making the replayed morph shell disappear.
+    timeline.set(built.bridge, { opacity: 0 }, beat.endSec);
   }
 
   /* ------------------------------------------------------------ compile */

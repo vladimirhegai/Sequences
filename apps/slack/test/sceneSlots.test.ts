@@ -145,6 +145,57 @@ describe("assembleSlotComposition", () => {
     expect(a.html).toBe(b.html);
   });
 
+  it("normalizes impossible model-authored slot timeline envelopes", () => {
+    const slots = extractSceneSlots([
+      '<scene_html id="hero-open"><div class="hero">Ship</div></scene_html>',
+      '<scene_script id="hero-open">',
+      "(function(tl) {",
+      "  fromTo('.hero', { opacity: 0 }, { opacity: 1, duration: .4 }, .2);",
+      "})(window.__tl_scene_hero_open);",
+      "</scene_script>",
+      '<scene_html id="cta-close"><div>Go</div></scene_html>',
+      '<scene_script id="cta-close">window.__tl_scene_cta_close.set(".x", {}, 4);</scene_script>',
+    ].join("\n"));
+
+    const result = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });
+
+    expect(result.html).toContain("tl.fromTo('.hero'");
+    expect(result.html).toContain("})(tl);");
+    expect(result.html).toContain('tl.set(".x", {}, 4)');
+    expect(result.html).not.toContain("window.__tl_scene_");
+    expect(result.scriptRepairs).toEqual({
+      bareFromTo: 1,
+      pseudoTimeline: 2,
+      arrowEnvelope: 0,
+    });
+  });
+
+  it("does not rewrite a locally declared fromTo helper", () => {
+    const slots = extractSceneSlots([
+      '<scene_html id="hero-open"><div>Ship</div></scene_html>',
+      '<scene_script id="hero-open">function fromTo() {}\nfromTo();</scene_script>',
+      '<scene_html id="cta-close"><div>Go</div></scene_html>',
+      '<scene_script id="cta-close">tl.set(".x", {}, 4);</scene_script>',
+    ].join("\n"));
+    const result = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });
+    expect(result.html).toContain("function fromTo() {}\nfromTo();");
+    expect(result.scriptRepairs.bareFromTo).toBe(0);
+  });
+
+  it("unwraps uninvoked arrow-function scene envelopes onto the host timeline", () => {
+    const slots = extractSceneSlots([
+      '<scene_html id="hero-open"><div class="hero">Ship</div></scene_html>',
+      '<scene_script id="hero-open">(tl) => { tl.from(".hero", { opacity: 0 }, 0.2); };</scene_script>',
+      '<scene_html id="cta-close"><div>Go</div></scene_html>',
+      '<scene_script id="cta-close">const animate = (tl) => { tl.to(".x", { opacity: 1 }, 4); };</scene_script>',
+    ].join("\n"));
+    const result = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });
+    expect(result.html).toContain('tl.from(".hero"');
+    expect(result.html).toContain('tl.to(".x"');
+    expect(result.html).not.toContain("(tl) =>");
+    expect(result.scriptRepairs.arrowEnvelope).toBe(2);
+  });
+
   it("reports scenes whose interior or script is missing", () => {
     const slots = extractSceneSlots('<scene_html id="hero-open"><h1>only</h1></scene_html>');
     const result = assembleSlotComposition({ storyboard, slots, compositionId: "demo-slots" });

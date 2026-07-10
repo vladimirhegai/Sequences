@@ -1316,7 +1316,7 @@ export function injectPluginContract(
     const wrapper =
       `\n<div class="seq-plugin seq-plugin-${instance.kind}" data-sequences-host="1" ` +
       `data-sequences-plugin="${instance.kind}" data-plugin-uid="${instance.uid}" ` +
-      `data-part="${instance.id}" style="${instance.wrapperStyle};` +
+      `data-part="${instance.id}" data-layout-important="1" style="${instance.wrapperStyle};` +
       `grid-column:1/-1;min-width:0;max-width:100%;box-sizing:border-box">` +
       `${instance.markup}</div>`;
     result = result.slice(0, anchorEnd) + wrapper + result.slice(anchorEnd);

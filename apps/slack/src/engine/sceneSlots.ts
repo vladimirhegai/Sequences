@@ -100,6 +100,66 @@ export interface SlotAssemblyResult {
   missingHtml: string[];
   /** Scene ids with no script block. */
   missingScript: string[];
+  /** Invalid model-authored slot envelopes normalized onto the host timeline. */
+  scriptRepairs: SlotScriptRepairs;
+}
+
+export interface SlotScriptRepairs {
+  bareFromTo: number;
+  pseudoTimeline: number;
+  arrowEnvelope: number;
+}
+
+/**
+ * Scene slots contain statements for the host's `tl`, but models sometimes
+ * repeat a remembered per-scene envelope. Three live failure shapes are fully
+ * mechanical:
+ *
+ * - a line-leading bare `fromTo(...)` is not a GSAP global and throws;
+ * - `window.__tl_scene_<id>` is never created by the host, so invoking an
+ *   otherwise valid wrapper with it passes `undefined` as `tl`.
+ * - a complete `(tl) => { ... };` (optionally assigned to a local const) is an
+ *   uninvoked function inside the host's own timeline IIFE.
+ *
+ * Normalize only those impossible bindings. A locally declared `fromTo`
+ * function is left alone, and no animation arguments or timing are changed.
+ */
+export function normalizeSceneSlotScript(script: string): {
+  script: string;
+  repairs: SlotScriptRepairs;
+} {
+  let normalized = script;
+  let bareFromTo = 0;
+  let pseudoTimeline = 0;
+  let arrowEnvelope = 0;
+  const arrow = normalized.match(
+    /^\s*(?:(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*)?\(\s*tl\s*\)\s*=>\s*\{([\s\S]*)\}\s*;?\s*$/,
+  );
+  if (arrow) {
+    normalized = arrow[1]!.trim();
+    arrowEnvelope = 1;
+  }
+  if (!/\b(?:function\s+fromTo|(?:const|let|var)\s+fromTo\b)/.test(normalized)) {
+    normalized = normalized.replace(/^(\s*)fromTo\s*\(/gm, (_match, indent: string) => {
+      bareFromTo += 1;
+      return `${indent}tl.fromTo(`;
+    });
+  }
+  normalized = normalized.replace(
+    /\bwindow\.__tl_scene_[A-Za-z0-9_$]+(?=\s*\.)/g,
+    () => {
+      pseudoTimeline += 1;
+      return "tl";
+    },
+  );
+  normalized = normalized.replace(
+    /(\}\s*\)\s*\(\s*)window\.__tl_scene_[A-Za-z0-9_$]+(?=\s*\))/g,
+    (_match, prefix: string) => {
+      pseudoTimeline += 1;
+      return `${prefix}tl`;
+    },
+  );
+  return { script: normalized, repairs: { bareFromTo, pseudoTimeline, arrowEnvelope } };
 }
 
 function filmDurationSec(storyboard: DirectScene[]): number {
@@ -179,6 +239,11 @@ export function assembleSlotComposition(args: SlotAssemblyArgs): SlotAssemblyRes
   const durationSec = args.durationSec ?? filmDurationSec(args.storyboard);
   const missingHtml: string[] = [];
   const missingScript: string[] = [];
+  const scriptRepairs: SlotScriptRepairs = {
+    bareFromTo: 0,
+    pseudoTimeline: 0,
+    arrowEnvelope: 0,
+  };
 
   const sections = args.storyboard
     .map((scene) => {
@@ -192,9 +257,13 @@ export function assembleSlotComposition(args: SlotAssemblyArgs): SlotAssemblyRes
     .map((scene) => {
       const script = args.slots.scenes.get(scene.id)?.script?.trim();
       if (!script) missingScript.push(scene.id);
+      const normalized = normalizeSceneSlotScript(script ?? "");
+      scriptRepairs.bareFromTo += normalized.repairs.bareFromTo;
+      scriptRepairs.pseudoTimeline += normalized.repairs.pseudoTimeline;
+      scriptRepairs.arrowEnvelope += normalized.repairs.arrowEnvelope;
       // Each scene's statements run in their own function scope so scenes
       // cannot collide on variable names; the shared timeline is the only seam.
-      return `(function (tl) {\n${script ?? ""}\n})(tl);`;
+      return `(function (tl) {\n${normalized.script}\n})(tl);`;
     })
     .join("\n");
 
@@ -228,7 +297,7 @@ export function assembleSlotComposition(args: SlotAssemblyArgs): SlotAssemblyRes
     "</html>",
   ].join("\n");
 
-  return { html, missingHtml, missingScript };
+  return { html, missingHtml, missingScript, scriptRepairs };
 }
 
 /**

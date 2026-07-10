@@ -749,6 +749,7 @@ describe("wrapper placement self-defense", () => {
     const scenes = reconcileAndLowerPlugins([declared(GRID_DECLARATION)]).scenes;
     const html = injectPluginContract(sceneHtml("s1"), scenes).html;
     const wrapper = html.match(/<div class="seq-plugin[^>]*>/)?.[0] ?? "";
+    expect(wrapper).toContain('data-layout-important="1"');
     expect(wrapper).toContain("grid-column:1/-1");
     expect(wrapper).toContain("min-width:0");
     expect(wrapper).toContain("max-width:100%");

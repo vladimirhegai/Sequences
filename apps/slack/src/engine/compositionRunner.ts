@@ -2242,6 +2242,83 @@ function bindMissingComponentElement(
   return { html, repairs: 1 };
 }
 
+function elementInnerContentAt(
+  html: string,
+  opening: { tag: string; index: number },
+): string | undefined {
+  const name = opening.tag.match(/^<([a-z][\w:-]*)\b/i)?.[1]?.toLowerCase();
+  if (!name || /\/>$/.test(opening.tag)) return undefined;
+  const contentStart = opening.index + opening.tag.length;
+  const walker = new RegExp(`<${regexpEscape(name)}\\b[^>]*>|</${regexpEscape(name)}\\s*>`, "gi");
+  walker.lastIndex = contentStart;
+  let depth = 1;
+  for (let step = walker.exec(html); step; step = walker.exec(html)) {
+    if (step[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) return html.slice(contentStart, step.index);
+    } else if (!/\/>$/.test(step[0])) {
+      depth += 1;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Some dense authored surfaces contain the real metric plus a hidden kit
+ * placeholder carrying the storyboard binding. In that state a count beat
+ * technically binds but animates invisible DOM while the number on screen
+ * stays frozen. Transfer only the narrow, high-confidence stat-card case: one
+ * hidden exact binding and one visible stat/metric root that owns a cmp value.
+ */
+function rebindHiddenStatComponent(
+  scope: string,
+  component: NonNullable<DirectScene["components"]>[number],
+): { html: string; repairs: number } {
+  if (component.kind !== "stat-card") return { html: scope, repairs: 0 };
+  const tags = [...scope.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)].map((match) => ({
+    tag: match[0],
+    index: match.index,
+  }));
+  const exact = tags.filter((entry) => htmlAttr(entry.tag, "data-part") === component.id);
+  if (exact.length !== 1) return { html: scope, repairs: 0 };
+  const hidden = exact[0]!;
+  const hiddenStyle = htmlAttr(hidden.tag, "style") ?? "";
+  if (!/(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b/i.test(hiddenStyle)) {
+    return { html: scope, repairs: 0 };
+  }
+
+  const candidates = tags.filter((entry) => {
+    if (entry.index === hidden.index || htmlAttr(entry.tag, "data-part")) return false;
+    const className = htmlAttr(entry.tag, "class") ?? "";
+    if (!/(?:^|\s)[^\s]*(?:stat|metric|kpi)[^\s]*(?:\s|$)/i.test(className)) return false;
+    if (!/(?:^|[-_\s])(?:card|dock|panel|metric|kpi)(?:$|[-_\s])/i.test(className)) return false;
+    const style = htmlAttr(entry.tag, "style") ?? "";
+    if (/(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b/i.test(style)) return false;
+    return /\bdata-cmp-value\b/i.test(elementInnerContentAt(scope, entry) ?? "");
+  });
+  if (candidates.length !== 1) return { html: scope, repairs: 0 };
+
+  const candidate = candidates[0]!;
+  let visibleTag = ensureTagAttr(candidate.tag, "data-part", component.id);
+  visibleTag = ensureTagAttr(visibleTag, "data-component", component.kind);
+  const hiddenTag = ensureTagAttr(
+    hidden.tag,
+    "data-part",
+    `${component.id}-hidden-aux-1`,
+  );
+  // Replace from right to left so the original match indices stay valid.
+  const replacements = [
+    { index: hidden.index, before: hidden.tag, after: hiddenTag },
+    { index: candidate.index, before: candidate.tag, after: visibleTag },
+  ].sort((a, b) => b.index - a.index);
+  let html = scope;
+  for (const replacement of replacements) {
+    html = html.slice(0, replacement.index) + replacement.after +
+      html.slice(replacement.index + replacement.before.length);
+  }
+  return { html, repairs: 1 };
+}
+
 export function reconcileComponentBindings(
   source: string,
   scenes: DirectScene[],
@@ -2261,6 +2338,11 @@ export function reconcileComponentBindings(
     const scopeEnd = sceneTags[sceneIndex + 1]?.index ?? html.length;
     let scope = html.slice(scopeStart, scopeEnd);
     for (const component of scene.components) {
+      const rebound = rebindHiddenStatComponent(scope, component);
+      if (rebound.repairs) {
+        scope = rebound.html;
+        repairs += rebound.repairs;
+      }
       const tags = [...scope.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)]
         .map((match) => match[0])
         .filter((tag) => htmlAttr(tag, "data-part") === component.id);
@@ -2500,7 +2582,12 @@ export function repairContrastAaIssues(
 }
 
 /** Coverage floor the sparse framing audit enforces (layoutInspector SPARSE_COVERAGE_MIN). */
-const SPARSE_FRAMING_TARGET_COVERAGE = 0.18;
+// Aim above the 18% audit floor. Fitting includes optical breathing room and
+// browser geometry is pixel-quantized, so targeting the threshold exactly can
+// re-measure at 17.x% and reject an otherwise correct deterministic repair.
+const SPARSE_FRAMING_TARGET_COVERAGE = 0.22;
+/** Maps the painted-occupancy floor (5.5%) onto the footprint floor (18%). */
+const SPARSE_OCCUPANCY_EQUIVALENT_SCALE = 0.18 / 0.055;
 /** Never magnify a sparse landing past the camera contract's own fit multiplier ceiling. */
 const SPARSE_FRAMING_ZOOM_MAX = 2.8;
 /** A correction must clear the audit's 1.05 zoom-skip threshold to actually take effect. */
@@ -2538,8 +2625,9 @@ function pickSparseMoveIndex(
  * `repairContrastAaIssues`): browser QA measured a camera landing — or a
  * camera-less mid-window — as a tiny subject adrift, so raise its coverage to
  * the audit floor with a bounded zoom-in on exactly the move that frames it.
- * The zoom factor `sqrt(0.18 / fraction)` (clamped 1.0..2.8) magnifies the
- * measured coverage back toward the 18% floor without ever cropping past it.
+ * The zoom factor `sqrt(0.22 / fraction)` (clamped 1.0..2.8) magnifies the
+ * measured coverage beyond the 18% floor with headroom for optical margin and
+ * pixel quantization, without ever cropping past the hard ceiling.
  * Pure: returns the mutated storyboard + the scene ids corrected. The caller
  * re-injects the camera island from the mutated storyboard (the
  * `persistUpgradedStoryboard` seam cut-discovery uses), re-inspects, and adopts
@@ -2554,25 +2642,64 @@ export function correctSparseFraming(
   const wanted = new Map<string, { fraction: number; part?: string; region?: string }>();
   for (const issue of browserQa.issues ?? []) {
     if (issue.code !== "camera_framed_sparse" || !issue.framing) continue;
-    const { sceneId, fraction, part, region } = issue.framing;
-    if (!(fraction > 0)) continue;
+    const { sceneId, fraction, occupiedFraction, part, region } = issue.framing;
+    const effectiveFraction = Math.min(
+      fraction,
+      occupiedFraction === undefined
+        ? Number.POSITIVE_INFINITY
+        : occupiedFraction * SPARSE_OCCUPANCY_EQUIVALENT_SCALE,
+    );
+    if (!(effectiveFraction > 0)) continue;
     const key = [sceneId, part ?? "", region ?? ""].join(SPARSE_FRAMING_KEY_SEPARATOR);
     const existing = wanted.get(key);
-    if (!existing || fraction < existing.fraction) {
-      wanted.set(key, { fraction, part, region });
+    if (!existing || effectiveFraction < existing.fraction) {
+      wanted.set(key, { fraction: effectiveFraction, part, region });
     }
   }
   if (!wanted.size) return { storyboard, corrected: [] };
 
   const corrected: string[] = [];
   const mutated = storyboard.map((scene) => {
-    const path = scene.camera?.path;
-    if (!path?.length) return scene;
     const findings = [...wanted.entries()]
       .filter(([key]) => key.startsWith(`${scene.id}${SPARSE_FRAMING_KEY_SEPARATOR}`))
       .map(([, value]) => value)
       .sort((a, b) => a.fraction - b.fraction);
     if (!findings.length) return scene;
+    const path = scene.camera?.path;
+    // A camera-less scene has no move to bump, which previously made the
+    // browser's static sparse finding unrepairable. The scene already declares
+    // its focal subject; add one restrained host framing move around that exact
+    // part. The caller still adopts only after full static/browser revalidation
+    // proves sparseness cleared without clipping.
+    if (!path?.length && scene.spatialIntent?.focalPart) {
+      const factor = Math.min(
+        Math.max(Math.sqrt(SPARSE_FRAMING_TARGET_COVERAGE / findings[0]!.fraction), 1),
+        SPARSE_FRAMING_ZOOM_MAX,
+      );
+      if (factor <= 1.0001) return scene;
+      corrected.push(scene.id);
+      return {
+        ...scene,
+        camera: {
+          version: 1 as const,
+          path: [{
+            version: 1 as const,
+            move: "push-in" as const,
+            fromPart: scene.spatialIntent.focalPart,
+            toPart: scene.spatialIntent.focalPart,
+            startSec: scene.startSec,
+            durationSec: Math.min(1.8, Math.max(0.8, scene.durationSec * 0.35)),
+            // Targeting a part already invokes the camera runtime's content-fit
+            // scale. Keep only a subtle additional push; applying the raw
+            // coverage factor twice can drive the fitted subject through the
+            // safe inset.
+            zoom: Math.round(Math.min(factor, 1.08) * 1000) / 1000,
+            framingCorrection: "camera-sparse-zoom" as const,
+          }],
+        },
+      };
+    }
+    if (!path?.length) return scene;
     const nextPath = path.map((move) => ({ ...move }));
     let changed = false;
     for (const finding of findings) {
@@ -8078,6 +8205,8 @@ async function recoverByQuarantiningInteractions(
 const HIGH_VISIBILITY_ISSUE_WEIGHTS: Record<string, number> = {
   camera_framed_clipped: 10,
   camera_framed_sparse: 6,
+  spatial_focal_invisible: 8,
+  spatial_focal_offframe: 8,
   cut_degraded: 6,
   eye_trace_jump: 6,
 };
@@ -8106,6 +8235,9 @@ export function browserQualityPenalty(
     browserQa.issues.reduce(
       (total, issue) =>
         total + (
+          issue.code === "moment_static_frame" && issue.momentImportance === "primary"
+            ? 6
+            :
           PAPERWORK_ISSUE_WEIGHTS[issue.code] ??
           HIGH_VISIBILITY_ISSUE_WEIGHTS[issue.code] ??
           (issue.severity === "error" ? 4 : issue.severity === "warning" ? 1 : 0)
@@ -8207,6 +8339,18 @@ function isMomentStaticFrameFinding(finding: string): boolean {
   return finding.trim().startsWith("moment_static_frame");
 }
 
+function isPrimaryStaticFrameFinding(
+  finding: string,
+  browserQa: DirectBrowserQaResult,
+): boolean {
+  if (!isMomentStaticFrameFinding(finding)) return false;
+  return (browserQa.temporalJudge ?? []).some((entry) =>
+    entry.verdict === "static" &&
+    entry.importance === "primary" &&
+    finding.includes(`moment:${entry.momentId}`)
+  );
+}
+
 function hasHardLivenessOrBlankIssue(browserQa: DirectBrowserQaResult): boolean {
   return (browserQa.errors ?? []).some((entry) =>
     entry.startsWith("near_blank_film:") ||
@@ -8216,9 +8360,9 @@ function hasHardLivenessOrBlankIssue(browserQa: DirectBrowserQaResult): boolean 
 }
 
 /**
- * Browser feedback for paid source retries. `moment_static_frame` is rendered
- * temporal-judge polish: useful operator evidence, but not a source retry
- * cause unless the same draft has a hard liveness/blank-frame defect.
+ * Browser feedback for paid source retries. An invisible PRIMARY payoff is a
+ * real choreography defect and gets repair pressure. Supporting static beats
+ * stay diagnostic unless the same draft is also blank/dead.
  */
 export function sourceRetryFeedbackForBrowserQa(
   browserQa: DirectBrowserQaResult,
@@ -8229,7 +8373,9 @@ export function sourceRetryFeedbackForBrowserQa(
     ...staticRepairWarnings,
     ...(browserQa.errors ?? []),
     ...(browserQa.warnings ?? []).filter((warning) =>
-      keepMomentStatic || !isMomentStaticFrameFinding(warning)
+      keepMomentStatic ||
+      !isMomentStaticFrameFinding(warning) ||
+      isPrimaryStaticFrameFinding(warning, browserQa)
     ),
   ]);
 }
@@ -8241,7 +8387,7 @@ function staticWarningBlocksEarlyLeastBad(warning: string): boolean {
 
 function browserIssueBlocksEarlyLeastBad(issue: DirectLayoutIssue): boolean {
   if (issue.severity === "info") return false;
-  if (issue.code === "moment_static_frame") return false;
+  if (issue.code === "moment_static_frame") return issue.momentImportance === "primary";
   if (HIGH_VISIBILITY_ISSUE_WEIGHTS[issue.code] !== undefined) return true;
   const blocking = sentinelBlockingForFinding(issue.code);
   if (blocking === "advisory" || blocking === "advisory-late") return false;
@@ -9659,6 +9805,21 @@ function slotCompositionId(projectDir: string): string {
   return `${base || "composition"}-slots`;
 }
 
+function recordSlotScriptRepairs(repairs: {
+  bareFromTo: number;
+  pseudoTimeline: number;
+  arrowEnvelope: number;
+}): void {
+  const total = repairs.bareFromTo + repairs.pseudoTimeline + repairs.arrowEnvelope;
+  if (!total) return;
+  recordSentinelNormalization("slot-script-envelope", total);
+  process.stderr.write(
+    `[author] normalized ${total} invalid scene-slot timeline binding(s) ` +
+      `(${repairs.bareFromTo} bare fromTo, ${repairs.pseudoTimeline} pseudo timeline, ` +
+      `${repairs.arrowEnvelope} uninvoked arrow envelope)\n`,
+  );
+}
+
 /**
  * A compact continuation prompt for a truncated or contract-violating slot
  * response: keep every completed scene, re-request only the named scenes.
@@ -9918,11 +10079,12 @@ export async function authorSlotDraft(
       );
     }
   }
-  const { html, missingHtml, missingScript } = assembleSlotComposition({
+  const { html, missingHtml, missingScript, scriptRepairs } = assembleSlotComposition({
     storyboard,
     slots,
     compositionId: slotCompositionId(args.projectDir),
   });
+  recordSlotScriptRepairs(scriptRepairs);
   if (missingHtml.length === storyboard.length) {
     throw new Error("author response is missing every <scene_html> slot");
   }
@@ -10037,6 +10199,7 @@ export async function repairSlotDraftForFindings(
     slots: merged,
     compositionId: slotCompositionId(args.projectDir),
   });
+  recordSlotScriptRepairs(assembled.scriptRepairs);
   if (assembled.missingHtml.length || assembled.missingScript.length) return undefined;
   return {
     draft: { storyboard, html: assembled.html },

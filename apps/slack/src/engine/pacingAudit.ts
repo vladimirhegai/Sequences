@@ -93,12 +93,19 @@ export const PACING_TOLERANCE_SEC = 0.35;
  * Largest reading/outcome-hold shortfall that gets closed by stretching the
  * scene's own cut boundary (and cascade-shifting every later scene) instead
  * of being reported to the model as a findings-retry. A miss this size is
- * mechanical arithmetic (extend a cut by under a second); a larger one is a
+ * mechanical arithmetic (extend a cut by at most a beat and a half); a larger one is a
  * genuine creative deficit and stays blocking, per Sentinel's decision rule
  * (SENTINEL_PLAN.md §3 Phase 3.1: normalize what deletes/degrades/retimes,
  * send content deficits back to the model).
  */
-export const MAX_PACING_STRETCH_SEC = 1.0;
+export const MAX_PACING_STRETCH_SEC = 1.5;
+/**
+ * A camera move can be shifted farther than a cut may be stretched when the
+ * move still fits its scene (within the separate stretch cap), does not pass
+ * another move, and retains every camera-moment binding. The upper bound is
+ * the same four-second maximum reading floor the move is clearing.
+ */
+export const MAX_PACING_RETIME_SEC = READING_MAX_SEC;
 /**
  * A cursor interaction owns the frame from just before the cursor arrives
  * until its result settles: a full camera move IN FLIGHT there stacks two
@@ -577,10 +584,16 @@ function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
  */
 export function isLoadBearingMove(scene: DirectScene, move: CameraMoveIntentV1): boolean {
   const moveEnd = move.startSec + move.durationSec;
-  return (scene.moments ?? []).some((moment) =>
+  return (scene.moments ?? []).some((moment) => momentNeedsCamera(moment) &&
     moveEnd >= moment.atSec - EVIDENCE_BEFORE_SEC &&
     move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
   );
+}
+
+function momentNeedsCamera(moment: NonNullable<DirectScene["moments"]>[number]): boolean {
+  const intent = `${moment.motionIntent} ${moment.title} ${moment.change}`.toLowerCase();
+  return /\b(?:camera|reframe|framing|pan|whip|zoom|track|orbit|dive|push-in|pull-back)\b/
+    .test(intent);
 }
 
 /** Append host-normalization notes a scene carries into STORYBOARD.md. */
@@ -804,9 +817,8 @@ export function topUpFramingFloor(
  * ("lands its payoff at Ns but the framing changes 0.0s later"). The finding's
  * own fix hint is "delay the reframe" — pure arithmetic the host can do:
  * delay the conflicting move so the payoff gets its hold, when
- *  - the move starts AT/after the beat settles (a move already in flight when
- *    the beat lands is the model's own arrival choreography — left alone),
- *  - the delay is <= MAX_PACING_STRETCH_SEC,
+ *  - the move starts or remains in flight through the required hold,
+ *  - the delay is <= MAX_PACING_RETIME_SEC,
  *  - the delayed move does not pass the next full move, and
  *  - the move is not load-bearing (no declared moment binds to its window).
  * When the delayed move no longer fits before the scene's own cut, the scene
@@ -821,7 +833,6 @@ export function delayConflictingCameraMoves(
   storyboard: DirectScene[],
 ): { storyboard: DirectScene[]; normalized: string[] } {
   const normalized: string[] = [];
-  const rampSceneIds = new Set(resolveTimeRampPlan(storyboard).ramps.map((ramp) => ramp.sceneId));
   const resolvedBeatsByScene = new Map<string, ResolvedComponentBeatV1[]>(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
@@ -834,7 +845,7 @@ export function delayConflictingCameraMoves(
     let result = scene;
     let stretch = 0;
     const path = scene.camera?.path;
-    if (!rampSceneIds.has(scene.id) && path?.length) {
+    if (path?.length) {
       const sceneEnd = scene.startSec + scene.durationSec;
       const fullMoves = path
         .map((move, index) => ({ move, index }))
@@ -843,8 +854,10 @@ export function delayConflictingCameraMoves(
         (scene.components ?? []).map((component) => [component.id, component.kind]),
       );
       const beats = fullMoves.length ? resolvedBeatsByScene.get(scene.id) ?? [] : [];
+      const allBeatHolds = beatHoldWindows(scene, beats);
       // The latest hold each too-early move must clear, from every beat it cuts.
       const requiredStart = new Map<number, number>();
+      const conflictCount = new Map<number, number>();
       for (const beat of beats) {
         let needed = 0;
         if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
@@ -860,44 +873,91 @@ export function delayConflictingCameraMoves(
         if (!needed) continue;
         for (const entry of fullMoves) {
           const start = entry.move.startSec;
-          if (start < beat.endSec - 0.05) continue;
+          const activeUntil = start + entry.move.durationSec;
+          if (activeUntil <= beat.endSec + 0.05) continue;
           if (start + PACING_TOLERANCE_SEC >= beat.endSec + needed) continue;
           requiredStart.set(
             entry.index,
             Math.max(requiredStart.get(entry.index) ?? 0, round(beat.endSec + needed)),
           );
+          conflictCount.set(entry.index, (conflictCount.get(entry.index) ?? 0) + 1);
         }
       }
       if (requiredStart.size) {
-        const newPath = [...path];
+        const newPath: Array<CameraMoveIntentV1 | undefined> = [...path];
         const notes: string[] = [];
         for (const entry of fullMoves) {
-          const target = requiredStart.get(entry.index);
-          if (target === undefined) continue;
+          const required = requiredStart.get(entry.index);
+          if (required === undefined) continue;
+          const target = advanceClearOfWindows(
+            required,
+            entry.move.durationSec,
+            entry.move.startSec,
+            allBeatHolds,
+          );
           const delay = target - entry.move.startSec;
-          if (delay <= 0 || delay > MAX_PACING_STRETCH_SEC + 1e-9) continue;
-          if (isLoadBearingMove(scene, entry.move)) continue;
           const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
-          if (next && target + entry.move.durationSec > next.move.startSec + 1e-6) continue;
+          // Retiming a load-bearing move is safe only while every moment that
+          // could bind to the original move still overlaps the new window.
+          const boundMoments = (scene.moments ?? []).filter((moment) =>
+            momentNeedsCamera(moment) &&
+            entry.move.startSec + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+            entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
+          );
+          const keepsBindings = boundMoments.every((moment) =>
+            target + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+            target <= moment.atSec + EVIDENCE_AFTER_SEC
+          );
           const overflow = target + entry.move.durationSec - sceneEnd;
+          const fitsDelay = delay > 0 && delay <= MAX_PACING_RETIME_SEC + 1e-9;
+          const fitsBeforeNext = !next || target + entry.move.durationSec <= next.move.startSec + 1e-6;
+          const fitsScene = overflow <= 1e-6 ||
+            (overflow <= MAX_PACING_STRETCH_SEC + 1e-9 &&
+              scene.durationSec + overflow <= 15 + 1e-9);
+          if (!fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene) {
+            // One camera phrase cutting across several independent reading /
+            // payoff holds has no free slot left. When it carries no camera
+            // moment, dropping that reframe is safer than repeatedly asking
+            // the planner to solve contradictory timing (direction-live-a
+            // attempt 1: one pull-back crossed two lockup lines + the metric).
+            if (
+              (conflictCount.get(entry.index) ?? 0) >= 2 &&
+              !isLoadBearingMove(scene, entry.move)
+            ) {
+              newPath[entry.index] = undefined;
+              const note =
+                `dropped the ${entry.move.move} at ${entry.move.startSec.toFixed(2)}s — it ` +
+                `crossed ${conflictCount.get(entry.index)} reading/payoff holds and no ` +
+                `binding-safe retime fits; the resolved station holds instead`;
+              notes.push(note);
+              normalized.push(`scene "${scene.id}": ${note}`);
+            }
+            continue;
+          }
           if (overflow > 1e-6) {
             // The delayed move overruns the scene's own cut: stretch that cut
             // by the overflow instead of leaving the finding to a paid retry.
-            if (overflow > MAX_PACING_STRETCH_SEC + 1e-9) continue;
-            if (scene.durationSec + overflow > 15 + 1e-9) continue;
             stretch = Math.max(stretch, round(overflow));
           }
           newPath[entry.index] = { ...entry.move, startSec: round(target) };
           const note =
             `delayed the ${entry.move.move} from ${entry.move.startSec.toFixed(2)}s to ` +
-            `${target.toFixed(2)}s so the payoff/copy before it holds` +
+            `${target.toFixed(2)}s so the payoff/copy holds without an in-flight reframe` +
             (overflow > 1e-6 ? ` (cut boundary stretched ${overflow.toFixed(2)}s to fit it)` : "");
           notes.push(note);
           normalized.push(`scene "${scene.id}": ${note}`);
         }
         if (notes.length) {
+          const keptPath = newPath.filter(
+            (move): move is CameraMoveIntentV1 => move !== undefined,
+          );
           result = withNormalizationNotes(
-            { ...scene, camera: { ...scene.camera!, path: newPath } },
+            {
+              ...scene,
+              ...(keptPath.length
+                ? { camera: { ...scene.camera!, path: keptPath } }
+                : { camera: undefined }),
+            },
             notes,
           );
         } else {

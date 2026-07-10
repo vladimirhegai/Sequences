@@ -1,7 +1,9 @@
 /**
  * Asset Lab — the operator webview over the pre-built asset library
  * (ASSETS.md). `npm run assets --workspace @sequences/slack` →
- * http://127.0.0.1:4322 — browse every registered asset, tweak its typed
+ * http://127.0.0.1:4747 — browse every registered asset, tweak its typed
+ * (default port deliberately away from the 4321/4322 studio/test band —
+ * override with STUDIO_ASSETS_PORT or --port when needed)
  * params live, fire its spring-driven animations, retheme the brand tokens,
  * and preview FLIP morph transitions between assets.
  *
@@ -36,7 +38,7 @@ if (process.env.RAILWAY_ENVIRONMENT) {
 }
 
 const UI_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), "ui", "asset-lab.html");
-const PORT = Number(process.env.STUDIO_ASSETS_PORT ?? argValue("--port") ?? 4322);
+const PORT = Number(process.env.STUDIO_ASSETS_PORT ?? argValue("--port") ?? 4747);
 const HOST = "127.0.0.1";
 
 function argValue(flag: string): string | undefined {

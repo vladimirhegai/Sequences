@@ -21,6 +21,13 @@ import { CAMERA_FULL_MOVES, resolveCameraPlan } from "./cameraContract.ts";
 import { resolveComponentPlan } from "./componentContract.ts";
 import { EVIDENCE_AFTER_SEC, EVIDENCE_BEFORE_SEC } from "./storyboardMoments.ts";
 import { GRADE_SHIFT_DURATION_SEC, type GradeTone } from "./gradeShift.ts";
+import {
+  directionAccentSlot,
+  directionPhraseForMoment,
+  directionScoreConsumersEnabled,
+  directionSystemOwnsWindow,
+  resolveFilmDirectionScore,
+} from "./directionScore.ts";
 import type { DirectScene } from "./directComposition.ts";
 
 export const FX_RUNTIME_VERSION = 1;
@@ -93,10 +100,11 @@ function round(value: number): number {
  * Derive the film's FX plan from the storyboard — no planner surface, no
  * author paperwork. Automatic rungs:
  *
- * 1. Payoff sweep + glow pulse: each `primary` moment bound (by the same
- *    evidence-window arithmetic the moment contract uses) to a completing
- *    payoff beat gets one sweep + one glow pulse on the beat's component at
- *    settle time. Capped ≤1 sweep/scene, ≤3/film, none in the opening second.
+ * 1. Payoff sweep: each `primary` moment bound (by the same evidence-window
+ *    arithmetic the moment contract uses) to a completing payoff beat may get
+ *    one sweep in the direction score's free accent slot. It never stacks a
+ *    glow on the same payoff and stands down when another system owns the
+ *    phrase. Capped ≤1 sweep/scene, ≤3/film, none in the opening second.
  * 2. Planner opt-in: a `highlight` beat with `style:"sweep"` sweeps its
  *    component at the beat's own window (the ring is simply replaced).
  * 3. Author opt-in: every full camera move landing on a region emits a
@@ -106,6 +114,8 @@ function round(value: number): number {
  */
 export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
   const effects: FxEffectV1[] = [];
+  const direction = resolveFilmDirectionScore(scenes);
+  const directed = directionScoreConsumersEnabled();
   const beatsByScene = new Map(
     resolveComponentPlan(scenes).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
@@ -168,9 +178,13 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
       filmSweeps += 1;
     }
 
-    // Rung 1: automatic payoff answer at primary moments.
+    // Rung 1: one automatic payoff answer, scheduled only after the dominant
+    // component action has settled and only when the phrase leaves enough
+    // room before its next cue. The old simultaneous sweep + glow pair made
+    // garnish compete with the state change it was meant to support.
     for (const moment of scene.moments ?? []) {
       if (moment.importance !== "primary") continue;
+      if (moment.atSec < filmStart + SWEEP_OPENING_EXCLUSION_SEC) continue;
       if (filmSweeps >= MAX_SWEEPS_PER_FILM || sceneSweeps >= MAX_SWEEPS_PER_SCENE) break;
       const payoff = beats.find((beat) =>
         PAYOFF_EVIDENCE_KINDS.has(beat.kind) &&
@@ -178,22 +192,53 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
         moment.atSec <= beat.endSec + EVIDENCE_AFTER_SEC
       );
       if (!payoff) continue;
-      const atSec = round(payoff.endSec + SWEEP_SETTLE_DELAY_SEC);
-      if (atSec < filmStart + SWEEP_OPENING_EXCLUSION_SEC) continue;
-      if (atSec + 0.2 > sceneEnd) continue;
+      if (!directed) {
+        const atSec = round(payoff.endSec + SWEEP_SETTLE_DELAY_SEC);
+        if (atSec + 0.2 > sceneEnd) continue;
+        effects.push({
+          kind: "sweep",
+          sceneId: scene.id,
+          target: payoff.component,
+          atSec,
+          durationSec: round(Math.min(SWEEP_DURATION_SEC, sceneEnd - atSec)),
+        });
+        effects.push({
+          kind: "glow-pulse",
+          sceneId: scene.id,
+          target: payoff.component,
+          atSec: round(payoff.endSec + 0.1),
+          durationSec: round(Math.min(
+            GLOW_PULSE_DURATION_SEC,
+            sceneEnd - payoff.endSec - 0.1,
+          )),
+        });
+        sceneSweeps += 1;
+        filmSweeps += 1;
+        continue;
+      }
+      const phrase = directionPhraseForMoment(direction, scene.id, moment.id);
+      if (
+        !phrase ||
+        phrase.dominant.system !== "component" ||
+        phrase.dominant.id !== `component:${payoff.id}`
+      ) {
+        continue;
+      }
+      const atSec = directionAccentSlot(
+        phrase,
+        SWEEP_DURATION_SEC,
+        Math.max(
+          filmStart + SWEEP_OPENING_EXCLUSION_SEC,
+          payoff.endSec + SWEEP_SETTLE_DELAY_SEC,
+        ),
+      );
+      if (atSec === undefined || atSec + 0.2 > sceneEnd) continue;
       effects.push({
         kind: "sweep",
         sceneId: scene.id,
         target: payoff.component,
         atSec,
         durationSec: round(Math.min(SWEEP_DURATION_SEC, sceneEnd - atSec)),
-      });
-      effects.push({
-        kind: "glow-pulse",
-        sceneId: scene.id,
-        target: payoff.component,
-        atSec: round(payoff.endSec + 0.1),
-        durationSec: round(Math.min(GLOW_PULSE_DURATION_SEC, sceneEnd - payoff.endSec - 0.1)),
       });
       sceneSweeps += 1;
       filmSweeps += 1;
@@ -216,7 +261,14 @@ export function resolveFxPlan(scenes: DirectScene[]): FxPlanV1 {
     if (sweepScenes.has(scenePlan.sceneId)) continue;
     const arrivals = scenePlan.segments
       .filter((segment) =>
-        CAMERA_FULL_MOVES.has(segment.move) && segment.blend >= 1 && Boolean(segment.toRegion)
+        CAMERA_FULL_MOVES.has(segment.move) && segment.blend >= 1 && Boolean(segment.toRegion) &&
+        (!directed || directionSystemOwnsWindow(
+          direction,
+          scenePlan.sceneId,
+          "camera",
+          segment.startSec,
+          segment.endSec,
+        ))
       )
       .sort((a, b) => a.startSec - b.startSec)
       .slice(0, MAX_CONNECTORS_PER_SCENE);

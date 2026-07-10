@@ -25,6 +25,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DirectScene } from "./directComposition.ts";
+import {
+  directionScoreConsumersEnabled,
+  directionSettleWindows,
+  resolveFilmDirectionScore,
+  type DirectionSettleWindowV1,
+} from "./directionScore.ts";
 
 export const CAMERA_RUNTIME_VERSION = 1;
 export const CAMERA_RUNTIME_FILE = "sequences-camera.v1.js";
@@ -292,11 +298,13 @@ const FILL_EPSILON_SEC = 0.11;
 const ANTICIPATION_SEC = 0.22;
 /** Minimum gap-fill length that can afford a wind-up split. */
 const ANTICIPATION_MIN_GAP_SEC = 0.35;
-/** Moves that earn an anticipation wind-up before they commit. */
+/**
+ * Moves that earn an anticipation wind-up before they commit. A whip can
+ * motivate a tiny reverse load; applying it to ordinary pushes and tracking
+ * moves made the camera visibly change its mind before routine reframes.
+ */
 const ANTICIPATION_MOVES: ReadonlySet<CameraMoveStyle> = new Set<CameraMoveStyle>([
   "whip",
-  "push-in",
-  "track-to-anchor",
 ]);
 
 const ZOOM_MIN = 0.5;
@@ -481,6 +489,7 @@ function targetOf(intent: CameraMoveIntentV1): TargetRef | undefined {
  */
 export function resolveCameraPlan(scenes: DirectScene[]): CameraPlanV1 {
   const planScenes: SceneCameraPlanV1[] = [];
+  const direction = resolveFilmDirectionScore(scenes);
   for (const scene of scenes) {
     const intent = scene.camera;
     if (!intent?.path.length) continue;
@@ -489,6 +498,20 @@ export function resolveCameraPlan(scenes: DirectScene[]): CameraPlanV1 {
     // leading moves from the first explicit framing.
     const firstTargeted = intent.path.find((move) => targetOf(move));
     if (!firstTargeted) continue;
+    // A later first move names where the camera is GOING, not necessarily the
+    // opening frame. Without an explicit from target the old resolver started
+    // on that future destination, turning the lead-in drift and the move into
+    // a no-op while the scene's promised focal could sit off-frame. The
+    // storyboard already owns one deterministic entry anchor: spatialIntent's
+    // focal part.
+    const entryTarget: TargetRef | undefined = firstTargeted.fromPart
+      ? { toPart: firstTargeted.fromPart }
+      : firstTargeted.fromRegion
+        ? { toRegion: firstTargeted.fromRegion }
+        : firstTargeted.startSec > scene.startSec + FILL_EPSILON_SEC &&
+            scene.spatialIntent?.focalPart
+          ? { toPart: scene.spatialIntent.focalPart }
+          : targetOf(firstTargeted);
     let currentTarget: TargetRef = targetOf(firstTargeted)!;
     const targeted = intent.path.map((move) => {
       const target = targetOf(move) ?? currentTarget;
@@ -497,18 +520,78 @@ export function resolveCameraPlan(scenes: DirectScene[]): CameraPlanV1 {
     });
 
     const segments: CameraSegmentV1[] = [];
+    const settleWindows = directionScoreConsumersEnabled()
+      ? directionSettleWindows(direction, scene.id)
+      : [];
     let cursor = round(scene.startSec);
-    const pushFill = (endSec: number, target: TargetRef, blend: number): void => {
+    const pushFillSegment = (
+      endSec: number,
+      target: TargetRef,
+      blend: number,
+      move: "drift" | "hold" = "drift",
+    ): void => {
+      if (endSec - cursor <= FILL_EPSILON_SEC) return;
+      const startsPlan = segments.length === 0;
       segments.push({
-        move: "drift",
+        move,
         startSec: cursor,
         endSec: round(endSec),
-        blend,
+        blend: move === "hold" ? 0 : blend,
         zoom: 1,
-        ease: MOVE_DEFAULTS.drift.ease,
+        ease: move === "hold" ? MOVE_DEFAULTS.hold.ease : MOVE_DEFAULTS.drift.ease,
         ...target,
+        ...(startsPlan && entryTarget?.toRegion ? { fromRegion: entryTarget.toRegion } : {}),
+        ...(startsPlan && entryTarget?.toPart ? { fromPart: entryTarget.toPart } : {}),
       });
       cursor = round(endSec);
+    };
+    /**
+     * Partition an automatic connective into drift and explicit holds from the
+     * film direction score. Declared camera moves are untouched; only the
+     * resolver-owned creep/approach yields while a payoff or cut landing reads.
+     */
+    const pushFill = (endSec: number, target: TargetRef, blend: number): void => {
+      const fillStart = cursor;
+      const holds = settleWindows
+        .filter((window): window is DirectionSettleWindowV1 =>
+          window.endSec > fillStart + FILL_EPSILON_SEC &&
+          window.startSec < endSec - FILL_EPSILON_SEC
+        )
+        .map((window) => ({
+          startSec: Math.max(fillStart, window.startSec),
+          endSec: Math.min(endSec, window.endSec),
+        }))
+        .sort((a, b) => a.startSec - b.startSec);
+      if (!holds.length) {
+        pushFillSegment(endSec, target, blend);
+        return;
+      }
+      const holdDuration = holds.reduce(
+        (total, hold) => total + Math.max(0, hold.endSec - Math.max(cursor, hold.startSec)),
+        0,
+      );
+      const movingDuration = Math.max(FILL_EPSILON_SEC, endSec - fillStart - holdDuration);
+      for (const hold of holds) {
+        if (hold.startSec > cursor + FILL_EPSILON_SEC) {
+          const duration = hold.startSec - cursor;
+          pushFillSegment(
+            hold.startSec,
+            target,
+            blend > 0 ? blend * duration / movingDuration : 0,
+          );
+        }
+        if (hold.endSec > cursor + FILL_EPSILON_SEC) {
+          pushFillSegment(hold.endSec, target, 0, "hold");
+        }
+      }
+      if (endSec > cursor + FILL_EPSILON_SEC) {
+        const duration = endSec - cursor;
+        pushFillSegment(
+          endSec,
+          target,
+          blend > 0 ? blend * duration / movingDuration : 0,
+        );
+      }
     };
     for (const entry of targeted) {
       const defaults = MOVE_DEFAULTS[entry.move.move];
@@ -558,8 +641,8 @@ export function resolveCameraPlan(scenes: DirectScene[]): CameraPlanV1 {
         zoom: clamp(entry.move.zoom ?? defaults.zoom, ZOOM_MIN, ZOOM_MAX),
         ease: entry.move.ease ?? defaults.ease,
         ...entry.target,
-        ...(isFirst && entry.move.fromRegion ? { fromRegion: entry.move.fromRegion } : {}),
-        ...(isFirst && entry.move.fromPart ? { fromPart: entry.move.fromPart } : {}),
+        ...(isFirst && entryTarget?.toRegion ? { fromRegion: entryTarget.toRegion } : {}),
+        ...(isFirst && entryTarget?.toPart ? { fromPart: entryTarget.toPart } : {}),
         ...(entry.move.move === "orbit"
           ? { arcDeg: entry.move.arcDeg ?? ORBIT_ARC_DEFAULT_DEG }
           : {}),

@@ -167,6 +167,63 @@ describe("normalizeStoryboardCameraIntent", () => {
 });
 
 describe("resolveCameraPlan", () => {
+  it("turns resolver-owned travel into a hold while a dominant payoff settles", () => {
+    const plan = resolveCameraPlan([scene({
+      id: "directed-journey",
+      startSec: 0,
+      durationSec: 6,
+      spatialIntent: {
+        version: 1,
+        focalPart: "proof-stat",
+        composition: "metric first, destination second",
+        relationships: [],
+      },
+      components: [{ version: 1, id: "proof-stat", kind: "stat-card" }],
+      beats: [{
+        version: 1,
+        id: "proof-count",
+        sceneId: "directed-journey",
+        component: "proof-stat",
+        kind: "count",
+        atSec: 1.5,
+        durationSec: 1,
+        value: 99,
+      }],
+      moments: [{
+        version: 1,
+        id: "proof-lands",
+        sceneId: "directed-journey",
+        atSec: 2.5,
+        title: "Proof lands",
+        visualState: "99 is visible",
+        change: "The number completed",
+        motionIntent: "ui-state",
+        importance: "primary",
+      }],
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "pan",
+          toRegion: "details",
+          startSec: 4.5,
+          durationSec: 1,
+        }],
+      },
+    })]);
+
+    const segments = plan.scenes[0]!.segments;
+    const hold = segments.find((segment) =>
+      segment.move === "hold" && segment.startSec >= 2.5 - 0.01
+    );
+    expect(hold).toMatchObject({ startSec: 2.5, endSec: 3.05, blend: 0 });
+    expect(segments.some((segment) => segment.move === "pan" && segment.startSec === 4.5))
+      .toBe(true);
+    for (let index = 1; index < segments.length; index += 1) {
+      expect(segments[index]!.startSec).toBe(segments[index - 1]!.endSec);
+    }
+  });
+
   it("builds a contiguous chain covering the scene and fills gaps with drift", () => {
     const plan = resolveCameraPlan([
       scene({
@@ -185,16 +242,17 @@ describe("resolveCameraPlan", () => {
     expect(plan.scenes).toHaveLength(1);
     const segments = plan.scenes[0]!.segments;
     // The fill before a whip is split: approach drift, then a short
-    // seqAnticipate wind-up that dips the camera backward before the commit.
+    // seqAnticipate wind-up that dips the camera backward before the commit;
+    // the direction score then gives the arrival a real settle hold.
     expect(segments.map((segment) => segment.move))
-      .toEqual(["hold", "drift", "drift", "whip", "drift"]);
+      .toEqual(["hold", "drift", "drift", "whip", "hold", "drift"]);
     // Contiguous and covering [0, 10].
     expect(segments[0]!.startSec).toBe(0);
     for (let index = 1; index < segments.length; index += 1) {
       expect(segments[index]!.startSec).toBe(segments[index - 1]!.endSec);
     }
     expect(segments[segments.length - 1]!.endSec).toBe(10);
-    // The gap drift approaches the upcoming framing; the tail drift creeps.
+    // The gap drift approaches the upcoming framing; the tail settles, then creeps.
     expect(segments[1]).toMatchObject({ toRegion: "metrics", blend: 0.24 });
     expect(segments[2]).toMatchObject({
       move: "drift",
@@ -203,7 +261,133 @@ describe("resolveCameraPlan", () => {
       toRegion: "metrics",
     });
     expect(segments[2]!.endSec - segments[2]!.startSec).toBeCloseTo(0.22, 5);
-    expect(segments[4]).toMatchObject({ toRegion: "metrics", blend: 0 });
+    expect(segments[4]).toMatchObject({
+      move: "hold",
+      startSec: 3.5,
+      toRegion: "metrics",
+      blend: 0,
+    });
+    expect(segments[5]).toMatchObject({ toRegion: "metrics", blend: 0 });
+  });
+
+  it("reserves reverse anticipation for whips, not ordinary pushes or tracks", () => {
+    const plan = resolveCameraPlan([
+      scene({
+        id: "operated",
+        startSec: 0,
+        durationSec: 8,
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "push-in", toRegion: "hero", startSec: 2, durationSec: 1 },
+            { version: 1, move: "track-to-anchor", toPart: "cta", startSec: 5, durationSec: 1 },
+          ],
+        },
+      }),
+    ]);
+    const segments = plan.scenes[0]!.segments;
+    expect(segments.filter((segment) => segment.ease === "seqAnticipate")).toEqual([]);
+    expect(segments.some((segment) => segment.move === "drift" && segment.blend === 0.24)).toBe(true);
+  });
+
+  it("starts a delayed first move on the scene focal instead of its future destination", () => {
+    const plan = resolveCameraPlan([
+      scene({
+        id: "proof",
+        startSec: 10,
+        durationSec: 5,
+        spatialIntent: {
+          version: 1,
+          focalPart: "laurel",
+          composition: "laurel first, rating second",
+          relationships: ["rating supports laurel"],
+        },
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "track-to-anchor",
+            toPart: "rating",
+            startSec: 12,
+            durationSec: 1.2,
+          }],
+        },
+      }),
+    ]);
+    const segments = plan.scenes[0]!.segments;
+    expect(segments[0]).toMatchObject({
+      move: "drift",
+      fromPart: "laurel",
+      toPart: "rating",
+      blend: 0.24,
+    });
+    expect(segments.find((segment) => segment.move === "track-to-anchor"))
+      .toMatchObject({ toPart: "rating" });
+  });
+
+  it("establishes an immediate first station instead of opening on a later scene focal", () => {
+    const plan = resolveCameraPlan([
+      scene({
+        id: "signals",
+        startSec: 3.5,
+        durationSec: 5,
+        spatialIntent: {
+          version: 1,
+          focalPart: "later-metric",
+          composition: "feed first, metric second",
+          relationships: ["the feed motivates the metric"],
+        },
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "drift",
+            toRegion: "signal-feed",
+            startSec: 3.5,
+            durationSec: 1.5,
+          }, {
+            version: 1,
+            move: "pan",
+            toRegion: "later-metric",
+            startSec: 5,
+            durationSec: 2,
+          }],
+        },
+      }),
+    ]);
+    expect(plan.scenes[0]!.segments[0]).toMatchObject({
+      move: "drift",
+      fromRegion: "signal-feed",
+      toRegion: "signal-feed",
+    });
+  });
+
+  it("honors an explicit entry frame before the scene focal fallback", () => {
+    const plan = resolveCameraPlan([
+      scene({
+        id: "tour",
+        startSec: 0,
+        durationSec: 5,
+        spatialIntent: {
+          version: 1,
+          focalPart: "fallback",
+          composition: "explicit entry wins",
+          relationships: ["start before destination"],
+        },
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "pan",
+            fromPart: "explicit-entry",
+            toPart: "destination",
+            startSec: 1,
+            durationSec: 1,
+          }],
+        },
+      }),
+    ]);
+    expect(plan.scenes[0]!.segments[0]!.fromPart).toBe("explicit-entry");
   });
 
   it("applies per-move zoom and ease defaults", () => {

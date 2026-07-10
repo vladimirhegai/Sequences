@@ -556,6 +556,28 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "It PREVENTS the runtime.invariants row's runtime_bind_exception.",
   },
   {
+    id: "normalize.slot-script-envelope",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/sceneSlots.test.ts",
+    addedBecause:
+      "2026-07-09 polish-audit live probe: two paid source attempts reached the " +
+      "browser with mechanically invalid slot bindings. One emitted line-leading " +
+      "bare fromTo(...) calls (not a browser global); the next wrapped valid scene " +
+      "statements around window.__tl_scene_<id>, which the host never creates, so " +
+      "the wrapper received undefined and threw on tl.fromTo. The later " +
+      "direction-live-b probe wrapped every otherwise-valid slot in an uninvoked " +
+      "(tl) => {...} expression (including a const-assigned variant), making all " +
+      "authored motion a silent no-op. " +
+      "normalizeSceneSlotScript binds only those impossible shapes to the existing " +
+      "host-owned tl or unwraps the complete redundant arrow envelope; it preserves " +
+      "all targets, vars, positions, and locally declared fromTo helpers. Telemetry " +
+      "tag: slot-script-envelope.",
+  },
+  {
     id: "normalize.moment-demote-last-resort",
     group: "normalize",
     layer: "normalize",
@@ -1084,8 +1106,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     addedBecause:
       "2026-07-04 rendered temporal judge: before/mid/after frame triples around " +
       "every evidence-bound moment, pixel-diffed in-page; an invisible claimed " +
-      "change is a moment_static_frame polish finding (repair guidance, never " +
-      "unpublishes a runnable draft). SLACK_SEQUENCES_TEMPORAL_JUDGE=0 disables.",
+      "change is a moment_static_frame finding. Primary moments consume source " +
+      "repair budget and weigh least-bad selection; supporting moments remain " +
+      "diagnostic. Neither alone unpublishes a runnable draft. " +
+      "SLACK_SEQUENCES_TEMPORAL_JUDGE=0 disables.",
   },
   {
     id: "eye-trace",

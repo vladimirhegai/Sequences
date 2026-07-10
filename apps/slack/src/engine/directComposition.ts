@@ -99,6 +99,10 @@ import {
   resolveMomentContract,
   type StoryboardMomentV1,
 } from "./storyboardMoments.ts";
+import {
+  directionScoreConsumersEnabled,
+  resolveFilmDirectionScore,
+} from "./directionScore.ts";
 
 const DIRECT_DIR = "composition";
 const MANIFEST_FILE = "manifest.json";
@@ -770,6 +774,9 @@ function writeJson(file: string, value: unknown): void {
 }
 
 export function storyboardMarkdown(title: string, scenes: DirectScene[]): string {
+  const directionByScene = new Map(
+    resolveFilmDirectionScore(scenes).scenes.map((scene) => [scene.sceneId, scene]),
+  );
   return [
     `# STORYBOARD.md — ${title}`,
     "",
@@ -800,6 +807,21 @@ export function storyboardMarkdown(title: string, scenes: DirectScene[]): string
         ? `- Camera path: ${scene.camera.path
           .map((move) => `${move.move}${move.toPart ? `→${move.toPart}` : move.toRegion ? `→${move.toRegion}` : ""}`)
           .join(", ")}`
+        : "",
+      directionByScene.get(scene.id)?.phrases.length
+        ? `- Direction: ${directionByScene.get(scene.id)!.entryRelationship} entry · ${
+          directionByScene.get(scene.id)!.phrases.map((phrase) =>
+            `${phrase.role}:${phrase.dominant.system}${
+              phrase.attention?.part
+                ? `→${phrase.attention.part}`
+                : phrase.attention?.region
+                  ? `→${phrase.attention.region}`
+                  : phrase.attention?.selector
+                    ? `→${phrase.attention.selector}`
+                    : ""
+            }`
+          ).join(", ")
+        }`
         : "",
       scene.timeRamp
         ? `- Speed ramp: dip to ${scene.timeRamp.slowTo}× at ${scene.timeRamp.atSec.toFixed(2)}s` +
@@ -971,6 +993,11 @@ export async function commitDirectComposition(
         version: COMPONENT_RUNTIME_VERSION,
         sha256: componentRuntimeHash(),
       },
+      direction: resolveFilmDirectionScore(normalized.scenes),
+      directionConsumersEnabled: directionScoreConsumersEnabled(),
+      ...(browserQa.continuousMotion
+        ? { continuousMotion: browserQa.continuousMotion }
+        : {}),
       moments: validation.moments,
       ...(validation.motionReport
         ? {
@@ -991,6 +1018,9 @@ export async function commitDirectComposition(
       samples: browserQa.samples,
       issues: browserQa.issues,
       interactions: interactionEvidence,
+      ...(browserQa.continuousMotion
+        ? { continuousMotion: browserQa.continuousMotion }
+        : {}),
       ...(browserQa.infraError ? { infraError: browserQa.infraError } : {}),
       runtime: {
         version: INTERACTION_RUNTIME_VERSION,
@@ -1192,6 +1222,8 @@ interface ThumbnailCapture {
   sceneId: string;
   /** Cut-safe upper bound: the walk-forward never crosses the outgoing cut. */
   latestSec: number;
+  /** Cut-safe lower bound for recovering a subject that has already departed. */
+  earliestSec: number;
   /** The moment's bound data-part when it is a component/interaction subject. */
   subjectPart?: string;
 }
@@ -1201,6 +1233,8 @@ const MAX_MOMENT_THUMBNAILS = 10;
 /** WS7 walk-forward: total budget past the chosen capture time (clamped to the
  *  cut-safe latest). A title card's copy can reveal ~1s after its scene opens. */
 const MOMENT_WALK_MAX_SEC = 1.0;
+/** Backward recovery budget when a settled subject has already left frame. */
+const MOMENT_WALK_BACK_MAX_SEC = 1.0;
 /** Step for the opacity walk when the moment names a specific subject part. */
 const MOMENT_WALK_STEP_SEC = 0.1;
 /** Coarser step for the pixel walk (each step is a screenshot). */
@@ -1248,6 +1282,7 @@ function thumbnailCaptures(manifest: DirectCompositionManifest): ThumbnailCaptur
       key: scene.id,
       atSec: scene.startSec + scene.durationSec * 0.58,
       sceneId: scene.id,
+      earliestSec: scene.startSec,
       latestSec: Math.max(scene.startSec, scene.startSec + scene.durationSec - 0.05),
     }));
   }
@@ -1291,6 +1326,7 @@ function thumbnailCaptures(manifest: DirectCompositionManifest): ThumbnailCaptur
         key: `m${String(index + 1).padStart(2, "0")}-${moment.id}`,
         atSec: Math.min(Math.max(settledSec, earliestSec), latestSec),
         sceneId: scene.id,
+        earliestSec,
         latestSec,
         ...(subjectPart ? { subjectPart } : {}),
       };
@@ -1404,7 +1440,19 @@ export async function generateDirectThumbnails(
         const rect = element.getBoundingClientRect();
         const w = Math.max(0, Math.min(rect.right, rootRect.right) - Math.max(rect.left, rootRect.left));
         const h = Math.max(0, Math.min(rect.bottom, rootRect.bottom) - Math.max(rect.top, rootRect.top));
-        return opacity >= 0.5 && w * h > 0 ? ("visible" as const) : ("hidden" as const);
+        const area = rect.width * rect.height;
+        const onFrame = area > 0 ? (w * h) / area : 0;
+        const insetX = rootRect.width * 0.025;
+        const insetY = rootRect.height * 0.025;
+        const safeX = rect.width >= rootRect.width * 0.94 ||
+          (rect.left >= rootRect.left + insetX && rect.right <= rootRect.right - insetX);
+        const safeY = rect.height >= rootRect.height * 0.94 ||
+          (rect.top >= rootRect.top + insetY && rect.bottom <= rootRect.bottom - insetY);
+        // Moment thumbs are review artifacts, not playback frames: even a
+        // technically visible subject reads as broken when 3-5% is clipped.
+        return opacity >= 0.5 && onFrame >= 0.98 && safeX && safeY
+          ? ("visible" as const)
+          : ("hidden" as const);
       }, { sceneId, subjectPart });
 
     // Fraction of frame pixels that deviate from the four-corner background —
@@ -1457,7 +1505,22 @@ export async function generateDirectThumbnails(
       if (state === "hidden") {
         // Named subject present but not yet revealed (probe-cutfix-3 m03: the
         // palette is opacity-0 mid-entrance) — walk to the first frame it shows.
-        for (let t = capture.atSec + MOMENT_WALK_STEP_SEC; t <= walkEnd + 1e-6; t += MOMENT_WALK_STEP_SEC) {
+        const walkStart = Math.max(
+          capture.earliestSec,
+          capture.atSec - MOMENT_WALK_BACK_MAX_SEC,
+        );
+        for (let t = capture.atSec - MOMENT_WALK_STEP_SEC;
+          t >= walkStart - 1e-6;
+          t -= MOMENT_WALK_STEP_SEC) {
+          await seekTo(t);
+          if (await subjectState(capture.sceneId, capture.subjectPart!) === "visible") {
+            chosen = t;
+            break;
+          }
+        }
+        for (let t = capture.atSec + MOMENT_WALK_STEP_SEC;
+          chosen === capture.atSec && t <= walkEnd + 1e-6;
+          t += MOMENT_WALK_STEP_SEC) {
           await seekTo(t);
           if (await subjectState(capture.sceneId, capture.subjectPart!) === "visible") {
             chosen = t;

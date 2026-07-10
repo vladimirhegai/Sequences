@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildDirectLayoutSampleTimes,
   inspectDirectComposition,
+  primaryFocalReview,
+  spatialFocalPartAt,
 } from "../src/engine/layoutInspector.ts";
 import {
   CAMERA_RUNTIME_FILE,
@@ -14,6 +16,50 @@ import { findBrowserExecutable } from "../src/engine/render.ts";
 import type { DirectCompositionDraft, DirectScene } from "../src/engine/directComposition.ts";
 
 const roots: string[] = [];
+
+describe("morph-aware spatial focal review", () => {
+  const morphScene: DirectScene = {
+    id: "morph",
+    title: "Morph",
+    purpose: "Search becomes command",
+    startSec: 3,
+    durationSec: 5,
+    spatialIntent: {
+      version: 1,
+      focalPart: "search",
+      composition: "centered shared element",
+      relationships: ["command continues search"],
+    },
+    beats: [{
+      version: 1,
+      id: "search-command",
+      sceneId: "morph",
+      component: "search",
+      kind: "morph",
+      morphTo: "command",
+      atSec: 3.5,
+      durationSec: 1.2,
+    }],
+  };
+
+  it("follows the settled target after the morph", () => {
+    expect(spatialFocalPartAt(morphScene, 4.6)).toBe("search");
+    expect(spatialFocalPartAt(morphScene, 4.7)).toBe("command");
+  });
+
+  it("reviews a primary morph after it settles on the target", () => {
+    expect(primaryFocalReview(morphScene, 3.5)).toEqual({
+      focalPart: "command",
+      sampleAt: 4.78,
+    });
+  });
+
+  it("reviews a primary component moment on its evidence target before the later scene hero", () => {
+    const review = primaryFocalReview(morphScene, 3.3, "supporting-feed");
+    expect(review.focalPart).toBe("supporting-feed");
+    expect(review.sampleAt).toBeCloseTo(3.45, 5);
+  });
+});
 
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -128,6 +174,23 @@ function cameraClippedDraft(): DirectCompositionDraft {
       purpose: "Travel from the claim to the stat wall",
       startSec: 0,
       durationSec: 4,
+      spatialIntent: {
+        version: 1,
+        focalPart: "overflow-stat",
+        composition: "The stat is the promised subject",
+        relationships: ["stat remains readable at its primary moment"],
+      },
+      moments: [{
+        version: 1,
+        id: "stat-resolves",
+        sceneId: "tour",
+        atSec: 2.2,
+        title: "Stat resolves",
+        visualState: "the complete stat is readable",
+        change: "the proof lands",
+        motionIntent: "resolve",
+        importance: "primary",
+      }],
       camera: {
         version: 1,
         path: [
@@ -157,7 +220,7 @@ p{margin:0;font:400 24px/1.3 Arial}
       <div class="station" data-region="intro" style="left:20px;top:20px;width:700px;height:520px">
         <h1>One live view</h1>
       </div>
-      <div class="station" data-region="stat-wall" style="left:800px;top:40px;width:700px;height:520px">
+      <div class="station" data-region="stat-wall" data-camera-frame="region" style="left:800px;top:40px;width:700px;height:520px">
         <p style="position:absolute;left:40px;top:60px;width:300px">Latency under control</p>
         <div data-part="overflow-stat" style="position:absolute;left:560px;top:120px;width:400px;height:120px;background:#232936;font:700 40px/1.2 Arial">99.98% uptime</div>
       </div>
@@ -522,6 +585,10 @@ describe("direct layout inspector", () => {
       // The finding requests repair without blocking a runnable film.
       expect(result.strictOk).toBe(false);
       expect(result.warnings.some((warning) => warning.includes("camera_framed_clipped"))).toBe(true);
+      expect(result.issues.some((issue) =>
+        issue.code === "spatial_focal_offframe" &&
+        issue.message.includes('Primary moment "stat-resolves"')
+      )).toBe(true);
     },
     60_000,
   );

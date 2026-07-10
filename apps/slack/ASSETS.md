@@ -5,7 +5,9 @@ library covering all five silhouette families, the in-film spring animation
 runtime (the 8th host-owned island, `sequences-assets`), the Asset Lab with
 trigger badges + morph spring tweaks, and the channel-brief auto-offer.
 Flag: `SLACK_SEQUENCES_ASSETS` (see the flag-state note at the bottom).
-The Asset Lab works regardless: `npm run assets` → `http://127.0.0.1:4322`.
+The Asset Lab works regardless: `npm run assets` → `http://127.0.0.1:4747`
+(`STUDIO_ASSETS_PORT` / `--port` override; moved off 4322 because tests were
+squatting that port).
 
 ## Why this exists
 

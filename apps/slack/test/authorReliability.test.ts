@@ -890,6 +890,40 @@ describe("reconcileComponentBindings — missing data-part recovery", () => {
     expect(repairs).toBe(1);
     expect(out).toContain('data-component="command-palette" data-part="cmd-palette"');
   });
+
+  it("moves a stat binding off a hidden placeholder onto the sole visible metric root", () => {
+    const html = wrap(
+      '<div class="panel-stat-dock"><span data-cmp-value>7</span></div>' +
+        '<div data-part="impact-stat" data-component="stat-card" style="display:none;">' +
+        '<span data-cmp-value>142ms</span></div>',
+    );
+    const { html: out, repairs } = reconcileComponentBindings(html, [
+      scene("dashboard-overload", 0, {
+        components: [component("impact-stat", "stat-card")],
+      }),
+    ]);
+    expect(repairs).toBe(1);
+    expect(out).toContain(
+      'class="panel-stat-dock" data-part="impact-stat" data-component="stat-card"',
+    );
+    expect(out).toContain('data-part="impact-stat-hidden-aux-1"');
+  });
+
+  it("leaves a hidden stat binding in place when visible metric roots are ambiguous", () => {
+    const html = wrap(
+      '<div class="panel-stat-dock"><span data-cmp-value>7</span></div>' +
+        '<div class="metric-card"><span data-cmp-value>8</span></div>' +
+        '<div data-part="impact-stat" data-component="stat-card" style="display:none"></div>',
+    );
+    const { html: out, repairs } = reconcileComponentBindings(html, [
+      scene("dashboard-overload", 0, {
+        components: [component("impact-stat", "stat-card")],
+      }),
+    ]);
+    expect(repairs).toBe(0);
+    expect(out).toContain('data-part="impact-stat" data-component="stat-card" style="display:none"');
+    expect(out).not.toContain('data-part="impact-stat-hidden-aux-1"');
+  });
 });
 
 describe("deterministic source repair ordering: camera world + component aliases", () => {

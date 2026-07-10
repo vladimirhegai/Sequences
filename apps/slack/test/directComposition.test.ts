@@ -94,6 +94,38 @@ vi.mock("../src/engine/layoutInspector.ts", () => ({
     ok: true,
     strictOk: true,
     samples: [0, 2, 4, 6, 8],
+    continuousMotion: {
+      version: 1,
+      advisory: true,
+      sampleHz: 5,
+      frame: { width: 1920, height: 1080 },
+      samples: [],
+      reversals: [],
+      jerkMarkers: [],
+      settleWindows: [],
+      scenes: [],
+      summary: {
+        sampleCount: 5,
+        focalFoundSamples: 5,
+        minimumVisibleFraction: 1,
+        meanVisibleFraction: 1,
+        minimumOccupancyFraction: 0.1,
+        meanOccupancyFraction: 0.1,
+        offframeSamples: 0,
+        tinyFocalSamples: 0,
+        peakSpeed: 0.1,
+        peakAcceleration: 0.2,
+        peakJerk: 0.3,
+        reversalCount: 0,
+        jerkMarkerCount: 0,
+        maxIndependentMotionCount: 1,
+        meanIndependentMotionCount: 0.5,
+        settleWindowCount: 1,
+        measuredSettleWindowCount: 1,
+        settledByWindowEndCount: 1,
+      },
+      advisories: [],
+    },
     issues: [],
     errors: [],
     warnings: [],
@@ -1435,7 +1467,7 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     })).toBeUndefined();
   });
 
-  it("removes moment_static_frame from source retry feedback unless the film is blank", () => {
+  it("retries static primary moments but keeps static supporting moments diagnostic", () => {
     const qa: DirectBrowserQaResult = {
       ...base,
       strictOk: false,
@@ -1443,10 +1475,26 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
         "moment_static_frame moment:m-ghost (t=6.00s): invisible change",
         "layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent.",
       ],
+      temporalJudge: [{
+        momentId: "m-ghost",
+        title: "Ghost",
+        importance: "supporting",
+        atSec: 6,
+        beforeSec: 5.8,
+        midSec: 6,
+        afterSec: 6.2,
+        changedRatio: 0,
+        meanDelta: 0,
+        verdict: "static",
+      }],
     };
     expect(sourceRetryFeedbackForBrowserQa(qa)).toEqual([
       "layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent.",
     ]);
+    expect(sourceRetryFeedbackForBrowserQa({
+      ...qa,
+      temporalJudge: qa.temporalJudge?.map((entry) => ({ ...entry, importance: "primary" })),
+    })).toContain("moment_static_frame moment:m-ghost (t=6.00s): invisible change");
     expect(sourceRetryFeedbackForBrowserQa({
       ...qa,
       errors: ["near_blank_film: 1 scene renders as blank frames"],
@@ -1661,9 +1709,9 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
       qa([sparseIssue("lonely", 0.1, { region: "lonely" })]),
     );
     expect(result.corrected).toEqual(["lonely"]);
-    // sqrt(0.18/0.1) = 1.3416…, base 1 → ~1.342, safely past the 1.05 skip.
+    // sqrt(0.22/0.1) = 1.483..., with headroom beyond the 18% audit floor.
     const zoom = result.storyboard[0]!.camera!.path[0]!.zoom!;
-    expect(zoom).toBeCloseTo(1.342, 2);
+    expect(zoom).toBeCloseTo(1.483, 2);
     expect(zoom).toBeGreaterThan(1.05);
     expect(result.storyboard[0]!.camera!.path[0]!.framingCorrection).toBe("camera-sparse-zoom");
     // The input storyboard is never mutated in place.
@@ -1675,8 +1723,55 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
       [cameraScene("tiny", "tiny")],
       qa([sparseIssue("tiny", 0.02, { region: "tiny" })]),
     );
-    // sqrt(0.18/0.02) = 3.0 -> clamped to the camera contract's 2.8 ceiling.
+    // sqrt(0.22/0.02) > 3 -> clamped to the camera contract's 2.8 ceiling.
     expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeCloseTo(2.8, 5);
+  });
+
+  it("zooms a wide footprint whose actual painted occupancy is sparse", () => {
+    const issue = sparseIssue("scatter", 0.5, { region: "scatter" });
+    issue.framing!.occupiedFraction = 0.01;
+    const result = correctSparseFraming([cameraScene("scatter", "scatter")], qa([issue]));
+    expect(result.corrected).toEqual(["scatter"]);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeGreaterThan(2.5);
+  });
+
+  it("adds a restrained focal push when a camera-less scene is sparse", () => {
+    const staticScene: DirectScene = {
+      id: "cold-open",
+      title: "Cold open",
+      purpose: "Introduce one search field",
+      startSec: 0,
+      durationSec: 4,
+      spatialIntent: {
+        version: 1,
+        focalPart: "query",
+        composition: "one centered search field",
+        relationships: ["query is the only subject"],
+      },
+    };
+    const result = correctSparseFraming(
+      [staticScene],
+      qa([sparseIssue("cold-open", 0.12)]),
+    );
+    expect(result.corrected).toEqual(["cold-open"]);
+    expect(result.storyboard[0]!.camera!.path[0]).toMatchObject({
+      move: "push-in",
+      fromPart: "query",
+      toPart: "query",
+      startSec: 0,
+      framingCorrection: "camera-sparse-zoom",
+    });
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeGreaterThan(1);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeLessThanOrEqual(1.08);
+  });
+
+  it("does not invent a sparse framing target without declared spatial intent", () => {
+    const result = correctSparseFraming(
+      [{ id: "unknown", title: "Unknown", purpose: "No focal", startSec: 0, durationSec: 4 }],
+      qa([sparseIssue("unknown", 0.08)]),
+    );
+    expect(result.corrected).toEqual([]);
+    expect(result.storyboard[0]!.camera).toBeUndefined();
   });
 
   it("bumps the last targeted full move for a scene-level [data-scene] finding", () => {
@@ -3829,10 +3924,28 @@ describe("direct HyperFrames composition", () => {
     });
     expect(fs.existsSync(path.join(dir, "composition", "STORYBOARD.md"))).toBe(true);
     expect(fs.existsSync(path.join(dir, "composition", "motion-plan.json"))).toBe(true);
+    const motionPlan = JSON.parse(
+      fs.readFileSync(path.join(dir, "composition", "motion-plan.json"), "utf8"),
+    ) as {
+      direction: { version: number; source: string; scenes: unknown[] };
+      directionConsumersEnabled: boolean;
+      continuousMotion: { version: number; advisory: boolean; summary: { sampleCount: number } };
+    };
+    expect(motionPlan.direction).toMatchObject({ version: 1, source: "host-derived" });
+    expect(motionPlan.direction.scenes).toHaveLength(first.storyboard.length);
+    expect(motionPlan.directionConsumersEnabled).toBe(true);
+    expect(motionPlan.continuousMotion).toMatchObject({
+      version: 1,
+      advisory: true,
+      summary: { sampleCount: 5 },
+    });
     expect(fs.existsSync(
       path.join(dir, "composition", "sequences-interactions.v1.js"),
     )).toBe(true);
     expect(fs.existsSync(path.join(dir, "composition", "qa", "spatial.json"))).toBe(true);
+    expect(JSON.parse(
+      fs.readFileSync(path.join(dir, "composition", "qa", "spatial.json"), "utf8"),
+    ).continuousMotion).toMatchObject({ version: 1, advisory: true });
     expect(fs.existsSync(path.join(
       dir,
       "revisions",

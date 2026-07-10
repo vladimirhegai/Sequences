@@ -826,7 +826,7 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
     expect(result.storyboard[0]!.sentinelNormalizations?.length).toBe(1);
   });
 
-  it("leaves a move already in flight when the beat lands (arrival choreography)", () => {
+  it("delays a move already in flight when it obscures the payoff hold", () => {
     const busy = scene({
       id: "arrival",
       startSec: 0,
@@ -847,11 +847,13 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
       },
     });
     const result = delayConflictingCameraMoves([busy]);
-    expect(result.normalized).toEqual([]);
-    expect(result.storyboard[0]!.camera!.path[0]!.startSec).toBe(1.5);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.camera!.path[0]!.startSec).toBe(2.8);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/outcome:")))
+      .toBe(false);
   });
 
-  it("never delays a load-bearing move", () => {
+  it("keeps a load-bearing move when the delay would break its moment binding", () => {
     const loadBearing = scene({
       id: "pinned",
       startSec: 0,
@@ -866,9 +868,61 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
         toState: "success",
       })],
       camera: { version: 1, path: [move({ move: "pan", startSec: 2.1, durationSec: 1.0 })] },
-      moments: [moment("pinned", "m-arrival", 2.6)],
+      moments: [moment("pinned", "m-arrival", 1.8)],
     });
     expect(delayConflictingCameraMoves([loadBearing]).normalized).toEqual([]);
+  });
+
+  it("drops a non-load-bearing move that crosses multiple holds when no clean slot fits", () => {
+    const crowded = scene({
+      id: "resolve",
+      startSec: 10,
+      durationSec: 6.5,
+      components: [
+        { version: 1 as const, id: "headline", kind: "headline" as const },
+        { version: 1 as const, id: "sub", kind: "headline" as const },
+        { version: 1 as const, id: "metric", kind: "stat-card" as const },
+      ],
+      beats: [
+        beat("resolve", {
+          id: "headline-type",
+          component: "headline",
+          kind: "type",
+          atSec: 10.6,
+          durationSec: 0.8,
+          text: "Incident Replay",
+        }),
+        beat("resolve", {
+          id: "sub-type",
+          component: "sub",
+          kind: "type",
+          atSec: 11,
+          durationSec: 2,
+          text: "One click. Full timeline. Proven fix.",
+        }),
+        beat("resolve", {
+          id: "metric-swap",
+          component: "metric",
+          kind: "swap",
+          atSec: 14,
+          durationSec: 0.6,
+          text: "9",
+        }),
+      ],
+      camera: {
+        version: 1,
+        path: [move({ move: "pull-back", startSec: 11.5, durationSec: 3 })],
+      },
+    });
+    expect(auditPacing([crowded]).some((finding) => finding.startsWith("pacing/reading:")))
+      .toBe(true);
+    const result = delayConflictingCameraMoves([crowded]);
+    expect(result.normalized).toEqual([
+      expect.stringContaining("crossed 2 reading/payoff holds"),
+    ]);
+    expect(result.storyboard[0]!.camera).toBeUndefined();
+    expect(auditPacing(result.storyboard).filter((finding) => finding.startsWith("pacing/reading:")))
+      .toEqual([]);
   });
 
   it("stretches the scene's own cut when the delayed move overruns it, cascade-shifting later scenes", () => {

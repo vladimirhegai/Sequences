@@ -26,7 +26,7 @@ export const laurelBadge = defineAsset({
       kind: "text",
       description: "The award claim",
       default: "#1 of the Day",
-      maxChars: 14,
+      maxChars: 28,
     },
     {
       name: "accent",
@@ -117,10 +117,12 @@ export const laurelBadge = defineAsset({
   color: var(--muted, #9aa5b4);
 }
 .asset-laurel-badge .lb-title {
-  font-size: 1.28em;
+  font-size: 1.15em;
   font-weight: 700;
-  letter-spacing: -0.01em;
-  max-width: 7.5em;
+  line-height: 1.05;
+  letter-spacing: 0;
+  max-width: 9em;
+  text-wrap: balance;
 }
 .asset-laurel-badge .lb-gloss {
   position: absolute;

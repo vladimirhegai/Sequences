@@ -40,6 +40,14 @@ describe("asset pack", () => {
     expect(ASSET_LIBRARY.length).toBeGreaterThanOrEqual(12);
   });
 
+  it("keeps a complete SaaS award claim instead of truncating the product category", () => {
+    const laurel = ASSET_LIBRARY.find((asset) => asset.id === "laurel-badge")!;
+    const rendered = renderAssetInstance(laurel, { title: "#1 Revenue Analytics" });
+    expect(rendered.markup).toContain("#1 Revenue Analytics");
+    expect(rendered.notes).toEqual([]);
+    expect(laurel.style).toContain("text-wrap: balance");
+  });
+
   for (const asset of ASSET_LIBRARY) {
     describe(asset.id, () => {
       it("renders deterministically with defaults and escapes injected copy", () => {
