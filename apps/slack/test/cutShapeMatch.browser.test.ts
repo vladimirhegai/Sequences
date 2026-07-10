@@ -142,7 +142,7 @@ describe("shape-match cut runtime browser contract", () => {
     expect(findings[0]!.message).not.toContain("one->two");
   }, 30_000);
 
-  it("degrades a row list → windowed table morph on structure mismatch (probe-audit-03 T8)", async () => {
+  it("degrades a row list → windowed table morph on semantic-family mismatch (probe-audit-03 T8)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-structure-smoke-"));
     roots.push(dir);
     initializeProject(dir, { name: "Structure", brandName: "Structure", seedScreenshot: false });
@@ -227,11 +227,70 @@ window.__timelines["structure-smoke"]=tl;tl.seek(0);
     expect(degraded).toHaveLength(1);
     expect(degraded[0]).toContain("list->board");
     expect(degraded[0]).toMatch(/compiled as swipe-(left|right|up|down):/);
-    expect(degraded[0]).toContain("mismatched structure");
+    expect(degraded[0]).toContain("different semantic families");
+    expect(degraded[0]).toContain("collection vs product-surface");
     const findings = qa.issues.filter((issue) => issue.code === "cut_degraded");
     expect(findings).toHaveLength(1);
-    expect(findings[0]!.message).toContain("mismatched structure");
+    expect(findings[0]!.message).toContain("different semantic families");
+    expect(findings[0]!.message).toContain("collection vs product-surface");
     expect(qa.ok).toBe(true);
+  }, 30_000);
+
+  it("degrades invisible focal twins and collection-to-lockup morphs before cloning them", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-focal-ink-smoke-"));
+    roots.push(dir);
+    initializeProject(dir, { name: "Focal ink", brandName: "Focal ink", seedScreenshot: false });
+    const storyboard: DirectScene[] = [
+      {
+        id: "action",
+        title: "Action",
+        purpose: "A visible action pill",
+        startSec: 0,
+        durationSec: 3,
+        cut: { version: 1, style: "morph", focalPartOut: "action-pill", focalPartIn: "ghost-pill" },
+      },
+      {
+        id: "list",
+        title: "List",
+        purpose: "A collection after the empty twin",
+        startSec: 3,
+        durationSec: 3,
+        cut: { version: 1, style: "morph", focalPartOut: "confirmed-list", focalPartIn: "closing-lockup" },
+      },
+      { id: "close", title: "Close", purpose: "A type lockup", startSec: 6, durationSec: 3 },
+    ];
+    const island = JSON.stringify(resolveCutPlan(storyboard));
+    const html = `<!doctype html><html><head><meta charset="UTF-8">
+<title>Focal ink morph smoke</title><script src="gsap.min.js"></script>
+<script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CUT_RUNTIME_FILE}"></script><style>
+*{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#fff;color:#1e1e24;font-family:Arial,sans-serif}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden}.scene{position:absolute;inset:0;display:grid;place-items:center;opacity:0}
+.pill{width:300px;height:88px;border-radius:999px;background:#ff385c;color:#fff;display:grid;place-items:center;font-size:28px}
+.ghost{width:300px;height:88px;display:grid;place-items:center}.list{width:760px;display:grid;gap:14px}.list>div{padding:24px 30px;background:#f4f4f4;border-radius:14px}
+.seq-plugin-lockup{width:760px;min-height:220px;display:grid;place-items:center;text-align:center}.seq-plugin-lockup h1{font-size:76px;margin:0}.seq-plugin-lockup p{font-size:26px}
+</style></head><body><main id="root" data-composition-id="focal-ink" data-width="1920" data-height="1080" data-duration="9">
+<section class="scene clip" data-scene="action" data-start="0" data-duration="3" data-track-index="1"><div class="pill" data-component="button" data-part="action-pill">Confirm change</div></section>
+<section class="scene clip" data-scene="list" data-start="3" data-duration="3" data-track-index="1"><div style="display:grid;gap:80px;justify-items:center"><div class="ghost" data-part="ghost-pill"><div class="pill" style="opacity:0">Saved</div></div><div class="list" data-component="list" data-part="confirmed-list"><div>BK-241 confirmed</div><div>BK-245 confirmed</div></div></div></section>
+<section class="scene clip" data-scene="close" data-start="6" data-duration="3" data-track-index="1"><div class="seq-plugin-lockup" data-part="closing-lockup"><h1>Book with Roamly</h1><p>One calm click for every change.</p></div></section>
+</main><script type="application/json" id="sequences-cuts">${island}</script><script>
+window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
+tl.set('[data-scene="action"]',{opacity:1},0).set('[data-scene="action"]',{opacity:0},2.999);
+tl.set('[data-scene="list"]',{opacity:1},3).set('[data-scene="list"]',{opacity:0},5.999);
+tl.set('[data-scene="close"]',{opacity:1},6).set('[data-scene="close"]',{opacity:0},9);
+SequencesCuts.compile(tl,document.getElementById('root'));window.__timelines['focal-ink']=tl;tl.seek(0);
+</script></body></html>`;
+    const draft = { storyboard, html };
+    expect(validateCutContract(html, storyboard).errors).toEqual([]);
+    const qa = await inspectDirectComposition(dir, draft, { captureGuide: false });
+    expect(qa.infraError).toBeUndefined();
+    const degraded = qa.warnings.filter((warning) => warning.startsWith("cut_degraded:"));
+    expect(degraded).toHaveLength(2);
+    expect(degraded.find((warning) => warning.includes("action->list"))).toContain(
+      "incoming focal part has no visible painted content",
+    );
+    expect(degraded.find((warning) => warning.includes("list->close"))).toContain(
+      "different semantic families (collection vs type)",
+    );
   }, 30_000);
 
   it("keeps a cover swipe invisible to layout/near-blank audits", async () => {

@@ -18,6 +18,11 @@ import {
 const DEFAULT_SAMPLE_HZ = 5;
 const DEFAULT_MAX_SAMPLES = 150;
 const MOVING_SPEED = 0.008;
+/** Low-amplitude operated camera movement still keeps a held frame alive. */
+const LIVENESS_SPEED = 0.002;
+/** Longer rendered stillness reads as a stopped slide, even between valid beats. */
+const QUIET_WINDOW_MIN_SEC = 0.8;
+export const QUIET_WINDOW_REVIEW_SEC = 1.4;
 const SETTLED_SPEED = 0.018;
 const REVERSAL_SPEED = 0.025;
 const REVERSAL_COSINE = -0.35;
@@ -44,6 +49,8 @@ export interface ContinuousMotionLocalStateV1 {
   opacity: number;
   width: number;
   height: number;
+  /** SVG/trim-path progress, when the subject exposes it. */
+  strokeDashoffset?: number;
 }
 
 export interface ContinuousMotionRawSnapshotV1 {
@@ -78,6 +85,13 @@ export interface ContinuousMotionMarkerV1 {
   value: number;
 }
 
+export interface ContinuousMotionQuietWindowV1 {
+  sceneId: string;
+  startSec: number;
+  endSec: number;
+  durationSec: number;
+}
+
 export interface ContinuousSettleEvidenceV1 {
   sceneId: string;
   phraseId: string;
@@ -109,6 +123,7 @@ export interface ContinuousMotionEvidenceV1 {
   samples: ContinuousMotionSampleV1[];
   reversals: ContinuousMotionMarkerV1[];
   jerkMarkers: ContinuousMotionMarkerV1[];
+  quietWindows: ContinuousMotionQuietWindowV1[];
   settleWindows: ContinuousSettleEvidenceV1[];
   scenes: ContinuousSceneSummaryV1[];
   summary: {
@@ -130,6 +145,8 @@ export interface ContinuousMotionEvidenceV1 {
     settleWindowCount: number;
     measuredSettleWindowCount: number;
     settledByWindowEndCount: number;
+    quietWindowCount: number;
+    maxQuietWindowSec: number;
   };
   advisories: string[];
 }
@@ -245,6 +262,7 @@ function localVector(
     (after.opacity - before.opacity) * 0.18 / dt,
     (after.width - before.width) / diagonal / dt,
     (after.height - before.height) / diagonal / dt,
+    ((after.strokeDashoffset ?? 0) - (before.strokeDashoffset ?? 0)) * 0.01 / dt,
   ];
 }
 
@@ -290,6 +308,36 @@ function minimum(values: number[]): number {
 
 function average(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function renderedQuietWindows(samples: ContinuousMotionSampleV1[]): ContinuousMotionQuietWindowV1[] {
+  const windows: ContinuousMotionQuietWindowV1[] = [];
+  let active: { sceneId: string; startSec: number; endSec: number } | undefined;
+  const flush = (): void => {
+    if (active && active.endSec - active.startSec >= QUIET_WINDOW_MIN_SEC - 1e-6) {
+      windows.push({
+        sceneId: active.sceneId,
+        startSec: round(active.startSec, 3),
+        endSec: round(active.endSec, 3),
+        durationSec: round(active.endSec - active.startSec, 3),
+      });
+    }
+    active = undefined;
+  };
+  for (let index = 1; index < samples.length; index += 1) {
+    const before = samples[index - 1]!;
+    const after = samples[index]!;
+    const sameScene = before.sceneId === after.sceneId;
+    const alive = after.independentMotionCount > 0 || (after.focal.speed ?? 0) >= LIVENESS_SPEED;
+    if (!sameScene || alive) {
+      flush();
+      continue;
+    }
+    if (!active) active = { sceneId: after.sceneId, startSec: before.time, endSec: after.time };
+    else active.endSec = after.time;
+  }
+  flush();
+  return windows;
 }
 
 function settleEvidence(
@@ -445,6 +493,7 @@ export function analyzeContinuousMotionSnapshots(
   const accelerationsValues = samples.map((sample) => sample.focal.acceleration ?? 0);
   const jerks = samples.map((sample) => sample.focal.jerk ?? 0);
   const motionCounts = samples.map((sample) => sample.independentMotionCount);
+  const quietWindows = renderedQuietWindows(samples);
   const sceneSummaries = scenes.map((scene): ContinuousSceneSummaryV1 => {
     const scoped = samples.filter((sample) => sample.sceneId === scene.id);
     const scopedFound = scoped.filter((sample) => sample.focal.found);
@@ -478,6 +527,8 @@ export function analyzeContinuousMotionSnapshots(
     settleWindowCount: settleWindows.length,
     measuredSettleWindowCount: settleWindows.filter((window) => window.measured).length,
     settledByWindowEndCount: settleWindows.filter((window) => window.settledByWindowEnd).length,
+    quietWindowCount: quietWindows.length,
+    maxQuietWindowSec: round(Math.max(0, ...quietWindows.map((window) => window.durationSec)), 3),
   };
   const advisories: string[] = [];
   if (summary.offframeSamples > 0) {
@@ -497,6 +548,12 @@ export function analyzeContinuousMotionSnapshots(
   if (jerkMarkers.length) {
     advisories.push(`${jerkMarkers.length} high-jerk focal sample(s) need review`);
   }
+  if (summary.maxQuietWindowSec >= QUIET_WINDOW_REVIEW_SEC) {
+    advisories.push(
+      `${summary.quietWindowCount} rendered quiet window(s); longest ` +
+        `${summary.maxQuietWindowSec.toFixed(2)}s without camera, content, or micro motion`,
+    );
+  }
   // Keep p95 calculations exercised and available for future threshold work
   // without treating a single seek-boundary spike as the typical profile.
   const p95Acceleration = percentile(accelerationsValues, 0.95);
@@ -511,6 +568,7 @@ export function analyzeContinuousMotionSnapshots(
     samples,
     reversals,
     jerkMarkers,
+    quietWindows,
     settleWindows,
     scenes: sceneSummaries,
     summary,
@@ -601,7 +659,7 @@ export async function captureContinuousMotionEvidence(
             .find((element: HTMLElement) => element.getAttribute("data-scene") === payload.sceneId)
           : undefined;
         const rootRect = root?.getBoundingClientRect();
-        const localState = (element: HTMLElement): Local => {
+        const localState = (element: Element): Local => {
           const style = getComputedStyle(element);
           const transform = style.transform;
           const values = transform === "none"
@@ -618,8 +676,11 @@ export async function captureContinuousMotionEvidence(
             scaleX: Math.hypot(a, b),
             scaleY: Math.hypot(c, d),
             opacity: Number.parseFloat(style.opacity) || 0,
-            width: element.offsetWidth,
-            height: element.offsetHeight,
+            width: element instanceof HTMLElement ? element.offsetWidth : element.getBoundingClientRect().width,
+            height: element instanceof HTMLElement ? element.offsetHeight : element.getBoundingClientRect().height,
+            ...(Number.isFinite(Number.parseFloat(style.strokeDashoffset))
+              ? { strokeDashoffset: Number.parseFloat(style.strokeDashoffset) }
+              : {}),
           };
         };
         const effectiveOpacity = (element: HTMLElement): number => {
@@ -699,6 +760,16 @@ export async function captureContinuousMotionEvidence(
           for (const [index, element] of fxElements.slice(0, 12).entries()) {
             subjects[`fx:${element.getAttribute("data-sequences-fx") ?? index}:${index}`] =
               localState(element);
+          }
+          // Internal component motion is story motion too. Sampling only the
+          // outer data-part root made row cascades, count slots, progress fills,
+          // and SVG draw-ons look falsely static.
+          const internal = Array.from(scene.querySelectorAll(
+            "[data-cmp-item],.cmp-row,.cmp-item,.cmp-card,.cmp-msg," +
+            "[data-cmp-value],[data-cmp-fill],svg path,svg line,svg polyline,svg circle",
+          ));
+          for (const [index, element] of internal.slice(0, 100).entries()) {
+            subjects[`internal:${index}`] = localState(element);
           }
         }
         return {

@@ -8,6 +8,7 @@ import {
   auditComponentComplexity,
   auditSurfaceExits,
   componentAuthoringReference,
+  componentKindsMorphCompatible,
   dedupeRedundantBeats,
   degradeOpenPopStyles,
   componentKitSource,
@@ -20,6 +21,7 @@ import {
   normalizeStoryboardComponentBeats,
   normalizeStoryboardComponents,
   parseComponentPlan,
+  retimeLateLoadBearingEntrances,
   resolveComponentPlan,
   trimOverBudgetComponents,
   validateComponentContract,
@@ -42,6 +44,17 @@ function scene(
 }
 
 const window = { sceneId: "s1", startSec: 0, durationSec: 8 };
+
+describe("component morph families", () => {
+  it("treats two declared instances of one kind as semantic peers", () => {
+    expect(componentKindsMorphCompatible("button", "button")).toBe(true);
+    expect(componentKindsMorphCompatible("stat-card", "stat-card")).toBe(true);
+    expect(componentKindsMorphCompatible("search", "command-palette")).toBe(true);
+    expect(componentKindsMorphCompatible("button", "progress-ring")).toBe(false);
+    expect(componentPlanningVocabulary()).toContain("button:");
+    expect(componentPlanningVocabulary()).toContain("morphs↔same-kind");
+  });
+});
 
 function declared(...kinds: Array<[string, SceneComponentSpecV1["kind"]]>): SceneComponentSpecV1[] {
   return kinds.map(([id, kind]) => ({ version: 1, id, kind }));
@@ -109,6 +122,159 @@ describe("normalizeStoryboardComponentBeats", () => {
       { version: 1, id: "p1", component: "bar", kind: "progress", atSec: 1, value: 7 },
     ], window, declared(["bar", "progress"]));
     expect(progress[0]!.value).toBe(1);
+  });
+});
+
+describe("retimeLateLoadBearingEntrances", () => {
+  it("moves an existing hero rows entrance into the opening runway and carries its moment", () => {
+    const result = retimeLateLoadBearingEntrances([
+      scene({
+        id: "review",
+        startSec: 0,
+        durationSec: 4,
+        cut: {
+          version: 1,
+          style: "morph",
+          focalPartOut: "confirm-pill",
+          focalPartIn: "confirmed-row",
+        },
+      }),
+      scene({
+        id: "confirmation",
+        startSec: 4,
+        durationSec: 6,
+        components: [{
+          version: 1,
+          id: "confirmation-list",
+          kind: "list",
+          role: "hero",
+          region: "confirmation-stage",
+        }],
+        beats: [{
+          version: 1,
+          id: "rows-arrive",
+          sceneId: "confirmation",
+          component: "confirmation-list",
+          kind: "rows",
+          atSec: 5.8,
+          durationSec: 1.2,
+        }],
+        moments: [{
+          version: 1,
+          id: "rows-readable",
+          sceneId: "confirmation",
+          atSec: 5.8,
+          title: "Confirmed rows arrive",
+          visualState: "The confirmed list is readable",
+          change: "The existing rows resolve",
+          motionIntent: "reveal",
+          importance: "primary",
+        }],
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "pull-back",
+            startSec: 4,
+            durationSec: 2,
+            toRegion: "confirmation-stage",
+          }],
+        },
+        spatialIntent: {
+          version: 1,
+          focalPart: "confirmation-list",
+          composition: "centered confirmation",
+          relationships: [],
+        },
+      }),
+    ]);
+
+    expect(result.scenes[1]!.beats![0]!.atSec).toBe(4.48);
+    expect(result.scenes[1]!.moments![0]!.atSec).toBe(4.48);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized[0]).toContain("cannot leave the opening station blank");
+    expect(result.scenes[1]!.sentinelNormalizations?.[0]).toContain("entrance-retime:");
+  });
+
+  it("does not pull a deliberate late CTA open forward", () => {
+    const late = scene({
+      id: "close",
+      startSec: 0,
+      durationSec: 6,
+      components: [{ version: 1, id: "cta", kind: "button", role: "hero", region: "cta-stage" }],
+      beats: [{
+        version: 1,
+        id: "cta-opens",
+        sceneId: "close",
+        component: "cta",
+        kind: "open",
+        atSec: 4.2,
+      }],
+      camera: {
+        version: 1,
+        path: [{ version: 1, move: "hold", startSec: 0, durationSec: 3, toRegion: "metric-stage" }],
+      },
+      spatialIntent: { version: 1, focalPart: "metric", composition: "metric then CTA", relationships: [] },
+    });
+    const result = retimeLateLoadBearingEntrances([late]);
+    expect(result.scenes[0]!.beats![0]!.atSec).toBe(4.2);
+    expect(result.normalized).toEqual([]);
+  });
+
+  it("leaves a later rows refresh in place when the component already entered", () => {
+    const refresh = scene({
+      id: "feed",
+      startSec: 0,
+      durationSec: 6,
+      components: [{ version: 1, id: "activity", kind: "list", role: "hero" }],
+      beats: [
+        { version: 1, id: "initial", sceneId: "feed", component: "activity", kind: "rows", atSec: 0.4 },
+        { version: 1, id: "new-page", sceneId: "feed", component: "activity", kind: "rows", atSec: 4.2 },
+      ],
+      spatialIntent: { version: 1, focalPart: "activity", composition: "live feed", relationships: [] },
+    });
+    const result = retimeLateLoadBearingEntrances([refresh]);
+    expect(result.scenes[0]!.beats!.map((beat) => beat.atSec)).toEqual([0.4, 4.2]);
+    expect(result.normalized).toEqual([]);
+  });
+
+  it("keeps supporting rows as mid-shot development when they only share the hero region", () => {
+    const review = scene({
+      id: "review",
+      startSec: 4,
+      durationSec: 5.6,
+      components: [
+        { version: 1, id: "date-card", kind: "app-window", role: "support", region: "review-stage" },
+        { version: 1, id: "confirm", kind: "button", role: "hero", region: "review-stage" },
+      ],
+      beats: [{
+        version: 1,
+        id: "metadata-shift",
+        sceneId: "review",
+        component: "date-card",
+        kind: "rows",
+        atSec: 5.8,
+      }],
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          startSec: 4,
+          durationSec: 2,
+          toRegion: "review-stage",
+        }],
+      },
+      spatialIntent: {
+        version: 1,
+        focalPart: "confirm",
+        composition: "support develops under the hero",
+        relationships: [],
+      },
+    });
+    const result = retimeLateLoadBearingEntrances([review]);
+    expect(result.scenes[0]!.beats![0]!.atSec).toBe(5.8);
+    expect(result.normalized).toEqual([]);
   });
 });
 
@@ -429,6 +595,7 @@ describe("catalog / kit / runtime coherence", () => {
       );
     }
     expect(js).toContain("compileMorph");
+    expect(js).toContain('return ":scope > " + entry.trim()');
     expect(js).not.toMatch(/Math\.random|Date\.now|setTimeout|requestAnimationFrame/);
   });
 

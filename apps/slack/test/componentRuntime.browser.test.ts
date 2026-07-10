@@ -64,12 +64,14 @@ function componentFilm(): { storyboard: DirectScene[]; html: string } {
         { version: 1, id: "stat-counts", sceneId: "shot-metrics", component: "conv-stat", kind: "count", atSec: 6.6 },
         { version: 1, id: "chart-grows", sceneId: "shot-metrics", component: "growth-chart", kind: "chart", atSec: 7.4 },
         { version: 1, id: "rows-arrive", sceneId: "shot-metrics", component: "orders-table", kind: "rows", atSec: 9.2 },
+        { version: 1, id: "row-underlines", sceneId: "shot-metrics", component: "orders-table", kind: "highlight", style: "underline", item: 2, atSec: 10.1 },
         { version: 1, id: "stat-flags", sceneId: "shot-metrics", component: "conv-stat", kind: "highlight", atSec: 10.9 },
       ],
       moments: [
         { version: 1, id: "m-count", sceneId: "shot-metrics", atSec: 7, title: "Conversion counts up", visualState: "stat hits 42%", change: "metric completes", motionIntent: "ui-state", importance: "primary" },
         { version: 1, id: "m-chart", sceneId: "shot-metrics", atSec: 7.8, title: "Growth bars rise", visualState: "chart grows", change: "trend visible", motionIntent: "draw-on", importance: "supporting" },
         { version: 1, id: "m-rows", sceneId: "shot-metrics", atSec: 9.5, title: "Orders stream in", visualState: "table fills", change: "live activity", motionIntent: "reveal", importance: "supporting" },
+        { version: 1, id: "m-row-focus", sceneId: "shot-metrics", atSec: 10.3, title: "Second order underlined", visualState: "the second row owns the measured underline", change: "focus moved to the selected evidence row", motionIntent: "draw-on", importance: "supporting" },
         { version: 1, id: "m-flag", sceneId: "shot-metrics", atSec: 11.1, title: "Hero stat flagged", visualState: "accent ring pulses the stat", change: "the key number is marked", motionIntent: "ui-state", importance: "supporting" },
       ],
     },
@@ -183,6 +185,11 @@ describe("component runtime browser contract", () => {
     expect(qa.infraError).toBeUndefined();
     expect(qa.errors).toEqual([]);
     expect(qa.ok).toBe(true);
+    expect(
+      qa.issues.filter((issue) =>
+        issue.code.includes("annotation") || issue.code.includes("attachment")
+      ),
+    ).toEqual([]);
     // Rendered temporal judge calibration: every one of these beats visibly
     // changes the frame, so no moment may be flagged as static.
     expect(qa.temporalJudge?.length).toBeGreaterThanOrEqual(2);

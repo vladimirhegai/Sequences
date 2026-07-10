@@ -322,13 +322,13 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     test: "test/pacingAudit.test.ts",
     addedBecause:
       "2026-07-07 attempt-economy sweep (recorded next candidate): the " +
-      "distinct-framings floor (validateStoryboardPlan) short by EXACTLY one is " +
+      "distinct-framings floor (validateStoryboardPlan) short by one or two is " +
       "the mechanical half of its own fix hint. topUpFramingFloor (parseStoryboard, " +
-      "in the atomic commit-or-revert) adds ONE gentle establishing push-in " +
+      "in the atomic commit-or-revert) adds up to TWO gentle establishing push-ins " +
       "(FRAMING_TOPUP_ZOOM 1.15, <= 1s, opening the shot so it never steals a " +
-      "beat's hold) to the longest single-framing shot that has real content to " +
-      "frame — lifting the framing count by one without inventing a shot. Short by " +
-      ">= 2 is a real content deficit and stays a finding. It PREVENTS the " +
+      "beat's hold) to the longest single-framing shots that have real content to " +
+      "frame, meeting the floor without inventing a shot. Short by " +
+      ">= 3 is a real content deficit and stays a finding. It PREVENTS the " +
       "framing-density floor error. Telemetry tag: framing-floor-topup. Visible in " +
       "STORYBOARD.md.",
   },
@@ -1276,6 +1276,22 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "repair budget and weigh least-bad selection; supporting moments remain " +
       "diagnostic. Neither alone unpublishes a runnable draft. " +
       "SLACK_SEQUENCES_TEMPORAL_JUDGE=0 disables.",
+  },
+  {
+    id: "liveness.rendered-quiet-window",
+    group: "liveness",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["motion_quiet_window"],
+    promptCostChars: 0,
+    test: "test/continuousMotion.test.ts",
+    addedBecause:
+      "2026-07-10 motion-design hardening: static motion-density validation can " +
+      "prove that tweens were authored, but not that the rendered frame stays " +
+      "alive. Continuous browser evidence raises motion_quiet_window only after " +
+      "measuring at least 1.4s with no camera, component, FX, or micro-motion. " +
+      "This is strictOk polish pressure on the bounded author ladder, then " +
+      "advisory-late so a healthy runnable film is never unpublished.",
   },
   {
     id: "eye-trace",

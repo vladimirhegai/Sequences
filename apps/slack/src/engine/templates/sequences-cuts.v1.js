@@ -69,19 +69,54 @@
   function bridgeElement(root, source) {
     var layer = overlayLayer(root);
     var bridge = source.cloneNode(true);
-    bridge.removeAttribute("id");
-    bridge.removeAttribute("data-part");
+    // A transition clone is paint only. Strip every nested contract/id so
+    // component, interaction, continuity, and QA selectors never bind to a
+    // ghost instead of the live endpoint.
+    var clonedNodes = [bridge].concat(Array.prototype.slice.call(bridge.querySelectorAll("*")));
+    for (var n = 0; n < clonedNodes.length; n += 1) {
+      clonedNodes[n].removeAttribute("id");
+      clonedNodes[n].removeAttribute("data-part");
+      clonedNodes[n].removeAttribute("data-component");
+      clonedNodes[n].removeAttribute("data-continuity-entity");
+      clonedNodes[n].removeAttribute("data-layout-important");
+    }
     bridge.setAttribute("data-sequences-runtime-cut", "bridge");
     bridge.setAttribute("data-layout-ignore", "");
     bridge.style.position = "absolute";
     bridge.style.left = "0";
     bridge.style.top = "0";
     bridge.style.margin = "0";
+    bridge.style.minWidth = "0";
+    bridge.style.minHeight = "0";
+    bridge.style.maxWidth = "none";
+    bridge.style.maxHeight = "none";
+    bridge.style.boxSizing = "border-box";
     bridge.style.pointerEvents = "none";
     bridge.style.opacity = "0";
     bridge.style.transformOrigin = "0 0";
     layer.appendChild(bridge);
     return bridge;
+  }
+
+  // Place a fixed-layout clone inside an interpolated box using ONE uniform
+  // scale. Changing clone width/height made browsers reflow text, grids, and
+  // controls on every frame (the rubber-sheet morph seen in live probes).
+  // Uniform scaling preserves the source typography and internal geometry;
+  // the destination clone crossfades in with its own intact layout.
+  function placeClone(clone, natural, box) {
+    var scale = Math.min(
+      box.width / Math.max(1, natural.width),
+      box.height / Math.max(1, natural.height),
+    );
+    scale = Math.max(0.01, scale);
+    global.gsap.set(clone, {
+      x: box.x + (box.width - natural.width * scale) / 2,
+      y: box.y + (box.height - natural.height * scale) / 2,
+      width: natural.width,
+      height: natural.height,
+      scale: scale,
+      transformOrigin: "0 0",
+    });
   }
 
   function localRect(root, element) {
@@ -269,13 +304,16 @@
     if (!fromPart) fail(cut, 'outgoing part "' + cut.focalPartOut + '" is absent');
     if (!toPart) fail(cut, 'incoming part "' + cut.focalPartIn + '" is absent');
     var bridge = bridgeElement(root, fromPart);
+    var incomingBridge = bridgeElement(root, toPart);
     var lead = Math.min(0.24, cut.exitSec);
     var start = cut.atSec - lead;
     var settle = cut.entrySec;
     var proxy = { p: 0 };
     var ease = global.gsap.parseEase("power3.inOut");
     global.gsap.set(bridge, { opacity: 0 });
+    global.gsap.set(incomingBridge, { opacity: 0 });
     timeline.set(bridge, { opacity: 0 }, 0);
+    timeline.set(incomingBridge, { opacity: 0 }, 0);
     // The real outgoing part hands its pixels to the bridge; the incoming part
     // stays hidden until the bridge lands on its measured geometry. Both rects
     // are measured live on every update, so authored motion inside either
@@ -283,6 +321,16 @@
     // function of timeline time.
     timeline.set(fromPart, { opacity: 0 }, start);
     timeline.set(bridge, { opacity: 1 }, start);
+    tween(timeline, bridge, { opacity: 1 }, {
+      opacity: 0,
+      duration: (lead + settle) * 0.42,
+      ease: "power2.in",
+    }, start + (lead + settle) * 0.28);
+    tween(timeline, incomingBridge, { opacity: 0 }, {
+      opacity: 1,
+      duration: (lead + settle) * 0.42,
+      ease: "power2.out",
+    }, start + (lead + settle) * 0.28);
     timeline.set(toPart, { opacity: 0 }, Math.max(0, start - 0.001));
     timeline.to(proxy, {
       p: 1,
@@ -294,15 +342,17 @@
         var t = ease(proxy.p);
         var width = a.width + (b.width - a.width) * t;
         var height = a.height + (b.height - a.height) * t;
-        global.gsap.set(bridge, {
+        var box = {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
           width: width,
           height: height,
-        });
+        };
+        placeClone(bridge, a, box);
+        placeClone(incomingBridge, b, box);
       },
     }, start);
-    timeline.set(bridge, { opacity: 0 }, cut.atSec + settle);
+    timeline.set([bridge, incomingBridge], { opacity: 0 }, cut.atSec + settle);
     timeline.set(toPart, { opacity: 1 }, cut.atSec + settle);
     // Give the rest of the incoming scene the arriving energy of a soft entry
     // while the bridge carries the eye.
@@ -354,6 +404,66 @@
     return part;
   }
 
+  function semanticFamily(part) {
+    var kind = String(part.getAttribute("data-component") || "").toLowerCase();
+    var classes = String(part.className || "").toLowerCase();
+    var value = kind + " " + classes;
+    if (/\b(app-window|browser|modal|dialog|window)\b/.test(value)) return "product-surface";
+    if (/\b(table|list|kanban|grid|feed|sidebar)\b/.test(value)) return "collection";
+    if (/\b(stat-card|progress-ring|progress|metric|counter|chart)\b/.test(value)) return "metric";
+    if (/\b(search|command-palette|button|input|toggle|tabs)\b/.test(value)) return "control";
+    if (/\b(headline|title|wordmark|lockup|logo|text)\b/.test(value)) return "type";
+    return "";
+  }
+
+  function transparentColor(value) {
+    var text = String(value || "").replace(/\s+/g, "").toLowerCase();
+    return text === "transparent" || /rgba\([^)]*,0(?:\.0+)?\)$/.test(text);
+  }
+
+  // A focal box can have valid geometry while painting no pixels — Roamly's
+  // destination pill wrapper contained only an opacity:0 child. Flying a clone
+  // of that box lands the viewer on blank space. Inspect only the focal subtree
+  // (scene opacity is intentionally ignored because incoming scenes are hidden
+  // at compile time) and require one locally-visible paint source.
+  function hasVisiblePaint(root) {
+    var nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("*")));
+    function locallyVisible(node) {
+      var cursor = node;
+      while (cursor && cursor.nodeType === 1) {
+        var style = getComputedStyle(cursor);
+        if (style.display === "none" || style.visibility === "hidden" ||
+            (parseFloat(style.opacity || "1") || 0) <= 0.02) return false;
+        if (cursor === root) break;
+        cursor = cursor.parentElement;
+      }
+      return true;
+    }
+    for (var i = 0; i < nodes.length; i += 1) {
+      var node = nodes[i];
+      if (!locallyVisible(node)) continue;
+      var rect = node.getBoundingClientRect();
+      if (rect.width <= 1 || rect.height <= 1) continue;
+      var style = getComputedStyle(node);
+      var tag = String(node.tagName || "").toLowerCase();
+      if (/^(img|picture|video|canvas|svg|path|circle|rect|line|polyline|polygon)$/.test(tag)) {
+        return true;
+      }
+      var directText = Array.prototype.some.call(node.childNodes, function (child) {
+        return child.nodeType === 3 && String(child.nodeValue || "").trim().length > 0;
+      });
+      if (directText && !transparentColor(style.color)) return true;
+      if (style.backgroundImage && style.backgroundImage !== "none") return true;
+      if (!transparentColor(style.backgroundColor)) return true;
+      var borderWidth = (parseFloat(style.borderTopWidth) || 0) +
+        (parseFloat(style.borderRightWidth) || 0) +
+        (parseFloat(style.borderBottomWidth) || 0) +
+        (parseFloat(style.borderLeftWidth) || 0);
+      if (borderWidth > 0 && !transparentColor(style.borderTopColor)) return true;
+    }
+    return false;
+  }
+
   function structureRatio(a, b) {
     var hi = Math.max(a, b);
     var lo = Math.max(1, Math.min(a, b));
@@ -379,6 +489,13 @@
     if (!a.width || !a.height || !b.width || !b.height) {
       return "a focal part measured zero size at bind time";
     }
+    var outgoingPaint = hasVisiblePaint(fromPart);
+    var incomingPaint = hasVisiblePaint(toPart);
+    if (!outgoingPaint || !incomingPaint) {
+      return !outgoingPaint
+        ? "outgoing focal part has no visible painted content"
+        : "incoming focal part has no visible painted content";
+    }
     var aspectA = a.width / a.height;
     var aspectB = b.width / b.height;
     var ratio = Math.max(aspectA / aspectB, aspectB / aspectA);
@@ -400,6 +517,12 @@
     // whole window.
     var surfaceA = framingSurface(fromPart);
     var surfaceB = framingSurface(toPart);
+    var familyA = semanticFamily(surfaceA);
+    var familyB = semanticFamily(surfaceB);
+    if (familyA && familyB && familyA !== familyB) {
+      return "focal surfaces belong to different semantic families (" +
+        familyA + " vs " + familyB + ")";
+    }
     var childRatio = structureRatio(surfaceA.childElementCount, surfaceB.childElementCount);
     var depthRatio = structureRatio(subtreeDepth(surfaceA), subtreeDepth(surfaceB));
     if (childRatio > STRUCTURE_CHILD_RATIO || depthRatio >= STRUCTURE_DEPTH_RATIO) {
@@ -458,8 +581,11 @@
     // new seeks, deterministic by construction, killed at flight end. This is
     // host-applied garnish on exactly this fast mover; it is NOT a planner
     // option.
-    var ECHO_DELAYS = [0.06, 0.12];
-    var ECHO_OPACITIES = [0.35, 0.18];
+    // Echo trails duplicate legible UI and turn a morph into a smear. Keep the
+    // transition to two intact layouts; motion texture belongs to the camera
+    // and background lanes, not cloned product copy.
+    var ECHO_DELAYS = [];
+    var ECHO_OPACITIES = [];
     var ghosts = [];
     for (var g = 0; g < ECHO_DELAYS.length; g += 1) {
       var ghost = bridgeElement(root, fromPart);
@@ -517,10 +643,9 @@
           y: a.y + (b.y - a.y) * t,
           width: a.width + (b.width - a.width) * t,
           height: a.height + (b.height - a.height) * t,
-          borderRadius: (radiusA + (radiusB - radiusA) * t).toFixed(2) + "px",
         };
-        global.gsap.set(bridgeA, vars);
-        global.gsap.set(bridgeB, vars);
+        placeClone(bridgeA, a, vars);
+        placeClone(bridgeB, b, vars);
         // Echo ghosts ride the SAME interpolated path a beat behind — a pure
         // function of the same proxy, so out-of-order seek stays exact.
         for (var e = 0; e < ghosts.length; e += 1) {

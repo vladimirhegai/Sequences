@@ -168,6 +168,75 @@ describe("auditPacing opening subject", () => {
       ),
     ).toBe(false);
   });
+
+  it.each([
+    ["type", 0],
+    ["set-state", 0.4],
+  ] as const)(
+    "does not mistake a late development swap for a %s-established headline entrance",
+    (initialKind, initialAtSec) => {
+      const hook = scene({
+        id: "cold-hook-runway",
+        startSec: 0,
+        durationSec: 5.5,
+        components: [
+          { version: 1 as const, id: "hook-headline", kind: "headline" as const, role: "hero" },
+        ],
+        beats: [
+          beat("cold-hook-runway", {
+            id: "headline-initial",
+            component: "hook-headline",
+            kind: initialKind,
+            atSec: initialAtSec,
+            durationSec: 0.8,
+            ...(initialKind === "type"
+              ? { text: "MISSED HANDOFF" }
+              : { toState: "missed-handoff" }),
+          }),
+          beat("cold-hook-runway", {
+            id: "headline-swap",
+            component: "hook-headline",
+            kind: "swap",
+            atSec: 2.5,
+            durationSec: 0.6,
+            text: "RECOVERED BEFORE NOON",
+          }),
+        ],
+      });
+
+      expect(sceneIntroductionTimes(hook)).toEqual([0, 2.5]);
+      expect(auditPacing([hook]).filter((finding) =>
+        finding.startsWith("storyboard/opening-subject:")
+      )).toEqual([]);
+    },
+  );
+
+  it.each(["type", "stream"] as const)(
+    "still blocks a genuinely late %s entrance that leaves its text slot blank",
+    (kind) => {
+      const lateText = scene({
+        id: "late-copy",
+        startSec: 0,
+        durationSec: 4,
+        components: [
+          { version: 1 as const, id: "hero-copy", kind: "headline" as const, role: "hero" },
+        ],
+        beats: [beat("late-copy", {
+          id: "copy-arrives",
+          component: "hero-copy",
+          kind,
+          atSec: 2.8,
+          durationSec: 0.8,
+          text: "MISSED HANDOFF",
+        })],
+      });
+
+      expect(sceneIntroductionTimes(lateText)).toEqual([2.8]);
+      expect(auditPacing([lateText]).some((finding) =>
+        finding.startsWith("storyboard/opening-subject:") && finding.includes("2.8s")
+      )).toBe(true);
+    },
+  );
 });
 
 describe("auditPacing introduction development", () => {
@@ -992,6 +1061,49 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
     expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/outcome:"))).toBe(false);
   });
 
+  it("drops a crowded non-camera reframe instead of stretching an empty tail (LedgerFlow live attempt 1)", () => {
+    const payout = scene({
+      id: "payout",
+      startSec: 10,
+      durationSec: 4.5,
+      components: [
+        { version: 1 as const, id: "approve", kind: "button" as const },
+        { version: 1 as const, id: "toast", kind: "toast" as const },
+      ],
+      beats: [
+        beat("payout", {
+          id: "press", component: "approve", kind: "press", atSec: 10.3, durationSec: 0.5,
+        }),
+        beat("payout", {
+          id: "success", component: "approve", kind: "set-state", atSec: 11,
+          durationSec: 0.4, toState: "success",
+        }),
+        beat("payout", {
+          id: "toast-open", component: "toast", kind: "open", atSec: 11.5, durationSec: 0.8,
+        }),
+      ],
+      camera: {
+        version: 1,
+        path: [move({
+          move: "push-in", toRegion: "payout-station", startSec: 11,
+          durationSec: 2.5, zoom: 1.3,
+        })],
+      },
+      moments: [{
+        version: 1, id: "toast-lands", sceneId: "payout", atSec: 11.5,
+        title: "Approval toast lands", visualState: "Payout approved",
+        change: "Result resolves", motionIntent: "resolve", importance: "primary",
+      }],
+    });
+    const result = delayConflictingCameraMoves([payout]);
+    expect(result.storyboard[0]!.durationSec).toBe(4.5);
+    expect(result.storyboard[0]!.camera).toBeUndefined();
+    expect(result.normalized[0]).toContain("crossed 3 reading/payoff holds");
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toEqual([]);
+  });
+
   it("still skips when the overflow exceeds the stretch cap", () => {
     // Delayed to 2.8s a 2.6s pan would end at 5.4s in a 3.2s scene — a 2.2s
     // overflow is past MAX_PACING_STRETCH_SEC, a genuine layout call for the
@@ -1146,10 +1258,20 @@ describe("Sentinel — topUpFramingFloor (normalize-before-retry)", () => {
     expect(result.storyboard.length + fullMoveCount(result.storyboard)).toBe(requiredFramingCount(14));
   });
 
-  it("leaves a film short by two as a finding (a real content deficit)", () => {
+  it("adds two bounded establishing moves when two held shots can meet the floor", () => {
     // total 17.5 → required round(17.5/3.5) = 5; 3 shots, no moves → short by 2.
     const storyboard = [held("a", 0, 5.5), held("b", 5.5, 6), held("c", 11.5, 6)];
     expect(requiredFramingCount(17.5)).toBe(5);
+    const result = topUpFramingFloor(storyboard);
+    expect(result.normalized).toHaveLength(2);
+    expect(result.storyboard.length + fullMoveCount(result.storyboard)).toBe(5);
+    expect(result.storyboard.find((entry) => entry.id === "b")?.camera?.path).toHaveLength(1);
+    expect(result.storyboard.find((entry) => entry.id === "c")?.camera?.path).toHaveLength(1);
+  });
+
+  it("leaves a film short by three as a finding (a real content deficit)", () => {
+    const storyboard = [held("a", 0, 7), held("b", 7, 7), held("c", 14, 7)];
+    expect(requiredFramingCount(21)).toBe(6);
     expect(topUpFramingFloor(storyboard).normalized).toEqual([]);
   });
 
@@ -1349,6 +1471,41 @@ describe("2026-07-08 probe set — interaction holds (audit + retimeCameraOverIn
     expect(auditPacing([loadBearing]).some((finding) =>
       finding.startsWith("pacing/interaction-hold:")
     )).toBe(true);
+  });
+
+  it("drops a non-camera interaction reframe when delaying it would stretch the scene", () => {
+    const review = scene({
+      id: "exception-review",
+      startSec: 5.5,
+      durationSec: 4.5,
+      camera: {
+        version: 1,
+        path: [move({
+          move: "track-to-anchor", toPart: "exception-row", startSec: 6.7,
+          durationSec: 2.3,
+        })],
+      },
+      interactions: [interaction("exception-review", {
+        id: "resolve-exception",
+        startSec: 7.6,
+        arriveSec: 7.9,
+        pressSec: 8,
+        releaseSec: 8.2,
+        holdUntilSec: 8.2,
+      })],
+      moments: [{
+        version: 1, id: "cursor-resolves", sceneId: "exception-review", atSec: 8,
+        title: "Cursor resolves exception", visualState: "Row approved",
+        change: "Policy exception clears", motionIntent: "ui-state", importance: "primary",
+      }],
+    });
+    const result = retimeCameraOverInteractions([review]);
+    expect(result.storyboard[0]!.durationSec).toBe(4.5);
+    expect(result.storyboard[0]!.camera?.path).toEqual([]);
+    expect(result.normalized[0]).toContain("dropped the track-to-anchor");
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/interaction-hold:")
+    )).toEqual([]);
   });
 });
 

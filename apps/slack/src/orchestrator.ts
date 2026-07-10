@@ -9,6 +9,7 @@
  * glue if the subprocess can't start. Live jobs author HyperFrames directly;
  * the frozen Plan compiler remains only for the deterministic demo fallback.
  */
+import fs from "node:fs";
 import path from "node:path";
 import {
   lintProject,
@@ -137,6 +138,23 @@ export function assembleBrief(fields: BriefFields): string {
     "Build a launch reel: a hook, the product/feature in action, the metric that matters, optional proof, and a CTA close.",
   );
   return lines.join("\n");
+}
+
+/**
+ * An explicit paid-artifact recovery may resume only a failed project that has
+ * never committed a direct composition. This keeps normal job ids immutable
+ * while allowing a validator/source fix to continue from persisted attempts.
+ */
+export function canResumeFailedProject(
+  dir: string,
+  recoverySelector = process.env.SLACK_SEQUENCES_RECOVER_REJECTED_STORYBOARD?.trim(),
+): boolean {
+  return Boolean(
+    recoverySelector &&
+    fs.existsSync(path.join(dir, "project.json")) &&
+    fs.existsSync(path.join(dir, "FAILURE.md")) &&
+    !hasDirectComposition(dir),
+  );
 }
 
 /* ------------------------------------------------------------------ outputs */
@@ -685,11 +703,18 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
   const providerId = resolveProvider(options.provider);
 
   const dir = projectDirFor(options.jobId);
-  initializeProject(dir, {
-    name: options.product,
-    brandName: options.brandName ?? options.product,
-    seedScreenshot: true,
-  });
+  const resumedFailedProject = canResumeFailedProject(dir);
+  if (resumedFailedProject) {
+    process.stderr.write(
+      `[orchestrator] resuming failed uncommitted project from its persisted paid artifacts: ${dir}\n`,
+    );
+  } else {
+    initializeProject(dir, {
+      name: options.product,
+      brandName: options.brandName ?? options.product,
+      seedScreenshot: true,
+    });
+  }
 
   const project = loadProject(dir);
   const usedPreset = options.presetPlan !== undefined;
@@ -871,6 +896,11 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       options.preferMcp,
       options.onProgress,
     );
+    if (resumedFailedProject) {
+      // The attempt documents remain valuable probe evidence; only the stale
+      // top-level fail-loud marker is retired after a composition really commits.
+      fs.rmSync(path.join(dir, "FAILURE.md"), { force: true });
+    }
     // Tier wall-clocks are recorded INSIDE buildPreviews, where each tier
     // actually completes: tier 1 when the thumbnails exist, tier 2 when the
     // MP4 exists. (They used to be stamped here, before/around the call, so

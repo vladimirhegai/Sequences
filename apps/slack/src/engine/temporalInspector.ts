@@ -28,6 +28,12 @@ import {
   continuousMotionEvidenceEnabled,
   type ContinuousMotionEvidenceV1,
 } from "./continuousMotion.ts";
+import {
+  buildCameraBlockingEvidence,
+  parseCameraBlockingPlan,
+  type CameraBlockingEvidenceV1,
+} from "./cameraBlocking.ts";
+import { parseContinuityGraph } from "./continuityGraph.ts";
 
 const FRAME_WIDTH = 320;
 const LABEL_HEIGHT = 26;
@@ -57,6 +63,8 @@ export interface TemporalReport {
   changeCurve: Array<{ time: number; delta: number }>;
   quietWindows: Array<{ start: number; end: number }>;
   continuousMotion?: ContinuousMotionEvidenceV1;
+  blockingPath?: string;
+  cameraBlocking?: CameraBlockingEvidenceV1;
 }
 
 /** DOM target whose visible state should change on the outgoing cut leg. */
@@ -325,6 +333,11 @@ export async function reportTemporalEvidence(
         { sampleHz: 8, maxSamples: 220, mapSeekTime: toOutputTime },
       );
     }
+    const blockingPlan = parseCameraBlockingPlan(current.html);
+    const continuityGraph = parseContinuityGraph(current.html);
+    const cameraBlocking = continuousMotion && blockingPlan && continuityGraph
+      ? buildCameraBlockingEvidence(blockingPlan, continuityGraph, continuousMotion)
+      : undefined;
 
     // A blank compositor page assembles the sheets and computes pixel deltas;
     // the composition page itself stays untouched.
@@ -374,6 +387,92 @@ export async function reportTemporalEvidence(
         }
         return canvas.toDataURL("image/png");
       };
+      window.__composeBlockingSheet = async (payload) => {
+        const rows = payload.rows;
+        const columns = Math.max(...rows.map((row) => row.frames.length));
+        const canvas = document.createElement("canvas");
+        canvas.width = columns * (FRAME_W + 8) + 8;
+        canvas.height = rows.length * (FRAME_H + LABEL_H + 8) + 8;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#0c1018";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.textBaseline = "middle";
+        const rowCenters = new Map();
+        for (let r = 0; r < rows.length; r += 1) {
+          const row = rows[r];
+          const y = 8 + r * (FRAME_H + LABEL_H + 8);
+          rowCenters.set(row.sceneId, y + FRAME_H / 2);
+          for (let c = 0; c < row.frames.length; c += 1) {
+            const frame = row.frames[c];
+            const x = 8 + c * (FRAME_W + 8);
+            const image = await load(frame.dataUrl);
+            context.drawImage(image, x, y, FRAME_W, FRAME_H);
+            context.fillStyle = "rgba(3,8,16,.18)";
+            context.fillRect(x, y, FRAME_W, FRAME_H);
+            if (row.trajectory.length > 1) {
+              context.beginPath();
+              context.strokeStyle = "rgba(70,240,211,.72)";
+              context.lineWidth = 1.5;
+              for (let p = 0; p < row.trajectory.length; p += 1) {
+                const point = row.trajectory[p];
+                const px = x + point.x * FRAME_W;
+                const py = y + point.y * FRAME_H;
+                if (p === 0) context.moveTo(px, py);
+                else context.lineTo(px, py);
+              }
+              context.stroke();
+            }
+            const block = [...row.blocks].sort((a, b) =>
+              Math.abs(a.arrivalSec - frame.time) - Math.abs(b.arrivalSec - frame.time)
+            )[0];
+            const landing = block && row.landings.find((entry) => entry.blockId === block.id);
+            if (block) {
+              const ax = x + block.arrivalPose.anchor.x * FRAME_W;
+              const ay = y + block.arrivalPose.anchor.y * FRAME_H;
+              context.strokeStyle = landing && landing.occupancyInRange ? "#55f0c5" : "#ffbf69";
+              context.lineWidth = 1.5;
+              context.beginPath();
+              context.moveTo(ax - 8, ay); context.lineTo(ax + 8, ay);
+              context.moveTo(ax, ay - 8); context.lineTo(ax, ay + 8);
+              context.stroke();
+              context.fillStyle = "rgba(5,10,18,.78)";
+              context.fillRect(x + 5, y + 5, FRAME_W - 10, 30);
+              context.font = "10px monospace";
+              context.fillStyle = "#dce8f5";
+              const occ = landing ? (landing.occupancyFraction * 100).toFixed(1) + "%" : "n/a";
+              const speed = landing ? landing.speed.toFixed(3) : "n/a";
+              context.fillText(
+                block.target.id + "  occ " + occ + "  v " + speed + "  dwell " + block.dwell.readableSec.toFixed(2) + "s",
+                x + 10,
+                y + 19,
+              );
+            }
+            context.fillStyle = "#8fa6bd";
+            context.font = "10px monospace";
+            context.fillText(frame.label, x + 2, y + FRAME_H + LABEL_H / 2);
+          }
+          context.fillStyle = "#f3f7fb";
+          context.font = "bold 10px monospace";
+          context.fillText(row.title, 8, y + FRAME_H + LABEL_H / 2 - 10);
+        }
+        for (const edge of payload.edges) {
+          const fromY = rowCenters.get(edge.fromScene);
+          const toY = rowCenters.get(edge.toScene);
+          if (fromY === undefined || toY === undefined) continue;
+          const fromX = canvas.width - 14;
+          const toX = 14;
+          context.strokeStyle = edge.mode === "shared-element" ? "rgba(123,97,255,.9)" : "rgba(123,97,255,.42)";
+          context.lineWidth = 2;
+          context.beginPath();
+          context.moveTo(fromX, fromY);
+          context.bezierCurveTo(canvas.width + 18, fromY, -18, toY, toX, toY);
+          context.stroke();
+          context.fillStyle = "#b7a8ff";
+          context.font = "9px monospace";
+          context.fillText(edge.entityId, 18, toY - 9);
+        }
+        return canvas.toDataURL("image/png");
+      };
       window.__frameDelta = async (aUrl, bUrl) => {
         const w = 160;
         const h = Math.round((FRAME_H / FRAME_W) * 160);
@@ -420,6 +519,31 @@ export async function reportTemporalEvidence(
       })),
       "strip.png",
     );
+    let blockingPath: string | undefined;
+    if (cameraBlocking && blockingPlan) {
+      const dataUrl = await compositor.evaluate(
+        (payload: unknown) => (window as unknown as {
+          __composeBlockingSheet: (payload: unknown) => Promise<string>;
+        }).__composeBlockingSheet(payload),
+        {
+          rows: shotFrames.map(({ scene, times }) => ({
+            sceneId: scene.id,
+            title: `${scene.id} · blocking + continuity`,
+            frames: times.map((time) => ({
+              time,
+              label: frameLabel(time),
+              dataUrl: frames.get(time)!,
+            })),
+            trajectory: cameraBlocking.trajectories.find((entry) => entry.sceneId === scene.id)?.points ?? [],
+            blocks: blockingPlan.scenes.find((entry) => entry.sceneId === scene.id)?.phrases ?? [],
+            landings: cameraBlocking.landings.filter((entry) => entry.sceneId === scene.id),
+          })),
+          edges: cameraBlocking.continuityEdges,
+        },
+      );
+      blockingPath = path.join(outDir, "blocking.png");
+      fs.writeFileSync(blockingPath, Buffer.from(dataUrl.split(",", 2)[1]!, "base64"));
+    }
 
     const cutEvidence: TemporalCutEvidence[] = [];
     for (const [index, { cut, times }] of cutFrames.entries()) {
@@ -464,7 +588,7 @@ export async function reportTemporalEvidence(
 
     const jsonPath = path.join(outDir, "temporal.json");
     fs.writeFileSync(jsonPath, JSON.stringify({
-      version: 2,
+      version: 3,
       compositionId: manifest.compositionId,
       revision: manifest.revision,
       durationSec: manifest.durationSec,
@@ -472,12 +596,17 @@ export async function reportTemporalEvidence(
       changeCurve,
       quietWindows,
       ...(continuousMotion ? { continuousMotion } : {}),
+      ...(cameraBlocking ? { cameraBlocking } : {}),
     }, null, 2) + "\n");
     if (continuousMotion) {
       const motionPlanPath = path.join(projectDir, "composition", "motion-plan.json");
       try {
         const motionPlan = JSON.parse(fs.readFileSync(motionPlanPath, "utf8")) as Record<string, unknown>;
-        writeJsonAtomic(motionPlanPath, { ...motionPlan, continuousMotion });
+        writeJsonAtomic(motionPlanPath, {
+          ...motionPlan,
+          continuousMotion,
+          ...(cameraBlocking ? { cameraBlockingEvidence: cameraBlocking } : {}),
+        });
       } catch (error) {
         process.stderr.write(
           `[temporal] could not persist continuous motion evidence: ${
@@ -519,6 +648,17 @@ export async function reportTemporalEvidence(
             ...continuousMotion.advisories.map((entry) => `  advisory: ${entry}`),
           ]
         : []),
+      ...(cameraBlocking
+        ? [
+            "camera blocking + continuity (advisory):",
+            `  entities across 3+ shots ${cameraBlocking.summary.threeShotEntityCount} · ` +
+              `primary readable landings ${cameraBlocking.summary.primaryReadableCount}/` +
+              `${cameraBlocking.summary.primaryLandingCount} · occupancy in range ` +
+              `${cameraBlocking.summary.occupancyInRangeCount}/${cameraBlocking.summary.landingCount}`,
+            ...(blockingPath ? [`  overlay: ${blockingPath}`] : []),
+            ...cameraBlocking.advisories.map((entry) => `  advisory: ${entry}`),
+          ]
+        : []),
     ].join("\n");
     return {
       summary,
@@ -528,6 +668,8 @@ export async function reportTemporalEvidence(
       changeCurve,
       quietWindows,
       ...(continuousMotion ? { continuousMotion } : {}),
+      ...(blockingPath ? { blockingPath } : {}),
+      ...(cameraBlocking ? { cameraBlocking } : {}),
     };
   } finally {
     await browser?.close().catch(() => {});

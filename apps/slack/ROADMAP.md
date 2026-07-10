@@ -27,6 +27,7 @@ point an agent at the listed file.
 
 | Feature | Owner file(s) | What you'd tune |
 | --- | --- | --- |
+| Continuity Graph + Camera Blocking Director (default-off proved feature) | `src/engine/continuityGraph.ts`, `src/engine/cameraBlocking.ts`, `src/engine/templates/sequences-continuity.v1.js`, `src/engine/templates/sequences-camera.v1.js`, `src/engine/temporalInspector.ts` | stable cross-shot entity ids, measured shared-element handoffs, primary-owned minimum-jerk camera routes, occupancy/anchor/dwell constraints, blocking overlay; enable with `SLACK_SEQUENCES_CONTINUITY_GRAPH=1` |
 | Create / revise / undo / share · two-tier delivery | `src/index.ts`, `src/orchestrator.ts` | Slack UX, message flow, MCP-vs-local policy |
 | Slack workspace context (hosted MCP retrieval) | `src/slackMcpContext.ts` | retrieval prompt, resilience/retry, degrade-gracefully note |
 | Direct HyperFrames authoring | `src/engine/compositionRunner.ts`, `src/engine/directComposition.ts`, `src/engine/fallbackComposition.ts` | director prompt, storyboard/HTML parse, validation gate, model-free failure net |
@@ -62,7 +63,7 @@ point an agent at the listed file.
 
 ---
 
-## Next Major Motion Feature: Continuity Graph + Camera Blocking Director
+## Built Major Motion Feature: Continuity Graph + Camera Blocking Director
 
 This is the single highest-leverage architectural feature after the 2026-07-10
 live-probe session. Do not solve it by adding more camera verbs or prompt prose.
@@ -92,8 +93,9 @@ Build a persistent semantic scene graph and a previsualization solver:
 Suggested owners: a new `src/engine/continuityGraph.ts` for identities and
 handoffs, `src/engine/cameraBlocking.ts` for the measured solver, extensions to
 `componentContract.ts`/`cameraContract.ts`, and a temporal-inspector overlay.
-Ship behind one default-off flag until the golden Slack ad plus three distinct
-SaaS briefs prove it.
+It ships behind one default-off flag. The golden Slack ad plus three distinct
+SaaS briefs now prove the implementation; operator rollout remains a separate
+decision from feature completion.
 
 Acceptance bar:
 
@@ -106,9 +108,25 @@ Acceptance bar:
   lowering moment visibility or settles;
 - no new author retry is required when deterministic DOM geometry is sufficient.
 
-This is intentionally out of scope for the current architecture-hardening
-session. The implemented fixes make today's pipeline honest and reliable; this
-feature changes what the pipeline is capable of composing.
+**Implemented and stress-tested 2026-07-10.** Stable `entityId` declarations
+compile into a canonical per-scene continuity graph; the browser runtime uses
+measured transforms for shared-element cut bridges; camera blocking turns every
+direction phrase into target/occupancy/anchor/lens/corridor/dwell paperwork and
+lets primary phrases own a minimum-jerk route. Repeated targets hold, supporting
+annotations animate locally without yanking the lens, and travel begins after
+the previous readable dwell so free connective time reduces speed instead of
+creating a late lunge. Temporal QA writes `blocking.png` over the contact strip
+and persists landing/trajectory/continuity evidence in `temporal.json`.
+
+Exact SignalPath A/B improved mean focal visibility 61.9%→91.0%, off-frame
+samples 118→21, peak speed 1.682→0.470 diag/s, acceleration 6.002→2.227, and
+jerk 43.015→22.562 while preserving 8/12 settles and 1 reversal; all 11/11
+primary landings are readable. Paid BeaconOps, LedgerFlow, and ThreadlineAI
+proofs produced non-empty MP4s with 7/7, 8/8, and 6/6 readable primary
+landings respectively, at least one entity across three shots (two for
+LedgerFlow), no fallback, and corrected exact-source renders in 32–39 seconds.
+See [PROBE_LOG.md](PROBE_LOG.md) for attempt fixes and
+[PROBE_FEEDBACK.md](PROBE_FEEDBACK.md) for authored art-direction residuals.
 
 ---
 
@@ -1725,20 +1743,17 @@ Legend: `[x]` done · `[~]` partial · `[ ]` not started
 
 ## Build Order (Hackathon-Pragmatic)
 
-**Current queue (2026-07-10, after seven camera-intensive live probes):**
+**Current queue (2026-07-10, after continuity stress tests):**
 
-1. **Continuity Graph + Camera Blocking Director** — the next major motion
-   feature and the detailed section near the top of this file. Build persistent
-   semantic entities, measured screen-space blocking, and a constrained camera
-   spline before adding more verbs or prompt rules.
-2. **Capability materialization + in-Slack audition** — instantiate known-good
+1. **Capability materialization + in-Slack audition** — instantiate known-good
    blocks/components instead of citing metadata and rebuilding them, then let
    the user audition candidates in Slack.
-3. **Component contracts v2** — source-derived contracts for non-kit components
+2. **Component contracts v2** — source-derived contracts for non-kit components
    and the stable identities the continuity graph needs.
 
-Done from the previous queue: paid component/camera live creates, live temporal
-evidence with a bounded critic, component contracts, and morph continuity v1.
+Done from the previous queue: Continuity Graph + Camera Blocking Director,
+paid component/camera live creates, live temporal evidence with a bounded
+critic, component contracts, and morph continuity v1.
 The 2026-07-10 renderer/choreography closeout is in
 [PROBE_LOG.md](PROBE_LOG.md); do not rerun those seven probes to rediscover it.
 

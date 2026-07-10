@@ -310,12 +310,22 @@ function preferredEvidenceKind(moment: StoryboardMomentV1): MomentEvidenceKind |
 function bindEvidence(
   moment: StoryboardMomentV1,
   activities: MotionActivity[],
+  scene: DirectScene,
 ): MomentEvidence | undefined {
   const windowStart = moment.atSec - EVIDENCE_BEFORE_SEC;
   const windowEnd = moment.atSec + EVIDENCE_AFTER_SEC;
-  const overlapping = activities.filter((activity) =>
-    activity.endSec >= windowStart && activity.startSec <= windowEnd
-  );
+  const sceneEnd = scene.startSec + scene.durationSec;
+  const overlapping = activities.filter((activity) => {
+    // A transition or interaction in the next shot must never masquerade as
+    // evidence for a sparse beat near the end of this one. Typed activities
+    // carry their owning scene; the timeline fallback keeps externally built
+    // density reports compatible without making the boundary ambiguous.
+    const belongsToScene = activity.sceneId !== undefined
+      ? activity.sceneId === scene.id
+      : activity.startSec >= scene.startSec - 0.05 && activity.startSec < sceneEnd - 0.02;
+    return belongsToScene &&
+      activity.endSec >= windowStart && activity.startSec <= windowEnd;
+  });
   if (!overlapping.length) return undefined;
   const preferred = preferredEvidenceKind(moment);
   const best = overlapping.sort((a, b) => {
@@ -411,7 +421,7 @@ export function resolveMomentContract(
     if (scene.moments?.length) {
       const sceneEnd = scene.startSec + scene.durationSec;
       for (const moment of scene.moments) {
-        const evidence = bindEvidence(moment, activities);
+        const evidence = bindEvidence(moment, activities, scene);
         if (!evidence) {
           // Degrade-never-veto for author-side paperwork the viewer never
           // sees: a SUPPORTING moment whose promised second has no evidence
@@ -582,6 +592,23 @@ function collectMomentAnchors(
       if (!fullCameraMoves.has(move.move)) continue;
       const arrival = Math.min(move.startSec + move.durationSec, sceneEnd);
       const target = move.toRegion ?? move.toPart ?? "new framing";
+      // A long operated move is itself reviewable development, not dead air.
+      // Its arrival can sit at the scene boundary (and therefore be too late
+      // to subdivide a moment gap), so expose one deterministic midpoint
+      // anchor for travel lasting at least 2.4s. Short moves remain one event.
+      if (move.durationSec >= 2.4) {
+        const midpoint = Math.min(move.startSec + move.durationSec * 0.5, sceneEnd);
+        anchors.push({
+          sceneId: scene.id,
+          atSec: round(midpoint),
+          viewerSec: viewerTimeOf(midpoint),
+          title: `Camera ${move.move} develops toward ${target}`.slice(0, 120),
+          visualState:
+            `camera traveling toward ${target} in ${scene.id} at ${midpoint.toFixed(1)}s`.slice(0, 200),
+          change: `camera ${move.move} travel develops the ${target} framing`.slice(0, 200),
+          motionIntent: "camera",
+        });
+      }
       anchors.push({
         sceneId: scene.id,
         atSec: round(arrival),
@@ -594,13 +621,22 @@ function collectMomentAnchors(
       });
     }
     for (const beat of scene.beats ?? []) {
+      // A review moment describes the state AFTER a typed beat. Anchoring at
+      // beat start made a long toast/count/type animation look clustered at a
+      // scene entrance and could roll back an otherwise valid camera repair
+      // (LedgerFlow live attempt 1). Completion remains inside the compiled
+      // beat's evidence window and is the actual readable/result frame.
+      const at = Math.min(
+        Math.max(beat.atSec + Math.max(0, beat.durationSec ?? 0), scene.startSec),
+        sceneEnd,
+      );
       const intent =
         beat.kind === "type" || beat.kind === "stream" ? "type-on" :
         beat.kind === "morph" ? "morph" : "ui-state";
       anchors.push({
         sceneId: scene.id,
-        atSec: round(Math.min(Math.max(beat.atSec, scene.startSec), sceneEnd)),
-        viewerSec: viewerTimeOf(beat.atSec),
+        atSec: round(at),
+        viewerSec: viewerTimeOf(at),
         title: `${beat.component}: ${beat.kind}`.slice(0, 120),
         visualState: `${beat.component} after its ${beat.kind} beat (${beat.id})`.slice(0, 200),
         change: `component beat ${beat.id} (${beat.kind}) fires on ${beat.component}`.slice(0, 200),

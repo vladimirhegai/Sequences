@@ -216,11 +216,13 @@ function advanceClearOfWindows(
   return round(target);
 }
 
-/** Beat kinds that put a NEW surface (or new content) in front of the viewer.
+/** Beat kinds that withhold a NEW surface or its first readable content until
+ * the beat starts. `type`/`stream` clear their authored text slots at compile;
  * `animate` covers a pre-built asset unit's spring entrance (its first beat is
  * its arrival, camera-aware) so introduction timing judges the real moment the
- * viewer sees it. */
-const ENTRANCE_BEAT_KINDS = new Set(["open", "rows", "swap", "animate"]);
+ * viewer sees it. A `swap` is deliberately absent: the runtime swaps content
+ * on an already-painted slot, so it is development, not that slot's entrance. */
+const ENTRANCE_BEAT_KINDS = new Set(["type", "stream", "open", "rows", "animate"]);
 /**
  * Component kinds compact enough to land late in a short final resolve (a
  * logo / CTA / metric end card is read in one glance). Dense surfaces —
@@ -283,8 +285,8 @@ export function nextFramingChangeAfter(
 /**
  * Introduction events for one scene: each declared component appears once (at
  * its first entrance-class beat, else at the scene start where the author
- * entrances it), and each additional swap beat re-fills an existing surface
- * with new content the viewer must re-read.
+ * entrances it), and each swap beat re-fills that existing surface with new
+ * content the viewer must re-read.
  */
 export function sceneIntroductionTimes(scene: DirectScene): number[] {
   const components = scene.components ?? [];
@@ -777,8 +779,12 @@ export function topUpFramingFloor(
     0,
   );
   const framings = storyboard.length + fullMoveCount;
-  // Short by EXACTLY one; anything larger is a real content deficit.
-  if (requiredFramingCount(totalSec) - framings !== 1) return { storyboard, normalized };
+  const required = requiredFramingCount(totalSec);
+  const deficit = required - framings;
+  // One or two missing framings in an otherwise structured film are mechanical:
+  // two long, held product shots can each accept one bounded establishing move.
+  // Larger misses still mean the plan lacks a real visual argument and retry.
+  if (deficit < 1 || deficit > 2) return { storyboard, normalized };
 
   const pushDuration = (scene: DirectScene): number =>
     round(Math.min(1.0, Math.max(0.5, scene.durationSec * 0.4)));
@@ -799,11 +805,14 @@ export function topUpFramingFloor(
         ),
     )
     .sort((a, b) => b.scene.durationSec - a.scene.durationSec || a.index - b.index);
-  const chosen = candidates[0];
-  if (!chosen) return { storyboard, normalized };
+  const chosen = candidates.slice(0, deficit);
+  // Commit only when the deterministic additions actually meet the floor.
+  if (chosen.length !== deficit) return { storyboard, normalized };
+  const chosenByIndex = new Map(chosen.map((entry, order) => [entry.index, order]));
 
   const scenes = storyboard.map((scene, index) => {
-    if (index !== chosen.index) return scene;
+    const order = chosenByIndex.get(index);
+    if (order === undefined) return scene;
     const push: CameraMoveIntentV1 = {
       version: 1,
       move: "push-in",
@@ -813,7 +822,8 @@ export function topUpFramingFloor(
     };
     const note =
       `added a gentle establishing push-in (zoom ${FRAMING_TOPUP_ZOOM}) to meet the ` +
-      `${requiredFramingCount(totalSec)}-framing floor for a ${totalSec.toFixed(0)}s film`;
+      `${required}-framing floor for a ${totalSec.toFixed(0)}s film` +
+      (deficit > 1 ? ` (${order + 1}/${deficit} bounded top-ups)` : "");
     normalized.push(`scene "${scene.id}": ${note}`);
     // The candidate had no camera path, so the fresh single-move path can't
     // collide; the host wraps its data-camera-world plane at author time.
@@ -929,7 +939,14 @@ export function delayConflictingCameraMoves(
           const fitsScene = overflow <= 1e-6 ||
             (overflow <= MAX_PACING_STRETCH_SEC + 1e-9 &&
               scene.durationSec + overflow <= 15 + 1e-9);
-          if (!fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene) {
+          const shouldDropCrowdedOverflow =
+            overflow > 1e-6 &&
+            (conflictCount.get(entry.index) ?? 0) >= 2 &&
+            !isLoadBearingMove(scene, entry.move);
+          if (
+            !fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene ||
+            shouldDropCrowdedOverflow
+          ) {
             // One camera phrase cutting across several independent reading /
             // payoff holds has no free slot left. When it carries no camera
             // moment, dropping that reframe is safer than repeatedly asking
@@ -1069,6 +1086,7 @@ export function retimeCameraOverInteractions(
         // Binding preservation: every moment that could bind to the original
         // window must still overlap the retimed one.
         const boundMoments = (scene.moments ?? []).filter((moment) =>
+          momentNeedsCamera(moment) &&
           entry.move.startSec + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
           entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
         );
@@ -1076,7 +1094,13 @@ export function retimeCameraOverInteractions(
           target + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
           target <= moment.atSec + EVIDENCE_AFTER_SEC
         );
-        if (fitsBeforeNext && fitsScene && keepsBindings) {
+        // If a non-camera moment already owns the interaction and postponing
+        // this move would stretch the scene, holding the existing station is
+        // the smaller deterministic edit. It avoids manufacturing a long,
+        // empty tail (LedgerFlow live attempt 1) and reflects the director's
+        // rule that the interaction itself supplies the focus.
+        const shouldDropOverflow = overflow > 1e-6 && boundMoments.length === 0;
+        if (fitsBeforeNext && fitsScene && keepsBindings && !shouldDropOverflow) {
           if (overflow > 1e-6) stretch = Math.max(stretch, round(overflow));
           newPath[entry.index] = { ...entry.move, startSec: round(target) };
           const note =
@@ -1299,7 +1323,25 @@ export function delayEarlySwapBeats(
         const beat = newBeats[i]!;
         if (beat.kind !== "swap") continue;
         if (beat.atSec >= settlePoint - 1e-6) continue;
-        const target = settlePoint;
+        // Prefer the full entry-settle hold. In a short scene containing
+        // several already-landed surfaces, however, pushing a development
+        // swap all the way to that point can create a NEW introduction/
+        // development deficit and make the atomic normalizer revert. Cap the
+        // delay at the latest point that still satisfies that existing floor,
+        // while remaining just beyond the audit's tolerated early-swap edge.
+        const introductionCount = sceneIntroductionTimes(scene).length;
+        const latestDevelopmentAt = round(
+          sceneEnd - DEVELOPMENT_SEC_PER_INTRODUCTION * introductionCount +
+            PACING_TOLERANCE_SEC,
+        );
+        const earliestAcceptedAt = round(
+          scene.startSec + ENTRY_SETTLE_SEC - PACING_TOLERANCE_SEC + 0.01,
+        );
+        const target = round(Math.max(
+          earliestAcceptedAt,
+          Math.min(settlePoint, latestDevelopmentAt),
+        ));
+        if (target <= beat.atSec + 1e-6 || target > settlePoint + 1e-6) continue;
         // Duration from the resolved beat (default-filled), else the intent.
         const resolvedBeat = resolved.get(beat.id);
         const beatStart = resolvedBeat ? resolvedBeat.startSec : beat.atSec;

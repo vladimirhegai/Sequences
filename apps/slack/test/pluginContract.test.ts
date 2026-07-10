@@ -191,6 +191,49 @@ describe("plugin reconciliation + lowering (Sentinel L2, degrade-never-veto)", (
     expect((lowered.components ?? []).map((entry) => entry.id)).toContain("hero-toast");
   });
 
+  it("lets a load-bearing station CTA complete a lockup without generating a second button", () => {
+    const raw = scene({
+      components: [{
+        version: 1, id: "cta-pill", kind: "button", region: "cta-station", role: "hero",
+      }],
+      beats: [{
+        version: 1, id: "cta-press", sceneId: "s1", component: "cta-pill",
+        kind: "set-state", atSec: 4.5, durationSec: 0.6, toState: "open",
+      }],
+      interactions: [{
+        version: 1, id: "press-cta", sceneId: "s1", cursorId: "cursor",
+        targetPart: "cta-pill", action: "click", startSec: 4, arriveSec: 4.5,
+      } as never],
+      plugins: normalizeStoryboardPluginDeclarations([{
+        kind: "lockup", id: "cta-lockup", region: "cta-station",
+        params: { headline: "Book with Roamly", sub: "One calm click.", cta: "Start shipping" },
+      }]),
+    });
+    const first = reconcileAndLowerPlugins([raw]);
+    const lowered = first.scenes[0]!;
+    expect((lowered.components ?? []).map((entry) => entry.id)).toContain("cta-pill");
+    expect((lowered.components ?? []).map((entry) => entry.id)).not.toContain("cta-lockup-cta");
+    expect((lowered.beats ?? []).some((entry) => entry.component === "cta-lockup-cta")).toBe(false);
+    expect(lowered.plugins?.[0]?.params.cta).toBe("");
+    expect(first.notes.join(" ")).toContain("reuses load-bearing station CTA");
+
+    // Reconcile an older persisted lowering as well: its generated child and
+    // entrance beat are retired while the authored interaction target stays.
+    const legacy = reconcileAndLowerPlugins([raw]).scenes[0]!;
+    legacy.components = [
+      ...(legacy.components ?? []),
+      { version: 1, id: "cta-lockup-cta", kind: "button", pluginUid: "s1-cta-lockup" },
+    ];
+    legacy.beats = [
+      ...(legacy.beats ?? []),
+      { version: 1, id: "cta-lockup-b3", sceneId: "s1", component: "cta-lockup-cta", kind: "open", atSec: 1 },
+    ];
+    legacy.plugins![0]!.params.cta = "Start shipping";
+    const replayed = reconcileAndLowerPlugins([legacy]).scenes[0]!;
+    expect((replayed.components ?? []).map((entry) => entry.id)).not.toContain("cta-lockup-cta");
+    expect((replayed.beats ?? []).some((entry) => entry.component === "cta-lockup-cta")).toBe(false);
+  });
+
   it("re-parses an already-lowered plan idempotently (the plugin-probe-1 notices-2 echo)", () => {
     // A scene-repair merge / findings-retry echo re-parses a plan that already
     // carries the lowered children — but normalizeStoryboardComponents strips
@@ -210,6 +253,30 @@ describe("plugin reconciliation + lowering (Sentinel L2, degrade-never-veto)", (
     expect(relowered.plugins?.[0]?.uid).toBe("s1-metrics");
     expect((relowered.beats ?? []).length).toBe((first.beats ?? []).length);
     expect(componentUnitCount(relowered.components)).toBe(1);
+  });
+
+  it("refreshes host beat timing when an existing plugin's camera arrival changes", () => {
+    const first = reconcileAndLowerPlugins([scene({
+      plugins: normalizeStoryboardPluginDeclarations([{
+        kind: "lockup", id: "proof-lockup", region: "proof-station",
+        params: { headline: "Proof lands here" },
+      }]),
+    })]).scenes[0]!;
+    const early = first.beats?.find((entry) => entry.id === "proof-lockup-b1")?.atSec;
+    const replayed = reconcileAndLowerPlugins([{
+      ...first,
+      camera: {
+        version: 1,
+        path: [{
+          version: 1, move: "pan", fromRegion: "overview", toRegion: "proof-station",
+          startSec: 3, durationSec: 2,
+        }],
+      },
+    }]).scenes[0]!;
+    const refreshed = replayed.beats?.filter((entry) => entry.id === "proof-lockup-b1") ?? [];
+    expect(early).toBeLessThan(1);
+    expect(refreshed).toHaveLength(1);
+    expect(refreshed[0]!.atSec).toBeGreaterThan(3);
   });
 
   it("keeps a lockup's typed copy pacing-feasible (static fallback in a tight scene)", () => {
@@ -238,6 +305,24 @@ describe("plugin reconciliation + lowering (Sentinel L2, degrade-never-veto)", (
     // No room to type + read: the copy ships static, no beat to reject.
     expect((tight.beats ?? []).filter((beat) => beat.kind === "type")).toHaveLength(0);
     expect((tight.components ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("ships lockups at display scale instead of inheriting compact component type", () => {
+    const scenes = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations([{
+          kind: "lockup",
+          params: { headline: "Book with Roamly", sub: "One calm click.", cta: "Start now" },
+        }]),
+      }),
+    ]).scenes;
+    const html = injectPluginContract(
+      `<html><head></head><body><section id="s1" class="scene" data-scene="s1"></section></body></html>`,
+      scenes,
+    ).html;
+    expect(html).toContain("font-size:clamp(72px,7.2vw,138px)");
+    expect(html).toContain("font-size:clamp(24px,2.2vw,42px)");
+    expect(html).toContain("width:min(100%,1200px)");
   });
 
   it("is deterministic: identical input lowers to identical bytes", () => {
@@ -349,6 +434,56 @@ describe("plugin markup injection (strip + reinject, recipe seam discipline)", (
     expect(html).not.toMatch(/Item \d/);
     expect(html).toContain("cmp-value");
     expect(html).toMatch(/data-cmp-value>[^<]*\d/);
+  });
+
+  it("keeps a regionless lockup above opaque authored surfaces in a safe station", () => {
+    const scenes = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations([{
+          version: 1,
+          kind: "lockup",
+          id: "cta-lockup",
+          params: { headline: "Resolve in minutes", cta: "Start now" },
+        }]),
+      }),
+    ]).scenes;
+    const html = injectPluginContract(
+      `<html><head></head><body><section id="s1" class="scene" data-scene="s1">` +
+        `<div class="cmp-window" style="position:absolute;inset:64px;z-index:10"></div>` +
+        `</section></body></html>`,
+      scenes,
+    ).html;
+    expect(html).toContain('data-sequences-plugin-placement="scene-safe-bottom"');
+    expect(html).toContain("position:absolute;left:50%;bottom:var(--space-safe,64px);z-index:30");
+  });
+
+  it("lands a regionless lockup in an authored semantic CTA slot instead of floating over the UI", () => {
+    const scenes = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations([{
+          version: 1,
+          kind: "lockup",
+          id: "cta-lockup",
+          params: { headline: "Resolve in minutes", cta: "Start now" },
+        }]),
+      }),
+    ]).scenes;
+    const html = injectPluginContract(
+      `<html><head></head><body><section id="s1" class="scene" data-scene="s1">` +
+        `<div class="cmp-window"><div class="cmp-body">` +
+        `<div class="cta-area"><!-- host lockup --></div>` +
+        `</div></div></section></body></html>`,
+      scenes,
+    ).html;
+    const slotIndex = html.indexOf('class="cta-area"');
+    const pluginIndex = html.indexOf('data-sequences-plugin="lockup"');
+    const slotCloseIndex = html.indexOf("</div>", slotIndex);
+    expect(pluginIndex).toBeGreaterThan(slotIndex);
+    expect(pluginIndex).toBeLessThan(slotCloseIndex);
+    expect(html).toContain('data-sequences-plugin-placement="semantic-slot"');
+    expect(html).not.toContain('data-sequences-plugin-placement="scene-safe-bottom"');
+    expect(html).not.toContain("position:absolute;left:50%;bottom:");
+    expect(injectPluginContract(html, scenes).html).toBe(html);
   });
 });
 
@@ -693,7 +828,7 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
     expect(firstBeatAt(result.scenes)).toBeCloseTo(3.6, 2);
   });
 
-  it("ignores hold/drift moves — they never re-frame", () => {
+  it("treats a first drift to the unit as its opening frame", () => {
     const result = reconcileAndLowerPlugins([
       scene({
         plugins: normalizeStoryboardPluginDeclarations(DECL),
@@ -706,6 +841,24 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
       }),
     ]);
     expect(firstBeatAt(result.scenes)).toBeCloseTo(0.6, 2);
+  });
+
+  it("anchors a plugin near a later cross-station drift instead of animating it offscreen", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        plugins: normalizeStoryboardPluginDeclarations(DECL),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "hold", toRegion: "intro-stage", startSec: 0, durationSec: 3 },
+            { version: 1, move: "drift", toRegion: "metric-station", startSec: 3, durationSec: 2 },
+          ],
+        },
+      }),
+    ]);
+    // Arrival is 5.0s; the shared 60%-introduction cap keeps the entrance at
+    // 3.6s instead of letting the unit animate unseen at 0.6s.
+    expect(firstBeatAt(result.scenes)).toBeCloseTo(3.6, 2);
   });
 });
 
@@ -750,6 +903,7 @@ describe("wrapper placement self-defense", () => {
     const html = injectPluginContract(sceneHtml("s1"), scenes).html;
     const wrapper = html.match(/<div class="seq-plugin[^>]*>/)?.[0] ?? "";
     expect(wrapper).toContain('data-layout-important="1"');
+    expect(wrapper).toContain('data-layout-important-from="');
     expect(wrapper).toContain("grid-column:1/-1");
     expect(wrapper).toContain("min-width:0");
     expect(wrapper).toContain("max-width:100%");
@@ -803,5 +957,20 @@ describe("exact-copy duplicate stamping (fix-probe-1 doubled lockup)", () => {
     );
     const result = injectPluginContract(html, scenes).html;
     expect(result).toContain('<div class="callback">Every deploy, verified.</div>');
+  });
+
+  it("clears a stale CTA duplicate stamp when a lockup starts reusing authored control copy", () => {
+    const first = injectPluginContract(AUTHOR_DUPE_HTML, lockupScenes()).html;
+    const withoutGeneratedCta = lockupScenes();
+    withoutGeneratedCta[0]!.plugins![0]!.params.cta = "";
+    const replayed = injectPluginContract(first, withoutGeneratedCta).html;
+    expect(replayed).toContain("<span>Start deploying</span>");
+    expect(replayed).not.toContain(
+      '<span data-sequences-plugin-duplicate="">Start deploying</span>',
+    );
+    // Headline duplication is still current and remains hidden.
+    expect(replayed).toContain(
+      '<div class="brand-headline" data-sequences-plugin-duplicate="">',
+    );
   });
 });

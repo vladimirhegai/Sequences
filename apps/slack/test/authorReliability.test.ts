@@ -9,6 +9,7 @@ import {
   dedupeFeedbackBySignature,
   degradeMismatchedShapeHintCuts,
   degradeVolunteeredBridgedCuts,
+  ensureHostCompileOrdering,
   ensureRuntimeScriptOrdering,
   findingSignature,
   HOST_PLAN_ISLAND_IDS,
@@ -100,6 +101,90 @@ describe("embedded development scene repair", () => {
     for (const child of cases) {
       expect(mergeEmbeddedDevelopmentScenes([parent(), child]).normalized).toEqual([]);
     }
+  });
+
+  it("absorbs an adjacent final CTA hold into the scene that already owns that CTA", () => {
+    const lockup = {
+      id: "lockup-cta",
+      title: "Review in Monogram",
+      purpose: "reveal the lockup and CTA",
+      startSec: 17,
+      durationSec: 6,
+      components: [
+        component("lockup", "headline"),
+        component("cta-button", "button"),
+      ],
+      beats: [{ version: 1, id: "cta-ready", component: "cta-button", kind: "set-state", atSec: 19 }],
+      moments: [{ id: "lockup-ready", atSec: 19 }],
+      camera: { version: 1, path: [{ move: "whip", toRegion: "cta-station", startSec: 20, durationSec: 1 }] },
+      spatialIntent: { focalPart: "lockup" },
+      interactions: [],
+      plugins: [],
+      recipes: [],
+    };
+    const finalHold = {
+      id: "final-cta",
+      title: "Final CTA Hold",
+      purpose: "Final CTA hold",
+      incomingIdea: "Invite the viewer",
+      foreground: "Review in Monogram",
+      startSec: 23,
+      durationSec: 3,
+      components: [],
+      beats: [],
+      moments: [{ id: "final-hold", atSec: 23, title: "Final CTA hold", change: "CTA holds steady", motionIntent: "resolve" }],
+      camera: { version: 1, path: [{ move: "hold", startSec: 23, durationSec: 2 }] },
+      spatialIntent: { focalPart: "cta-button" },
+      cut: { style: "hard" },
+      interactions: [],
+      plugins: [],
+      recipes: [],
+      outgoingCut: "Hard to black",
+    };
+    const result = mergeEmbeddedDevelopmentScenes([lockup, finalHold]);
+    expect(result.storyboard).toHaveLength(1);
+    expect(result.normalized[0]).toContain("without a duplicate cut");
+    const merged = result.storyboard[0] as Record<string, unknown>;
+    expect(merged.durationSec).toBe(9);
+    expect((merged.moments as Array<{ id: string }>).map((moment) => moment.id))
+      .toEqual(["lockup-ready", "final-hold"]);
+    expect((merged.moments as Array<Record<string, unknown>>).at(-1)).toMatchObject({
+      sceneId: "lockup-cta",
+      importance: "supporting",
+      motionIntent: "camera-arrival",
+      title: "Operated CTA hold begins",
+    });
+    expect(
+      ((merged.camera as { path: Array<Record<string, unknown>> }).path).at(-1),
+    ).toMatchObject({ move: "hold", toPart: "cta-button", startSec: 23 });
+    expect(merged.outgoingCut).toBe("Hard to black");
+  });
+
+  it("keeps an adjacent CTA scene when it introduces a real state change", () => {
+    const base = {
+      id: "lockup",
+      startSec: 0,
+      durationSec: 4,
+      components: [component("cta-button", "button")],
+      camera: { path: [{ move: "hold", startSec: 0, durationSec: 4 }] },
+      spatialIntent: { focalPart: "cta-button" },
+    };
+    const changed = {
+      id: "final-cta",
+      title: "Final CTA",
+      purpose: "CTA hold",
+      startSec: 4,
+      durationSec: 3,
+      components: [],
+      beats: [{ id: "new-state", component: "cta-button", kind: "set-state", atSec: 4.2 }],
+      moments: [{ id: "ready", atSec: 4.2, title: "CTA ready", change: "new state", motionIntent: "resolve" }],
+      camera: { path: [{ move: "hold", startSec: 4, durationSec: 2 }] },
+      spatialIntent: { focalPart: "cta-button" },
+      interactions: [],
+      plugins: [],
+      recipes: [],
+    };
+    expect(mergeEmbeddedDevelopmentScenes([base, changed]).normalized).toEqual([]);
   });
 });
 
@@ -484,6 +569,16 @@ describe("deterministic rows-markup top-up (fallback-elimination lever 1)", () =
     const ambiguous =
       '<div data-part="sev-board" class="cmp"></div><div data-part="sev-board" class="cmp"></div>';
     expect(topUpRowsMarkup(ambiguous, rowsScene("table")).repaired).toEqual([]);
+  });
+
+  it("recognizes authored semantic rows instead of injecting neutral duplicates", () => {
+    const html = `<section data-scene="triage"><div data-part="sev-board" data-component="table">` +
+      `<div class="inbox-row">Alpha</div><div class="inbox-row">Beta</div>` +
+      `<div class="inbox-row">Gamma</div></div></section>`;
+    const result = topUpRowsMarkup(html, rowsScene("table"));
+    expect(result.repaired).toEqual([]);
+    expect(result.html).toBe(html);
+    expect(result.html).not.toContain("data-sequences-neutral");
   });
 
   it("survives nested same-tag children when locating the root close tag", () => {
@@ -988,6 +1083,125 @@ describe("reconcileComponentBindings — missing data-part recovery", () => {
     expect(out).toContain('data-part="impact-stat" data-component="stat-card" style="display:none"');
     expect(out).not.toContain('data-part="impact-stat-hidden-aux-1"');
   });
+
+  it("moves a hidden focal-row binding onto the one item every action names", () => {
+    const html = wrap(
+      '<div class="cmp cmp-table" data-part="queue-table" data-component="table">' +
+        '<div class="cmp-row" data-part="queue-row-1">MG-201</div>' +
+        '<div class="cmp-row" data-part="queue-row-2">MG-204</div>' +
+        '<div class="cmp-row" data-part="queue-row-3">MG-207</div></div>' +
+        '<div data-part="row-mg204" data-component="list" ' +
+        'data-layout-important="1" style="display:none"></div>' +
+        "<script>tl.to('[data-part=\"queue-row-2\"]',{scale:1.02},7)</script>",
+    );
+    const { html: out, repairs } = reconcileComponentBindings(html, [
+      scene("dashboard-overload", 0, {
+        components: [
+          component("queue-table", "table"),
+          component("row-mg204", "list"),
+        ],
+        beats: [
+          {
+            version: 1,
+            id: "highlight-row",
+            sceneId: "dashboard-overload",
+            component: "queue-table",
+            kind: "highlight",
+            atSec: 2,
+            item: 2,
+          },
+          {
+            version: 1,
+            id: "underline-row",
+            sceneId: "dashboard-overload",
+            component: "row-mg204",
+            kind: "highlight",
+            atSec: 2.3,
+            item: 1,
+          },
+        ],
+        interactions: [{
+          version: 1,
+          id: "pick-row",
+          sceneId: "dashboard-overload",
+          cursorId: "cursor",
+          targetPart: "queue-table",
+          action: "click",
+          startSec: 1,
+          arriveSec: 2,
+          item: 2,
+          from: "frame:bottom-right",
+          path: "arc",
+          aimX: 0.5,
+          aimY: 0.5,
+          feedback: "press-ripple",
+        }],
+        spatialIntent: {
+          version: 1,
+          focalPart: "row-mg204",
+          composition: "table detail",
+          relationships: [],
+        },
+      }),
+    ]);
+    expect(repairs).toBe(1);
+    expect(out).toContain(
+      'class="cmp-row" data-part="row-mg204" data-component="list" ' +
+        'data-sequences-part-alias="queue-row-2" data-layout-important="1"',
+    );
+    expect(out).toContain('data-part="row-mg204-hidden-aux-1"');
+    expect(out).toContain("tl.to('[data-part=\"row-mg204\"]'");
+    expect(out.match(/<[^>]+data-part="row-mg204"(?:\s|>)/g)).toHaveLength(1);
+  });
+
+  it("does not guess a hidden focal row when item evidence disagrees", () => {
+    const html = wrap(
+      '<div class="cmp cmp-table" data-part="queue-table" data-component="table">' +
+        '<div class="cmp-row">MG-201</div><div class="cmp-row">MG-204</div></div>' +
+        '<div data-part="row-mg204" data-component="list" style="display:none"></div>',
+    );
+    const { html: out, repairs } = reconcileComponentBindings(html, [
+      scene("dashboard-overload", 0, {
+        components: [
+          component("queue-table", "table"),
+          component("row-mg204", "list"),
+        ],
+        beats: [{
+          version: 1,
+          id: "highlight-first",
+          sceneId: "dashboard-overload",
+          component: "queue-table",
+          kind: "highlight",
+          atSec: 2,
+          item: 1,
+        }],
+        interactions: [{
+          version: 1,
+          id: "pick-second",
+          sceneId: "dashboard-overload",
+          cursorId: "cursor",
+          targetPart: "queue-table",
+          action: "click",
+          startSec: 1,
+          arriveSec: 2,
+          item: 2,
+          from: "frame:bottom-right",
+          path: "arc",
+          aimX: 0.5,
+          aimY: 0.5,
+          feedback: "press-ripple",
+        }],
+        spatialIntent: {
+          version: 1,
+          focalPart: "row-mg204",
+          composition: "table detail",
+          relationships: [],
+        },
+      }),
+    ]);
+    expect(repairs).toBe(0);
+    expect(out).toContain('data-part="row-mg204" data-component="list" style="display:none"');
+  });
 });
 
 describe("deterministic source repair ordering: camera world + component aliases", () => {
@@ -1351,6 +1565,46 @@ describe("ensureRuntimeScriptOrdering — the SequencesInteractions is not defin
 });
 
 /* -------------------------------------------- Sentinel Phase 1 — scaffold */
+
+describe("ensureHostCompileOrdering - live target geometry follows scene motion", () => {
+  it("runs interaction followers after every scene-producing host compiler", () => {
+    const html = `<script>
+var tl = gsap.timeline({ paused: true });
+SequencesInteractions.compile(tl, root);
+SequencesFx.compile(tl, root);
+SequencesCuts.compile(tl, root);
+SequencesAssets.compile(tl, root);
+SequencesComponents.compile(tl, root);
+SequencesContinuity.compile(tl, root);
+SequencesCamera.compile(tl, root);
+var __seqWarped = SequencesTime.wrap(tl);
+</script>`;
+    const first = ensureHostCompileOrdering(html);
+    expect(first.changed).toBe(true);
+    const names = ["Cuts", "Camera", "Continuity", "Components", "Fx", "Assets", "Interactions"];
+    const positions = names.map((name) => first.html.indexOf(`Sequences${name}.compile`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(positions.at(-1)).toBeLessThan(first.html.indexOf("SequencesTime.wrap"));
+    expect(ensureHostCompileOrdering(first.html)).toEqual({ html: first.html, changed: false });
+  });
+
+  it("does not mix compiler calls belonging to different timeline variables", () => {
+    const html = `<script>
+SequencesInteractions.compile(hero, heroRoot);
+SequencesCamera.compile(detail, detailRoot);
+SequencesCamera.compile(hero, heroRoot);
+SequencesInteractions.compile(detail, detailRoot);
+</script>`;
+    const { html: repaired } = ensureHostCompileOrdering(html);
+    expect(repaired.indexOf("SequencesCamera.compile(hero")).toBeLessThan(
+      repaired.indexOf("SequencesInteractions.compile(hero"),
+    );
+    expect(repaired.indexOf("SequencesCamera.compile(detail")).toBeLessThan(
+      repaired.indexOf("SequencesInteractions.compile(detail"),
+    );
+  });
+});
 
 /** The 2026-07-05 incident 1 shape: a component scene + a camera-path scene
  * where the model omitted the component `data-part` and the `data-camera-world`

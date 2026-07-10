@@ -219,7 +219,6 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     className: "cmp-modal",
     purpose: "Scrim plus centered dialog",
     beats: ["open", "close"],
-    morphsWith: ["stat-card"],
     markup:
       `<div class="cmp cmp-modal" data-component="modal" data-part="invite-modal">` +
       `<div class="cmp-scrim"></div><div class="cmp-dialog material-hero"><div class="cmp-title">Invite your team</div>…</div></div>`,
@@ -229,7 +228,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     className: "cmp-stat",
     purpose: "Metric tile: label, big value (counts up), delta chip",
     beats: ["count", "open"],
-    morphsWith: ["modal"],
+    morphsWith: ["progress-ring"],
     markup:
       `<div class="cmp cmp-stat material" data-component="stat-card" data-part="latency-stat">` +
       `<div class="cmp-label">P95 latency</div><div class="cmp-value" data-cmp-value>142ms</div>` +
@@ -302,6 +301,7 @@ export const COMPONENT_CATALOG: ComponentKindSpec[] = [
     className: "cmp-ring",
     purpose: "Circular progress with a center value",
     beats: ["progress", "count", "open"],
+    morphsWith: ["stat-card"],
     markup:
       `<div class="cmp cmp-ring" data-component="progress-ring" data-part="uptime">` +
       `<svg viewBox="0 0 120 120"><circle class="cmp-ring-bg" cx="60" cy="60" r="52"/>` +
@@ -410,6 +410,23 @@ export function morphPartnerKinds(kind: ComponentKind): ComponentKind[] {
 }
 
 /**
+ * Whether two DECLARED component instances share a semantic morph family.
+ *
+ * Every kind may morph to a distinct instance of the same kind: button-to-
+ * button is the canonical pill/status transition, while stat-card-to-stat-card
+ * preserves a metric. `morphPartnerKinds` intentionally remains the narrower
+ * cross-kind inference table used when a planner forgot to declare its twin;
+ * treating the source kind as inferred there would make every missing target
+ * ambiguous and would break search-to-command-palette recovery.
+ */
+export function componentKindsMorphCompatible(
+  source: ComponentKind,
+  target: ComponentKind,
+): boolean {
+  return source === target || morphPartnerKinds(source).includes(target);
+}
+
+/**
  * The canonical host-owned root element for a declared component (Sentinel
  * Phase 1 scaffold). The catalog exemplar already carries the correct tag,
  * `cmp cmp-<kind>` class, `data-component`, and a kit-valid interior; here its
@@ -439,6 +456,12 @@ export interface SceneComponentSpecV1 {
   /** Optional camera-world station the component lives in. */
   region?: string;
   role?: "hero" | "support";
+  /**
+   * Stable semantic identity across scene-local representations. Optional and
+   * planner-facing only while the default-off continuity graph is enabled;
+   * the host stamps the corresponding DOM attribute mechanically.
+   */
+  entityId?: string;
   /**
    * Host-stamped when this component was lowered from a declared plugin unit
    * (`pluginContract.ts`) — never model-authored (`normalizeStoryboardComponents`
@@ -612,12 +635,14 @@ export function normalizeStoryboardComponents(value: unknown): SceneComponentSpe
     if (CATALOG_BY_KIND.get(kind)?.internal) return [];
     seen.add(id);
     const region = stableName(item.region);
+    const entityId = stableName(item.entityId);
     return [{
       version: 1,
       id,
       kind,
       ...(region ? { region } : {}),
       ...(item.role === "hero" || item.role === "support" ? { role: item.role } : {}),
+      ...(entityId ? { entityId } : {}),
     }];
   });
 }
@@ -785,6 +810,118 @@ export interface BeatDedupeResult {
   dropped: string[];
 }
 
+export interface EntranceRetimeResult {
+  scenes: DirectScene[];
+  /** Human-readable log lines, one per existing entrance moved earlier. */
+  normalized: string[];
+}
+
+/**
+ * A rows/open beat supplies the FIRST painted state of some component kinds:
+ * the runtime deliberately holds their children/panel invisible until that
+ * beat. When a load-bearing hero schedules that entrance well after scene
+ * entry, the audience gets an empty station while the camera travels through
+ * it (Roamly's confirmation list was blank for almost three viewer-seconds).
+ *
+ * This L2 normalizer only moves an EXISTING entrance and any moment already
+ * pinned to that exact beat. It never invents content or motion. A morph into
+ * the scene gets a slightly longer entry runway so its intact dual-clone
+ * handoff can land before the remaining rows cascade.
+ */
+export function retimeLateLoadBearingEntrances(
+  storyboard: DirectScene[],
+): EntranceRetimeResult {
+  const normalized: string[] = [];
+  const collectionKinds = new Set<ComponentKind>([
+    "app-window", "sidebar", "table", "list", "kanban", "chat", "terminal",
+  ]);
+  const sceneStartOffset = (sceneIndex: number, durationSec: number): number => {
+    const incoming = sceneIndex > 0 ? storyboard[sceneIndex - 1]?.cut?.style : undefined;
+    const runway = incoming === "morph" ? 0.48 : 0.28;
+    return Math.min(runway, Math.max(0.18, durationSec * 0.12));
+  };
+
+  const scenes = storyboard.map((scene, sceneIndex) => {
+    const beats = scene.beats ?? [];
+    if (!beats.length) return scene;
+    const components = new Map((scene.components ?? []).map((component) => [component.id, component]));
+    const openingMove = scene.camera?.path?.[0];
+    const openingPart = openingMove?.fromPart ?? openingMove?.toPart;
+    const openingRegion = openingMove?.fromRegion ?? openingMove?.toRegion;
+    const spatialFocal = scene.spatialIntent?.focalPart;
+    const offset = sceneStartOffset(sceneIndex, scene.durationSec);
+    const latestLoadBearingEntrance = scene.startSec + Math.max(0.72, offset + 0.18);
+    const targetAt = round(scene.startSec + offset);
+    const moved = new Map<string, { from: number; to: number }>();
+
+    const nextBeats = beats.map((beat) => {
+      if ((beat.kind !== "rows" && beat.kind !== "open") || beat.atSec <= latestLoadBearingEntrance) {
+        return beat;
+      }
+      const component = components.get(beat.component);
+      if (!component || component.pluginUid) return beat;
+      const firstEntrance = beats
+        .filter((candidate) =>
+          candidate.component === beat.component &&
+          (candidate.kind === "rows" || candidate.kind === "open")
+        )
+        .sort((a, b) => a.atSec - b.atSec)[0];
+      // A later rows/open is a refresh or payoff, not the first painted state.
+      if (firstEntrance?.id !== beat.id) return beat;
+      const opensWithCamera = component.id === openingPart ||
+        Boolean(component.region && component.region === openingRegion);
+      const hero = component.role === "hero";
+      // A support table can share the opening station with the true hero and
+      // still be scheduled as deliberate mid-shot development. Region overlap
+      // alone is therefore insufficient; require semantic or exact camera-part
+      // ownership before moving its first rows beat.
+      const loadBearingRows = beat.kind === "rows" && collectionKinds.has(component.kind) &&
+        (hero || component.id === openingPart || component.id === spatialFocal);
+      // `open` can be a deliberately late result (toast/CTA). Move it only
+      // when the plan explicitly makes this component the opening focal.
+      const loadBearingOpen = beat.kind === "open" &&
+        (component.id === openingPart || (component.id === spatialFocal && opensWithCamera));
+      if (!loadBearingRows && !loadBearingOpen) return beat;
+
+      moved.set(beat.id, { from: beat.atSec, to: targetAt });
+      normalized.push(
+        `scene "${scene.id}": moved load-bearing ${beat.kind} "${beat.id}" on ` +
+          `"${beat.component}" from ${beat.atSec.toFixed(2)}s to ${targetAt.toFixed(2)}s ` +
+          `(the runtime entrance cannot leave the opening station blank)`,
+      );
+      return { ...beat, atSec: targetAt };
+    });
+    if (!moved.size) return scene;
+
+    const nextMoments = (scene.moments ?? []).map((moment) => {
+      // A moment authored on the moved beat is timing paperwork for that same
+      // state change. Carry it with the beat so evidence does not become a
+      // fabricated late highlight or force a paid missing-moment retry.
+      const owner = [...moved.values()].find(({ from }) => {
+        if (Math.abs(moment.atSec - from) > 0.12) return false;
+        // If another, unmoved beat shares this cue, the moment is ambiguous;
+        // leave its semantic timing intact rather than dragging it with the
+        // entrance merely because the planner stacked two events.
+        return !beats.some((beat) =>
+          !moved.has(beat.id) && Math.abs(beat.atSec - moment.atSec) <= 0.12
+        );
+      });
+      return owner ? { ...moment, atSec: owner.to } : moment;
+    });
+    const notes = normalized.filter((line) => line.startsWith(`scene "${scene.id}":`));
+    return {
+      ...scene,
+      beats: nextBeats.sort((a, b) => a.atSec - b.atSec),
+      ...(scene.moments?.length ? { moments: nextMoments } : {}),
+      sentinelNormalizations: [
+        ...(scene.sentinelNormalizations ?? []),
+        ...notes.map((line) => `entrance-retime: ${line.replace(/^scene "[^"]+": /, "")}`),
+      ],
+    };
+  });
+  return { scenes, normalized };
+}
+
 /**
  * Deterministic de-double pass over a parsed storyboard, run before moments
  * top-up and validation. Planners double-trigger motion three ways, and each
@@ -821,6 +958,7 @@ export function dedupeRedundantBeats(storyboard: DirectScene[]): BeatDedupeResul
       )
       .map((intent) => ({
         part: intent.targetPart,
+        item: intent.item,
         start: intent.pressSec! - CURSOR_PRESS_SLACK_SEC,
         end: (intent.releaseSec ?? intent.pressSec! + 0.3) + CURSOR_PRESS_SLACK_SEC,
       }));
@@ -830,9 +968,10 @@ export function dedupeRedundantBeats(storyboard: DirectScene[]): BeatDedupeResul
       const startSec = beat.atSec;
       const endSec = beat.atSec + beatDuration(beat);
       // Rule 3: cursor press already pulses this part on these frames.
-      if (PULSE_KINDS.has(beat.kind)) {
+      if (PULSE_KINDS.has(beat.kind) && beat.kind !== "highlight") {
         const cursorPress = pressWindows.find((window) =>
           window.part === beat.component &&
+          (window.item === undefined || beat.item === undefined || window.item === beat.item) &&
           startSec < window.end &&
           endSec > window.start
         );
@@ -861,7 +1000,7 @@ export function dedupeRedundantBeats(storyboard: DirectScene[]): BeatDedupeResul
         if (
           PULSE_KINDS.has(beat.kind) &&
           earlier.kind === beat.kind &&
-          !(beat.kind === "select" && earlier.item !== beat.item) &&
+          !(beat.item !== undefined && earlier.item !== undefined && earlier.item !== beat.item) &&
           startSec - earlier.atSec < PULSE_REPEAT_WINDOW_SEC
         ) {
           return true;
@@ -1783,7 +1922,8 @@ export function componentMotionWindows(
 export function componentPlanningVocabulary(): string {
   const lines = COMPONENT_CATALOG.filter((spec) => !spec.internal).map((spec) => {
     const beats = [...new Set([...spec.beats])];
-    const morphs = spec.morphsWith?.length ? ` · morphs↔${spec.morphsWith.join("/")}` : "";
+    const crossKind = spec.morphsWith?.length ? `/${spec.morphsWith.join("/")}` : "";
+    const morphs = ` · morphs↔same-kind${crossKind}`;
     return `- ${spec.kind}: ${spec.purpose}${beats.length ? ` · beats: ${beats.join(",")}` : ""}${morphs}`;
   });
   return [
@@ -1819,16 +1959,17 @@ export function componentAuthoringReference(kinds?: Iterable<ComponentKind>): st
     "storyboard declares component beats, the `sequences-components` JSON island +",
     `\`${COMPONENT_RUNTIME_FILE}\` + \`SequencesComponents.compile(tl, root)\`.`,
     "Author each declared component ONCE with its exact data-part id and",
-    "data-component kind, using the kit markup below (pair with .material /",
-    ".material-hero / .inset-well for light). Author its ENTRANCE yourself;",
-    "never author its internal state motion — typing, opening, selecting,",
+    "data-component kind, using the kit markup below and the frame's selected",
+    "material profile. Author an entrance only when no typed open/pop/morph beat",
+    "owns that component; never author overlapping internal state motion — typing, opening, selecting,",
     "counting, chart growth, streaming, and morphs are compiled by the host",
     "runtime from the storyboard beats. Author the FINAL state (full text,",
     "final numbers, final bar heights); the runtime animates toward it. States",
     "are data-state/data-active attributes the runtime flips. A morph target",
     "starts hidden by the runtime; do not author an entrance for it.",
     "A `rows` or `stream` beat reveals EXISTING children: author at least 3",
-    ".cmp-row / .cmp-item / .cmp-card / .cmp-msg children inside that target",
+    ".cmp-row / .cmp-item / .cmp-card / .cmp-msg children inside that target;",
+    "a custom visual row class must also carry the generic `data-cmp-item` marker",
     "yourself — a rows beat on a childless container has nothing to reveal and",
     "aborts the compile.",
     "",

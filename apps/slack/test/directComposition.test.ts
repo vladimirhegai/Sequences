@@ -10,8 +10,11 @@ import {
   applyCompositionRepair,
   applyDeterministicSourceRepairs,
   addressedPartsForLayoutRepair,
+  autoStyleSemanticHighlights,
+  completeStoryboardWorldLayouts,
   inferStoryboardPlanRequirements,
   injectLayoutIntentHints,
+  injectWorldLayoutStyles,
   normalizeWorldLayout,
   parseCompositionResponse,
   parseStoryboardResponse,
@@ -87,7 +90,21 @@ function withHostInjections(html: string): string {
       );
     },
   );
-  return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(withRootTiming)));
+  const withCinemaProfile = withRootTiming.replace(
+    /<[a-z][\w:-]*\b(?=[^>]*\bdata-composition-id\s*=)[^>]*>/i,
+    (tag) => {
+      const className = "cinema-profile-cinematic";
+      const classes = /\bclass\s*=\s*(["'])([^"']*)\1/i.exec(tag);
+      if (classes) {
+        if (classes[2]!.split(/\s+/).includes(className)) return tag;
+        return tag.slice(0, classes.index) +
+          `class=${classes[1]}${classes[2]} ${className}${classes[1]}` +
+          tag.slice(classes.index + classes[0].length);
+      }
+      return tag.replace(/>$/, ` class="${className}">`);
+    },
+  );
+  return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(withCinemaProfile)));
 }
 
 vi.mock("../src/engine/layoutInspector.ts", () => ({
@@ -103,6 +120,7 @@ vi.mock("../src/engine/layoutInspector.ts", () => ({
       samples: [],
       reversals: [],
       jerkMarkers: [],
+      quietWindows: [],
       settleWindows: [],
       scenes: [],
       summary: {
@@ -124,6 +142,8 @@ vi.mock("../src/engine/layoutInspector.ts", () => ({
         settleWindowCount: 1,
         measuredSettleWindowCount: 1,
         settledByWindowEndCount: 1,
+        quietWindowCount: 0,
+        maxQuietWindowSec: 0,
       },
       advisories: [],
     },
@@ -826,6 +846,74 @@ describe("unsupported component beats degrade at parse (fallback-elimination)", 
   });
 });
 
+describe("semantic highlight style reconciliation", () => {
+  it("turns an explicitly named measured underline into the underline runtime style", () => {
+    const scene = storyboard()[1]!;
+    const result = autoStyleSemanticHighlights([{
+      ...scene,
+      components: [{ version: 1, id: "exception-table", kind: "table" }],
+      beats: [{
+        version: 1,
+        id: "px-482-underline",
+        sceneId: scene.id,
+        component: "exception-table",
+        kind: "highlight",
+        item: 3,
+        atSec: scene.startSec + 1,
+      }],
+      moments: [{
+        version: 1,
+        id: "underline-sweeps-px-482",
+        sceneId: scene.id,
+        atSec: scene.startSec + 1,
+        title: "Measured underline sweeps across PX-482",
+        visualState: "The exact row owns the underline",
+        change: "Focus converges on row three",
+        motionIntent: "draw-on",
+        importance: "supporting",
+      }],
+    }]);
+    expect(result.storyboard[0]!.beats![0]).toMatchObject({
+      component: "exception-table",
+      item: 3,
+      style: "underline",
+    });
+    expect(result.applied).toHaveLength(1);
+  });
+
+  it("does not invent a style for an ambiguous highlight or override an explicit ring", () => {
+    const scene = storyboard()[1]!;
+    const result = autoStyleSemanticHighlights([{
+      ...scene,
+      components: [{ version: 1, id: "metric", kind: "stat-card" }],
+      beats: [
+        {
+          version: 1,
+          id: "metric-focus",
+          sceneId: scene.id,
+          component: "metric",
+          kind: "highlight",
+          atSec: scene.startSec + 1,
+        },
+        {
+          version: 1,
+          id: "explicit-underline-word-but-ring",
+          sceneId: scene.id,
+          component: "metric",
+          kind: "highlight",
+          style: "ring",
+          atSec: scene.startSec + 2,
+        },
+      ],
+    }]);
+    expect(result.storyboard[0]!.beats).toEqual([
+      expect.not.objectContaining({ style: expect.anything() }),
+      expect.objectContaining({ style: "ring" }),
+    ]);
+    expect(result.applied).toEqual([]);
+  });
+});
+
 describe("Sentinel Phase 3 — storyboard normalization is wired into parseStoryboardResponse", () => {
   it("clamps an over-budget camera scene before the pacing gate, so it never throws", () => {
     // The 3s middle scene declares 3 full moves (budget = 1). Without the
@@ -1100,6 +1188,31 @@ describe("Sentinel Phase 5 — morph twin reconciliation at parse", () => {
     expect(beat.kind).toBe("morph");
     expect(beat.morphTo).toBe("cmd-palette");
     expect(parsed[1]!.sentinelNormalizations?.length).toBe(1);
+  });
+
+  it("keeps a load-bearing pill-to-pill morph between distinct button ids", () => {
+    const parsed = parseStoryboardResponse(
+      planWithMorph(
+        [
+          { version: 1, id: "quick-search", kind: "button" },
+          { version: 1, id: "cmd-palette", kind: "button" },
+        ],
+        [{
+          version: 1,
+          id: "pill-resolves",
+          sceneId: "product-proof",
+          atSec: 4.4,
+          title: "Approval resolves",
+          visualState: "Approved pill replaces Needs review",
+          change: "the status pill changes state",
+          motionIntent: "morph",
+          importance: "primary",
+        }],
+      ),
+    );
+    const beat = parsed[1]!.beats!.find((entry) => entry.id === "showpiece-morph")!;
+    expect(beat.kind).toBe("morph");
+    expect(beat.morphTo).toBe("cmd-palette");
   });
 
   it("degrades an ambiguous non-load-bearing morph to highlight instead of vetoing", () => {
@@ -1604,8 +1717,8 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
         code: "contrast_aa",
         severity: "warning",
         time: 2,
-        selector: "div",
-        text: "Too broad",
+        selector: "span.cmp-label",
+        text: "Too broad to recolor globally",
         message: "Contrast is 2.57:1; needs 3:1.",
         fixHint: "Adjust the existing semantic color.",
         source: "hyperframes",
@@ -1622,7 +1735,64 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     expect(repaired.repaired).toEqual(["#sell-btn-el"]);
     expect(repaired.draft.html).toContain("data-sequences-contrast-repair");
     expect(repaired.draft.html).toContain("#sell-btn-el{color:rgb(80,80,80) !important;}");
-    expect(repaired.draft.html).not.toContain("div{color:");
+    expect(repaired.draft.html).not.toContain("span.cmp-label{color:");
+  });
+
+  it("uses a unique scene-scoped repair selector for a compact contrast audit label", () => {
+    const repaired = repairContrastAaIssues(draft(), {
+      ...base,
+      strictOk: false,
+      issues: [{
+        code: "contrast_aa",
+        severity: "warning",
+        time: 2,
+        selector: "span.cmp-label",
+        repairSelector: '[data-scene="scene-a"] > div:nth-of-type(2) > span:nth-of-type(1)',
+        text: "Start with BeaconOps",
+        message: "Contrast is 1.14:1; needs 4.5:1.",
+        source: "hyperframes",
+        contrast: {
+          ratio: 1.14,
+          required: 4.5,
+          suggestedColor: "rgb(250,250,250)",
+        },
+      }],
+      warnings: [],
+    });
+    expect(repaired.repaired).toEqual([
+      '[data-scene="scene-a"] > div:nth-of-type(2) > span:nth-of-type(1)',
+    ]);
+    expect(repaired.draft.html).toContain(
+      '[data-scene="scene-a"] > div:nth-of-type(2) > span:nth-of-type(1){color:rgb(250,250,250) !important;}',
+    );
+    expect(repaired.draft.html).not.toContain("span.cmp-label{color:");
+  });
+
+  it("accumulates exact contrast repairs discovered on consecutive sampled passes", () => {
+    const issue = (selector: string, color: string) => ({
+      code: "contrast_aa",
+      severity: "warning" as const,
+      time: 2,
+      selector,
+      message: "Contrast is 2.5:1; needs 3:1.",
+      source: "hyperframes" as const,
+      contrast: { ratio: 2.5, required: 3, suggestedColor: color },
+    });
+    const first = repairContrastAaIssues(draft(), {
+      ...base,
+      strictOk: false,
+      issues: [issue("#sell-btn-el", "rgb(80,80,80)")],
+      warnings: [],
+    });
+    const second = repairContrastAaIssues(first.draft, {
+      ...base,
+      strictOk: false,
+      issues: [issue("#proof-copy", "rgb(40,40,40)")],
+      warnings: [],
+    });
+    expect(second.draft.html).toContain("#sell-btn-el{color:rgb(80,80,80) !important;}");
+    expect(second.draft.html).toContain("#proof-copy{color:rgb(40,40,40) !important;}");
+    expect(second.draft.html.match(/data-sequences-contrast-repair/g)).toHaveLength(1);
   });
 
   it("contrast repair neutralizes replace-pattern and style-closing text in the comment", () => {
@@ -2910,6 +3080,133 @@ describe("direct HyperFrames composition", () => {
     });
     expect(complete.mock.calls[1]?.[0]).toContain("exhausted its output budget");
     expect(complete.mock.calls[1]?.[0]).toContain("compact single-line JSON");
+  });
+
+  it("upgrades a valid cached partial worldLayout without another paid planner call", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CONCEPT_PASS", "0");
+    const dir = projectDir();
+    const raw = storyboard().map((scene, index) => index === 1
+      ? {
+          ...scene,
+          camera: {
+            version: 1 as const,
+            path: [
+              {
+                version: 1 as const,
+                move: "pan" as const,
+                toRegion: "terminal-strip",
+                startSec: 3.2,
+                durationSec: 0.8,
+              },
+              {
+                version: 1 as const,
+                move: "pan" as const,
+                toRegion: "metric-wall",
+                startSec: 4.4,
+                durationSec: 0.8,
+              },
+            ],
+          },
+          components: [
+            {
+              version: 1 as const,
+              id: "terminal-surface",
+              kind: "terminal" as const,
+              region: "terminal-strip",
+            },
+            {
+              version: 1 as const,
+              id: "metric-surface",
+              kind: "stat-card" as const,
+              region: "metric-wall",
+            },
+          ],
+          worldLayout: [{ region: "metric-wall", cell: [0, 0] as [number, number] }],
+        }
+      : scene);
+    const complete = vi.fn().mockResolvedValue(
+      `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`,
+    );
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "test planner",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    const args = {
+      brief: "Launch cached world map",
+      projectDir: dir,
+      skills: skills(),
+    };
+    const first = await requestStoryboardPlan(provider, args);
+    expect(first[1]!.worldLayout).toEqual([
+      { region: "metric-wall", cell: [0, 0] },
+      { region: "terminal-strip", cell: [1, 0] },
+    ]);
+
+    // Simulate a paid v22 artifact written before partial-map completion was
+    // added. Keep its key and every other normalized field intact.
+    const cacheFile = path.join(dir, "planning", "storyboard.json");
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as {
+      storyboard: DirectScene[];
+      [key: string]: unknown;
+    };
+    cached.storyboard = cached.storyboard.map((scene) => scene.id === "product-proof"
+      ? { ...scene, worldLayout: [{ region: "metric-wall", cell: [0, 0] }] }
+      : scene);
+    fs.writeFileSync(cacheFile, JSON.stringify(cached, null, 2) + "\n", "utf8");
+
+    const replayed = await requestStoryboardPlan(provider, args);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(replayed[1]!.worldLayout).toEqual([
+      { region: "metric-wall", cell: [0, 0] },
+      { region: "terminal-strip", cell: [1, 0] },
+    ]);
+    const upgraded = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as {
+      storyboard: DirectScene[];
+    };
+    expect(upgraded.storyboard[1]!.worldLayout).toEqual(replayed[1]!.worldLayout);
+  });
+
+  it("reclaims an exact-contract rejected artifact without another paid planner call", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CONCEPT_PASS", "0");
+    const dir = projectDir();
+    const complete = vi.fn().mockResolvedValue(
+      `<storyboard_json>${JSON.stringify(storyboard())}</storyboard_json>`,
+    );
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "test planner",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    const args = { brief: "Launch recovered plan", projectDir: dir, skills: skills() };
+    const first = await requestStoryboardPlan(provider, args);
+    const cacheFile = path.join(dir, "planning", "storyboard.json");
+    const cached = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as {
+      key: string;
+      storyboard: DirectScene[];
+    };
+    fs.rmSync(cacheFile);
+    const attemptsDir = path.join(dir, "planning", "attempts");
+    fs.mkdirSync(attemptsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(attemptsDir, "storyboard-5-rejected.raw.txt"),
+      `<storyboard_json>${JSON.stringify(cached.storyboard)}</storyboard_json>`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(attemptsDir, "storyboard-5-rejected.json"),
+      JSON.stringify({ attempt: 5, outcome: "rejected", rung: "rescue", key: cached.key }),
+      "utf8",
+    );
+
+    const recovered = await requestStoryboardPlan(provider, args);
+    expect(recovered).toEqual(first);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(cacheFile)).toBe(true);
   });
 
   it("reuses an already-paid storyboard across job ids via the shared planning cache", async () => {
@@ -4288,6 +4585,68 @@ describe("L2 brand base injection (host-owned committed type/canvas/accent)", ()
 });
 
 describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", () => {
+  it("purely completes a partial station map while preserving every authored cell", () => {
+    const scene: DirectScene = {
+      ...storyboard()[1]!,
+      components: [
+        { version: 1, id: "overview-shell", kind: "app-window", region: "overview-station" },
+        { version: 1, id: "root-panel", kind: "stat-card", region: "root-cause" },
+      ],
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "hold", toRegion: "overview-station", startSec: 3.05, durationSec: 0.4 },
+          { version: 1, move: "pan", toRegion: "dependency-chain", startSec: 3.6, durationSec: 0.7 },
+          { version: 1, move: "track-to-anchor", toPart: "root-panel", startSec: 4.5, durationSec: 0.7 },
+        ],
+      },
+      worldLayout: [{ region: "dependency-chain", cell: [1, 0] }],
+    };
+    const before = structuredClone(scene);
+    const completed = completeStoryboardWorldLayouts([scene]);
+
+    expect(scene).toEqual(before);
+    expect(completed.completions).toEqual([{
+      sceneId: "product-proof",
+      addedRegions: ["overview-station", "root-cause"],
+      declaredCellCount: 1,
+    }]);
+    expect(completed.scenes[0]!.worldLayout).toEqual([
+      { region: "dependency-chain", cell: [1, 0] },
+      { region: "overview-station", cell: [0, 0] },
+      { region: "root-cause", cell: [2, 0] },
+    ]);
+    const repeated = completeStoryboardWorldLayouts(completed.scenes);
+    expect(repeated.completions).toEqual([]);
+    expect(repeated.scenes).toEqual(completed.scenes);
+  });
+
+  it("uses a connective station stride so a two-station camera route has no blank midpoint", () => {
+    const value = draft();
+    const scenes = [{
+      ...value.storyboard[0]!,
+      worldLayout: [
+        { region: "metric-wall", cell: [0, 0] as [number, number] },
+        { region: "cta-station", cell: [1, 0] as [number, number] },
+      ],
+    }];
+    const html = value.html.replace(
+      "</head>",
+      `</head>`,
+    ).replace(
+      /(<section[^>]*data-scene="scene-a"[^>]*>)/,
+      `$1<div data-camera-world><div data-region="metric-wall"></div>` +
+        `<div data-region="cta-station"></div></div>`,
+    );
+    const first = injectWorldLayoutStyles(html, scenes);
+    expect(first.rules).toBe(3);
+    expect(first.html).toContain("width:3520px !important;height:1080px !important");
+    expect(first.html).toContain(
+      '[data-region="cta-station"]{position:absolute !important;left:1860px !important;',
+    );
+    expect(injectWorldLayoutStyles(first.html, scenes).html).toBe(first.html);
+  });
+
   it("synthesizes viewport cells for camera-path regions when the plan omits worldLayout", () => {
     const scenes = storyboard();
     const raw = scenes.map((scene, index) =>
@@ -4313,13 +4672,49 @@ describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", ()
     expect(
       middle.sentinelNormalizations?.some((note) => note.startsWith("world-layout-derive")),
     ).toBe(true);
-    // A declared layout always wins — no synthesis, no note.
+    // A partial declaration keeps its authored cell and fills its missing
+    // sibling instead of suppressing the world-layout guardrail.
     const declared = raw.map((scene, index) =>
       index === 1
         ? { ...scene, worldLayout: [{ region: "metric-wall", cell: [0, 0] }] }
         : scene
     );
     const kept = parseStoryboardResponse(`<storyboard_json>${JSON.stringify(declared)}</storyboard_json>`)[1]!;
-    expect(kept.worldLayout).toEqual([{ region: "metric-wall", cell: [0, 0] }]);
+    expect(kept.worldLayout).toEqual([
+      { region: "metric-wall", cell: [0, 0] },
+      { region: "terminal-strip", cell: [1, 0] },
+    ]);
+    expect(
+      kept.sentinelNormalizations?.some((note) => note.startsWith("world-layout-derive")),
+    ).toBe(true);
+  });
+
+  it("completes a partial three-station map around its declared middle cell", () => {
+    const scenes = storyboard().map((entry, index) => index === 1
+      ? {
+          ...entry,
+          components: [
+            { version: 1 as const, id: "overview-shell", kind: "app-window" as const, region: "overview-station" },
+            { version: 1 as const, id: "root-panel", kind: "stat-card" as const, region: "root-cause" },
+          ],
+          camera: {
+            version: 1 as const,
+            path: [
+              { version: 1 as const, move: "hold" as const, toRegion: "overview-station", startSec: 3.05, durationSec: 0.4 },
+              { version: 1 as const, move: "pan" as const, toRegion: "dependency-chain", startSec: 3.6, durationSec: 0.7 },
+              { version: 1 as const, move: "track-to-anchor" as const, toPart: "root-panel", startSec: 4.5, durationSec: 0.7 },
+            ],
+          },
+          worldLayout: [{ region: "dependency-chain", cell: [1, 0] as [number, number] }],
+        }
+      : entry);
+    const middle = parseStoryboardResponse(
+      `<storyboard_json>${JSON.stringify(scenes)}</storyboard_json>`,
+    )[1]!;
+    expect(middle.worldLayout).toEqual([
+      { region: "dependency-chain", cell: [1, 0] },
+      { region: "overview-station", cell: [0, 0] },
+      { region: "root-cause", cell: [2, 0] },
+    ]);
   });
 });

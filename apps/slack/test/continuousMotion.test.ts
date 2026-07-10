@@ -223,4 +223,26 @@ describe("continuous motion evidence", () => {
     expect(evidence.summary.focalFoundSamples).toBe(0);
     expect(evidence.summary.meanVisibleFraction).toBe(0);
   });
+
+  it("reports rendered stillness but accepts low-amplitude operated motion", () => {
+    const still = analyzeContinuousMotionSnapshots(
+      [scene],
+      Array.from({ length: 9 }, (_, index) => snapshot(index * 0.25, 500)),
+      { width: 1000, height: 1000 },
+      4,
+    );
+    expect(still.summary.maxQuietWindowSec).toBe(2);
+    expect(still.quietWindows).toEqual([
+      expect.objectContaining({ sceneId: "proof", startSec: 0, endSec: 2 }),
+    ]);
+    expect(still.advisories).toContainEqual(expect.stringContaining("rendered quiet window"));
+
+    const operated = analyzeContinuousMotionSnapshots(
+      [scene],
+      Array.from({ length: 9 }, (_, index) => snapshot(index * 0.25, 500 + index)),
+      { width: 1000, height: 1000 },
+      4,
+    );
+    expect(operated.summary.maxQuietWindowSec).toBe(0);
+  });
 });

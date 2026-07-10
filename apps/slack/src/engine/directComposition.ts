@@ -428,6 +428,7 @@ function normalizeStoryboard(
       ...(proposed?.outgoingCut ? { outgoingCut: proposed.outgoingCut } : {}),
       ...(proposed?.cut ? { cut: proposed.cut } : {}),
       ...(proposed?.camera ? { camera: proposed.camera } : {}),
+      ...(proposed?.worldLayout?.length ? { worldLayout: proposed.worldLayout } : {}),
       ...(proposed?.timeRamp ? { timeRamp: proposed.timeRamp } : {}),
       ...(proposed?.gradeShift ? { gradeShift: proposed.gradeShift } : {}),
       ...(proposed?.components?.length ? { components: proposed.components } : {}),
@@ -890,7 +891,8 @@ export function storyboardMarkdown(title: string, scenes: DirectScene[]): string
         : "",
       ...(scene.interactions ?? []).map((interaction) =>
         `- Interaction: ${interaction.action} ${interaction.cursorId} â†’ ` +
-        `${interaction.targetPart} (${interaction.startSec.toFixed(2)}–${
+        `${interaction.targetPart}${interaction.item ? ` item ${interaction.item}` : ""} ` +
+        `(${interaction.startSec.toFixed(2)}–${
           (interaction.holdUntilSec ?? interaction.releaseSec ?? interaction.arriveSec).toFixed(2)
         }s, ${interaction.path})`
       ),

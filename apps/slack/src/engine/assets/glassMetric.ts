@@ -80,8 +80,8 @@ export const glassMetric = defineAsset({
       spring: "pop",
       trigger: "enter",
       tracks: [
-        { property: "scale", from: 0.72, to: 1 },
-        { property: "translateY", from: 26, to: 0 },
+        { property: "scale", from: 0.8, to: 1 },
+        { property: "translateY", from: 24, to: 0 },
         { property: "opacity", from: 0, to: 1 },
       ],
     },
@@ -132,7 +132,7 @@ export const glassMetric = defineAsset({
   );
   -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 0.62em), #000 calc(100% - 0.56em));
   mask: radial-gradient(closest-side, transparent calc(100% - 0.62em), #000 calc(100% - 0.56em));
-  filter: drop-shadow(0 0 0.55em color-mix(in srgb, var(--gm-accent, #6ea8ff) 40%, transparent));
+  filter: drop-shadow(0 0 0.42em color-mix(in srgb, var(--gm-accent, #6ea8ff) 34%, transparent));
 }
 .asset-glass-metric .gm-disc {
   position: absolute;
@@ -141,14 +141,15 @@ export const glassMetric = defineAsset({
   display: grid;
   place-content: center;
   text-align: center;
-  gap: 0.18em;
+  gap: 0.2em;
   background:
-    radial-gradient(120% 120% at 30% 18%, rgba(255, 255, 255, 0.10), transparent 55%),
+    radial-gradient(115% 115% at 32% 16%, rgba(255, 255, 255, 0.12), transparent 56%),
     color-mix(in srgb, var(--surface, #161b24) 90%, var(--gm-accent, #6ea8ff) 10%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1.1em 2em rgba(0, 0, 0, 0.32),
-    0 0.9em 2.2em rgba(0, 0, 0, 0.42);
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1.1em 2em rgba(0, 0, 0, 0.34),
+    0 0.25em 0.6em rgba(0, 0, 0, 0.3),
+    0 1em 2.3em rgba(0, 0, 0, 0.42);
 }
 .asset-glass-metric[data-tone="solid"] .gm-disc {
   background: color-mix(in srgb, var(--gm-accent, #6ea8ff) 26%, var(--surface, #161b24));
@@ -160,14 +161,14 @@ export const glassMetric = defineAsset({
 }
 .asset-glass-metric .gm-value {
   font-size: 1.55em;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 680;
+  letter-spacing: -0.02em;
   line-height: 1.05;
 }
 .asset-glass-metric .gm-label {
   font-size: 0.6em;
   font-weight: 600;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--muted, #9aa5b4);
 }

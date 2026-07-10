@@ -215,4 +215,54 @@ describe("resolveFilmDirectionScore", () => {
     expect(directionPhraseForMoment(score, "route", "chat-cue")?.attention)
       .toEqual({ region: "chat" });
   });
+
+  it("treats a generated lockup as one camera subject while its children animate", () => {
+    const lockup = scene({
+      id: "brand",
+      startSec: 0,
+      durationSec: 4,
+      plugins: [{
+        version: 1,
+        kind: "lockup",
+        id: "brand-lockup",
+        params: { headline: "Roamly", sub: "Calm clicks", cta: "" },
+        uid: "brand-brand-lockup",
+      }],
+      components: [{
+        version: 1,
+        id: "brand-lockup-sub",
+        kind: "headline",
+        role: "hero",
+        pluginUid: "brand-brand-lockup",
+      }],
+      beats: [{
+        version: 1,
+        id: "sub-assembles",
+        sceneId: "brand",
+        component: "brand-lockup-sub",
+        kind: "type",
+        atSec: 1,
+        durationSec: 1,
+        text: "Calm clicks",
+      }],
+      moments: [{
+        version: 1,
+        id: "brand-resolves",
+        sceneId: "brand",
+        atSec: 2,
+        title: "Brand resolves",
+        visualState: "The complete lockup is readable",
+        change: "The subtitle completes",
+        motionIntent: "resolve",
+        importance: "primary",
+      }],
+    });
+    const phrase = directionPhraseForMoment(
+      resolveFilmDirectionScore([lockup]),
+      "brand",
+      "brand-resolves",
+    );
+    expect(phrase?.dominant).toMatchObject({ system: "component", part: "brand-lockup" });
+    expect(phrase?.attention).toEqual({ part: "brand-lockup" });
+  });
 });

@@ -1,6 +1,6 @@
 /**
- * Sequences Studio — the operator's ONE local viewer over components, assets,
- * and recipes. (`npm run studio --workspace @sequences/slack` →
+ * Sequences Studio — the operator's ONE local viewer over engine catalogs.
+ * (`npm run studio --workspace @sequences/slack` →
  * http://127.0.0.1:4321; `npm run assets` is an alias.)
  *
  * The operator VIEWS here; coding agents AUTHOR elsewhere:
@@ -11,6 +11,10 @@
  *  - recipes: the agent-authored source library (recipes/<id>.recipe.html,
  *    see recipes/README.md) joined against the exported RecipeV2 library,
  *    with gate/export buttons that run the SAME CLI machinery.
+ *  - looks: DESIGN_DIALECTS rendered as palette/type/material/motion cards;
+ *    unlicensed vendor wallpapers appear only as moodboard crop references;
+ *  - camera: typed SceneCameraIntentV1 patterns with a seekable station map;
+ *  - plugins: PLUGIN_CATALOG kinds, params, purpose, and planning vocabulary.
  *
  * Localhost-only, no auth, no build step, no heavy deps (`http.createServer`
  * + static files + vanilla JS UI). NEVER deployed: refuses to start under
@@ -35,6 +39,10 @@ import {
 } from "../src/engine/assetContract.ts";
 import { SPRING_PRESETS, type SpringPresetName } from "../src/engine/motionSpring.ts";
 import { ASSET_LIBRARY, getAsset } from "../src/engine/assets/index.ts";
+import { BACKGROUND_CATALOG, backgroundById } from "../src/engine/backgroundCatalog.ts";
+import { CAMERA_PATTERNS } from "../src/engine/cameraPatterns.ts";
+import { DESIGN_DIALECTS } from "../src/engine/designDialects.ts";
+import { PLUGIN_CATALOG } from "../src/engine/pluginContract.ts";
 import { sweepOrphanBrowsers } from "../src/engine/browserLifecycle.ts";
 import { gateRecipe, loadGateRecord, recipeGateDir } from "./gate.ts";
 import { exportRecipe } from "./exportRecipe.ts";
@@ -51,6 +59,10 @@ const UI_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "ui");
 const RECIPES_LIBRARY_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../skills/sequences-recipes",
+);
+const WALLPAPERS_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../vendor/wallpapers",
 );
 const PORT = Number(process.env.STUDIO_PORT ?? argValue("--port") ?? 4321);
 const HOST = "127.0.0.1";
@@ -119,6 +131,58 @@ function componentsState(): unknown {
       markup: spec.markup,
     })),
     kitCss: componentKitStyleTag(),
+  };
+}
+
+/* ------------------------------------------------------- discovery catalogs */
+
+function looksState(): unknown {
+  return {
+    entries: DESIGN_DIALECTS.map((dialect) => ({
+      id: dialect.id,
+      label: dialect.label,
+      preferredBasis: dialect.preferredBasis,
+      canvas: dialect.canvas,
+      colorTopology: dialect.colorTopology,
+      palette: { ...dialect.palette, accent: dialect.accent },
+      chapterColors: dialect.chapterColors ?? [],
+      materialProfile: dialect.materialProfile,
+      type: {
+        systemId: dialect.typeSystemId,
+        ...dialect.typography,
+      },
+      visualGrammar: dialect.visualGrammar,
+      motion: dialect.motion,
+      backgroundPolicyIds: dialect.backgroundPolicyIds,
+      defaultBackgroundPolicyId: dialect.defaultBackgroundPolicyId,
+      rules: dialect.rules,
+      sourceRefs: dialect.sourceRefs,
+    })),
+    backgrounds: backgroundsState().entries,
+  };
+}
+
+function backgroundsState(): { entries: Array<unknown> } {
+  return {
+    entries: BACKGROUND_CATALOG.map((entry) => ({
+      ...entry,
+      previewUrl: `/moodboard/backgrounds/${encodeURIComponent(entry.id)}`,
+    })),
+  };
+}
+
+function cameraState(): unknown {
+  return { version: 1, entries: CAMERA_PATTERNS };
+}
+
+function pluginsState(): unknown {
+  return {
+    entries: PLUGIN_CATALOG.map((spec) => ({
+      kind: spec.kind,
+      purpose: spec.purpose,
+      params: spec.params,
+      planningLine: spec.planningLine,
+    })),
   };
 }
 
@@ -256,7 +320,22 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       assets: ASSET_LIBRARY.map(assetSummary),
       morph: { default: "settle", gestures: MORPH_GESTURES },
       recipes: recipesState(),
+      looks: looksState(),
+      camera: cameraState(),
+      plugins: pluginsState(),
     });
+  }
+  if (req.method === "GET" && url.pathname === "/api/looks") {
+    return sendJson(res, 200, { looks: looksState() });
+  }
+  if (req.method === "GET" && url.pathname === "/api/backgrounds") {
+    return sendJson(res, 200, { backgrounds: backgroundsState() });
+  }
+  if (req.method === "GET" && url.pathname === "/api/camera") {
+    return sendJson(res, 200, { camera: cameraState() });
+  }
+  if (req.method === "GET" && url.pathname === "/api/plugins") {
+    return sendJson(res, 200, { plugins: pluginsState() });
   }
   if (req.method === "GET" && url.pathname === "/api/recipes") {
     return sendJson(res, 200, { recipes: recipesState() });
@@ -297,6 +376,17 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     const root = path.join(RECIPES_LIBRARY_DIR, decodeURIComponent(segments[1]));
     return sendWithin(res, root, segments.slice(2).join("/"));
   }
+  if (
+    req.method === "GET" &&
+    segments.length === 3 &&
+    segments[0] === "moodboard" &&
+    segments[1] === "backgrounds" &&
+    segments[2]
+  ) {
+    const entry = backgroundById(decodeURIComponent(segments[2]));
+    if (!entry) return sendJson(res, 404, { error: "unknown moodboard background" });
+    return sendWithin(res, WALLPAPERS_DIR, path.basename(entry.file));
+  }
   if (req.method === "GET" && segments[0] === "ui") {
     return sendWithin(res, UI_DIR, segments.slice(1).join("/"));
   }
@@ -307,7 +397,9 @@ server.listen(PORT, HOST, () => {
   const url = `http://${HOST}:${PORT}`;
   process.stdout.write(
     `Sequences Studio → ${url}  (${COMPONENT_CATALOG.length} components · ` +
-      `${ASSET_LIBRARY.length} assets · recipes from recipes/*.recipe.html)\n`,
+      `${ASSET_LIBRARY.length} assets · ${DESIGN_DIALECTS.length} looks · ` +
+      `${CAMERA_PATTERNS.length} camera patterns · ${PLUGIN_CATALOG.length} plugins · ` +
+      `${BACKGROUND_CATALOG.length} moodboard backgrounds · recipes from recipes/*.recipe.html)\n`,
   );
   // Operator-local hygiene: reap any headless QA browsers a previous
   // interrupted gate/test stranded on this machine (orphans only).

@@ -237,6 +237,14 @@ function sceneActions(
     const duration = Math.max(0.1, beat.durationSec ?? COMPONENT_DEFAULT_SEC[beat.kind] ?? 0.6);
     const startSec = Math.max(scene.startSec, beat.atSec);
     const endSec = Math.min(sceneEnd, startSec + duration);
+    const component = scene.components?.find((entry) => entry.id === beat.component);
+    const plugin = component?.pluginUid
+      ? scene.plugins?.find((entry) => entry.uid === component.pluginUid)
+      : undefined;
+    // A lockup is one compositional subject. Its headline/sub/CTA still animate
+    // independently, but those internal beats must not make the camera zoom
+    // between siblings or frame a subtitle while cropping the wordmark.
+    const attentionPart = plugin?.kind === "lockup" ? plugin.id : beat.component;
     actions.push({
       system: "component",
       id: `component:${beat.id}`,
@@ -244,7 +252,7 @@ function sceneActions(
       endSec: round(endSec),
       atSec: round(endSec),
       energy: componentEnergy(beat.kind),
-      part: beat.component,
+      part: attentionPart,
     });
   }
 

@@ -33,6 +33,7 @@ import {
 } from "../src/engine/directComposition.ts";
 import { reportTemporalEvidence } from "../src/engine/temporalInspector.ts";
 import { CAMERA_FULL_MOVES } from "../src/engine/cameraContract.ts";
+import { resolveCliInputPath } from "../src/engine/cliPaths.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.env.SLACK_SEQUENCES_DATA_DIR ??= path.join(appDir, ".data");
@@ -112,7 +113,9 @@ function usage(): string {
 }
 
 function readJson(file: string): Partial<BriefFields & { brandName?: string }> {
-  const parsed = JSON.parse(fs.readFileSync(path.resolve(file), "utf8")) as unknown;
+  const parsed = JSON.parse(
+    fs.readFileSync(resolveCliInputPath(file, appDir), "utf8"),
+  ) as unknown;
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("--input must point to a JSON object");
   }
@@ -165,7 +168,9 @@ function parseArgs(argv: string[]): CliOptions {
       extraContext.push(take(index, arg));
       index += 1;
     } else if (arg === "--context-file") {
-      extraContext.push(fs.readFileSync(path.resolve(take(index, arg)), "utf8"));
+      extraContext.push(
+        fs.readFileSync(resolveCliInputPath(take(index, arg), appDir), "utf8"),
+      );
       index += 1;
     } else if (arg === "--provider") {
       values.provider = take(index, arg) as ProviderId;

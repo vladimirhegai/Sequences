@@ -35,6 +35,11 @@ import {
   parseCameraPlan,
 } from "./cameraContract.ts";
 import {
+  CONTINUITY_RUNTIME_FILE,
+  continuityRuntimeSource,
+} from "./continuityGraph.ts";
+import { parseCameraBlockingPlan } from "./cameraBlocking.ts";
+import {
   COMPONENT_RUNTIME_FILE,
   componentMotionWindows,
   componentRuntimeSource,
@@ -61,6 +66,7 @@ import { findBrowserExecutable } from "./render.ts";
 import {
   captureContinuousMotionEvidence,
   continuousMotionEvidenceEnabled,
+  QUIET_WINDOW_REVIEW_SEC,
   type ContinuousMotionEvidenceV1,
 } from "./continuousMotion.ts";
 
@@ -129,6 +135,20 @@ export interface DirectLayoutIssue {
     occupiedFraction?: number;
     part?: string;
     region?: string;
+  };
+  /** Structured evidence consumed by the bounded post-browser beat retimer. */
+  eyeTracePingPong?: {
+    sceneId: string;
+    firstBeatId: string;
+    secondBeatId: string;
+    firstPart: string;
+    secondPart: string;
+    firstAtSec: number;
+    secondAtSec: number;
+    viewerGapSec: number;
+    displacementFraction: number;
+    firstCenter: { x: number; y: number };
+    secondCenter: { x: number; y: number };
   };
 }
 
@@ -211,6 +231,10 @@ export interface DirectInteractionEvidence {
   target: { x: number; y: number };
   deltaPx: number;
   hit: boolean;
+  /** Raw measured boxes make pointer/annotation drift diagnosable from QA artifacts. */
+  cursorRect?: LayoutRect;
+  targetRect?: LayoutRect;
+  hotspot?: { x: number; y: number };
   normalized?: "cursor_near_miss";
 }
 
@@ -353,7 +377,14 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // v14: Sequences safe-area evidence serializes plain root rects, not DOMRect.
 // v17: sparse framing includes painted rectangle-union occupancy and primary
 //      static moments participate in strict visual acceptance.
-const QA_CACHE_VERSION = 17;
+// v18: continuity handoff runtime participates in scratch staging + cache
+// fingerprint, so feature-on drafts compile against the same runtime they ship.
+// v19: graph-owned camera documents are not judged against overridden legacy
+// segment destinations; blocking/static coverage owns their framing evidence.
+// v20: contrast evidence resolves the exact sampled text node before the next
+// seek, so compact audit selectors (for example plain `span`) cannot all enrich
+// to the first matching element and mint one shared, ineffective repair rule.
+const QA_CACHE_VERSION = 20;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -366,6 +397,7 @@ function qaStaticFingerprint(): string {
         interactionRuntimeSource(),
         cutRuntimeSource(),
         cameraRuntimeSource(),
+        continuityRuntimeSource(),
         componentRuntimeSource(),
         timeRampRuntimeSource(),
         fxRuntimeSource(),
@@ -467,6 +499,11 @@ function prepareScratch(projectDir: string, draft: DirectCompositionDraft): stri
   fs.writeFileSync(
     path.join(scratch, CAMERA_RUNTIME_FILE),
     cameraRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(scratch, CONTINUITY_RUNTIME_FILE),
+    continuityRuntimeSource(),
     "utf8",
   );
   fs.writeFileSync(
@@ -652,6 +689,13 @@ async function auditSequencesRelationships(
       if (element.id) return `#${CSS.escape(element.id)}`;
       const name = element.getAttribute("data-layout-name");
       if (name) return `[data-layout-name="${name.replaceAll('"', '\\"')}"]`;
+      const part = element.getAttribute("data-part");
+      const scene = element.closest<HTMLElement>("[data-scene]");
+      const sceneId = scene?.getAttribute("data-scene") ?? scene?.id;
+      if (part && sceneId) {
+        return `[data-scene="${sceneId.replaceAll('"', '\\"')}"] ` +
+          `[data-part="${part.replaceAll('"', '\\"')}"]`;
+      }
       return element.tagName.toLowerCase();
     };
     const ignored = (element: Element): boolean => Boolean(element.closest("[data-layout-ignore]"));
@@ -716,6 +760,8 @@ async function auditSequencesRelationships(
     };
 
     for (const element of Array.from(root.querySelectorAll<HTMLElement>("[data-layout-important]"))) {
+      const importantFrom = Number.parseFloat(element.dataset.layoutImportantFrom ?? "");
+      if (Number.isFinite(importantFrom) && at < importantFrom - 0.02) continue;
       if (!visible(element) || element.closest("[data-layout-allow-overflow]")) continue;
       const value = rect(element);
       if (movedWorld(element) && mostlyOffFrame(value)) continue;
@@ -1050,6 +1096,35 @@ async function auditInteractions(
     };
     const issues: DirectLayoutIssue[] = [];
     const evidence: DirectInteractionEvidence[] = [];
+    const childItems = (element: HTMLElement): HTMLElement[] => {
+      const scoped = (selector: string): HTMLElement[] => {
+        const direct = Array.from(
+          element.querySelectorAll<HTMLElement>(`:scope > ${selector}`),
+        );
+        return direct.length
+          ? direct
+          : Array.from(element.querySelectorAll<HTMLElement>(selector));
+      };
+      for (const selector of [
+        ".cmp-row", ".cmp-item", ".cmp-card", ".cmp-msg", "[data-cmp-item]",
+        '[class$="-row"],[class*="-row "]', "i",
+      ]) {
+        const found = scoped(selector);
+        if (found.length) return found;
+      }
+      return [];
+    };
+    const semanticTarget = (
+      base: HTMLElement | null,
+      intent: InteractionIntentV1,
+      useItem: boolean,
+    ): HTMLElement | null => {
+      if (!base || !useItem || intent.item === undefined) return base;
+      const items = childItems(base);
+      if (!items.length) return base;
+      const index = Math.max(0, Math.min(items.length - 1, Math.round(intent.item) - 1));
+      return items[index] ?? base;
+    };
     const add = (
       code: string,
       element: Element | null,
@@ -1085,7 +1160,11 @@ async function auditInteractions(
         scene?.querySelectorAll<HTMLElement>(
         `[data-part="${CSS.escape(targetName)}"]`,
       );
-      const target: HTMLElement | null = targetMatches?.[0] ?? null;
+      const target: HTMLElement | null = semanticTarget(
+        targetMatches?.[0] ?? null,
+        intent,
+        targetName === intent.targetPart,
+      );
       if (!scene || !cursor || !target) {
         add(
           "interaction_binding_missing",
@@ -1232,6 +1311,9 @@ async function auditInteractions(
         target: targetPoint,
         deltaPx,
         hit,
+        cursorRect,
+        targetRect,
+        hotspot: { x: hotspotX, y: hotspotY },
         ...(nearMissSnap ? { normalized: "cursor_near_miss" as const } : {}),
       });
       if (endpoint && (!hit || deltaPx > 2)) {
@@ -1321,6 +1403,28 @@ async function renderSpatialGuide(
     const root = document.querySelector<HTMLElement>("[data-composition-id]");
     if (!root) return;
     const rootRect = root.getBoundingClientRect();
+    const semanticTarget = (
+      base: HTMLElement | null,
+      item: number | undefined,
+    ): HTMLElement | null => {
+      if (!base || item === undefined) return base;
+      const selectors = [
+        ".cmp-row", ".cmp-item", ".cmp-card", ".cmp-msg", "[data-cmp-item]",
+        '[class$="-row"],[class*="-row "]', "i",
+      ];
+      for (const selector of selectors) {
+        const direct = Array.from(
+          base.querySelectorAll<HTMLElement>(`:scope > ${selector}`),
+        );
+        const found = direct.length
+          ? direct
+          : Array.from(base.querySelectorAll<HTMLElement>(selector));
+        if (!found.length) continue;
+        const index = Math.max(0, Math.min(found.length - 1, Math.round(item) - 1));
+        return found[index] ?? base;
+      }
+      return base;
+    };
     const layer = document.createElement("div");
     layer.id = "__sequences-spatial-guide";
     Object.assign(layer.style, {
@@ -1367,13 +1471,22 @@ async function renderSpatialGuide(
       const scene = root.querySelector<HTMLElement>(
         `[data-scene="${CSS.escape(intent.sceneId)}"]`,
       );
-      const target = scene?.querySelector<HTMLElement>(
-        `[data-part="${CSS.escape(intent.targetPart)}"]`,
+      const target = semanticTarget(
+        scene?.querySelector<HTMLElement>(
+          `[data-part="${CSS.escape(intent.targetPart)}"]`,
+        ) ?? null,
+        intent.item,
       );
       const cursor = root.querySelector<HTMLElement>(
         `[data-cursor-id="${CSS.escape(intent.cursorId)}"]`,
       );
-      if (target) box(target.getBoundingClientRect(), "#a3e635", intent.targetPart);
+      if (target) {
+        box(
+          target.getBoundingClientRect(),
+          "#a3e635",
+          `${intent.targetPart}${intent.item ? ` item ${intent.item}` : ""}`,
+        );
+      }
       if (cursor) box(cursor.getBoundingClientRect(), "#fb7185", intent.cursorId);
     }
     document.body.appendChild(layer);
@@ -1402,12 +1515,19 @@ export function primaryFocalReview(
   scene: DirectScene,
   momentAtSec: number,
   momentSubjectPart?: string,
+  momentEvidenceEndSec?: number,
 ): { focalPart?: string; sampleAt: number } {
   const sceneEnd = scene.startSec + scene.durationSec;
   let sampleAt = Math.min(
     Math.max(momentAtSec + 0.15, scene.startSec + 0.15),
     sceneEnd - 0.08,
   );
+  if (momentEvidenceEndSec !== undefined && Number.isFinite(momentEvidenceEndSec)) {
+    sampleAt = Math.min(
+      Math.max(sampleAt, momentEvidenceEndSec + 0.08),
+      sceneEnd - 0.08,
+    );
+  }
   // A primary moment may concern a supporting component rather than the
   // scene-level hero (direction-live-a: feed rows at 4.5s while the later
   // mttr counter was still correctly hidden). Prefer its executable evidence
@@ -1539,22 +1659,35 @@ async function auditFocalParts(
  */
 async function auditPrimaryMomentFocals(
   page: import("puppeteer-core").Page,
-  scenes: DirectScene[],
+  draft: DirectCompositionDraft,
   seekContent: (time: number) => Promise<void>,
 ): Promise<DirectLayoutIssue[]> {
   const issues: DirectLayoutIssue[] = [];
   const failed = new Set<string>();
+  const scenes = draft.storyboard;
+  const duration = scenes.reduce(
+    (end, scene) => Math.max(end, scene.startSec + scene.durationSec),
+    0,
+  );
+  const boundMomentById = new Map(
+    resolveMomentContract(draft.html, scenes, duration).moments
+      .map((moment) => [moment.id, moment]),
+  );
   for (const scene of scenes) {
     const sceneEnd = scene.startSec + scene.durationSec;
     for (const moment of (scene.moments ?? []).filter((entry) => entry.importance === "primary")) {
-      const evidenceTarget = moment.evidence &&
-          (moment.evidence.kind === "component" || moment.evidence.kind === "interaction")
-        ? moment.evidence.detail.split("→").at(-1)?.trim()
+      // Bind source evidence before choosing a focal. Planner moments do not
+      // yet carry `evidence`; falling back to the scene hero made an active
+      // button/ring moment audit the wrong subject (Threadline live attempt 1).
+      const evidence = boundMomentById.get(moment.id)?.evidence ?? moment.evidence;
+      const evidenceTarget = evidence &&
+          (evidence.kind === "component" || evidence.kind === "interaction")
+        ? evidence.detail.split("→").at(-1)?.trim()
         : undefined;
       const momentSubject = evidenceTarget && /^[a-z0-9][a-z0-9-]*$/i.test(evidenceTarget)
         ? evidenceTarget
         : undefined;
-      const review = primaryFocalReview(scene, moment.atSec, momentSubject);
+      const review = primaryFocalReview(scene, moment.atSec, momentSubject, evidence?.endSec);
       const focalPart = review.focalPart;
       if (!focalPart) continue;
       const key = `${scene.id}\u0000${focalPart}`;
@@ -1623,6 +1756,89 @@ async function auditPrimaryMomentFocals(
         source: "sequences",
       });
     }
+  }
+  return issues;
+}
+
+/** Feature-on browser proof for the camera that actually ships. */
+async function auditCameraBlockingLandings(
+  page: import("puppeteer-core").Page,
+  draft: DirectCompositionDraft,
+  seekContent: (time: number) => Promise<void>,
+): Promise<DirectLayoutIssue[]> {
+  const plan = parseCameraBlockingPlan(draft.html);
+  if (!plan?.enabled) return [];
+  const sceneEndById = new Map(draft.storyboard.map((scene) => [
+    scene.id,
+    scene.startSec + scene.durationSec,
+  ]));
+  const issues: DirectLayoutIssue[] = [];
+  for (const block of plan.scenes.flatMap((scene) => scene.phrases)) {
+    if (block.importance !== "primary" || block.target.kind !== "part") continue;
+    const sceneEnd = sceneEndById.get(block.sceneId);
+    if (sceneEnd === undefined) continue;
+    const sampleAt = Math.min(
+      sceneEnd - 0.08,
+      Math.max(block.arrivalSec + 0.08, block.dwell.startSec + 0.08),
+    );
+    if (sampleAt <= 0) continue;
+    await seekContent(sampleAt);
+    const measured = await page.evaluate((payload: { sceneId: string; part: string }) => {
+      const root = document.querySelector<HTMLElement>(
+        "[data-composition-id][data-width][data-height]",
+      );
+      const scene = document.querySelector<HTMLElement>(
+        `[data-scene="${CSS.escape(payload.sceneId)}"]`,
+      );
+      const target = scene?.querySelector<HTMLElement>(
+        `[data-part="${CSS.escape(payload.part)}"]`,
+      );
+      if (!root || !target) {
+        return { missing: true, opacity: 0, visibleFraction: 0, occupancyFraction: 0 };
+      }
+      const frame = root.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      let opacity = 1;
+      for (let node: Element | null = target; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") opacity = 0;
+        opacity *= Number.parseFloat(style.opacity) || 0;
+      }
+      const width = Math.max(0, Math.min(rect.right, frame.right) - Math.max(rect.left, frame.left));
+      const height = Math.max(0, Math.min(rect.bottom, frame.bottom) - Math.max(rect.top, frame.top));
+      const area = Math.max(0, rect.width * rect.height);
+      const visibleArea = width * height;
+      return {
+        missing: false,
+        opacity,
+        visibleFraction: area > 0 ? visibleArea / area : 0,
+        occupancyFraction: frame.width * frame.height > 0
+          ? visibleArea / (frame.width * frame.height)
+          : 0,
+      };
+    }, { sceneId: block.sceneId, part: block.target.id });
+    const visible = !measured.missing && measured.opacity >= 0.35 && measured.visibleFraction >= 0.85;
+    const inRange = measured.occupancyFraction >= block.occupancy.min - 1e-6 &&
+      measured.occupancyFraction <= block.occupancy.max + 1e-6;
+    if (visible && inRange) continue;
+    issues.push({
+      code: "camera_blocking_landing",
+      severity: "warning",
+      time: sampleAt,
+      selector: `[data-part="${block.target.id}"]`,
+      sceneId: block.sceneId,
+      part: block.target.id,
+      message:
+        `Blocking phrase "${block.phraseId}" lands on "${block.target.id}" with ` +
+        `${Math.round(measured.visibleFraction * 100)}% visibility and ` +
+        `${(measured.occupancyFraction * 100).toFixed(1)}% frame occupancy; expected ` +
+        `>=85% visibility and ${(block.occupancy.min * 100).toFixed(1)}–` +
+        `${(block.occupancy.max * 100).toFixed(1)}% occupancy.`,
+      fixHint:
+        "Keep the blocking target visible through its dwell and adjust its station bounds or " +
+        "component scale so the measured occupancy lands inside the declared range.",
+      source: "sequences",
+    });
   }
   return issues;
 }
@@ -2162,16 +2378,63 @@ async function enrichRepairEvidence(
       }
       return structuralSelector(element, scene);
     };
-    const resolveElement = (selector: string): Element | null => {
+    const resolveElement = (issue: DirectLayoutIssue): Element | null => {
+      const selector = issue.selector;
       if (!selector || selector === "composition") return null;
       try {
-        return root.querySelector(selector);
+        const candidates = Array.from(root.querySelectorAll(selector));
+        if (candidates.length === 1) return candidates[0]!;
+        const measured = issue.rect;
+        if (measured) {
+          const ranked = candidates.map((candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            return {
+              candidate,
+              delta: Math.abs(rect.left - measured.left) +
+                Math.abs(rect.top - measured.top) +
+                Math.abs(rect.width - measured.width) +
+                Math.abs(rect.height - measured.height),
+            };
+          }).sort((a, b) => a.delta - b.delta);
+          // Layout evidence already carries the sampled box. Use it to resolve
+          // repeated letters/rows whose compact selector and text are both
+          // ambiguous; a visibly separated runner-up keeps this conservative.
+          if (
+            ranked[0] && ranked[0].delta <= 2 &&
+            (!ranked[1] || ranked[1].delta - ranked[0].delta >= 1)
+          ) {
+            return ranked[0].candidate;
+          }
+        }
+        // HyperFrames intentionally emits compact evidence labels such as
+        // `span`/`span.cmp-label`. When several nodes share that selector, bind
+        // the finding to the exact direct-text node the contrast audit sampled.
+        // Ambiguous duplicate copy stays unrepaired rather than recoloring an
+        // arbitrary sibling.
+        const text = issue.text?.trim();
+        if (!text) return null;
+        const matches = candidates.filter((candidate) =>
+          (candidate.textContent ?? "").trim().slice(0, 50) === text
+        );
+        if (matches.length === 1) return matches[0]!;
+        const visibleMatches = matches.filter((candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          if (rect.width < 1 || rect.height < 1) return false;
+          let opacity = 1;
+          for (let node: Element | null = candidate; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (style.display === "none" || style.visibility === "hidden") return false;
+            opacity *= Number.parseFloat(style.opacity) || 0;
+          }
+          return opacity > 0.01;
+        });
+        return visibleMatches.length === 1 ? visibleMatches[0]! : null;
       } catch {
         return null;
       }
     };
     return rawIssues.map((issue) => {
-      const element = resolveElement(issue.selector);
+      const element = resolveElement(issue);
       if (!element) return issue;
       const scene = element.closest<HTMLElement>("[data-scene]");
       const partElement = element.closest<HTMLElement>("[data-part]");
@@ -2600,15 +2863,22 @@ export async function inspectDirectComposition(
       const hyperframesIssues = (hyperframes as Record<string, unknown>[])
         .map(normalizeHyperframesIssue);
       const sequenceRelationshipIssues = await auditSequencesRelationships(page, time);
+      // Resolve generic class/tag selectors to their exact scene-scoped DOM
+      // path before deciding whether camera travel owns the excursion.
+      const enrichedHyperframes = await enrichRepairEvidence(page, hyperframesIssues);
       // Content parked in a currently-unframed camera-world region is meant to
       // be off screen (clipped by the viewport); it is not a layout defect.
-      const offWorldFlags = await page.evaluate((selectors: string[]) => {
+      const offWorldFlags = await page.evaluate((payload: {
+        entries: Array<{ selector: string; code: string }>;
+        time: number;
+      }) => {
+        const entries = payload.entries;
         const root = document.querySelector<HTMLElement>(
           "[data-composition-id][data-width][data-height]",
         );
-        if (!root) return selectors.map(() => false);
+        if (!root) return entries.map(() => false);
         const rootRect = root.getBoundingClientRect();
-        return selectors.map((sel) => {
+        return entries.map(({ selector: sel, code }) => {
           let element: Element | null = null;
           try {
             element = sel && sel !== "composition" ? root.querySelector(sel) : null;
@@ -2616,6 +2886,15 @@ export async function inspectDirectComposition(
             element = null;
           }
           if (!element) return false;
+          const scene = element.closest<HTMLElement>("[data-scene]");
+          if (scene) {
+            const start = Number(scene.dataset.start);
+            const duration = Number(scene.dataset.duration);
+            if (
+              Number.isFinite(start) && Number.isFinite(duration) &&
+              (payload.time < start - 0.01 || payload.time > start + duration + 0.01)
+            ) return true;
+          }
           const world = element.closest<HTMLElement>("[data-camera-world]");
           if (!world) return false;
           const transform = getComputedStyle(world).transform;
@@ -2626,21 +2905,33 @@ export async function inspectDirectComposition(
           const w = Math.max(0, Math.min(r.right, rootRect.right) - Math.max(r.left, rootRect.left));
           const h = Math.max(0, Math.min(r.bottom, rootRect.bottom) - Math.max(r.top, rootRect.top));
           const area = r.width * r.height;
-          return area <= 0 || (w * h) / area < 0.6;
+          // Text extending beyond the frame because its camera station is in
+          // transit is not text-box overflow. Use the same 85% readable floor
+          // as focal QA for text findings; primary/blocking evidence still
+          // catches a subject that remains cropped at its actual landing.
+          const threshold = code === "text_box_overflow" || code === "clipped_text"
+            ? 0.85
+            : 0.6;
+          return area <= 0 || (w * h) / area < threshold;
         });
-      }, hyperframesIssues.map((issue) => issue.selector));
-      const enriched = await enrichRepairEvidence(page, [
-        ...hyperframesIssues.filter((_, index) => !offWorldFlags[index]),
-        ...sequenceRelationshipIssues,
-      ]);
+      }, {
+        entries: enrichedHyperframes.map((issue) => ({
+          selector: issue.repairSelector ?? issue.selector,
+          code: issue.code,
+        })),
+        time,
+      });
+      const enrichedSequence = await enrichRepairEvidence(page, sequenceRelationshipIssues);
       rawIssues.push(
         // A camera world plane extends beyond its scene clip BY DESIGN under
         // any pan/zoom — container_overflow on the world ELEMENT is a false
         // positive dropped at the source so penalty/warnings/repair prompts
         // all agree (fix-probe-5/6). Content INSIDE the world stays judged.
-        ...enriched.filter((issue) =>
+        ...enrichedHyperframes.filter((issue, index) =>
+          !offWorldFlags[index] &&
           !(issue.code === "container_overflow" && issue.isCameraWorld)
         ),
+        ...enrichedSequence,
         ...await auditFocalParts(page, draft.storyboard, time),
         ...interactionAudit.issues,
       );
@@ -2755,10 +3046,11 @@ export async function inspectDirectComposition(
         },
         { image: String(screenshot), time },
       );
+      const sampleIssues: DirectLayoutIssue[] = [];
       for (const entry of contrast) {
         if (entry.wcagAA) continue;
         const required = entry.required ?? (entry.large ? 3 : 4.5);
-        const issue: DirectLayoutIssue = {
+        sampleIssues.push({
           code: "contrast_aa",
           severity: "warning",
           time,
@@ -2774,14 +3066,25 @@ export async function inspectDirectComposition(
             ...(entry.bg ? { background: entry.bg } : {}),
             ...(entry.suggestedColor ? { suggestedColor: entry.suggestedColor } : {}),
           },
-        };
-        const key = `${entry.selector} ${entry.text ?? ""}`;
+        });
+      }
+      // Resolve while the page is still parked on THIS sample. Deferring until
+      // after the loop used the final seek's DOM state and, more importantly,
+      // mapped every compact `span` selector to the first span in the document.
+      for (const issue of await enrichRepairEvidence(page, sampleIssues)) {
+        const key = `${issue.repairSelector ?? issue.selector} ${issue.text ?? ""}`;
         const existing = contrastWorst.get(key);
-        if (!existing || entry.ratio < (existing.contrast?.ratio ?? 999)) {
+        if (!existing || (issue.contrast?.ratio ?? 999) < (existing.contrast?.ratio ?? 999)) {
           contrastWorst.set(key, issue);
         }
       }
     }
+    // Contrast Audit intentionally returns compact selectors such as
+    // `span.cmp-label`. Those are useful evidence labels but are unsafe repair
+    // selectors: one low-contrast CTA previously recolored every component
+    // label in the film. Resolve each finding to the same unique scene/part or
+    // structural selector used by geometry QA before a deterministic repair is
+    // allowed to touch CSS.
     rawIssues.push(...contrastWorst.values());
 
     // Rendering may seek frames out of order. Revisit each interaction arrival
@@ -3065,6 +3368,19 @@ export async function inspectDirectComposition(
             "further apart in time, or let one component carry both beats — one focal " +
             "element at a time.",
           source: "sequences",
+          eyeTracePingPong: {
+            sceneId: pingPong.sceneId,
+            firstBeatId: pingPong.firstBeatId,
+            secondBeatId: pingPong.secondBeatId,
+            firstPart: pingPong.firstPart,
+            secondPart: pingPong.secondPart,
+            firstAtSec: pingPong.firstAtSec,
+            secondAtSec: pingPong.secondAtSec,
+            viewerGapSec: pingPong.viewerGapSec,
+            displacementFraction: pingPong.displacementFraction,
+            firstCenter: first!,
+            secondCenter: second!,
+          },
         });
       }
     }
@@ -3359,7 +3675,9 @@ export async function inspectDirectComposition(
         ),
       );
     const finalSceneId = draft.storyboard[draft.storyboard.length - 1]?.id;
-    for (const scenePlan of parseCameraPlan(draft.html).plan?.scenes ?? []) {
+    const graphOwnedCamera = parseCameraBlockingPlan(draft.html)?.enabled === true;
+    if (!graphOwnedCamera) {
+      for (const scenePlan of parseCameraPlan(draft.html).plan?.scenes ?? []) {
       const scene = draft.storyboard.find((entry) => entry.id === scenePlan.sceneId);
       if (!scene) continue;
       const sceneEnd = scene.startSec + scene.durationSec;
@@ -3561,6 +3879,7 @@ export async function inspectDirectComposition(
           });
         }
       }
+      }
     }
 
     // Scenes without a full-move landing get the same coverage discipline
@@ -3573,12 +3892,14 @@ export async function inspectDirectComposition(
     // The film's FINAL scene is exempt — a closing resolve legitimately
     // compresses to one small focal point (logo sting, lone CTA); the
     // deterministic fallback film's end card is the proof case.
-    const landingSampledScenes = new Set(
-      (parseCameraPlan(draft.html).plan?.scenes ?? [])
-        .filter((scene) =>
-          scene.segments.some((segment) => CAMERA_FULL_MOVES.has(segment.move)))
-        .map((scene) => scene.sceneId),
-    );
+    const landingSampledScenes = graphOwnedCamera
+      ? new Set<string>()
+      : new Set(
+          (parseCameraPlan(draft.html).plan?.scenes ?? [])
+            .filter((scene) =>
+              scene.segments.some((segment) => CAMERA_FULL_MOVES.has(segment.move)))
+            .map((scene) => scene.sceneId),
+        );
     for (const scene of draft.storyboard.slice(0, -1)) {
       if (landingSampledScenes.has(scene.id)) continue;
       if (scene.durationSec < SPARSE_MIN_SCENE_SEC) continue;
@@ -3618,7 +3939,9 @@ export async function inspectDirectComposition(
       });
     }
 
-    rawIssues.push(...await auditPrimaryMomentFocals(page, draft.storyboard, seekContent));
+    rawIssues.push(...await (graphOwnedCamera
+      ? auditCameraBlockingLandings(page, draft, seekContent)
+      : auditPrimaryMomentFocals(page, draft, seekContent)));
 
     // Exit discipline (WS4): a surface whose last beat has passed still sitting
     // at full opacity over the focal element is the "assets don't disappear and
@@ -3683,6 +4006,10 @@ export async function inspectDirectComposition(
       // their boundary/beat by design and were sampled deliberately.
       issue.code === "cut_degraded" ||
       issue.code.startsWith("eye_trace") ||
+      // This is deliberate landing evidence sampled at a camera/component cue.
+      // Suppressing it merely because that cue sits inside a motion window made
+      // hidden/zero-area primary targets invisible to QA.
+      issue.code === "camera_blocking_landing" ||
       !insideCutWindow(issue.time)
     )).slice(0, 80);
     const interactionIssues = issues.filter((issue) =>
@@ -3745,9 +4072,11 @@ export async function inspectDirectComposition(
       guidePngBase64 = await renderSpatialGuide(page, interactionIntents);
     }
     // Continuous playback evidence. It is deliberately advisory: losing this
-    // evidence never rejects a runnable draft, and its metrics do not feed
-    // strictOk until golden + live A/B calibration establishes useful bounds.
+    // evidence never rejects a runnable draft. Long measured stillness does
+    // request one bounded polish pass: this is rendered evidence, not the
+    // planner merely counting a declared beat that may be visually inert.
     let continuousMotion: ContinuousMotionEvidenceV1 | undefined;
+    const motionQuietIssues: DirectLayoutIssue[] = [];
     if (continuousMotionEvidenceEnabled() && duration >= 8) {
       try {
         continuousMotion = await captureContinuousMotionEvidence(
@@ -3757,6 +4086,30 @@ export async function inspectDirectComposition(
           { width, height },
           { mapSeekTime: toOutputTime },
         );
+        for (const window of continuousMotion.quietWindows.filter(
+          (entry) => entry.durationSec >= QUIET_WINDOW_REVIEW_SEC,
+        )) {
+          const issue: DirectLayoutIssue = {
+            code: "motion_quiet_window",
+            severity: "warning",
+            time: window.startSec,
+            selector: `[data-scene="${window.sceneId}"]`,
+            sceneId: window.sceneId,
+            message:
+              `Scene "${window.sceneId}" is visually still for ` +
+              `${window.durationSec.toFixed(2)}s (${window.startSec.toFixed(2)}–` +
+              `${window.endSec.toFixed(2)}s): no camera, component, FX, or micro-motion ` +
+              `was measured.`,
+            fixHint:
+              "Keep the focal state readable while adding one low-amplitude typed motion " +
+              "voice: operated camera hold/parallax, progress/chart development, cursor settle, " +
+              "or a quiet supporting response. Do not add a looping whole-frame breathing pulse.",
+            source: "sequences",
+          };
+          motionQuietIssues.push(issue);
+          issues.push(issue);
+          warnings.push(formatIssue(issue));
+        }
       } catch (error) {
         process.stderr.write(
           `[layout-qa] continuous motion evidence skipped: ${
@@ -3824,7 +4177,8 @@ export async function inspectDirectComposition(
         errors.length === 0 &&
         visualErrors.length === 0 &&
         repairWarnings.length === 0 &&
-        staticPrimaryMoments.length === 0,
+        staticPrimaryMoments.length === 0 &&
+        motionQuietIssues.length === 0,
       samples,
       issues,
       interactions: interactionEvidence,

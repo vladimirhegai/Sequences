@@ -58,6 +58,30 @@
     move(timeline, slot, from, to, beat.startSec);
   }
 
+  // A typed open owns the entrance channel. Source authors still sometimes
+  // add a second delayed fromTo on the same surface; its pre-rendered hidden
+  // state makes the element pop once for the host entrance and then restart.
+  // Hold the settled pose briefly after the typed beat so any overlapping
+  // authored entrance finishes invisibly underneath it.
+  function pinOpenSettle(timeline, target, beat) {
+    if (!target) return;
+    var scene = target.closest && target.closest("[data-scene]");
+    var sceneEnd = scene
+      ? (parseFloat(scene.getAttribute("data-start") || "0") || 0) +
+        (parseFloat(scene.getAttribute("data-duration") || "0") || 0)
+      : beat.endSec + 0.45;
+    var duration = Math.min(0.45, sceneEnd - beat.endSec - 0.01);
+    if (duration <= 0.01) return;
+    move(timeline, target, { opacity: 1, x: 0, y: 0, scale: 1 }, {
+      opacity: 1,
+      x: 0,
+      y: 0,
+      scale: 1,
+      duration: duration,
+      ease: "none",
+    }, beat.endSec);
+  }
+
   function firstMatch(scope, selectors) {
     for (var i = 0; i < selectors.length; i += 1) {
       var found = scope.querySelector(selectors[i]);
@@ -67,12 +91,42 @@
   }
 
   function childItems(el) {
-    var found = el.querySelectorAll(".cmp-row");
-    if (!found.length) found = el.querySelectorAll(".cmp-item");
-    if (!found.length) found = el.querySelectorAll(".cmp-card");
-    if (!found.length) found = el.querySelectorAll(".cmp-msg");
-    if (!found.length) found = el.querySelectorAll(":scope > i");
+    // Prefer the component's OWN children. A list can legitimately contain a
+    // nested hero-row component; a descendant-wide query returned both the
+    // outer slot and the nested row, so the same pixels were hidden/revealed
+    // twice and the first state looked empty. Fall back to descendants for
+    // framed components (app-window/terminal) whose real rows live in a body.
+    function scoped(selector) {
+      var directSelector = selector.split(",").map(function (entry) {
+        return ":scope > " + entry.trim();
+      }).join(",");
+      var direct = el.querySelectorAll(directSelector);
+      return direct.length ? direct : el.querySelectorAll(selector);
+    }
+    var found = scoped(".cmp-row");
+    if (!found.length) found = scoped(".cmp-item");
+    if (!found.length) found = scoped(".cmp-card");
+    if (!found.length) found = scoped(".cmp-msg");
+    // `data-cmp-item` is the stable generic escape hatch for authored product
+    // dialects that need their own row class. The suffix fallback rescues older
+    // live compositions such as `.inbox-row` without adding placeholder rows
+    // on top of real evidence.
+    if (!found.length) found = scoped("[data-cmp-item]");
+    if (!found.length) found = scoped('[class$="-row"],[class*="-row "]');
+    if (!found.length) found = scoped("i");
     return Array.prototype.slice.call(found);
+  }
+
+  // Component beat `item` is a 1-based semantic child index. Selection has
+  // always honored it, but highlight accidentally ignored it and outlined the
+  // entire list/table. Resolve every item-scoped visual through one helper so
+  // the selected row, focus ring, underline, and pointer can agree.
+  function beatTarget(el, beat) {
+    if (typeof beat.item !== "number" || !isFinite(beat.item)) return el;
+    var items = childItems(el);
+    if (!items.length) return el;
+    var index = clamp(Math.round(beat.item) - 1, 0, items.length - 1);
+    return items[index];
   }
 
   function textSlot(el) {
@@ -546,6 +600,7 @@
       reveal(timeline, el, { opacity: 0, scale: 0.6 }, {
         opacity: 1, scale: 1, duration: popDur, ease: "seqPop",
       }, beat.startSec);
+      pinOpenSettle(timeline, el, beat);
       return;
     }
     var target = openTargets(el);
@@ -659,12 +714,16 @@
     // Style variants beyond the default ring (sweep, underline) are compiled
     // by the host fx runtime (sequences-fx) — one owner per visual channel.
     if (beat.style && beat.style !== "ring") return;
-    var ring = el.querySelector(".cmp-highlight-ring");
+    var target = beatTarget(el, beat);
+    if (getComputedStyle(target).position === "static") {
+      target.style.position = "relative";
+    }
+    var ring = target.querySelector(":scope > .cmp-highlight-ring");
     if (!ring) {
       ring = document.createElement("span");
       ring.className = "cmp-highlight-ring";
       ring.setAttribute("aria-hidden", "true");
-      el.appendChild(ring);
+      target.appendChild(ring);
     }
     var duration = beat.endSec - beat.startSec;
     // Quick rise, long settle, near-still scale: the ring is a focus glow now
@@ -774,48 +833,56 @@
       nodes[i].removeAttribute("id");
       nodes[i].removeAttribute("data-part");
       nodes[i].removeAttribute("data-component");
+      nodes[i].removeAttribute("data-continuity-entity");
       nodes[i].removeAttribute("data-layout-important");
     }
   }
 
-  function surfaceVars(element) {
-    var style = getComputedStyle(element);
+  function fittedMorphPose(box, naturalWidth, naturalHeight) {
+    var width = Math.max(1, naturalWidth);
+    var height = Math.max(1, naturalHeight);
+    var scale = Math.min(box.width / width, box.height / height);
     return {
-      backgroundColor: style.backgroundColor,
-      borderColor: style.borderTopColor,
-      borderRadius: style.borderTopLeftRadius,
-      borderWidth: style.borderTopWidth,
-      boxShadow: style.boxShadow,
+      x: box.x + (box.width - width * scale) / 2,
+      y: box.y + (box.height - height * scale) / 2,
+      scale: scale,
     };
   }
 
-  function buildMorphBridge(host, fromElement, from, toElement) {
+  function morphClone(element, box, className) {
+    var clone = element.cloneNode(true);
+    stripMorphCloneBindings(clone);
+    clone.classList.add("seq-component-morph-content", className);
+    clone.setAttribute("aria-hidden", "true");
+    clone.setAttribute("data-state", "open");
+    clone.style.cssText +=
+      ";position:absolute!important;left:0!important;top:0!important;margin:0!important;" +
+      "width:" + box.width + "px!important;height:" + box.height + "px!important;" +
+      "transform-origin:0 0!important;pointer-events:none!important;";
+    return clone;
+  }
+
+  function buildMorphBridge(host, fromElement, from, toElement, to) {
     var bridge = document.createElement("div");
     bridge.className = "seq-component-morph-bridge";
     bridge.setAttribute("aria-hidden", "true");
     bridge.style.cssText =
-      "position:absolute;pointer-events:none;overflow:hidden;box-sizing:border-box;" +
-      "z-index:70;opacity:0;visibility:hidden;margin:0;transform-origin:0 0;";
-    bridge.style.left = from.x + "px";
-    bridge.style.top = from.y + "px";
-    bridge.style.width = from.width + "px";
-    bridge.style.height = from.height + "px";
-    var fromSurface = surfaceVars(fromElement);
-    for (var key in fromSurface) bridge.style[key] = fromSurface[key];
-
-    // The clone preserves the first frame exactly, then its internals leave
-    // before the shell changes aspect. It owns no ids/contracts, so runtime
-    // selectors and browser QA continue addressing only the live components.
-    var content = fromElement.cloneNode(true);
-    stripMorphCloneBindings(content);
-    content.classList.add("seq-component-morph-content");
-    content.style.cssText +=
-      ";position:absolute!important;left:0!important;top:0!important;margin:0!important;" +
-      "width:" + from.width + "px!important;height:" + from.height + "px!important;" +
-      "transform:none!important;transform-origin:0 0!important;pointer-events:none!important;";
-    bridge.appendChild(content);
+      "position:absolute;inset:0;pointer-events:none;overflow:visible;box-sizing:border-box;" +
+      "z-index:70;opacity:0;visibility:hidden;margin:0;";
+    var outgoing = morphClone(fromElement, from, "seq-component-morph-outgoing");
+    var incoming = morphClone(toElement, to, "seq-component-morph-incoming");
+    bridge.appendChild(outgoing);
+    bridge.appendChild(incoming);
     host.appendChild(bridge);
-    return { bridge: bridge, content: content, targetSurface: surfaceVars(toElement) };
+    return {
+      bridge: bridge,
+      outgoing: outgoing,
+      incoming: incoming,
+      outgoingFrom: fittedMorphPose(from, from.width, from.height),
+      outgoingTo: fittedMorphPose(to, from.width, from.height),
+      incomingFrom: fittedMorphPose(from, to.width, to.height),
+      incomingTo: fittedMorphPose(to, to.width, to.height),
+    };
   }
 
   function compileMorph(timeline, scene, el, beat) {
@@ -827,85 +894,63 @@
     var from = positionWithin(fromElement, host);
     var to = positionWithin(toElement, host);
     var duration = beat.endSec - beat.startSec;
-    var revealAt = beat.startSec + duration * 0.56;
-    var handoffAt = beat.startSec + duration * 0.72;
-    var built = buildMorphBridge(host, fromElement, from, toElement);
+    var revealAt = beat.startSec + duration * 0.26;
+    var handoffAt = beat.startSec + duration * 0.84;
+    var built = buildMorphBridge(host, fromElement, from, toElement, to);
 
-    // Swap the live source for a pixel-identical bridge on one frame. The
-    // bridge's source content fades before the aspect ratio changes enough to
-    // distort it; only the empty material shell interpolates width/height.
+    // Swap the live source for two intact fixed-layout clones. Both travel by
+    // uniform scale; no child reflows or stretches while the meanings crossfade.
+    timeline.set(built.bridge, { autoAlpha: 0 }, 0);
+    timeline.set(target, { opacity: 0 }, 0);
     timeline.set(built.bridge, { autoAlpha: 1 }, beat.startSec);
     timeline.set(el, { opacity: 0 }, beat.startSec);
-    move(timeline, built.content, { opacity: 1, filter: "blur(0px)" }, {
-      opacity: 0,
-      filter: "blur(5px)",
-      duration: duration * 0.3,
-      ease: "power2.in",
-    }, beat.startSec + duration * 0.08);
-    move(timeline, built.bridge, {
-      left: from.x,
-      top: from.y,
-      width: from.width,
-      height: from.height,
+    move(timeline, built.outgoing, {
+      x: built.outgoingFrom.x,
+      y: built.outgoingFrom.y,
+      scale: built.outgoingFrom.scale,
+      opacity: 1,
     }, {
-      left: to.x,
-      top: to.y,
-      width: to.width,
-      height: to.height,
-      backgroundColor: built.targetSurface.backgroundColor,
-      borderColor: built.targetSurface.borderColor,
-      borderRadius: built.targetSurface.borderRadius,
-      borderWidth: built.targetSurface.borderWidth,
-      boxShadow: built.targetSurface.boxShadow,
-      duration: duration * 0.82,
+      x: built.outgoingTo.x,
+      y: built.outgoingTo.y,
+      scale: built.outgoingTo.scale,
+      opacity: 0,
+      duration: duration * 0.72,
       ease: beat.ease,
     }, beat.startSec);
+    move(timeline, built.incoming, {
+      x: built.incomingFrom.x,
+      y: built.incomingFrom.y,
+      scale: built.incomingFrom.scale,
+      opacity: 0,
+    }, {
+      x: built.incomingTo.x,
+      y: built.incomingTo.y,
+      scale: built.incomingTo.scale,
+      opacity: 1,
+      duration: duration * 0.58,
+      ease: beat.ease,
+    }, revealAt);
     // The twin arrives only through this morph: pre-rendered hidden at build.
     // A morph IS the twin's entrance, so it must do everything `open` would —
     // kit CSS keeps an overlay's scrim/panel/items at opacity 0 until opened,
     // and a separate `open` beat on a morphed-in twin is deduped at plan time
     // (it would re-run the entrance over this reveal and flash).
-    reveal(timeline, target, { opacity: 0 }, {
-      opacity: 1,
-      duration: duration * 0.34,
-      ease: "power2.out",
-    }, revealAt);
-    setState(timeline, target, "open", revealAt);
+    setState(timeline, target, "open", handoffAt);
     var opened = openTargets(target);
-    if (opened.scrim) {
-      reveal(timeline, opened.scrim, { opacity: 0 }, {
-        opacity: 1,
-        duration: Math.max(0.2, duration * 0.4),
-        ease: "power2.out",
-      }, revealAt);
-    }
+    timeline.set(target, { opacity: 1, x: 0, y: 0, scale: 1 }, handoffAt);
+    pinSlotIdentity(timeline, target, {
+      startSec: handoffAt,
+      endSec: beat.endSec,
+    }, true);
+    if (opened.scrim) timeline.set(opened.scrim, { opacity: 1 }, handoffAt);
     if (opened.panel && opened.panel !== target) {
-      reveal(timeline, opened.panel, { opacity: 0 }, {
-        opacity: 1,
-        duration: Math.max(0.2, duration * 0.45),
-        ease: "power2.out",
-      }, revealAt);
+      timeline.set(opened.panel, { opacity: 1, x: 0, y: 0, scale: 1 }, handoffAt);
     }
-    var itemStep = opened.items.length > 1
-      ? (duration * 0.3) / (opened.items.length - 1)
-      : 0;
     for (var i = 0; i < opened.items.length; i += 1) {
-      reveal(timeline, opened.items[i], { opacity: 0, y: -8 }, {
-        opacity: 1,
-        y: 0,
-        duration: Math.max(0.18, duration * 0.3),
-        ease: "power3.out",
-      }, revealAt + itemStep * i);
+      timeline.set(opened.items[i], { opacity: 1, x: 0, y: 0, scale: 1 }, handoffAt);
     }
-    move(timeline, built.bridge, { opacity: 1 }, {
-      opacity: 0,
-      duration: duration * 0.28,
-      ease: "power2.out",
-    }, handoffAt);
-    // Visibility belongs only to the start swap. A second autoAlpha set here
-    // leaves visibility:hidden behind when the timeline seeks backward even
-    // though opacity restores, making the replayed morph shell disappear.
-    timeline.set(built.bridge, { opacity: 0 }, beat.endSec);
+    timeline.set(built.bridge, { autoAlpha: 0 }, handoffAt);
+    pinOpenSettle(timeline, target, beat);
   }
 
   /* ------------------------------------------------------------ compile */

@@ -250,6 +250,41 @@ the motion-heavy incident film improved settle and motion competition, while
 the quiet approval film and consumer-free golden retained their own rhythm.
 See [PROBE_LOG.md](PROBE_LOG.md) for the exact measurements and attempt accounting.
 
+## Continuity Graph + Camera Blocking Director (2026-07-10, default OFF)
+
+`SLACK_SEQUENCES_CONTINUITY_GRAPH=1` enables the proved architectural feature;
+any other value preserves byte-compatible legacy behavior. Important scene
+components may declare one stable `entityId` across representation changes.
+`continuityGraph.ts` canonicalizes one appearance per entity per scene and
+compiles measured shared-element handoffs; never create a self-edge or use a
+sidebar as the product-shell representative when an app-window exists.
+
+`cameraBlocking.ts` converts every direction phrase into explicit target,
+occupancy range, screen anchor, lens/zoom, travel corridor, arrival, readable
+dwell, and next-handoff paperwork. In the feature-on camera runtime, primary
+blocks own x/y/zoom through `seqContinuity` (minimum-jerk quintic). Supporting
+blocks remain visible in previs but animate locally: they must not cause a late
+zoom/orbit. Repeated targets hold one measured pose. Travel begins only after
+the previous readable dwell and may anticipate the next primary through free
+connective time. Typed camera paths retain rack-focus ownership, but their
+independent pan/orbit geometry does not compete with the graph route.
+
+Temporal QA persists `cameraBlocking` in `temporal.json` and writes
+`build/qa/temporal/blocking.png` with landings, focal trajectory, occupancy,
+speed, dwell, and continuity edges. When graph ownership is on, browser layout
+QA audits every primary blocking landing and skips obsolete legacy camera
+segment landing heuristics. Exact-project replay:
+
+```powershell
+$env:SLACK_SEQUENCES_CONTINUITY_GRAPH='1'
+npm run continuity:replay -- <project-dir-or-id> [--out <clone-id>]
+npm run temporal:replay -- <project-dir>
+npm run render:existing -- <project-dir>
+```
+
+Acceptance proof is in [PROBE_LOG.md](PROBE_LOG.md); non-engine visual residuals
+belong in [PROBE_FEEDBACK.md](PROBE_FEEDBACK.md), not in relaxed camera gates.
+
 Measurement invariants from the 2026-07-10 Vectorline audit: phrase-level
 attention (`part`, then `region`, then `selector`) takes precedence over a
 scene's generic `focalPart`; at a cue inside a camera move, that active move
@@ -337,6 +372,7 @@ Use persisted artifacts before paying for another model call:
 
 ```powershell
 npm run storyboard:replay -- <raw-response-file>
+npm run continuity:replay -- <project-dir-or-id> [--out <clone-id>]
 npm run temporal:replay -- <project-dir>
 npm run render:existing -- <project-dir>
 ```
