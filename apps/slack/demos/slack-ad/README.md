@@ -3,7 +3,7 @@
 An isolated, deterministic source project for the hackathon demo film. It recreates the supplied Slack UI references as editable DOM with fictional content and uses one seekable GSAP master timeline.
 
 ```powershell
-npx tsx apps/slack/demos/slack-ad/render.ts --preview
+npx tsx apps/slack/demos/slack-ad/render.ts
 npx tsx apps/slack/demos/slack-ad/render.ts --render
 npx tsx apps/slack/demos/slack-ad/render.ts --render --resume
 ```

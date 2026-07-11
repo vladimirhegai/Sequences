@@ -1,17 +1,27 @@
 # From noise to momentum — 27.0s
 
+Visual language: Apple-keynote white field, Segoe UI display type, the official
+eight-path Slack mark as inline SVG, and the production-cleared Big Sur-style
+wallpaper (`assets/wallpapers/wallpaper3.jpg`, MIT) as the shared desktop for
+the modal and workspace scenes. Every typewriter reveals by width so the caret
+physically rides the text edge.
+
 | Time | Beat | Motion / camera intent |
 |---:|---|---|
-| 0.00–3.25 | Six disconnected tools and notifications accumulate behind “Too many tools” then “Too many handoffs.” | Fast asymmetric spring arrivals. The frame gets busy; the camera stays planted. |
-| 3.25–5.45 | “No momentum.” becomes the single focal phrase. | One short push with a small overshoot, then a readable hold. |
-| 5.45–7.35 | The mess visibly contracts and resolves into the four-color Slack mark. | Cards converge; eight mark pieces arrive from the same vectors. No teleporting cut. |
-| 7.35–9.70 | “Work shouldn’t feel this messy.” types beneath the mark. A pointer clicks Slack. | Mark reframes upward; pointer makes one operated approach and click. |
-| 9.70–12.00 | Slack’s Create a channel dialog appears and `launch` is entered. | Modal springs in, typing is stepped, Next receives a tactile press. |
-| 12.00–16.25 | Full fictional Slack workspace. Maya asks how to make the launch video; Jordan replies, “Let’s use Sequences.” | Workspace lands full-frame. Camera commits to the messages, then returns. Sequences is only copy, not a product reveal. |
-| 16.25–19.40 | “Every Decision” and “Every Conversation” appear as parallel proof modules. | Cards arrive from opposing directions and connect with one Slack-color line. |
-| 19.40–23.15 | “All in one place.” evolves in-place into “All in Slack.” | Same focal point; phrase exchange is continuous, not a hard cut. |
-| 23.15–27.00 | Slack mark + wordmark, “Where work happens.” | Fast assembly by 24.4s, then a 2.6s still end hold. |
+| 0.00–3.25 | Six disconnected tools and notifications pile up one by one behind “Too many tools” then “Too many handoffs.” | Springy one-by-one arrivals on the white field; copy blurs in and out; slow cloud breath adds tension. |
+| 3.25–5.45 | “No momentum.” becomes the single focal phrase (smooth four-color gradient on the key word). | Short push with overshoot, readable hold, then the cards jitter — the pile stalls. |
+| 5.45–7.35 | Every card and ping collapses into one point; a shockwave ring fires and the eight official mark pieces bloom outward from that point. | The mess literally becomes the Slack mark. No dead frames: suck-in, ring, and assembly overlap. |
+| 7.35–9.70 | “Work shouldn’t feel this messy.” types beneath the mark with a live caret; a pointer clicks the mark. | Mark reframes upward; caret blinks after the line lands; one operated approach and click. |
+| 9.70–12.00 | The desktop wallpaper fades up and Slack’s Create a channel dialog appears; `launch` is typed with the input caret riding along. | Wallpaper drifts to rest; modal springs in; a second pointer presses Next. |
+| 12.00–16.25 | The workspace window opens on the same desktop. Sarah Bennett asks about the launch video; Marcus Webb replies “Let’s use Sequences.” | Window settles like a macOS app. Mild push on the first message, then a 2.3× superzoom dives into the reply and pans right with the typing before pulling back. |
+| 16.25–19.40 | “Every Decision” and “Every Conversation” as parallel proof modules. | Cards arrive from opposing directions with gentle counter-parallax. No connective line. |
+| 19.40–23.15 | “All in one place.” evolves in-place into “All in Slack.” (smooth gradient); the mark docks beside the phrase. | Same focal point; the SVG mark flies from below into a lockup position. |
+| 23.15–27.00 | Official Slack lockup + wordmark, “Where work happens.” | Pieces cascade in, wordmark blurs into place, then a near-still breathing hold. |
 
-Safe framing: authored at 1920×1080 with at least 48px capture inset on focal subjects. The message push deliberately crops workspace chrome while keeping the active message fully framed.
+Safe framing: authored at 1920×1080 with at least 48px capture inset on focal
+subjects. During the superzoom the window intentionally exceeds the frame; the
+QA focal target is the typed reply text itself.
 
-Privacy: the supplied UI screenshots were used only as visual reference. The film contains no real names, avatars, workspace content, or personal information.
+Privacy: the supplied UI screenshots were used only as visual reference. The
+film contains no real names, avatars, workspace content, or personal
+information — Sarah Bennett and Marcus Webb are fictional.

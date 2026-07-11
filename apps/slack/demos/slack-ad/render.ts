@@ -12,7 +12,7 @@ const fullRender = process.argv.includes("--render");
 const resume = process.argv.includes("--resume");
 const FPS = 30;
 const DURATION = 27;
-const representative = [0.45,1.35,2.35,3.7,5.72,6.45,7.85,9.25,10.2,11.15,12.35,13.72,14.45,15.65,16.65,17.75,18.65,19.7,20.6,21.4,22.55,23.4,24.15,26.1];
+const representative = [0.45,1.35,2.35,3.7,5.72,6.45,7.85,9.25,10.2,11.15,12.35,13.72,14.45,15.3,16.65,17.75,18.65,19.7,20.6,21.4,22.55,23.4,24.15,26.1];
 
 function findBrowser(): string {
   const candidates = [
@@ -80,9 +80,11 @@ function focusFor(t: number): string {
   if (t < 7.35) return "#hero-mark";
   if (t < 9.7) return "#messy .typed";
   if (t < 12) return "#channel-modal";
-  if (t < 13.3) return "#slack-window";
-  if (t < 15) return t < 14 ? "#message-one" : "#message-two";
-  if (t < 16.25) return "#slack-window";
+  if (t < 12.6) return "#slack-window";
+  if (t < 13.9) return "#message-one p";
+  // The superzoom holds until ~16.3; the full row and window exceed the frame
+  // by design there, so the focal proof rides the typed reply text itself.
+  if (t < 16.25) return "#message-two p";
   if (t < 17.1) return ".decision";
   if (t < 19.4) return ".conversation";
   if (t < 23.15) return t < 20.9 ? "#all-place" : "#all-slack";
