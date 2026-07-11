@@ -1009,6 +1009,20 @@ export function delayConflictingCameraMoves(
             beatHoldWindows(scene, beats, destinationIdsFor(entry.move)),
           );
           const delay = target - entry.move.startSec;
+          // A long, authored approach can miss the bounded scene-stretch cap
+          // by only a few frames after we protect a payoff. Preserve the move
+          // and trim that small excess instead of reverting the entire atomic
+          // normalization (RelayGuard live attempt 2). This is deliberately
+          // narrow: at most 350ms / 15% and never below a 600ms camera phrase.
+          let durationSec = entry.move.durationSec;
+          const initialOverflow = target + durationSec - sceneEnd;
+          const trimNeeded = initialOverflow - MAX_PACING_STRETCH_SEC;
+          const maxSafeTrim = Math.min(0.35, entry.move.durationSec * 0.15);
+          const trimsMarginalOverflow =
+            trimNeeded > 1e-6 &&
+            trimNeeded <= maxSafeTrim + 1e-9 &&
+            entry.move.durationSec - trimNeeded >= 0.6 - 1e-9;
+          if (trimsMarginalOverflow) durationSec = round(entry.move.durationSec - trimNeeded);
           const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
           // Retiming a load-bearing move is safe only while every moment that
           // could bind to the original move still overlaps the new window.
@@ -1018,12 +1032,12 @@ export function delayConflictingCameraMoves(
             entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
           );
           const keepsBindings = boundMoments.every((moment) =>
-            target + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+            target + durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
             target <= moment.atSec + EVIDENCE_AFTER_SEC
           );
-          const overflow = target + entry.move.durationSec - sceneEnd;
+          const overflow = target + durationSec - sceneEnd;
           const fitsDelay = delay > 0 && delay <= MAX_PACING_RETIME_SEC + 1e-9;
-          const fitsBeforeNext = !next || target + entry.move.durationSec <= next.move.startSec + 1e-6;
+          const fitsBeforeNext = !next || target + durationSec <= next.move.startSec + 1e-6;
           const fitsScene = overflow <= 1e-6 ||
             (overflow <= MAX_PACING_STRETCH_SEC + 1e-9 &&
               scene.durationSec + overflow <= 15 + 1e-9);
@@ -1077,7 +1091,7 @@ export function delayConflictingCameraMoves(
             // by the overflow instead of leaving the finding to a paid retry.
             stretch = Math.max(stretch, round(overflow));
           }
-          newPath[entry.index] = { ...entry.move, startSec: round(target) };
+          newPath[entry.index] = { ...entry.move, startSec: round(target), durationSec };
           if (canCarryCameraMoments) {
             const delta = target - entry.move.startSec;
             for (const moment of boundMoments) {
@@ -1087,6 +1101,9 @@ export function delayConflictingCameraMoves(
           const note =
             `delayed the ${entry.move.move} from ${entry.move.startSec.toFixed(2)}s to ` +
             `${target.toFixed(2)}s so the payoff/copy holds without an in-flight reframe` +
+            (trimsMarginalOverflow
+              ? ` (trimmed duration ${entry.move.durationSec.toFixed(2)}s to ${durationSec.toFixed(2)}s)`
+              : "") +
             (canCarryCameraMoments
               ? ` (carried ${boundMoments.length} single-phrase camera moment(s))`
               : "") +
@@ -1181,7 +1198,9 @@ export function retimeCameraOverInteractions(
           for (let pass = 0; pass <= windows.length; pass += 1) {
             const end = target + entry.move.durationSec;
             const clash = windows.find(
-              (window) => target < window.until - 1e-6 && end > window.from + 1e-6,
+              (window) =>
+                target < window.until - PACING_TOLERANCE_SEC &&
+                end > window.from + PACING_TOLERANCE_SEC,
             );
             if (!clash) break;
             target = Math.max(target, round(clash.until));
@@ -1197,8 +1216,9 @@ export function retimeCameraOverInteractions(
         if (target <= entry.move.startSec + 1e-6) continue;
         const firstClash = windows.find(
           (window) =>
-            entry.move.startSec < window.until - 1e-6 &&
-            entry.move.startSec + entry.move.durationSec > window.from + 1e-6,
+            entry.move.startSec < window.until - PACING_TOLERANCE_SEC &&
+            entry.move.startSec + entry.move.durationSec >
+              window.from + PACING_TOLERANCE_SEC,
         )!;
         const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
         const fitsBeforeNext = !next || target + entry.move.durationSec <= next.move.startSec + 1e-6;
@@ -1213,7 +1233,27 @@ export function retimeCameraOverInteractions(
           entry.move.startSec + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
           entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
         );
-        const keepsBindings = boundMoments.every((moment) =>
+        const resolvedBeats = resolvedBeatsByScene.get(scene.id) ?? [];
+        const hasNonCameraEvidence = (
+          moment: NonNullable<DirectScene["moments"]>[number],
+        ): boolean =>
+          resolvedBeats.some((beat) =>
+            beat.endSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+            beat.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
+          ) || (/\b(?:cursor|click|press|tap|drag|pointer)\b/i.test(
+            `${moment.title} ${moment.visualState} ${moment.change}`,
+          ) && (scene.interactions ?? []).some((interaction) => {
+            const end = interaction.holdUntilSec ?? interaction.releaseSec ?? interaction.arriveSec;
+            return interaction.startSec <= moment.atSec + EVIDENCE_AFTER_SEC &&
+              end >= moment.atSec - EVIDENCE_BEFORE_SEC;
+          }));
+        // Camera prose is sometimes duplicated by a resolved count/state beat
+        // at the same moment. That typed evidence survives without the
+        // clashing reframe, so it must not make the camera move load-bearing.
+        const cameraOnlyBoundMoments = boundMoments.filter((moment) =>
+          !hasNonCameraEvidence(moment)
+        );
+        const keepsBindings = cameraOnlyBoundMoments.every((moment) =>
           target + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
           target <= moment.atSec + EVIDENCE_AFTER_SEC
         );
@@ -1222,8 +1262,13 @@ export function retimeCameraOverInteractions(
         // the smaller deterministic edit. It avoids manufacturing a long,
         // empty tail (LedgerFlow live attempt 1) and reflects the director's
         // rule that the interaction itself supplies the focus.
-        const shouldDropOverflow = overflow > 1e-6 && boundMoments.length === 0;
-        if (fitsBeforeNext && fitsScene && keepsBindings && !shouldDropOverflow) {
+        const typedEvidenceOwnsMoments =
+          boundMoments.length > 0 && cameraOnlyBoundMoments.length === 0;
+        const shouldDropOverflow = overflow > 1e-6 && cameraOnlyBoundMoments.length === 0;
+        if (
+          fitsBeforeNext && fitsScene && keepsBindings &&
+          !shouldDropOverflow && !typedEvidenceOwnsMoments
+        ) {
           if (overflow > 1e-6) stretch = Math.max(stretch, round(overflow));
           newPath[entry.index] = { ...entry.move, startSec: round(target) };
           const note =
@@ -1233,7 +1278,7 @@ export function retimeCameraOverInteractions(
             (overflow > 1e-6 ? ` (cut boundary stretched ${overflow.toFixed(2)}s to fit it)` : "");
           notes.push(note);
           normalized.push(`scene "${scene.id}": ${note}`);
-        } else if (!boundMoments.length) {
+        } else if (!cameraOnlyBoundMoments.length) {
           newPath[entry.index] = undefined;
           const note =
             `dropped the ${entry.move.move} at ${entry.move.startSec.toFixed(2)}s — it re-framed ` +

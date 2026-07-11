@@ -226,7 +226,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "the boundary stretches by the overflow (<= MAX_PACING_STRETCH_SEC, 15s scene " +
       "cap) and later scenes cascade-shift — still pure arithmetic. LaunchRelay " +
       "(2026-07-11): when a scene has exactly one full camera phrase, its camera-only " +
-      "moment timestamps carry by the same delay; multi-phrase binding stays strict. Same atomic " +
+      "moment timestamps carry by the same delay; multi-phrase binding stays strict. RelayGuard " +
+      "(2026-07-11): a long approach may trim only the marginal overflow beyond the " +
+      "stretch cap (<=350ms / 15%, never below 600ms), preserving the authored phrase " +
+      "instead of reverting an otherwise exact toast-hold repair. Same atomic " +
       "commit-or-revert. Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
   },
   {
@@ -244,7 +247,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "held middle exists to frame an act) out of every interaction's " +
       "arrive→result window (+lead/settle), never passing the next full move, " +
       "stretching the cut boundary <= MAX_PACING_STRETCH_SEC when it overruns, " +
-      "and preserving every moment-evidence binding; an unfittable " +
+      "and preserving every camera-only moment-evidence binding; a resolved component " +
+      "beat or explicitly named cursor action at the same moment can own the evidence " +
+      "without preserving a clashing reframe. Detection uses the audit's own tolerance " +
+      "so harmless boundary grazes are not mutated. An unfittable " +
       "NON-load-bearing move drops to the drift auto-fill. The backstop gate is " +
       "auditPacing's pacing/interaction-hold (pacing.holds row, advisory-late), " +
       "which only fires on residue no retime could fix. Same atomic " +

@@ -1213,6 +1213,63 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
     )).toEqual([]);
   });
 
+  it("trims a marginally long approach so stacked toast outcomes can hold (RelayGuard live attempt 2)", () => {
+    const coldOpen = scene({
+      id: "cold-noise-open",
+      startSec: 0,
+      durationSec: 4.5,
+      components: [
+        { version: 1 as const, id: "toast-1", kind: "toast" as const },
+        { version: 1 as const, id: "toast-2", kind: "toast" as const },
+        { version: 1 as const, id: "toast-3", kind: "toast" as const },
+        {
+          version: 1 as const,
+          id: "readiness",
+          kind: "stat-card" as const,
+          region: "readiness-station",
+        },
+      ],
+      beats: [
+        beat("cold-noise-open", {
+          id: "toast-1-open", component: "toast-1", kind: "open", atSec: 0.54,
+          durationSec: 0.5,
+        }),
+        beat("cold-noise-open", {
+          id: "toast-2-open", component: "toast-2", kind: "open", atSec: 1.35,
+          durationSec: 0.5,
+        }),
+        beat("cold-noise-open", {
+          id: "toast-3-open", component: "toast-3", kind: "open", atSec: 2.16,
+          durationSec: 0.5,
+        }),
+      ],
+      camera: {
+        version: 1,
+        path: [move({
+          move: "push-in",
+          toRegion: "readiness-station",
+          startSec: 1.5,
+          durationSec: 2.8,
+          zoom: 1.3,
+        })],
+      },
+      moments: [moment("cold-noise-open", "readiness-arrival", 3.5)],
+    });
+
+    expect(auditPacing([coldOpen]).filter((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toHaveLength(2);
+    const result = delayConflictingCameraMoves([coldOpen]);
+    const approach = result.storyboard[0]!.camera!.path[0]!;
+    expect(approach.startSec).toBeCloseTo(3.46, 2);
+    expect(approach.durationSec).toBeCloseTo(2.54, 2);
+    expect(result.storyboard[0]!.durationSec).toBeCloseTo(6, 2);
+    expect(result.normalized[0]).toContain("trimmed duration 2.80s to 2.54s");
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toEqual([]);
+  });
+
   it("still skips when the overflow exceeds the stretch cap", () => {
     // Delayed to 2.8s a 2.6s pan would end at 5.4s in a 3.2s scene — a 2.2s
     // overflow is past MAX_PACING_STRETCH_SEC, a genuine layout call for the
@@ -1670,6 +1727,70 @@ describe("2026-07-08 probe set — interaction holds (audit + retimeCameraOverIn
     expect(result.storyboard[0]!.durationSec).toBe(4.5);
     expect(result.storyboard[0]!.camera?.path).toEqual([]);
     expect(result.normalized[0]).toContain("dropped the track-to-anchor");
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/interaction-hold:")
+    )).toEqual([]);
+  });
+
+  it("drops a clashing reframe when a resolved beat also owns its camera-labeled moment", () => {
+    const ship = scene({
+      id: "click-ship-clear",
+      startSec: 0,
+      durationSec: 6.5,
+      components: [
+        { version: 1 as const, id: "ship", kind: "button" as const, region: "action" },
+        {
+          version: 1 as const,
+          id: "readiness",
+          kind: "stat-card" as const,
+          region: "readiness",
+        },
+      ],
+      beats: [beat("click-ship-clear", {
+        id: "readiness-count",
+        component: "readiness",
+        kind: "count",
+        atSec: 4,
+        durationSec: 1,
+        value: 100,
+      })],
+      camera: {
+        version: 1,
+        path: [
+          move({
+            move: "track-to-anchor", toPart: "ship", startSec: 1, durationSec: 1.5,
+          }),
+          move({ move: "whip", toPart: "readiness", startSec: 3, durationSec: 0.8 }),
+        ],
+      },
+      interactions: [interaction("click-ship-clear", {
+        id: "ship-click",
+        startSec: 1,
+        arriveSec: 2.5,
+        pressSec: 3,
+        releaseSec: 3.3,
+        holdUntilSec: 3.6,
+      })],
+      moments: [{
+        version: 1,
+        id: "readiness-clear",
+        sceneId: "click-ship-clear",
+        atSec: 4,
+        title: "Whip lands on readiness",
+        visualState: "Whip lands as readiness reaches 100",
+        change: "Camera reframes the cleared state",
+        motionIntent: "camera-whip",
+        importance: "primary",
+      }],
+    });
+
+    expect(auditPacing([ship]).some((finding) =>
+      finding.startsWith("pacing/interaction-hold:")
+    )).toBe(true);
+    const result = retimeCameraOverInteractions([ship]);
+    expect(result.storyboard[0]!.camera!.path.map((entry) => entry.move))
+      .toEqual(["track-to-anchor"]);
+    expect(result.normalized[0]).toContain("dropped the whip");
     expect(auditPacing(result.storyboard).filter((finding) =>
       finding.startsWith("pacing/interaction-hold:")
     )).toEqual([]);
