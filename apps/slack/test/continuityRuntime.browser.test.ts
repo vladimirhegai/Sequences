@@ -555,7 +555,125 @@ SequencesCamera.compile(tl,document.getElementById("root"));SequencesContinuity.
 window.__timelines["probe-blocking"]=tl;tl.seek(0,false);</script></body></html>`;
 }
 
+/** GatePilot exact-shape: an entry cut and a delayed primary whip share one
+ * contextual station. The entry and primary carry different solo occupancy,
+ * but the same ensemble fit; without the compact authored opening approach
+ * the graph route is pixel-static through the claimed camera moment. */
+function cutEntryImpactFilm(): string {
+  const center = { x: 0.5, y: 0.5, name: "center" };
+  const camera = {
+    version: 1,
+    scenes: [{
+      sceneId: "gate",
+      segments: [
+        { move: "hold", startSec: 1, endSec: 1.35, blend: 0, zoom: 1, ease: "none", toRegion: "gate-station", fromPart: "approve" },
+        { move: "drift", startSec: 1.35, endSec: 1.68, blend: 0.24, zoom: 1, ease: "seqDrift", toRegion: "gate-station" },
+        { move: "drift", startSec: 1.68, endSec: 1.9, blend: 0.06, zoom: 1, ease: "seqAnticipate", toRegion: "gate-station" },
+        { move: "whip", startSec: 1.9, endSec: 2.7, blend: 1, zoom: 1, ease: "seqWhip", toRegion: "gate-station" },
+        { move: "drift", startSec: 2.7, endSec: 4, blend: 0, zoom: 1, ease: "seqDrift", toRegion: "gate-station" },
+      ],
+    }],
+  };
+  const phrase = {
+    sceneId: "gate",
+    target: { kind: "part", id: "approve", entityKind: "cta" },
+    framingTarget: { kind: "region", id: "gate-station" },
+    framingOccupancy: { min: 0.1, preferred: 0.22, max: 0.42 },
+    arrivalPose: { anchor: center, lens: "detail", zoom: 1 },
+    corridor: { from: center, to: center, padding: 0.08 },
+  };
+  const blocking = {
+    version: 1,
+    enabled: true,
+    solver: {
+      curve: "minimum-jerk-quintic",
+      measuredDom: true,
+      maxNormalizedVelocity: 1.9,
+      maxNormalizedAcceleration: 5.8,
+      maxNormalizedJerk: 60,
+    },
+    scenes: [{
+      sceneId: "gate",
+      phrases: [{
+        ...phrase,
+        id: "gate:entry",
+        phraseId: "gate:01",
+        role: "entry",
+        importance: "supporting",
+        startSec: 1,
+        arrivalSec: 1,
+        endSec: 1.35,
+        occupancy: { min: 0.008, preferred: 0.025, max: 0.08 },
+        dwell: { startSec: 1, endSec: 1.38, readableSec: 0.38 },
+      }, {
+        ...phrase,
+        id: "gate:whip",
+        phraseId: "gate:02",
+        role: "payoff",
+        importance: "primary",
+        startSec: 1.35,
+        arrivalSec: 2.35,
+        endSec: 2.35,
+        occupancy: { min: 0.018, preferred: 0.055, max: 0.14 },
+        dwell: { startSec: 2.35, endSec: 2.97, readableSec: 0.62 },
+      }],
+    }],
+  };
+  const continuity = {
+    version: 1,
+    enabled: true,
+    entities: [],
+    edges: [],
+    summary: { entityCount: 0, multiShotEntityCount: 0, threeShotEntityCount: 0, sharedElementHandoffCount: 0 },
+  };
+  return `<!doctype html><html><head><meta charset="utf-8">
+<script src="gsap.min.js"></script><script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CONTINUITY_RUNTIME_FILE}"></script>
+<style>*{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#07101d}#root,.scene{position:absolute;inset:0;overflow:hidden}.scene{opacity:0}.world{position:relative;width:1920px;height:1080px}.station{position:absolute;left:360px;top:170px;width:1200px;height:740px;background:#16263a;border:2px solid #f6b94a}.metric{position:absolute;left:420px;top:110px;width:360px;height:180px;background:#233d58}.approve{position:absolute;left:470px;top:390px;width:260px;height:100px;border-radius:50px;background:#f6b94a;color:#07101d;display:grid;place-items:center;font:700 38px Arial}</style></head><body>
+<main id="root" data-composition-id="cut-entry-impact" data-width="1920" data-height="1080" data-duration="4">
+<section class="scene" data-scene="before"></section><section class="scene" data-scene="gate"><div class="world" data-camera-world><div class="station" data-region="gate-station"><div class="metric">96%</div><div class="approve" data-part="approve" data-component="button">Approve</div></div></div></section></main>
+<script type="application/json" id="sequences-camera">${JSON.stringify(camera)}</script><script type="application/json" id="sequences-continuity">${JSON.stringify(continuity)}</script><script type="application/json" id="sequences-camera-blocking">${JSON.stringify(blocking)}</script>
+<script>window.__timelines={};const tl=gsap.timeline({paused:true});tl.set('[data-scene="before"]',{opacity:1},0).set('[data-scene="before"]',{opacity:0},1).set('[data-scene="gate"]',{opacity:1},1);SequencesCamera.compile(tl,document.getElementById('root'));SequencesContinuity.compile(tl,document.getElementById('root'));window.__timelines['cut-entry-impact']=tl;tl.seek(0,false);</script></body></html>`;
+}
+
 describe("continuity + camera blocking browser runtime", () => {
+  it("preserves a visible compact whip after a same-pose cut entry settles", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-cut-entry-impact-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), cutEntryImpactFilm(), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, CONTINUITY_RUNTIME_FILE), continuityRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const transformAt = (time: number) => page.evaluate((at: number) => {
+        const timeline = (window as unknown as {
+          __timelines: Record<string, { seek: (time: number, suppress?: boolean) => void }>;
+        }).__timelines["cut-entry-impact"]!;
+        timeline.seek(at, false);
+        return document.querySelector<HTMLElement>('[data-scene="gate"] [data-camera-world]')!
+          .style.transform;
+      }, time);
+      const before = await transformAt(1.82);
+      const during = await transformAt(2.12);
+      const landed = await transformAt(2.36);
+      expect(new Set([before, during, landed]).size).toBe(3);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+
   it("lands measured product occupancy and carries the entity through hard cuts deterministically", async () => {
     const browserPath = findBrowserExecutable();
     expect(browserPath).toBeTruthy();
