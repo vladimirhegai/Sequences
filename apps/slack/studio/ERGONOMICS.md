@@ -47,3 +47,34 @@ whoever picks this up, keep increments small)
 Related: MOTION_QUALITY_PLAN.md WS-G (grow the proven library) grows CONTENT;
 this charter keeps the AUTHORING PATH cheap. Both matter — the library is only
 as good as how easily the next agent can extend it.
+
+## Implemented authoring path (2026-07-10)
+
+The six product tabs now have clean-context skills under `studio/skills/`:
+`studio-components`, `studio-assets`, `studio-recipes`, `studio-looks`,
+`studio-camera`, and `studio-plugins`. Give a subagent the matching `SKILL.md`
+plus a narrow brief; it contains exact source seams, Sentinel obligations,
+proof commands, and the catalog-specific definition of done.
+
+Start from a deterministic skeleton:
+
+```powershell
+npm run catalog --workspace @sequences/slack -- new components <id>
+npm run catalog --workspace @sequences/slack -- new assets <id>
+npm run recipes --workspace @sequences/slack -- new <id>
+npm run catalog --workspace @sequences/slack -- new looks <id>
+npm run catalog --workspace @sequences/slack -- new camera <id>
+npm run catalog --workspace @sequences/slack -- new plugins <id>
+```
+
+Recipe sources are created directly in `recipes/`; other skeletons go to the
+gitignored `.data/studio/scaffolds/` workspace so an agent must apply each
+central-catalog edit deliberately. Generators refuse to overwrite work.
+
+`src/engine/studioLibrary.ts` generates a compact inventory from the five
+typed catalogs. `skillContext.ts` includes it in the reference shared by both
+OpenRouter planning and source-authoring calls; proven recipes retain their
+separate scored retrieval path. `test/studioCatalogIntegration.test.ts`
+mechanically proves catalog → OpenRouter vocabulary → Studio discovery, while
+each catalog skill identifies the schema/injection/QA tests that complete its
+chain. The detailed seam matrix remains in `studio/INTEGRATION.md`.

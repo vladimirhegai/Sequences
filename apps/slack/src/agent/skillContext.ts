@@ -17,6 +17,7 @@ import {
   type RecipeDefinition,
 } from "../engine/recipeContract.ts";
 import { recipesEnabled } from "../engine/sentinelFlags.ts";
+import { studioLibraryVocabulary } from "../engine/studioLibrary.ts";
 
 const SKILLS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../skills");
 
@@ -409,6 +410,7 @@ export function retrieveHyperframesSkillContext(
     DETERMINISM_COMPACT,
     DATA_ATTRIBUTES_COMPACT,
     EASE_LIBRARY_COMPACT,
+    studioLibraryVocabulary(),
   ].join("\n\n");
 
 
@@ -461,13 +463,21 @@ export function retrieveHyperframesSkillContext(
     return content ? `<motion-rule id="${id}">\n${content}\n</motion-rule>` : "";
   }).filter(Boolean);
 
+  // Alternate block families so a tight final trim cannot preserve every
+  // blueprint while dropping the entire motion-rule half of the reference.
+  const selectedTexts: string[] = [];
+  const selectedCount = Math.max(blueprintTexts.length, ruleTexts.length);
+  for (let index = 0; index < selectedCount; index += 1) {
+    if (blueprintTexts[index]) selectedTexts.push(blueprintTexts[index]!);
+    if (ruleTexts[index]) selectedTexts.push(ruleTexts[index]!);
+  }
+
   const selectedSection = [
     ...(recipeSection ? [recipeSection] : []),
     `## Selected blueprints for this job: ${blueprintIds.join(", ") || "compose freely"}`,
     `## Selected motion rules: ${ruleIds.join(", ") || "author from the vocabulary above"}`,
     "",
-    ...blueprintTexts,
-    ...ruleTexts,
+    ...selectedTexts,
   ].join("\n\n");
 
   // Assemble and trim
