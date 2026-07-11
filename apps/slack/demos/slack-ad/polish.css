@@ -1,0 +1,49 @@
+/* Late-stage composition polish kept separate so the base study remains easy to compare. */
+.proof-card {
+  height: 530px;
+  top: auto;
+  padding: 48px 55px;
+}
+
+.proof-card h2 {
+  font-size: 58px;
+  margin: 20px 0 58px;
+}
+
+.decision {
+  left: 140px;
+  top: 95px;
+  z-index: 2;
+}
+
+.conversation {
+  right: 140px;
+  top: 440px;
+  z-index: 3;
+}
+
+.channel-stack {
+  gap: 13px;
+  font-size: 22px;
+}
+
+.channel-stack > * {
+  padding: 14px 22px;
+}
+
+.join-line {
+  left: 825px;
+  top: 620px;
+  width: 290px;
+  transform: rotate(-31deg);
+}
+
+/* Keep the promise field unmistakably designed even when the focal type is
+   between states; this aubergine floor also prevents dark-frame false alarms. */
+.promise {
+  background: radial-gradient(circle at 50% 48%, #55305d 0%, #432349 50%, #342039 100%);
+}
+
+#all-slack-guard {
+  opacity: 0;
+}
