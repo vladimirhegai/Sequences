@@ -332,6 +332,13 @@ not drive execution); 9 bespoke contracts with no shared interface; ~45
 
 ### WS-G — Recipes, plugins, assets (grow the proven-good library)
 
+> Companion charter: **[studio/ERGONOMICS.md](studio/ERGONOMICS.md)** (owner
+> mandate) — every Studio catalog must stay authorable by a clean-context
+> subagent (skill file per tab, scaffolding commands, end-to-end integration
+> audit). WS-G grows content; that charter keeps the authoring path cheap.
+> Fold its E1/E3 items in if session budget allows; otherwise it is the
+> standing backlog for the session after.
+
 - **G1.** Close the recipe-consumption gap (planner declines offered recipes —
   add host-side auto-declare at high retrieval confidence; degrade-never-veto).
 - **G2.** New plugin kinds where free-form authoring keeps failing:
