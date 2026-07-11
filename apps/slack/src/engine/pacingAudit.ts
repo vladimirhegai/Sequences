@@ -881,7 +881,9 @@ export function topUpFramingFloor(
  *  - the move starts or remains in flight through the required hold,
  *  - the delay is <= MAX_PACING_RETIME_SEC,
  *  - the delayed move does not pass the next full move, and
- *  - the move is not load-bearing (no declared moment binds to its window).
+ *  - a multi-phrase scene keeps every moment binding; a scene with exactly one
+ *    full camera phrase carries its camera-only moment timestamps by the same
+ *    delay because ownership is unambiguous.
  * When the delayed move no longer fits before the scene's own cut, the scene
  * boundary stretches by the overflow (<= MAX_PACING_STRETCH_SEC, 15s scene
  * cap) and every later scene cascade-shifts — the short-scene shape the
@@ -905,6 +907,7 @@ export function delayConflictingCameraMoves(
   for (const scene of storyboard) {
     let result = scene;
     let stretch = 0;
+    const retimedMomentAt = new Map<string, number>();
     const path = scene.camera?.path;
     if (path?.length) {
       const sceneEnd = scene.startSec + scene.durationSec;
@@ -1024,6 +1027,14 @@ export function delayConflictingCameraMoves(
           const fitsScene = overflow <= 1e-6 ||
             (overflow <= MAX_PACING_STRETCH_SEC + 1e-9 &&
               scene.durationSec + overflow <= 15 + 1e-9);
+          // A scene with ONE full camera phrase has no ambiguity about which
+          // motion owns its camera-only moments. If arithmetic must delay that
+          // phrase, carry those timestamps by the same delta instead of making
+          // stale paperwork veto the repair. Multi-move scenes remain strict:
+          // shifting a moment there could change which phrase it describes.
+          const canCarryCameraMoments =
+            !keepsBindings && fullMoves.length === 1 && boundMoments.length > 0;
+          const bindingsSafe = keepsBindings || canCarryCameraMoments;
           const destinationIds = destinationIdsFor(entry.move);
           const servesGatedDestination = (scene.beats ?? []).some((candidate) =>
             destinationIds.has(candidate.component) &&
@@ -1038,7 +1049,7 @@ export function delayConflictingCameraMoves(
             !isLoadBearingMove(scene, entry.move) &&
             (!servesGatedDestination || sameStationReframe);
           if (
-            !fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene ||
+            !fitsDelay || !fitsBeforeNext || !bindingsSafe || !fitsScene ||
             shouldDropCrowdedOverflow
           ) {
             // One camera phrase cutting across several independent reading /
@@ -1067,9 +1078,18 @@ export function delayConflictingCameraMoves(
             stretch = Math.max(stretch, round(overflow));
           }
           newPath[entry.index] = { ...entry.move, startSec: round(target) };
+          if (canCarryCameraMoments) {
+            const delta = target - entry.move.startSec;
+            for (const moment of boundMoments) {
+              retimedMomentAt.set(moment.id, round(moment.atSec + delta));
+            }
+          }
           const note =
             `delayed the ${entry.move.move} from ${entry.move.startSec.toFixed(2)}s to ` +
             `${target.toFixed(2)}s so the payoff/copy holds without an in-flight reframe` +
+            (canCarryCameraMoments
+              ? ` (carried ${boundMoments.length} single-phrase camera moment(s))`
+              : "") +
             (overflow > 1e-6 ? ` (cut boundary stretched ${overflow.toFixed(2)}s to fit it)` : "");
           notes.push(note);
           normalized.push(`scene "${scene.id}": ${note}`);
@@ -1081,6 +1101,14 @@ export function delayConflictingCameraMoves(
           result = withNormalizationNotes(
             {
               ...scene,
+              ...(retimedMomentAt.size
+                ? {
+                    moments: (scene.moments ?? []).map((moment) => ({
+                      ...moment,
+                      atSec: retimedMomentAt.get(moment.id) ?? moment.atSec,
+                    })),
+                  }
+                : {}),
               ...(keptPath.length
                 ? { camera: { ...scene.camera!, path: keptPath } }
                 : { camera: undefined }),

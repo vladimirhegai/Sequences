@@ -978,7 +978,7 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
       .toBe(false);
   });
 
-  it("keeps a load-bearing move when the delay would break its moment binding", () => {
+  it("carries a single camera phrase's moment when delaying that phrase", () => {
     const loadBearing = scene({
       id: "pinned",
       startSec: 0,
@@ -995,7 +995,39 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
       camera: { version: 1, path: [move({ move: "pan", startSec: 2.1, durationSec: 1.0 })] },
       moments: [moment("pinned", "m-arrival", 1.8)],
     });
-    expect(delayConflictingCameraMoves([loadBearing]).normalized).toEqual([]);
+    const result = delayConflictingCameraMoves([loadBearing]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.camera!.path[0]!.startSec).toBe(2.8);
+    expect(result.storyboard[0]!.moments![0]!.atSec).toBe(2.5);
+    expect(auditPacing(result.storyboard).some((finding) => finding.startsWith("pacing/outcome:")))
+      .toBe(false);
+  });
+
+  it("does not move camera moments in a multi-phrase scene", () => {
+    const ambiguous = scene({
+      id: "pinned-multi",
+      startSec: 0,
+      durationSec: 6,
+      components: [{ version: 1 as const, id: "deploy-button", kind: "button" as const }],
+      beats: [beat("pinned-multi", {
+        id: "b-press",
+        component: "deploy-button",
+        kind: "set-state",
+        atSec: 1.2,
+        durationSec: 0.8,
+        toState: "success",
+      })],
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 2.1, durationSec: 1 }),
+          move({ move: "push-in", startSec: 4.5, durationSec: 0.8 }),
+        ],
+      },
+      moments: [moment("pinned-multi", "m-arrival", 1.8)],
+    });
+    expect(delayConflictingCameraMoves([ambiguous]).normalized).toEqual([]);
+    expect(delayConflictingCameraMoves([ambiguous]).storyboard[0]!.moments![0]!.atSec).toBe(1.8);
   });
 
   it("drops a non-load-bearing move that crosses multiple holds when no clean slot fits", () => {

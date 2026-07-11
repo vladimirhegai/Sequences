@@ -125,6 +125,13 @@ export interface PluginLowerContext {
    * static number).
    */
   arrivalSec?: number;
+  /**
+   * When the camera opens on (or has arrived at) this unit and later starts a
+   * named move to another station, the absolute departure second. Generated
+   * beat cascades compress to finish before this boundary instead of firing
+   * after their source station has left frame.
+   */
+  departureSec?: number;
 }
 
 export interface PluginSpec {
@@ -263,6 +270,93 @@ function cameraArrivalSec(
     arrival = arrival === undefined ? end : Math.min(arrival, end);
   }
   return arrival;
+}
+
+/** First named camera departure from the plugin unit's currently framed station. */
+function cameraDepartureSec(
+  camera: { path?: CameraMoveIntentV1[] } | undefined,
+  declaration: Pick<PluginDeclarationV1, "id" | "region">,
+): number | undefined {
+  const childPrefix = `${declaration.id}-`;
+  const framesUnit = (part: string | undefined, region: string | undefined): boolean =>
+    (declaration.region !== undefined && region === declaration.region) ||
+    part === declaration.id ||
+    (part?.startsWith(childPrefix) ?? false);
+  const path = [...(camera?.path ?? [])].sort((a, b) => a.startSec - b.startSec);
+  const first = path[0];
+  if (!first) return undefined;
+  let currentFramesUnit = first.fromPart || first.fromRegion
+    ? framesUnit(first.fromPart, first.fromRegion)
+    : framesUnit(first.toPart, first.toRegion);
+  for (const move of path) {
+    const hasNamedTarget = Boolean(move.toPart || move.toRegion);
+    const targetFramesUnit = hasNamedTarget
+      ? framesUnit(move.toPart, move.toRegion)
+      : currentFramesUnit;
+    if (move.move !== "hold" && currentFramesUnit && !targetFramesUnit) {
+      return move.startSec;
+    }
+    if (hasNamedTarget) currentFramesUnit = targetFramesUnit;
+  }
+  return undefined;
+}
+
+const PLUGIN_OUTCOME_HOLD_SEC = 0.8;
+const PLUGIN_SETTLE_SEC = 0.15;
+
+/**
+ * Preserve a generated unit's rhythm while fitting all of its beats inside the
+ * station's visible window. Only relative offsets compress; durations, order,
+ * content, and the first entrance anchor stay unchanged. If even the first
+ * beat cannot settle before departure, the pacing gate still reports it.
+ */
+function fitLoweringBeforeDeparture(
+  lowering: PluginLowering,
+  ctx: PluginLowerContext,
+): PluginLowering {
+  if (ctx.departureSec === undefined || lowering.beats.length < 2) return lowering;
+  const firstAt = Math.min(...lowering.beats.map((entry) => entry.atSec));
+  const kinds = new Map(lowering.components.map((entry) => [entry.id, entry.kind]));
+  const holdAfter = (entry: ComponentBeatIntentV1): number => {
+    const words = entry.text?.trim().split(/\s+/).filter(Boolean).length ?? 0;
+    const readingHold = (entry.kind === "type" || entry.kind === "swap") && words
+      ? Math.min(4, Math.max(1.2, words * 0.3))
+      : 0;
+    const outcomeHold = entry.kind === "press" || entry.kind === "set-state" ||
+        (entry.kind === "open" && kinds.get(entry.component) === "toast")
+      ? PLUGIN_OUTCOME_HOLD_SEC
+      : PLUGIN_SETTLE_SEC;
+    return Math.max(readingHold, outcomeHold);
+  };
+  const firstBeat = lowering.beats.find((entry) => Math.abs(entry.atSec - firstAt) <= 1e-6)!;
+  // No compression can create visibility when the very first beat already
+  // misses the station window. Leave that impossible plan intact for the
+  // storyboard gate/prompt to resolve; collapsing every beat to one off-screen
+  // timestamp would hide the problem and destroy the authored rhythm.
+  if (firstAt + (firstBeat.durationSec ?? 0) + holdAfter(firstBeat) > ctx.departureSec + 1e-6) {
+    return lowering;
+  }
+  let scale = 1;
+  for (const entry of lowering.beats) {
+    const offset = entry.atSec - firstAt;
+    if (offset <= 1e-6) continue;
+    const duration = entry.durationSec ?? 0;
+    const latestStart = ctx.departureSec - duration - holdAfter(entry);
+    scale = Math.min(scale, (latestStart - firstAt) / offset);
+  }
+  scale = Math.max(0, Math.min(1, scale));
+  if (scale >= 1 - 1e-6) return lowering;
+  return {
+    ...lowering,
+    beats: lowering.beats.map((entry) => ({
+      ...entry,
+      atSec: Math.round((firstAt + (entry.atSec - firstAt) * scale) * 1000) / 1000,
+    })),
+  };
+}
+
+function lowerPlugin(spec: PluginSpec, ctx: PluginLowerContext): PluginLowering {
+  return fitLoweringBeforeDeparture(spec.lower(ctx), ctx);
 }
 
 const TILE_PATTERNS: Record<string, string[]> = {
@@ -1269,6 +1363,7 @@ function lowerContext(
       .map((name) => `${name}=${declaration.params[name]}`)
       .join("&");
   const arrivalSec = cameraArrivalSec(scene.camera, declaration);
+  const departureSec = cameraDepartureSec(scene.camera, declaration);
   return {
     sceneId: scene.id,
     startSec: scene.startSec,
@@ -1277,6 +1372,7 @@ function lowerContext(
     uid,
     ...(declaration.region ? { region: declaration.region } : {}),
     ...(arrivalSec !== undefined ? { arrivalSec } : {}),
+    ...(departureSec !== undefined ? { departureSec } : {}),
     params: declaration.params,
     topic: deriveTopic(
       typeof declaration.params.topic === "string" ? declaration.params.topic : "",
@@ -1485,7 +1581,7 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
           )
         );
         if (typedMetric) {
-          const retired = spec.lower(
+          const retired = lowerPlugin(spec,
             lowerContext(scene, {
               ...declaration,
               params,
@@ -1533,7 +1629,7 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
       // every child this lowering would create already exists in the scene,
       // the unit was lowered by a previous parse — re-stamp the existing
       // components and keep the declaration instead of appending a duplicate.
-      const replay = spec.lower(
+      const replay = lowerPlugin(spec,
         lowerContext(scene, { ...declaration, params, uid: `${scene.id}-${declaration.id}` }),
       );
       const existingIds = new Set(
@@ -1571,7 +1667,7 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
       let id = declaration.id;
       for (let suffix = 2; suffix < 6; suffix += 1) {
         const candidate: PluginDeclarationV1 = { ...declaration, id, params };
-        const lowered = CATALOG_BY_KIND.get(declaration.kind)!.lower(
+        const lowered = lowerPlugin(CATALOG_BY_KIND.get(declaration.kind)!,
           lowerContext(scene, candidate),
         );
         const collision = [id, ...lowered.components.map((entry) => entry.id)]
@@ -1593,7 +1689,7 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
         params,
         uid: `${scene.id}-${id}`,
       };
-      const lowering = spec.lower(lowerContext(scene, finalDeclaration));
+      const lowering = lowerPlugin(spec, lowerContext(scene, finalDeclaration));
       takenPartIds.add(id);
       for (const entry of lowering.components) takenPartIds.add(entry.id);
       extraComponents.push(...lowering.components);
@@ -1821,7 +1917,7 @@ export function resolvePluginPlan(scenes: DirectScene[]): ResolvedPluginInstance
     for (const declaration of scene.plugins ?? []) {
       const spec = CATALOG_BY_KIND.get(declaration.kind);
       if (!spec || !declaration.uid) continue; // reconcile owns the note
-      const lowering = spec.lower(lowerContext(scene, declaration));
+      const lowering = lowerPlugin(spec, lowerContext(scene, declaration));
       const firstBeatSec = lowering.beats.reduce(
         (earliest, beatIntent) => Math.min(earliest, beatIntent.atSec),
         Infinity,
@@ -2238,7 +2334,7 @@ export const PLUGIN_KINDS: ReadonlySet<string> = new Set(PLUGIN_CATALOG.map((spe
 /* Sanity: every lowered component kind must exist in the component catalog.
  * Checked at module load so a catalog typo fails fast in tests, not mid-run. */
 for (const spec of PLUGIN_CATALOG) {
-  const probe = spec.lower({
+  const probe = lowerPlugin(spec, {
     sceneId: "probe",
     startSec: 0,
     durationSec: 6,

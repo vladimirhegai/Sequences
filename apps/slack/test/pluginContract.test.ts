@@ -16,7 +16,7 @@ import {
   componentUnitCount,
   trimOverBudgetComponents,
 } from "../src/engine/componentContract.ts";
-import { sceneIntroductionTimes } from "../src/engine/pacingAudit.ts";
+import { auditPacing, sceneIntroductionTimes } from "../src/engine/pacingAudit.ts";
 import { authorStoryboardProjection } from "../src/engine/compositionRunner.ts";
 import { createSeededRandom } from "../src/engine/pluginKernel.ts";
 import { deriveTopic, seedMetrics, seedToasts } from "../src/engine/seedContent.ts";
@@ -1110,6 +1110,43 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
     // Arrival is 5.0s; the shared 60%-introduction cap keeps the entrance at
     // 3.6s instead of letting the unit animate unseen at 0.6s.
     expect(firstBeatAt(result.scenes)).toBeCloseTo(3.6, 2);
+  });
+
+  it("compresses a source-station toast cascade before the camera departs (LaunchRelay)", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        durationSec: 4.9,
+        plugins: normalizeStoryboardPluginDeclarations([{
+          version: 1,
+          kind: "notification-stack",
+          id: "scatter-notifs",
+          region: "chaos-zone",
+          params: { count: 4, tone: "mixed" },
+        }]),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "hold", toRegion: "chaos-zone", startSec: 0, durationSec: 2.6 },
+            {
+              version: 1,
+              move: "whip",
+              fromRegion: "chaos-zone",
+              toRegion: "rail-zone",
+              startSec: 2.6,
+              durationSec: 0.8,
+            },
+          ],
+        },
+      }),
+    ]);
+    const lowered = result.scenes[0]!;
+    const opens = lowered.beats!.filter((entry) => entry.id.startsWith("scatter-notifs-b"));
+    expect(opens.map((entry) => entry.atSec)).toEqual([0.588, 0.825, 1.063, 1.3]);
+    expect(Math.max(...opens.map((entry) => entry.atSec + (entry.durationSec ?? 0) + 0.8)))
+      .toBeLessThanOrEqual(2.6);
+    expect(auditPacing([lowered]).filter((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toEqual([]);
   });
 });
 

@@ -224,7 +224,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "not load-bearing. 2026-07-07 attempt-economy sweep: when the delayed move " +
       "overruns the scene's own cut (the short-scene shape every probe re-rejected), " +
       "the boundary stretches by the overflow (<= MAX_PACING_STRETCH_SEC, 15s scene " +
-      "cap) and later scenes cascade-shift — still pure arithmetic. Same atomic " +
+      "cap) and later scenes cascade-shift — still pure arithmetic. LaunchRelay " +
+      "(2026-07-11): when a scene has exactly one full camera phrase, its camera-only " +
+      "moment timestamps carry by the same delay; multi-phrase binding stays strict. Same atomic " +
       "commit-or-revert. Telemetry tag: camera-move-delay. Visible in STORYBOARD.md.",
   },
   {
@@ -825,7 +827,12 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "believable content, and N-element entrances are host strengths the " +
       "model reliably fumbles. 2026-07-09 plugin-live-1 lessons folded in: " +
       "entrance beats wait for the camera's arrival at the unit's station " +
-      "(cameraArrivalSec — count-ups no longer play off-screen), the injected " +
+      "(cameraArrivalSec — count-ups no longer play off-screen). LaunchRelay " +
+      "(2026-07-11): cameraDepartureSec also bounds the other side of visibility; " +
+      "a generated cascade that begins on-frame compresses its relative offsets " +
+      "so every beat and required hold finishes before its source station departs. " +
+      "An impossible window whose first beat is already late stays unchanged for " +
+      "the gate instead of collapsing into one off-screen timestamp. The injected " +
       "wrapper carries placement self-defense (grid-column:1/-1, min-width:0) " +
       "so an author grid station can never squeeze it, and author-drawn " +
       "markup duplicating an ABSORBED component (pluginAbsorbedParts) is " +
