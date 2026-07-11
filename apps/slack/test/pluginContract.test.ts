@@ -1148,6 +1148,38 @@ describe("camera-arrival entrance timing (plugin-live-1: count-ups off-screen)",
       finding.startsWith("pacing/outcome:")
     )).toEqual([]);
   });
+
+  it("honors an explicit from-region after a targetless opening drift", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        durationSec: 4.9,
+        plugins: normalizeStoryboardPluginDeclarations([{
+          version: 1,
+          kind: "notification-stack",
+          id: "alerts",
+          region: "source-zone",
+          params: { count: 4 },
+        }]),
+        camera: {
+          version: 1,
+          path: [
+            { version: 1, move: "drift", startSec: 0, durationSec: 0.4 },
+            {
+              version: 1,
+              move: "pan",
+              fromRegion: "source-zone",
+              toRegion: "proof-zone",
+              startSec: 2.6,
+              durationSec: 0.8,
+            },
+          ],
+        },
+      }),
+    ]);
+    const opens = result.scenes[0]!.beats!.filter((entry) => entry.id.startsWith("alerts-b"));
+    expect(Math.max(...opens.map((entry) => entry.atSec + (entry.durationSec ?? 0) + 0.8)))
+      .toBeLessThanOrEqual(2.6);
+  });
 });
 
 describe("author-duplicated absorbed parts are hidden at injection", () => {

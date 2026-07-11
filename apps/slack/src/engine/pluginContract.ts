@@ -289,11 +289,14 @@ function cameraDepartureSec(
     ? framesUnit(first.fromPart, first.fromRegion)
     : framesUnit(first.toPart, first.toRegion);
   for (const move of path) {
+    const sourceFramesUnit = move.fromPart || move.fromRegion
+      ? framesUnit(move.fromPart, move.fromRegion)
+      : currentFramesUnit;
     const hasNamedTarget = Boolean(move.toPart || move.toRegion);
     const targetFramesUnit = hasNamedTarget
       ? framesUnit(move.toPart, move.toRegion)
       : currentFramesUnit;
-    if (move.move !== "hold" && currentFramesUnit && !targetFramesUnit) {
+    if (move.move !== "hold" && sourceFramesUnit && !targetFramesUnit) {
       return move.startSec;
     }
     if (hasNamedTarget) currentFramesUnit = targetFramesUnit;
