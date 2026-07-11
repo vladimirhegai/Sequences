@@ -710,6 +710,7 @@ describe("unsupported component beats degrade at parse (fallback-elimination)", 
             components: [
               { version: 1, id: "alerts-table", kind: "table" },
               { version: 1, id: "latency-stat", kind: "stat-card" },
+              { version: 1, id: "action-bar", kind: "button" },
             ],
             beats,
             moments,
@@ -788,6 +789,33 @@ describe("unsupported component beats degrade at parse (fallback-elimination)", 
     expect(beat.kind).toBe("swap");
     expect(beat.text).toBe("rollback checkout");
     expect(parsed[1]!.moments!.some((entry) => entry.id === "m-typed-query")).toBe(true);
+  });
+
+  it("converts load-bearing rows on a button to the same control's active state", () => {
+    const parsed = planWith(
+      [{
+        version: 1,
+        id: "dashboard-populates",
+        sceneId: "product-proof",
+        component: "action-bar",
+        kind: "rows",
+        atSec: 4.2,
+      }],
+      [{
+        version: 1,
+        id: "m-dashboard-populates",
+        sceneId: "product-proof",
+        atSec: 4.3,
+        title: "Action bar activates on dashboard",
+        visualState: "The dashboard action surface becomes active",
+        change: "The consolidated dashboard comes alive",
+        motionIntent: "ui-state",
+        importance: "primary",
+      }],
+    );
+    const beat = parsed[1]!.beats!.find((entry) => entry.id === "dashboard-populates")!;
+    expect(beat.kind).toBe("set-state");
+    expect(beat.toState).toBe("active");
   });
 
   it("keeps a load-bearing NON-text unsupported beat blocking (a moment anchors on it)", () => {
@@ -5218,7 +5246,14 @@ describe("L2 brand base injection (host-owned committed type/canvas/accent)", ()
   const FRAME_MD = [
     "| Token | Value | Rule |",
     "| Canvas | `#0A0E14` | Primary text must remain >=7:1 |",
+    "| Surface | `#121824` | elevated field |",
+    "| Text | `#F4F5F7` | load-bearing copy |",
+    "| Muted text | `#9BA0AC` | secondary copy |",
     "| Committed accent | `#E8590C` | one accent |",
+    "| Text on accent | `#111111` | safe ink |",
+    "| Accent-soft | `#3A1F12` | tinted panels |",
+    "| Border | `#2A3240` | seams |",
+    "| Positive / negative | `#27D9A1` / `#B42335` | status only |",
     "",
     "**Display / headlines:** Space Grotesk",
     "**Body / UI:** EB Garamond",
@@ -5229,7 +5264,16 @@ describe("L2 brand base injection (host-owned committed type/canvas/accent)", ()
     const block = brandBaseStyleBlock(FRAME_MD)!;
     expect(block).toContain('id="sequences-brand-base"');
     expect(block).toContain("--canvas:#0A0E14");
+    expect(block).toContain("--surface:#121824");
+    expect(block).toContain("--surface-2:#121824");
+    expect(block).toContain("--text:#F4F5F7");
+    expect(block).toContain("--muted:#9BA0AC");
     expect(block).toContain("--accent:#E8590C");
+    expect(block).toContain("--accent-text:#111111");
+    expect(block).toContain("--accent-soft:#3A1F12");
+    expect(block).toContain("--border:#2A3240");
+    expect(block).toContain("--positive:#27D9A1");
+    expect(block).toContain("--negative:#B42335");
     expect(block).toContain("--font-body:'EB Garamond'");
     expect(block).toContain("body{font-family:var(--font-body)");
     expect(block).toContain(".cmp-headline{font-family:var(--font-display)");

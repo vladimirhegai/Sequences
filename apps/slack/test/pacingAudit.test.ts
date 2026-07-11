@@ -1473,7 +1473,7 @@ describe("2026-07-08 probe set — interaction holds (audit + retimeCameraOverIn
     )).toBe(true);
   });
 
-  it("drops a non-camera interaction reframe when delaying it would stretch the scene", () => {
+  it("drops an interaction-owned reframe even when the planner mislabeled cursor arrival as camera-arrival", () => {
     const review = scene({
       id: "exception-review",
       startSec: 5.5,
@@ -1495,8 +1495,8 @@ describe("2026-07-08 probe set — interaction holds (audit + retimeCameraOverIn
       })],
       moments: [{
         version: 1, id: "cursor-resolves", sceneId: "exception-review", atSec: 8,
-        title: "Cursor resolves exception", visualState: "Row approved",
-        change: "Policy exception clears", motionIntent: "ui-state", importance: "primary",
+        title: "Cursor resolves exception", visualState: "Cursor lands on the approve button",
+        change: "The click clears the policy exception", motionIntent: "camera-arrival", importance: "primary",
       }],
     });
     const result = retimeCameraOverInteractions([review]);

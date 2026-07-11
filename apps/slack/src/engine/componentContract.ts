@@ -1539,12 +1539,39 @@ export function componentUnitCount(
 ): number {
   if (!components?.length) return 0;
   const pluginUids = new Set<string>();
+  const freeByRegion = new Map<string, SceneComponentSpecV1[]>();
+  for (const component of components) {
+    if (!component.pluginUid && component.region) {
+      const group = freeByRegion.get(component.region) ?? [];
+      group.push(component);
+      freeByRegion.set(component.region, group);
+    }
+  }
+  // One app-window chassis plus one non-overlay child in the same declared
+  // station is one product surface, not two simultaneous ideas. LumaFlow's
+  // two-second bridge (`app-window` + its action bar) burned a storyboard
+  // retry because the old raw count contradicted the finding's own wording.
+  // Keep this deliberately narrow: larger groups and transient overlays still
+  // count independently, so the original dense-scene guard retains teeth.
+  const pairedChassisRegions = new Set(
+    [...freeByRegion.entries()]
+      .filter(([, group]) =>
+        group.length === 2 && group.some((component) => component.kind === "app-window") &&
+        group.every((component) =>
+          !STACKABLE_OVERLAY_KINDS.has(component.kind) && component.kind !== "toast"
+        )
+      )
+      .map(([region]) => region),
+  );
+  const countedChassisRegions = new Set<string>();
   let free = 0;
   for (const component of components) {
     if (component.pluginUid) pluginUids.add(component.pluginUid);
-    else free += 1;
+    else if (component.region && pairedChassisRegions.has(component.region)) {
+      countedChassisRegions.add(component.region);
+    } else free += 1;
   }
-  return free + pluginUids.size;
+  return free + pluginUids.size + countedChassisRegions.size;
 }
 
 /**

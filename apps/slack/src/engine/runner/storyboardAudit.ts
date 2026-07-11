@@ -52,6 +52,7 @@ import {
   resolveComponentPlan,
   retimeLateLoadBearingEntrances,
   trimOverBudgetComponents,
+  type ComponentBeatIntentV1,
   type ComponentBeatKind,
   type ComponentKind,
 } from "../componentContract.ts";
@@ -1646,18 +1647,28 @@ export function degradeUnsupportedComponentBeats(
         (beat.kind === "progress" || beat.kind === "rows") &&
         typeof beat.value === "number" &&
         componentSupportsBeat(kind, "count");
-      if (loadBearing && !isTextAnalog && !isNumericAnalog) return beat;
+      // LumaFlowQC1's scene-scoped repair changed "dashboard populates" into
+      // `rows` on the dashboard action button. A button cannot own child rows,
+      // but its active-state transition is the same control, time, and semantic
+      // turn; the model's eventual full re-plan chose this exact repair. It is
+      // therefore safe even when a moment binds to the beat.
+      const isButtonRowsAnalog = beat.kind === "rows" && kind === "button";
+      if (loadBearing && !isTextAnalog && !isNumericAnalog && !isButtonRowsAnalog) return beat;
       const analog: ComponentBeatKind =
         isTextAnalog
           ? "swap"
           : isNumericAnalog
             ? "count"
-            : "highlight";
+            : isButtonRowsAnalog
+              ? "set-state"
+              : "highlight";
       degraded.push(
         `scene "${scene.id}" beat "${beat.id}": "${beat.kind}" is unsupported on a ` +
           `${kind} component — degraded to "${analog}"`,
       );
-      return { ...beat, kind: analog };
+      return isButtonRowsAnalog
+        ? { ...beat, kind: analog, toState: "active" } as ComponentBeatIntentV1
+        : { ...beat, kind: analog };
     });
     return { ...scene, beats };
   });

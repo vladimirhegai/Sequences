@@ -14,6 +14,7 @@ import { auditSentinelNormalizerRegistry } from "../src/engine/sentinel.ts";
 const SYNTAX_ORDER = [
   "normalize.root-data-start",
   "normalize.inline-source-syntax.css-var",
+  "normalize.inline-source-syntax.template-selector",
   "normalize.inline-source-syntax.svg-placeholder",
   "normalize.inline-source-syntax.connector-svg-policy",
   "normalize.inline-source-syntax.visibility",
@@ -79,6 +80,8 @@ describe("ordered source normalizer registry (WS-F1)", () => {
       '    tl.set("#card", { opacity: 0 }, 0);',
       '    tl.set("#card", { display: "grid", visibility: "visible", opacity: 1 }, 0.2);',
       '    tl.to("#card", { borderColor: var(--positive) }, 0.4);',
+      '    const sel = ".active";',
+      '    document.querySelector(`#card ${sel}`);',
       '    tl.fromTo("#card", { opacity: 1, duration: 0.01 }, 1);',
       "  </script>",
       "</main>",
@@ -96,12 +99,13 @@ describe("ordered source normalizer registry (WS-F1)", () => {
     expect(telemetry).toEqual([
       ["root-data-start", 1],
       ["bare-css-var", 1],
+      ["template-literal-selector", 1],
       ["invalid-svg-placeholder", 1],
       ["connector-svg-policy", 2],
       ["gsap-display-visibility", 1],
       ["gsap-call-shape", 1],
     ]);
-    expect(diagnostics).toHaveLength(6);
+    expect(diagnostics).toHaveLength(7);
     expect(result.state).toBe([
       "<!doctype html>",
       '<main data-composition-id="golden" data-start="0">',
@@ -114,6 +118,8 @@ describe("ordered source normalizer registry (WS-F1)", () => {
       '    tl.set("#card", { opacity: 0 }, 0);',
       '    tl.set("#card", {opacity: 1 }, 0.2);',
       '    tl.to("#card", { borderColor: "var(--positive)" }, 0.4);',
+      '    const sel = ".active";',
+      '    document.querySelector("#card " + sel + "");',
       '    tl.to("#card", { opacity: 1, duration: 0.01 }, 1);',
       "  </script>",
       "</main>",

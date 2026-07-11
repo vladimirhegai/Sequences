@@ -458,8 +458,8 @@ describe("plugin markup injection (strip + reinject, recipe seam discipline)", (
         `</section></body></html>`,
       scenes,
     ).html;
-    expect(html).toContain('data-sequences-plugin-placement="scene-safe-bottom"');
-    expect(html).toContain("position:absolute;left:50%;bottom:var(--space-safe,64px);z-index:30");
+    expect(html).toContain('data-sequences-plugin-placement="scene-center-overlay"');
+    expect(html).toContain("position:absolute;left:50%;top:50%;z-index:30");
   });
 
   it("lands a regionless lockup in an authored semantic CTA slot instead of floating over the UI", () => {
@@ -486,8 +486,8 @@ describe("plugin markup injection (strip + reinject, recipe seam discipline)", (
     expect(pluginIndex).toBeGreaterThan(slotIndex);
     expect(pluginIndex).toBeLessThan(slotCloseIndex);
     expect(html).toContain('data-sequences-plugin-placement="semantic-slot"');
-    expect(html).not.toContain('data-sequences-plugin-placement="scene-safe-bottom"');
-    expect(html).not.toContain("position:absolute;left:50%;bottom:");
+    expect(html).not.toContain('data-sequences-plugin-placement="scene-center-overlay"');
+    expect(html).not.toContain("position:absolute;left:50%;top:50%");
     expect(injectPluginContract(html, scenes).html).toBe(html);
   });
 });
@@ -1071,7 +1071,11 @@ describe("exact-copy duplicate stamping (fix-probe-1 doubled lockup)", () => {
             version: 1,
             kind: "lockup",
             id: "brand-lockup",
-            params: { headline: "Every deploy, verified.", cta: "Start deploying" },
+            params: {
+              headline: "Every deploy, verified.",
+              sub: "One release command center.",
+              cta: "Start deploying",
+            },
           },
         ]),
       }),
@@ -1100,6 +1104,13 @@ describe("exact-copy duplicate stamping (fix-probe-1 doubled lockup)", () => {
     expect(twice).toBe(once);
   });
 
+  it("lands the CTA inside the lockup entrance ensemble", () => {
+    const lowered = lockupScenes()[0]!;
+    const headline = lowered.beats!.find((beat) => beat.component === "brand-lockup-headline")!;
+    const cta = lowered.beats!.find((beat) => beat.component === "brand-lockup-cta")!;
+    expect(cta.atSec - headline.atSec).toBeCloseTo(0.2, 3);
+  });
+
   it("never stamps copy in OTHER scenes (cross-scene echoes are design)", () => {
     const scenes = lockupScenes();
     const html = AUTHOR_DUPE_HTML.replace(
@@ -1124,5 +1135,42 @@ describe("exact-copy duplicate stamping (fix-probe-1 doubled lockup)", () => {
     expect(replayed).toContain(
       '<div class="brand-headline" data-sequences-plugin-duplicate="">',
     );
+  });
+});
+
+describe("anonymous dashboard-grid duplicate stamping (LumaFlowQC1 clipped metric wall)", () => {
+  const scenes = reconcileAndLowerPlugins([
+    scene({
+      plugins: normalizeStoryboardPluginDeclarations([
+        {
+          version: 1,
+          kind: "dashboard-grid",
+          id: "metrics",
+          region: "dashboard-overview",
+          params: { tiles: 4, emphasis: "mixed", topic: "release readiness" },
+        },
+      ]),
+      components: [{ version: 1, id: "risk-card", kind: "stat-card", region: "dashboard-overview" }],
+    }),
+  ]).scenes;
+  const html = sceneHtml("s1").replace(
+    "</section>",
+    `<div data-region="dashboard-overview">` +
+      `<div class="row" data-part="metric-row">` +
+      `<div class="metric-tile" data-part="tile-1">Latency</div>` +
+      `<div class="metric-tile" data-part="tile-2">Errors</div>` +
+      `<div class="metric-tile" data-part="tile-3">Deploys</div>` +
+      `<div class="metric-tile" data-part="tile-4">MTTR</div></div>` +
+      `<div data-component="stat-card" data-part="risk-card">87</div></div></section>`,
+  );
+
+  it("hides the anonymous duplicate row but preserves the declared focal component", () => {
+    const once = injectPluginContract(html, scenes).html;
+    expect(once).toContain(
+      '<div class="row" data-part="metric-row" data-sequences-plugin-duplicate="">',
+    );
+    expect(once).toContain('<div data-component="stat-card" data-part="risk-card">87</div>');
+    expect(once).toContain("[data-sequences-plugin-duplicate]{display:none!important}");
+    expect(injectPluginContract(once, scenes).html).toBe(once);
   });
 });

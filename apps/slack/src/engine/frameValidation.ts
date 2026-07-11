@@ -16,6 +16,14 @@ export interface ParsedFrame {
   accent?: string;
   /** The frame's tinted canvas hex (semantic token table row). */
   canvas?: string;
+  surface?: string;
+  text?: string;
+  muted?: string;
+  accentText?: string;
+  accentSoft?: string;
+  border?: string;
+  positive?: string;
+  negative?: string;
   palette: string[];
   display?: string;
   body?: string;
@@ -43,15 +51,28 @@ export function parseFrame(frameMd: string): ParsedFrame {
     .filter((value): value is string => Boolean(value));
   const font = (role: string): string | undefined =>
     frameMd.match(new RegExp(`\\*\\*${role}:\\*\\*\\s*([^\\r\\n]+)`, "i"))?.[1]?.trim();
+  const semanticColor = (role: string): string | undefined =>
+    normalizeHex(
+      frameMd.match(new RegExp(`\\|\\s*${role}\\s*\\|\\s*\`(#[0-9a-f]{6})\``, "i"))?.[1] ?? "",
+    );
+  const statusPair = frameMd.match(
+    /\|\s*Positive\s*\/\s*negative\s*\|\s*`(#[0-9a-f]{6})`\s*\/\s*`(#[0-9a-f]{6})`/i,
+  );
   return {
     brandMatched,
     accentCommitted,
     accent: normalizeHex(
       frameMd.match(/\|\s*Committed accent\s*\|\s*`(#[0-9a-f]{6})`/i)?.[1] ?? "",
     ),
-    canvas: normalizeHex(
-      frameMd.match(/\|\s*Canvas\s*\|\s*`(#[0-9a-f]{6})`/i)?.[1] ?? "",
-    ),
+    canvas: semanticColor("Canvas"),
+    surface: semanticColor("Surface"),
+    text: semanticColor("Text"),
+    muted: semanticColor("Muted text"),
+    accentText: semanticColor("Text on accent"),
+    accentSoft: semanticColor("Accent-soft"),
+    border: semanticColor("Border"),
+    positive: normalizeHex(statusPair?.[1] ?? ""),
+    negative: normalizeHex(statusPair?.[2] ?? ""),
     palette: [...new Set(palette)],
     display: font("Display / headlines"),
     body: font("Body / UI"),

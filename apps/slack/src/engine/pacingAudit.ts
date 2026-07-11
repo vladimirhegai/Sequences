@@ -601,13 +601,31 @@ function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
  */
 export function isLoadBearingMove(scene: DirectScene, move: CameraMoveIntentV1): boolean {
   const moveEnd = move.startSec + move.durationSec;
-  return (scene.moments ?? []).some((moment) => momentNeedsCamera(moment) &&
+  return (scene.moments ?? []).some((moment) => momentNeedsCamera(scene, moment) &&
     moveEnd >= moment.atSec - EVIDENCE_BEFORE_SEC &&
     move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
   );
 }
 
-function momentNeedsCamera(moment: NonNullable<DirectScene["moments"]>[number]): boolean {
+function momentNeedsCamera(
+  scene: DirectScene,
+  moment: NonNullable<DirectScene["moments"]>[number],
+): boolean {
+  const prose = `${moment.title} ${moment.visualState} ${moment.change}`.toLowerCase();
+  const explicitlyCameraOwned =
+    /\b(?:camera|reframe|framing|pan|whip|zoom|track|orbit|dive|push-in|pull-back)\b/.test(prose);
+  const explicitlyInteractionOwned = /\b(?:cursor|click|press|tap|drag|pointer)\b/.test(prose) &&
+    (scene.interactions ?? []).some((interaction) => {
+      const end = interaction.holdUntilSec ?? interaction.releaseSec ?? interaction.arriveSec;
+      return interaction.startSec - EVIDENCE_BEFORE_SEC <= moment.atSec &&
+        end + EVIDENCE_AFTER_SEC >= moment.atSec;
+    });
+  // A planner sometimes labels "Cursor arrives" as `camera-arrival`. The
+  // explicit interaction is still the evidence owner; preserving a clashing
+  // camera move for that mislabeled moment makes the host retry the planner
+  // for arithmetic it can resolve by holding the station. Explicit camera
+  // prose continues to win when the shot genuinely follows the pointer.
+  if (explicitlyInteractionOwned && !explicitlyCameraOwned) return false;
   const intent = `${moment.motionIntent} ${moment.title} ${moment.change}`.toLowerCase();
   return /\b(?:camera|reframe|framing|pan|whip|zoom|track|orbit|dive|push-in|pull-back)\b/
     .test(intent);
@@ -925,7 +943,7 @@ export function delayConflictingCameraMoves(
           // Retiming a load-bearing move is safe only while every moment that
           // could bind to the original move still overlaps the new window.
           const boundMoments = (scene.moments ?? []).filter((moment) =>
-            momentNeedsCamera(moment) &&
+            momentNeedsCamera(scene, moment) &&
             entry.move.startSec + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
             entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
           );
@@ -1086,7 +1104,7 @@ export function retimeCameraOverInteractions(
         // Binding preservation: every moment that could bind to the original
         // window must still overlap the retimed one.
         const boundMoments = (scene.moments ?? []).filter((moment) =>
-          momentNeedsCamera(moment) &&
+          momentNeedsCamera(scene, moment) &&
           entry.move.startSec + entry.move.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
           entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
         );

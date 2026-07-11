@@ -733,8 +733,8 @@ export const PLUGIN_CATALOG: PluginSpec[] = [
       "line-height:.94;letter-spacing:-.045em;max-width:16ch}\n" +
       ".seq-plugin-lockup .seq-lockup-sub{font-size:clamp(24px,2.2vw,42px);" +
       "font-weight:500;line-height:1.16;max-width:32ch;opacity:.82;letter-spacing:-.01em}\n" +
-      ".seq-plugin-lockup .cmp-button{margin-top:13px;font-size:clamp(22px,1.55vw,30px);" +
-      "padding:.72em 1.35em}",
+      ".seq-plugin-lockup .cmp-button{margin-top:13px;font-size:clamp(30px,2.3vw,44px);" +
+      "padding:.95em 1.9em}",
     lower(ctx) {
       const headline = String(ctx.params.headline ?? "").trim();
       const sub = String(ctx.params.sub ?? "").trim();
@@ -798,7 +798,12 @@ export const PLUGIN_CATALOG: PluginSpec[] = [
       if (cta) {
         components.push(component(ctx, `${ctx.id}-cta`, "button"));
         beats.push(
-          beat(ctx, 3, `${ctx.id}-cta`, "open", t0 + (sub ? 0.95 : 0.6), { durationSec: 0.5 }),
+          // Reveal the CTA as part of the lockup's ensemble landing. Deferring
+          // it by nearly a second left a primary blocking phrase staring at an
+          // opacity-zero button throughout its readable dwell (LumaFlowQC1).
+          // A short 0.2s hierarchy offset keeps the headline first without
+          // splitting one closing idea into two camera targets.
+          beat(ctx, 3, `${ctx.id}-cta`, "open", t0 + (sub ? 0.2 : 0.15), { durationSec: 0.5 }),
         );
         markups.push(
           `<button class="cmp cmp-button" data-component="button" data-part="${ctx.id}-cta" ` +
@@ -1720,6 +1725,82 @@ function sceneOpenTag(html: string, sceneId: string): { index: number; end: numb
   return { index: match.index, end: match.index + match[0].length };
 }
 
+/** Balanced bounds for one authored element opening tag. */
+function elementBlockBounds(
+  html: string,
+  index: number,
+  openTag: string,
+): { start: number; contentStart: number; contentEnd: number; end: number } | undefined {
+  const tagName = openTag.match(/^<([a-z][\w:-]*)\b/i)?.[1];
+  if (!tagName || /\/>$/.test(openTag)) return undefined;
+  const contentStart = index + openTag.length;
+  const scanner = new RegExp(`<${tagName}\\b|</${tagName}\\s*>`, "gi");
+  scanner.lastIndex = contentStart;
+  let depth = 1;
+  for (let match = scanner.exec(html); match; match = scanner.exec(html)) {
+    depth += match[0].startsWith("</") ? -1 : 1;
+    if (depth === 0) {
+      return { start: index, contentStart, contentEnd: match.index, end: match.index + match[0].length };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * A source model can redraw the anonymous metric row represented by a typed
+ * dashboard-grid plugin. Because those decorative tiles are not storyboard
+ * components, the plan-level same-kind absorber cannot see them; the result is
+ * two dashboards stacked in one station (LumaFlowQC1's clipped metric wall).
+ * Stamp only the high-confidence structural form: a row/grid container with at
+ * least three metric/tile children and no declared component part anywhere in
+ * it. The host plugin remains the sole rendered owner while authored selectors
+ * can still bind to the hidden subtree.
+ */
+function stampDashboardGridDuplicates(
+  html: string,
+  instances: readonly ResolvedPluginInstance[],
+  scenes: readonly DirectScene[],
+): string {
+  let result = html;
+  for (const instance of instances.filter((entry) => entry.kind === "dashboard-grid")) {
+    const bounds = sceneBlockBounds(result, instance.sceneId);
+    const scene = scenes.find((entry) => entry.id === instance.sceneId);
+    if (!bounds || !scene) continue;
+    const declaredParts = new Set((scene.components ?? []).map((component) => component.id));
+    const scope = result.slice(bounds.start, bounds.end);
+    const candidates: Array<{ index: number; tag: string }> = [];
+    for (const match of scope.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)) {
+      const tag = match[0];
+      const className = tag.match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2] ?? "";
+      if (!/(?:^|\s)[\w-]*(?:row|grid)[\w-]*(?:\s|$)/i.test(className)) continue;
+      if (/\bdata-(?:component|sequences-host|sequences-plugin)\b/i.test(tag)) continue;
+      const index = bounds.start + (match.index ?? 0);
+      const block = elementBlockBounds(result, index, tag);
+      if (!block || block.end > bounds.end) continue;
+      const content = result.slice(block.contentStart, block.contentEnd);
+      const semanticChildren = [...content.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)]
+        .filter((child) => {
+          const childTag = child[0];
+          const childClass = childTag.match(/\bclass\s*=\s*(["'])(.*?)\1/i)?.[2] ?? "";
+          const childPart = childTag.match(/\bdata-part\s*=\s*(["'])(.*?)\1/i)?.[2] ?? "";
+          return /(?:^|\s)[\w-]*(?:metric|tile|stat|kpi)[\w-]*(?:\s|$)/i.test(childClass) ||
+            /^(?:metric-)?tile[-_]?\d+$/i.test(childPart);
+        });
+      if (semanticChildren.length < 3) continue;
+      const containsDeclaredPart = [...content.matchAll(/\bdata-part\s*=\s*(["'])(.*?)\1/gi)]
+        .some((part) => declaredParts.has(part[2]!));
+      if (containsDeclaredPart) continue;
+      candidates.push({ index, tag });
+    }
+    if (candidates.length !== 1) continue;
+    const candidate = candidates[0]!;
+    result = result.slice(0, candidate.index + candidate.tag.length - 1) +
+      ` data-sequences-plugin-duplicate="">` +
+      result.slice(candidate.index + candidate.tag.length);
+  }
+  return result;
+}
+
 /**
  * Find an authored semantic landing slot for a regionless host plugin.
  *
@@ -1784,6 +1865,7 @@ export function injectPluginContract(
       /\sdata-sequences-plugin-duplicate(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi,
       "",
     );
+  result = stampDashboardGridDuplicates(result, instances, scenes);
   // Exact-copy duplicate stamping (the fix-probe-1 doubled lockup): with the
   // host wrappers stripped, any same-scene text node exactly matching copy a
   // unit renders verbatim from its typed params is author duplication. Stamp
@@ -1861,18 +1943,20 @@ export function injectPluginContract(
     // commonly draw an opaque app window after the host insertion point; a
     // normal-flow wrapper at the scene root then sits underneath that window
     // and burns a futile polish retry. Give only this overlay-like plugin a
-    // deterministic safe-bottom station when no explicit region was declared.
+    // deterministic centered station when no explicit region was declared;
+    // centering the whole lockup keeps its CTA inside the product pedestal and
+    // lands the CTA near the blocking solver's lower-center reading anchor.
     // Region-bound lockups keep participating in their authored station flow.
     const fallbackPlacement = instance.kind === "lockup" && !instance.region && semanticSlotEnd === undefined
-      ? "position:absolute;left:50%;bottom:var(--space-safe,64px);z-index:30;" +
+      ? "position:absolute;left:50%;top:50%;z-index:30;" +
         "width:min(calc(100% - (2 * var(--space-safe,64px))),1100px);" +
-        "transform:translateX(-50%);"
+        "transform:translate(-50%,-50%);"
       : "";
     const wrapper =
       `\n<div class="seq-plugin seq-plugin-${instance.kind}" data-sequences-host="1" ` +
       `data-sequences-plugin="${instance.kind}" data-plugin-uid="${instance.uid}" ` +
       `${semanticSlotEnd !== undefined ? 'data-sequences-plugin-placement="semantic-slot" ' : ""}` +
-      `${fallbackPlacement ? 'data-sequences-plugin-placement="scene-safe-bottom" ' : ""}` +
+      `${fallbackPlacement ? 'data-sequences-plugin-placement="scene-center-overlay" ' : ""}` +
       `data-part="${instance.id}" data-layout-important="1" ` +
       `data-layout-important-from="${instance.importantFromSec}" style="${instance.wrapperStyle};` +
       `${fallbackPlacement}` +

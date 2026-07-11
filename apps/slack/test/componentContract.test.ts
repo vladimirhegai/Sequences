@@ -1180,6 +1180,30 @@ describe("auditComponentComplexity", () => {
       }),
     ])).toEqual([]);
   });
+
+  it("counts one app-window chassis and its same-station child as one surface", () => {
+    const bridge = scene({
+      id: "lateral-collapse",
+      startSec: 3,
+      durationSec: 2,
+      components: [
+        { version: 1, id: "action-bar", kind: "button", region: "dashboard-station" },
+        { version: 1, id: "product-shell", kind: "app-window", region: "dashboard-station" },
+      ],
+    });
+    expect(auditComponentComplexity([bridge])).toEqual([]);
+
+    const withOverlay = {
+      ...bridge,
+      components: [
+        ...bridge.components!,
+        { version: 1 as const, id: "notice", kind: "toast" as const, region: "dashboard-station" },
+      ],
+    };
+    expect(auditComponentComplexity([withOverlay]).some((finding) =>
+      finding.includes('scene "lateral-collapse"')
+    )).toBe(true);
+  });
 });
 
 describe("Sentinel — trimOverBudgetComponents (normalize-before-retry)", () => {

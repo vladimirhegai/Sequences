@@ -3101,6 +3101,36 @@ export function quoteBareCssVarsInInlineScripts(
 }
 
 /**
+ * The static author lint deliberately rejects interpolated template literals
+ * passed to querySelector/querySelectorAll because the HTML bundler can hand
+ * their `${...}` payload to its CSS parser. Preserve the runtime selector while
+ * lowering the narrow, mechanically safe form (one simple identifier and no
+ * escapes) to ordinary string concatenation before linting and bundling.
+ */
+export function lowerTemplateLiteralSelectorsInInlineScripts(
+  source: string,
+): { html: string; repairs: number } {
+  let repairs = 0;
+  const html = source.replace(
+    /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    (block, attrs: string, body: string) => {
+      if (/\bsrc\s*=/i.test(attrs) || /\btype\s*=\s*(["'])application\/json\1/i.test(attrs)) {
+        return block;
+      }
+      const normalized = body.replace(
+        /\b(querySelector(?:All)?)\(\s*`([^`$\\]*)\$\{([A-Za-z_$][\w$]*)\}([^`$\\]*)`\s*\)/g,
+        (_match, method: string, before: string, identifier: string, after: string) => {
+          repairs += 1;
+          return `${method}(${JSON.stringify(before)} + ${identifier} + ${JSON.stringify(after)})`;
+        },
+      );
+      return `<script${attrs}>${normalized}</script>`;
+    },
+  );
+  return { html, repairs };
+}
+
+/**
  * Remove only decorative SVG path tags whose `d` contains a literal ellipsis
  * placeholder. Browsers reject `C...` as geometry and emit a runtime error.
  * A path carrying a binding or important-layout marker stays blocking because
@@ -3246,7 +3276,18 @@ export function brandBaseStyleBlock(frameMd: string): string | undefined {
   const quote = (family: string): string => `'${family.replace(/['"]/g, "")}'`;
   const rootTokens: string[] = [];
   if (frame.canvas) rootTokens.push(`--canvas:${frame.canvas}`);
+  if (frame.surface) {
+    rootTokens.push(`--surface:${frame.surface}`);
+    rootTokens.push(`--surface-2:${frame.surface}`);
+  }
+  if (frame.text) rootTokens.push(`--text:${frame.text}`);
+  if (frame.muted) rootTokens.push(`--muted:${frame.muted}`);
   if (frame.accent) rootTokens.push(`--accent:${frame.accent}`);
+  if (frame.accentText) rootTokens.push(`--accent-text:${frame.accentText}`);
+  if (frame.accentSoft) rootTokens.push(`--accent-soft:${frame.accentSoft}`);
+  if (frame.border) rootTokens.push(`--border:${frame.border}`);
+  if (frame.positive) rootTokens.push(`--positive:${frame.positive}`);
+  if (frame.negative) rootTokens.push(`--negative:${frame.negative}`);
   if (frame.display) rootTokens.push(`--font-display:${quote(frame.display)}`);
   if (frame.body) rootTokens.push(`--font-body:${quote(frame.body)}`);
   if (frame.mono) rootTokens.push(`--font-mono:${quote(frame.mono)}`);
@@ -3427,6 +3468,22 @@ export const NORMALIZERS = [
         diagnostics: result.repairs
           ? [
               `[author] quoted ${result.repairs} bare CSS var() value(s) inside inline JavaScript\n`,
+            ]
+          : [],
+      };
+    },
+  },
+  {
+    id: "normalize.inline-source-syntax.template-selector",
+    telemetryTag: "template-literal-selector",
+    run: (html: string) => {
+      const result = lowerTemplateLiteralSelectorsInInlineScripts(html);
+      return {
+        state: result.html,
+        repairCount: result.repairs,
+        diagnostics: result.repairs
+          ? [
+              `[author] lowered ${result.repairs} interpolated query selector template literal(s) to string concatenation\n`,
             ]
           : [],
       };
@@ -4782,7 +4839,7 @@ export const NORMALIZERS = [
 export const SOURCE_SYNTAX_NORMALIZERS: readonly OrderedNormalizer<
   string,
   SourceNormalizerContext
->[] = NORMALIZERS.slice(0, 6);
+>[] = NORMALIZERS.slice(0, 7);
 
 export function runSourceSyntaxNormalizerRegistry(
   html: string,
