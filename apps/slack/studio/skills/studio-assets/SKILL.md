@@ -5,7 +5,7 @@ description: Add or revise a Sequences parametric asset using defineAsset, typed
 
 # Author a Studio asset
 
-1. Read `apps/slack/CLAUDE.md`, `ASSETS.md`, `studio/ERGONOMICS.md`, `studio/INTEGRATION.md`, and one sibling in `src/engine/assets/`.
+1. Read `apps/slack/CLAUDE.md`, `studio/ERGONOMICS.md`, `studio/INTEGRATION.md`, and one sibling in `src/engine/assets/`.
 2. Run `npm run catalog --workspace @sequences/slack -- new assets <kebab-id>`.
 3. Implement `src/engine/assets/<camelId>.ts` with `defineAsset`. Keep params bounded, markup local/offline, stable `data-part` names, and motion tracks limited to supported properties.
 4. Export and register it once in `src/engine/assets/index.ts`. The array is the source for planner vocabulary, plugin bridge, cache key, QA, and Studio.

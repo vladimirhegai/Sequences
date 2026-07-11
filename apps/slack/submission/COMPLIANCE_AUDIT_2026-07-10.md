@@ -24,7 +24,7 @@ The project is not submission-ready until the owner actions below are complete.
 |---|---|---|
 | Submit by 2026-07-13 5:00 PM PDT | Official Rules §1 | Owner must submit before the sponsor clock deadline. |
 | Eligible entrant/team | Not discoverable from source | Owner must confirm age, residence, employer/conflict, team registration, and team size ≤4. |
-| New Slack Agent track | `HACKATHON_RULES.md`; new app architecture | Correct intended track. Do not select Organizations unless Marketplace requirements are completed. |
+| New Slack Agent track | Slack manifest and new app architecture | Correct intended track. Do not select Organizations unless Marketplace requirements are completed. |
 | Uses a required Slack technology | `src/slackMcpContext.ts` calls Slack-hosted `https://mcp.slack.com/mcp` with permission-scoped user OAuth | Meets the MCP-integration route. Describe this accurately; the internal stdio Sequences MCP is additional plumbing, not the qualifying Slack integration. |
 | Installs and runs consistently | Slack app manifest + Bolt Socket Mode + Railway service | Architecture is valid. Live `/healthz` returned `200 ready` on 2026-07-10. Run the full sandbox flow again after the final deployment. |
 | Public demo under 3 minutes | New editable 27s Slack ad source under `demos/slack-ad/` | The ad is supporting proof, not a substitute for footage showing `/sequences` functioning in Slack. Final edit must stay below 3:00 and show the real sandbox workflow. |

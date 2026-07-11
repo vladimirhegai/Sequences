@@ -1,259 +1,127 @@
 # Sequences for Slack — agent guide
 
-Sequences turns a release thread into an on-brand launch film and returns the
-storyboard and MP4 in Slack. The app is Bolt + Socket Mode; TypeScript runs
-directly through `tsx`.
+Sequences turns a Slack release brief into a storyboard, preview, and MP4. The
+app is Bolt + Socket Mode and runs TypeScript through `tsx`.
 
-This file is the durable working guide. Read deeper docs only when the task
-needs them:
+Keep the active documentation set small:
 
-- [ROADMAP.md](ROADMAP.md) — shipped system map, active work, parked risks;
-- [SENTINEL.md](SENTINEL.md) — layer ownership, fallback contract, diagnostics,
-  contract registry, budgets, and feature flags;
-- [ARCHITECTURE.md](ARCHITECTURE.md) — target architecture;
-- [OPERATIONS.md](OPERATIONS.md) — setup, publish, deploy, and recovery;
-- [ASSETS.md](ASSETS.md) — parametric assets and `/sequences asset`;
-- [PROBE_LOG.md](PROBE_LOG.md) — paid-probe evidence and attempt accounting;
-- [studio/INTEGRATION.md](studio/INTEGRATION.md) — Recipe Studio seam table;
-- [HACKATHON_RULES.md](HACKATHON_RULES.md) — challenge constraints;
-- [docs/history/CHANGELOG.md](docs/history/CHANGELOG.md) — historical ledger,
-  never current instructions.
+- [OPERATIONS.md](OPERATIONS.md): local probes, publish, deploy, and recovery.
+- [SENTINEL.md](SENTINEL.md): correctness ownership, retries, and fallback.
+- [PROBE_LOG.md](PROBE_LOG.md): current paid-probe evidence.
+- [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md): next-session architecture and
+  motion-quality brief.
 
-## Delivery destination
+## Delivery and scope
 
 Slack work publishes to **https://github.com/vladimirhegai/Slack_Sequences**.
-The `vladimirhegai/Sequences` monorepo is the local development workspace, not
-the public delivery repository.
-
-From the monorepo root, commit first, then publish the standalone subset:
+This monorepo is only the development workspace. From the repository root:
 
 ```bash
 bash scripts/publish-public.sh "type(scope): concise message"
 ```
 
-The script archives `HEAD`; uncommitted work is not published. Publishing and
-deploying are separate. GitHub autodeploy is off; the live sandbox changes only
-after `railway up` from the monorepo root. Verify `/healthz` returns `ready`.
-Never publish or deploy unless the user explicitly asks. Full procedure:
-[OPERATIONS.md](OPERATIONS.md).
+Publishing and deploying are separate. The live sandbox changes only after
+`railway up`. Never publish or deploy unless the user explicitly asks.
 
-## Scope and isolation
+Active work lives in `apps/slack`. It may use `@sequences/core`,
+`@sequences/platform`, and pinned HyperFrames packages, but it must not import
+from `apps/forge` or `apps/sequences`. Those apps and `packages/*` are paused
+unless the task explicitly expands scope.
 
-Active work lives in `apps/slack`. It may depend on `@sequences/core`,
-`@sequences/platform`, and pinned `@hyperframes/*@0.6.86`, but it must never
-import from `apps/forge` or `apps/sequences`. Copy and adapt required glue into
-`apps/slack/src/engine`. Do not modify paused apps or `packages/*` for Slack
-work unless the task explicitly expands scope.
+## Model boundaries
 
-The standalone public repository contains this app plus shared packages;
-cross-app relative imports will break after publication.
+There are two different bots:
 
-## The two bots
+1. `src/slackMcpContext.ts` uses the OpenAI Responses API and Slack hosted MCP
+   with the invoking user's OAuth token. This path requires `OPENAI_API_KEY`.
+2. `src/engine/compositionRunner.ts` plans and authors through
+   `SLACK_SEQUENCES_PROVIDER` (production uses `openrouter-api`). The internal
+   Sequences MCP owns mutation, preview, render, and undo.
 
-Keep the two model boundaries distinct:
+Editable general prompts belong in `prompts/*.md`. Runtime facts, typed
+contracts, frame tokens, and the locked storyboard belong in source.
 
-1. The context bot in `src/slackMcpContext.ts` uses the OpenAI Responses API
-   (`gpt-5-mini`) to call `https://mcp.slack.com/mcp` with the invoking user's
-   OAuth token. It reads permission-scoped Slack messages/files and returns an
-   evidence pack. This path always needs `OPENAI_API_KEY`; OpenRouter cannot
-   drive the Responses `mcp` tool.
-2. The planning/authoring bot in `src/engine/compositionRunner.ts` runs through
-   `SLACK_SEQUENCES_PROVIDER` (Railway uses `openrouter-api`). It turns the brief,
-   evidence pack, and design capsule into a typed storyboard and canonical
-   HyperFrames composition. An internal stdio Sequences MCP owns mutation,
-   preview, render, and undo.
+## Execution contract
 
-Editable system prompts live in `prompts/*.md`. Runtime-composed facts such as
-brand tokens, retrieved skills, the locked storyboard, and scoped component
-contracts stay in source. Do not bury general prompt prose in TypeScript.
+The pipeline is staged and transactional:
 
-## Current execution architecture
+1. Collect the brief and permission-scoped Slack evidence.
+2. Build and validate `frame.md`.
+3. Plan a typed storyboard; deterministic normalizers may make only
+   non-creative, atomic, revalidated repairs.
+4. Emit scene skeletons and source slots. The author fills scene interiors;
+   the host retains the document chassis and all typed plan islands.
+5. Reinject canonical interaction, cut, camera, continuity, component,
+   time-ramp, FX, asset, and environment contracts.
+6. Run static and browser QA, then the bounded vision critic.
+7. Checkpoint accepted source, capture moment thumbnails, and render the MP4.
 
-The live path is staged and transactional:
+`SLACK_SEQUENCES_USE_MCP=0` is diagnostic only. Receipts never contain prompts,
+credentials, workspace content, plan data, or model output.
 
-1. Slack collects a brief and the context bot retrieves workspace evidence.
-2. The host creates `frame.md`; deterministic tools validate palette, contrast,
-   embedded fonts, and spatial tokens.
-3. Bounded planning produces a concept and typed storyboard. Parse-side
-   normalizers make only deterministic, non-creative repairs and revalidate
-   atomically.
-4. The host emits scene skeletons and scene-addressable source slots. The model
-   authors scene interiors; the host owns the document chassis, stage geometry,
-   scene windows, timeline registration, and every plan/runtime seam.
-5. Deterministic source repair strips model-authored host islands, reinjects the
-   locked contracts, reconciles only unambiguous near-misses, and stages local
-   assets.
-6. Static validation runs before browser QA. Browser QA measures rendered
-   geometry, interactions, framing, composition, transitions, temporal change,
-   eye trace, and continuous motion.
-7. A bounded vision critic receives compact representative-strip and primary-
-   blocking PNGs plus numeric evidence, returns at most five directives, and
-   may repair the banked draft under full non-regression QA. Its kill switch or
-   any critic/capture failure keeps the pre-critique draft.
-8. The orchestrator checkpoints the accepted source, uploads moment-led
-   thumbnails, then renders and uploads the MP4 asynchronously.
+## Ownership and motion truths
 
-MCP is the default execution path. `SLACK_SEQUENCES_USE_MCP=0` is a diagnostic
-opt-out to the behaviorally equivalent in-process path. Receipts are always
-argument-free: never place prompts, plan data, credentials, tokens, workspace
-messages, or model output in a Slack receipt.
+- The host owns typed contracts, runtimes, compile order, scene windows, seek
+  semantics, structural stage geometry, and camera blocking.
+- The author owns scene interiors, copy, and creative choreography not already
+  expressed by a typed contract.
+- Plugins and assets lower into ordinary components and beats. Recipes are
+  proven fragments; reconciliation is degrade-never-veto.
+- Continuity and camera blocking are default-on. Stable `entityId`s should
+  produce measured shared-element handoffs and one primary lens route.
+- Supporting phrases do not move the lens. Camera fitting uses painted content,
+  not empty station boxes.
+- Ambient motion belongs on imagery, furniture, and light. Primary copy holds
+  still while it is meant to be read.
+- A gesture follows anticipation → action → settle → readable hold. The film
+  gets one energy peak; connective motion stays subordinate.
+- A green JSON report is not a motion-quality pass. Inspect representative
+  frames and blocking evidence, then read the motion code for movement between
+  those frames.
 
-## Host-owned contracts and generated content
+The authoritative environment-variable registry is
+`src/engine/featureFlags.ts`. Do not add an unregistered
+`SLACK_SEQUENCES_*` read.
 
-`src/engine/hostContract.ts` provides shared metadata and adapters for the nine
-versioned host contracts: interaction, cut, camera, continuity, component,
-time-ramp, FX, asset, and environment. Each adapter exposes canonical runtime
-bytes/hash/injection plus parse, validation, kit, or staging hooks where the
-legacy contract supports them. Orchestration order remains runner-owned.
+## Failure discipline
 
-Key ownership rules:
+Read [SENTINEL.md](SENTINEL.md) before adding a rule or repair. Put each
+obligation at the lowest layer that can own it: schema, scaffold,
+deterministic normalize, static gate, browser gate, then paid retry. Register
+finding classes in `src/engine/sentinel.ts`.
 
-- The host owns cut/camera/continuity/component/interaction/time/FX/asset/
-  environment plan islands, runtimes, compile calls, and seek semantics.
-- The author owns scene interiors, copy, art direction inside the committed
-  frame system, and creative choreography not already typed by a contract.
-- Plugins are parameterized host generators lowered to ordinary components and
-  beats. Current kinds include dashboard/notification/lockup/activity/terminal/
-  team plus `flow-diagram`, `comparison-table`, and `pricing-reveal`.
-- Recipes are proven fragments injected verbatim at Level 1. High-confidence
-  offers with default-safe parameters may be auto-declared; reconciliation is
-  degrade-never-veto. Author sources in `recipes/`, gate with
-  `npm run recipes --workspace @sequences/slack -- gate <id>`, inspect the
-  thumbnails, then export with
-  `npm run recipes --workspace @sequences/slack -- export <id>`. A
-  runtime/schema/injection seam change requires updating
-  `studio/INTEGRATION.md` and re-running `npm run studio:golden`.
+For a paid attempt or fallback:
 
-## Motion and composition invariants
+1. Stop the retry loop when practical.
+2. Preserve the exact rejected artifact.
+3. Reproduce it without a model call.
+4. Fix only the shared deterministic cause and add a minimized regression.
+5. Record it in [PROBE_LOG.md](PROBE_LOG.md), then rerun only if authorized.
 
-- Continuity graph + camera blocking are default-on; set
-  `SLACK_SEQUENCES_CONTINUITY_GRAPH=0` only for rollback comparison. Stable
-  `entityId`s compile measured shared-element handoffs and graph-owned primary
-  camera routes with explicit target, occupancy, anchor, arrival, dwell, and
-  next-handoff paperwork. Supporting phrases never yank the lens.
-- The environment contract is default-on. Every film deterministically stages
-  one production-cleared MIT wallpaper plus its license notice and injects a
-  desktop stage, screen-over-wallpaper, full-app view, or generated field.
-  Ambient motion lives on imagery, furniture, and light outside the camera
-  world; text and primary components stay still during readable holds.
-- Camera fitting targets painted/text/media content, not raw station boxes.
-  Sparse framing uses a 24×14 occupancy grid plus retained bbox evidence.
-  Browser-proven station `fitScale` repair tightens undersized content before
-  falling back to a bounded focal zoom.
-- Whole-frame composition uses a 32×18 grid. Semantic content and explicit
-  `data-composition-credit` environments count; bare canvas paint does not.
-  `SLACK_SEQUENCES_COMPOSITION=audit` is the calibration default; `block`
-  applies strict polish pressure and `0` disables it.
-- Component roots may declare one scene entrance family (`rise`, `assemble`, or
-  `materialize`). Typed beats may follow a beat/component with a bounded lag;
-  the host caps follow depth and resolves cycles/conflicts safely. Exits are
-  directional and subordinate. A host settle bloom decays after the final
-  visible beat without transforming/filtering the root.
-- Component morphs use a cloned material-shell bridge. Never restore scale on
-  live source DOM; reverse seek must restore both endpoints.
-- Declared bridged cuts receive a host-owned outgoing lead and are measured
-  before the boundary. A degraded declared morph is surfaced and its shipped
-  paperwork must describe what actually executed.
-- Display type is a typed host-injected `ghost-word` moment, at most one per
-  film, with bounded copy/timing and a declared focal relationship.
-- Continuous evidence persists visibility/occupancy, velocity, acceleration,
-  jerk, reversal, competition, settles, quiet windows, and rendered dead
-  windows outside typed holds. Washout evidence combines a luminance histogram
-  with focal/field separation. These can rank drafts and apply bounded polish
-  pressure; runtime `ok` remains distinct from `strictOk`.
+Never raise attempt counts, loosen a gate, or add prompt prose merely to hide a
+mechanical failure.
 
-All behavior switches and operational `SLACK_SEQUENCES_*` inputs are classified
-in `src/engine/featureFlags.ts`. Its source-scan test fails when a read is
-unregistered or a registration is stale. Treat that registry—not scattered
-documentation—as the source of truth for defaults, values, ownership, and
-rollback.
+## Safety and verification
 
-## Sentinel and failure handling
+Railway owns the only live Socket Mode process. Never copy Railway tokens into
+local `.env` or start a second process with sandbox credentials.
 
-Before adding any authoring gate, rule, or repair, read
-[SENTINEL.md](SENTINEL.md). Put every obligation at the lowest layer that can
-own it: schema, scaffold, deterministic normalize, static gate, browser gate,
-then paid model retry. Register every finding class in
-`src/engine/sentinel.ts`; `test/sentinel.test.ts` enforces the closed world.
-Gates are not loosened—Sentinel changes where an obligation is enforced.
-
-The fallback contract and recovery catalog are also in SENTINEL.md. During
-prep, `SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0` is useful because a
-failure produces `FAILURE.md` instead of the labeled proof film. Before judges
-use the Railway sandbox, set it to `1` (or remove the override). Frame-design
-failures always fail loud.
-
-When a paid probe burns an attempt on a mechanical, non-architectural class:
-stop, place the fix with the Sentinel tree, add a minimized regression, record
-the attempt in `PROBE_LOG.md`, then continue. Never raise attempt counts or
-loosen a gate to make the symptom disappear.
-
-## Environment safety
-
-One live Slack app runs in the Railway developer sandbox. Local work is source,
-tests, deterministic demos, local browser/render checks, and explicitly
-authorized paid probes. Never copy Railway credentials into `apps/slack/.env`
-or start a second Socket Mode process with sandbox tokens; duplicate processes
-produce duplicate replies.
-
-Socket Mode carries Slack events. Railway exposes only `/healthz`,
-`/slack/install`, and `/slack/oauth_redirect`; do not add Events API or
-interactivity request URLs. Railway is not a public `/mcp` endpoint.
-
-## Verification ladder
-
-Run the smallest relevant rung while iterating, then the full rung required by
-the change. Always report which layers actually ran.
-
-### Fast inner loop
+Fast loop:
 
 ```powershell
 npm run typecheck --workspace @sequences/slack
 npm run test:unit --workspace @sequences/slack
-```
-
-Run focused Vitest files while developing. Browser regressions are isolated:
-
-```powershell
 npm run test:browser --workspace @sequences/slack
 ```
 
-### Slack source gate
+Source gate:
 
 ```powershell
-npm run typecheck --workspace @sequences/slack
-npm run test --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
 npm run direct:demo --workspace @sequences/slack
 npm run sequence:check --workspace @sequences/slack -- --demo --no-mcp --format both
-npm run film:demo --workspace @sequences/slack
 ```
 
-### Render and container gate
-
-Required after engine/runtime/render/Chromium/FFmpeg/Docker changes:
-
-```powershell
-$env:VERIFY_RENDER = "1"
-try { npm run film:demo --workspace @sequences/slack }
-finally { Remove-Item Env:VERIFY_RENDER -ErrorAction SilentlyContinue }
-
-docker build -t sequences-slack .
-docker run --rm sequences-slack npm run mcp:demo -w @sequences/slack
-docker run --rm -e VERIFY_RENDER=1 sequences-slack npm run film:demo -w @sequences/slack
-```
-
-### Change-specific proof
-
-- Documentation only: inspect links/commands and run `git diff --check`.
-- Manifest/scopes/events: paste the manifest, reinstall, refresh the token,
-  redeploy, self-check, and exercise the affected sandbox flow.
-- OAuth/hosted Slack MCP: source gate, `/slack/install`, self-check, real
-  `/sequences`.
-- Host contracts, temporal QA, camera, or cuts: focused unit/browser suites,
-  full source gate, local rendered golden, then the plan-authorized paid probe.
-- Rendering/Docker: render/container gate, sandbox demo, draft, and HD.
-
-Unit tests do not prove OAuth, Socket Mode, Railway, Slack upload, or visual
-quality. For motion work, inspect the MP4 and contact/temporal strips; a green
-JSON report alone is not the acceptance result.
+Runtime, camera, cut, render, or temporal changes also require the relevant
+browser tests and a rendered golden/probe inspection. Report exactly what ran;
+unit tests do not prove OAuth, Slack upload, Railway, or visual quality.

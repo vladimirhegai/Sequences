@@ -44,7 +44,7 @@ whoever picks this up, keep increments small)
 - **E4. Keep `studio/INTEGRATION.md`'s seam table authoritative** — any new
   seam a catalog entry must cross gets a row, so the audit stays mechanical.
 
-Related: MOTION_QUALITY_PLAN.md WS-G (grow the proven library) grows CONTENT;
+Related: `../REFACTOR_HANDOFF.md` defines when proven-library work is in scope;
 this charter keeps the AUTHORING PATH cheap. Both matter — the library is only
 as good as how easily the next agent can extend it.
 

@@ -22,11 +22,10 @@ authoritative agent guide:
 
 > ## 👉 Read **[apps/slack/CLAUDE.md](apps/slack/CLAUDE.md)** before doing any work.
 >
-> It covers the two bots, isolation rule, MCP path, prompts convention, current
-> state, and verification. From there: [ARCHITECTURE.md](apps/slack/ARCHITECTURE.md)
-> (target design), [ROADMAP.md](apps/slack/ROADMAP.md) (current state, feature map,
-> TODOs), [OPERATIONS.md](apps/slack/OPERATIONS.md) (setup + deploy),
-> [HACKATHON_RULES.md](apps/slack/HACKATHON_RULES.md).
+> It covers the two bots, isolation rule, pipeline ownership, failure discipline,
+> and verification. From there: [OPERATIONS.md](apps/slack/OPERATIONS.md) for
+> probes/deploy, [SENTINEL.md](apps/slack/SENTINEL.md) for correctness ownership,
+> and [REFACTOR_HANDOFF.md](apps/slack/REFACTOR_HANDOFF.md) for the next architecture pass.
 
 `apps/slack` is **self-contained**: it may depend on shared packages
 (`@sequences/core`, `@sequences/platform`, pinned `@hyperframes/*@0.6.86`) but
