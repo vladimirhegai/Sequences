@@ -23,6 +23,7 @@
     "studio": "tsx studio/server.ts",
     "assets": "tsx studio/server.ts",
     "recipes": "tsx studio/recipesCli.ts",
+    "catalog": "tsx studio/catalogCli.ts",
     "studio:golden": "tsx studio/recipesCli.ts export last-word-roulette",
     "browsers:clean": "tsx scripts/cleanupBrowsers.ts",
     "capabilities:sync": "tsx scripts/syncCapabilityIndex.ts",

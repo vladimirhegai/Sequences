@@ -58,6 +58,29 @@ coding agent writes recipes/<id>.recipe.html (meta + doc + fragment, one file)
 | `assetContract.renderAssetInstance` / `compileAssetAnimation` / `ASSET_LIBRARY`, `componentContract.COMPONENT_CATALOG` + kit CSS | `studio/server.ts` (`/api/state`, `/api/render`) + `studio/ui/index.html` — the components/assets viewer renders LIVE from the contracts, never a forked copy | renderer/summary signature changes break `npm run studio` (the old standalone Asset Lab merged into this server 2026-07-10; `npm run assets` is an alias). |
 | `prompts/planning-director.md` byte budget (`test/promptBudget.test.ts`) | recipe teaching text lives in runtime-composed retrieval + the response-contract lines in `requestStoryboardPlan` — **not** in the prompt file | keep it that way; recipe additions must not grow the budgeted prompt. |
 
+## Studio catalog authoring matrix (2026-07-10)
+
+Every tab has a clean-context skill in `studio/skills/studio-<catalog>/SKILL.md`
+and a `npm run catalog -- new <catalog> <id>` scaffold (`recipes` uses
+`npm run recipes -- new <id>`). `test/catalogScaffold.test.ts` keeps those six
+routes closed-world. This table is the entry → runtime chain audit required by
+`studio/ERGONOMICS.md`; add a row before introducing another hand-wired seam.
+
+| catalog | committed source of truth | planner / OpenRouter discovery | schema → host execution | QA / proof | Studio consumer |
+|---|---|---|---|---|---|
+| Components | `componentContract.ts` `ComponentKind` + `COMPONENT_CATALOG` + kit CSS/markup | `componentPlanningVocabulary`; compact inventory in `studioLibraryVocabulary` reaches planner and author | catalog-derived component kind enum → component island/runtime | `componentContract.test.ts`, `componentRuntime.browser.test.ts`, Sentinel registry | `/api/state` maps `COMPONENT_CATALOG` |
+| Assets | `src/engine/assets/<id>.ts` + `assets/index.ts` `ASSET_LIBRARY` | asset plugin vocabulary + storyboard cache key + compact inventory | asset plugin declaration → lowering → asset island/kit + compiled springs | `assetContract.test.ts`, plugin tests, Asset Lab visual proof | `/api/state` maps and renders `ASSET_LIBRARY` |
+| Recipes | `recipes/<id>.recipe.html` | scored `skillContext` retrieval with declare-by-default docs | scene `recipes` → reconcile → verbatim host injection | exact production gate, browser QA, thumbnails, retrieval sanity | `/api/recipes` joins sources, gate records, exports |
+| Looks | `designDialects.ts` `DESIGN_DIALECTS` + background policies | frame-design selection + compact inventory | frame plan/dialect requirements → authored CSS under frame validation | frame/design-dialect tests + Studio contrast/art-direction inspection | `/api/looks` maps `DESIGN_DIALECTS` and production backgrounds |
+| Camera | `cameraPatterns.ts` `CAMERA_PATTERNS` | planning prompt expands every pattern + compact inventory | typed scene camera path → resolver → camera island/runtime | `cameraPatterns.test.ts`, `cameraContract.test.ts`, camera browser suites | `/api/camera` maps `CAMERA_PATTERNS` to seekable board |
+| Plugins | `pluginContract.ts` `PLUGIN_CATALOG` | catalog-derived planning vocabulary/schema enum + compact inventory | scene `plugins` → reconcile/lower → component beats + one host markup unit | `pluginContract.test.ts`, `pluginRuntime.browser.test.ts`, module-load lowering probe | `/api/plugins` maps catalog metadata + copy-ready examples |
+
+`test/studioCatalogIntegration.test.ts` proves that each current catalog entry
+appears in the shared OpenRouter inventory and that Studio imports the same
+five typed sources. Recipe end-to-end consumption remains independently proven
+by the recipe gate/export and retrieval tests because recipes are filesystem
+artifacts rather than a TypeScript catalog.
+
 ### 2026-07-09 motion-polish re-proof
 
 The material-shell component morph bridge, content-aware camera framing,

@@ -47,6 +47,7 @@ import { sweepOrphanBrowsers } from "../src/engine/browserLifecycle.ts";
 import { gateRecipe, loadGateRecord, recipeGateDir } from "./gate.ts";
 import { exportRecipe } from "./exportRecipe.ts";
 import { listRecipeSources } from "./recipeSource.ts";
+import { pluginDeclarationExample } from "./pluginExamples.ts";
 
 if (process.env.RAILWAY_ENVIRONMENT) {
   process.stderr.write(
@@ -233,6 +234,7 @@ function pluginsState(): unknown {
       purpose: spec.purpose,
       params: spec.params,
       planningLine: spec.planningLine,
+      example: pluginDeclarationExample(spec),
     })),
   };
 }

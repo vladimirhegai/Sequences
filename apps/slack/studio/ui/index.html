@@ -543,6 +543,10 @@
         <h2>Planning description</h2>
         <pre class="code" id="plugin-planning"></pre>
       </div>
+      <div class="panel">
+        <h2>Declaration example <span class="badge">copy-ready JSON</span></h2>
+        <pre class="code" id="plugin-example"></pre>
+      </div>
     </aside>
   </section>
 
@@ -1359,6 +1363,7 @@ function selectPlugin(plugin) {
         `<td>${esc(param.kind)}<span class="d">${esc(limits)}</span></td><td>${esc(pluginDefault(param))}</td></tr>`;
     }).join("");
   el("plugin-planning").textContent = plugin.planningLine;
+  el("plugin-example").textContent = JSON.stringify(plugin.example, null, 2);
 }
 
 /* ------------------------------------------------------------ recipes */
