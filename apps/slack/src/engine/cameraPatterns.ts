@@ -261,6 +261,170 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
       ],
     },
   },
+  {
+    version: 1,
+    id: "vertical-feature-descent",
+    title: "Vertical Feature Descent",
+    purpose: "Follow a product workflow down a tall surface, then tighten on the generated outcome.",
+    durationSec: 5.6,
+    motionDescription:
+      "A brief top-state read launches a fast downward track through the working step. The descent keeps its direction through a short development drift, then a compact push locks onto the result.",
+    eyeTrace: "One top-to-bottom reading line follows the interface hierarchy and terminates on the proof card.",
+    bestFor: ["vertical workflows", "mobile product tours", "form-to-result", "feature stacks"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "prompt", label: "START", role: "entry", x: 1040, y: 180, width: 1120, height: 430, description: "The initiating prompt, command, or input state." },
+      { id: "process", label: "WORKING", role: "claim", x: 1040, y: 690, width: 1120, height: 470, description: "The product action encountered during the descent." },
+      { id: "result", label: "RESULT", role: "proof", x: 1040, y: 1240, width: 1120, height: 430, description: "A generated output or success state with a clear focal detail." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "prompt", toRegion: "prompt", zoom: 1.04, startSec: 0, durationSec: 0.35, ease: "seqDrift" },
+        { version: 1, move: "track-to-anchor", toRegion: "process", zoom: 1.1, startSec: 0.35, durationSec: 0.85, ease: "seqAnticipate" },
+        { version: 1, move: "parallax-pass", toRegion: "process", zoom: 1.13, startSec: 1.2, durationSec: 1.35, ease: "seqGlide" },
+        { version: 1, move: "track-to-anchor", toRegion: "result", zoom: 1.18, startSec: 2.55, durationSec: 0.75, ease: "seqSwoosh" },
+        { version: 1, move: "push-in", toRegion: "result", zoom: 1.32, startSec: 3.3, durationSec: 0.65, ease: "seqSettle" },
+        { version: 1, move: "drift", toRegion: "result", zoom: 1.35, startSec: 3.95, durationSec: 1.65, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "cursor-result-chase",
+    title: "Cursor Result Chase",
+    purpose: "Make an input action and its distant product response feel causally connected.",
+    durationSec: 4.6,
+    motionDescription:
+      "The lens starts poised on the control, snaps along the cursor's travel after the action, and arrives just ahead of the result. A firm forward settle gives the response time to resolve.",
+    eyeTrace: "Control to cursor lane to outcome forms one diagonal pursuit, with the camera handing attention forward rather than trailing it.",
+    bestFor: ["one-click automation", "search and command", "AI generation", "interactive demos"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "control", label: "ACTION", role: "entry", x: 360, y: 980, width: 720, height: 430, description: "The clicked control or submitted command." },
+      { id: "cursor-lane", label: "CHASE", role: "context", x: 1240, y: 650, width: 650, height: 420, description: "A spatial bridge for cursor travel and system response." },
+      { id: "response", label: "RESULT", role: "proof", x: 2140, y: 350, width: 760, height: 560, description: "The destination state appears as the camera catches it." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "control", toRegion: "control", zoom: 1.08, startSec: 0, durationSec: 0.3, ease: "seqDrift" },
+        { version: 1, move: "whip", toRegion: "cursor-lane", zoom: 1.06, startSec: 0.3, durationSec: 0.45, ease: "seqWhip" },
+        { version: 1, move: "track-to-anchor", toRegion: "response", zoom: 1.2, startSec: 0.75, durationSec: 0.75, ease: "seqSwoosh" },
+        { version: 1, move: "push-in", toRegion: "response", zoom: 1.34, startSec: 1.5, durationSec: 0.6, ease: "seqSettle" },
+        { version: 1, move: "drift", toRegion: "response", zoom: 1.37, startSec: 2.1, durationSec: 2.5, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "notification-escalation",
+    title: "Notification Escalation",
+    purpose: "Build urgency through successive signals, then release it into one resolved product state.",
+    durationSec: 5.2,
+    motionDescription:
+      "Two increasingly quick diagonal reframes climb through incoming signals. The second arrival immediately pulls back, converting notification pressure into a composed system-wide resolution.",
+    eyeTrace: "The eye climbs a stepped alert stack, then expands outward with the final system reveal.",
+    bestFor: ["incident response", "team collaboration", "approval chains", "automation alerts"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "signal-one", label: "SIGNAL", role: "entry", x: 420, y: 1080, width: 650, height: 360, description: "The first low-stakes notification establishes the visual unit." },
+      { id: "signal-two", label: "ESCALATE", role: "claim", x: 1270, y: 650, width: 680, height: 400, description: "A second signal raises urgency and pace." },
+      { id: "decision", label: "ACT NOW", role: "proof", x: 2180, y: 260, width: 700, height: 430, description: "The decisive alert or action prompt at peak energy." },
+      { id: "resolved", label: "RESOLVED", role: "resolve", x: 830, y: 330, width: 1600, height: 1080, description: "The full product state proves the alerts were handled." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "signal-one", toRegion: "signal-one", zoom: 1.08, startSec: 0, durationSec: 0.35, ease: "seqDrift" },
+        { version: 1, move: "pan", toRegion: "signal-two", zoom: 1.14, startSec: 0.35, durationSec: 0.7, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "signal-two", zoom: 1.17, startSec: 1.05, durationSec: 0.65, ease: "seqSettle" },
+        { version: 1, move: "whip", toRegion: "decision", zoom: 1.28, startSec: 1.7, durationSec: 0.45, ease: "seqWhip" },
+        { version: 1, move: "pull-back", toRegion: "resolved", zoom: 0.84, startSec: 2.15, durationSec: 0.85, ease: "seqAnticipate" },
+        { version: 1, move: "drift", toRegion: "resolved", zoom: 0.88, startSec: 3, durationSec: 2.2, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "logo-product-reveal",
+    title: "Logo to Product Reveal",
+    purpose: "Turn a compact brand lockup into the product world it represents without relying on a cut.",
+    durationSec: 4.8,
+    motionDescription:
+      "A short brand hold winds into a decisive pull-back. The product surface emerges around the mark, then a shallow arc separates its depth before a clean hero settle.",
+    eyeTrace: "The logo remains the visual seed while the frame expands; attention transfers naturally to the product's central surface.",
+    bestFor: ["brand openers", "launch reveals", "logo-to-UI transitions", "end-card reversals"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "mark", label: "BRAND MARK", role: "entry", x: 1320, y: 690, width: 560, height: 420, description: "A centered lockup or emblem used as the reveal seed." },
+      { id: "product", label: "PRODUCT WORLD", role: "resolve", x: 630, y: 300, width: 1940, height: 1200, description: "The branded product surface that grows around the mark." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "hold", fromRegion: "mark", toRegion: "mark", zoom: 1.32, startSec: 0, durationSec: 0.3, ease: "none" },
+        { version: 1, move: "pull-back", toRegion: "product", zoom: 0.82, startSec: 0.3, durationSec: 0.9, ease: "seqAnticipate" },
+        { version: 1, move: "orbit-lite", toRegion: "product", zoom: 0.88, startSec: 1.2, durationSec: 1.1, ease: "seqGlide" },
+        { version: 1, move: "push-in", toRegion: "product", zoom: 1.02, startSec: 2.3, durationSec: 0.65, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "product", zoom: 1.06, startSec: 2.95, durationSec: 1.85, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "pricing-choice-focus",
+    title: "Pricing Choice Focus",
+    purpose: "Survey a choice set quickly and make the recommended option feel selected, not merely enlarged.",
+    durationSec: 5,
+    motionDescription:
+      "A wide establishing drift gives all plans one fair read. A shallow compare pass crosses the set, then an anticipated push commits to the recommended tier and settles on its value proof.",
+    eyeTrace: "The eye scans the row once, then stops at the emphasized center of value; there is no repeated ping-pong between plans.",
+    bestFor: ["pricing reveals", "plan selection", "package comparison", "upgrade prompts"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "plans", label: "CHOICES", role: "entry", x: 520, y: 450, width: 2160, height: 900, description: "The complete plan set establishes truthful comparison context." },
+      { id: "recommended", label: "BEST FIT", role: "proof", x: 1220, y: 510, width: 760, height: 800, description: "The recommended tier and its decisive benefit." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "plans", toRegion: "plans", zoom: 0.88, startSec: 0, durationSec: 0.55, ease: "seqDrift" },
+        { version: 1, move: "parallax-pass", toRegion: "plans", zoom: 0.94, startSec: 0.55, durationSec: 1.25, ease: "seqGlide" },
+        { version: 1, move: "push-in", toRegion: "recommended", zoom: 1.3, startSec: 1.8, durationSec: 0.85, ease: "seqAnticipate" },
+        { version: 1, move: "drift", toRegion: "recommended", zoom: 1.34, startSec: 2.65, durationSec: 1.75, ease: "seqSettle" },
+        { version: 1, move: "hold", toRegion: "recommended", zoom: 1.34, startSec: 4.4, durationSec: 0.6, ease: "none" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "integration-depth-network",
+    title: "Integration Depth Network",
+    purpose: "Reveal a multi-layer integration story while preserving one understandable route through the system.",
+    durationSec: 6,
+    motionDescription:
+      "A fast anchor move leaves the source product, a parallax pass threads through the connected service layer, and a shallow orbit exposes depth before the camera lands on the unified outcome.",
+    eyeTrace: "Source to network to hub creates one forward route; depth separation supports the route instead of becoming spectacle.",
+    bestFor: ["integration ecosystems", "data pipelines", "platform architecture", "connected workflows"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "source", label: "YOUR PRODUCT", role: "entry", x: 270, y: 680, width: 720, height: 520, description: "The product or event that initiates the connected flow." },
+      { id: "network", label: "INTEGRATIONS", role: "context", x: 1120, y: 380, width: 980, height: 1040, description: "Layered services and connectors form the traversal field." },
+      { id: "hub", label: "ONE SYSTEM", role: "resolve", x: 2290, y: 610, width: 650, height: 580, description: "The unified destination that proves the integration value." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "source", toRegion: "source", zoom: 1.04, startSec: 0, durationSec: 0.35, ease: "seqDrift" },
+        { version: 1, move: "track-to-anchor", toRegion: "network", zoom: 1.08, startSec: 0.35, durationSec: 0.85, ease: "seqAnticipate" },
+        { version: 1, move: "parallax-pass", toRegion: "network", zoom: 1.12, startSec: 1.2, durationSec: 1.45, ease: "seqGlide" },
+        { version: 1, move: "orbit-lite", toRegion: "network", zoom: 1.16, startSec: 2.65, durationSec: 0.95, ease: "seqSwoosh" },
+        { version: 1, move: "track-to-anchor", toRegion: "hub", zoom: 1.24, startSec: 3.6, durationSec: 0.8, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "hub", zoom: 1.28, startSec: 4.4, durationSec: 1.6, ease: "seqSettle" },
+      ],
+    },
+  },
 ];
 
 export function cameraPatternById(id: string): CameraPatternV1 | undefined {

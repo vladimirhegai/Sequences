@@ -14,6 +14,12 @@ describe("camera pattern catalog", () => {
       "snap-to-proof",
       "hero-arc-landing",
       "compare-swing",
+      "vertical-feature-descent",
+      "cursor-result-chase",
+      "notification-escalation",
+      "logo-product-reveal",
+      "pricing-choice-focus",
+      "integration-depth-network",
     ]);
   });
 
