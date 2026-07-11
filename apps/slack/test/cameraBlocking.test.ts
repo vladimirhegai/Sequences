@@ -90,6 +90,23 @@ describe("camera blocking director", () => {
     expect(block.dwell.endSec).toBeGreaterThanOrEqual(scorePhrase.settleUntilSec);
   });
 
+  it("ends outgoing readable dwell before an animated cut takes the frame", () => {
+    const storyboard = scenes();
+    storyboard[0]!.cut = {
+      version: 1,
+      style: "swipe",
+      axis: "left",
+      exitSec: 0.4,
+      entrySec: 0.5,
+    };
+    const block = resolveCameraBlockingPlan(
+      storyboard,
+      resolveContinuityGraph(storyboard),
+    ).scenes[0]!.phrases[0]!;
+    expect(block.dwell.endSec).toBeLessThanOrEqual(2.6);
+    expect(block.dwell.readableSec).toBeCloseTo(block.dwell.endSec - block.arrivalSec, 5);
+  });
+
   it("arrives before cursor travel when a later payoff beat shares the interaction target", () => {
     const storyboard: DirectScene[] = [{
       id: "cta-shot",
@@ -126,7 +143,7 @@ describe("camera blocking director", () => {
     expect(block.arrivalSec).toBeLessThan(storyboard[0]!.interactions![0]!.arriveSec);
   });
 
-  it("treats an authored camera phrase as target intent and lands before its travel", () => {
+  it("treats an authored camera phrase as target intent and lands when its travel resolves", () => {
     const storyboard: DirectScene[] = [{
       id: "camera-owned",
       title: "Camera-owned phrase",
@@ -176,11 +193,11 @@ describe("camera blocking director", () => {
     ).scenes[0]!.phrases[0]!;
 
     // With the continuity graph enabled, the authored camera move contributes
-    // its target/lens intent; it does not get to delay the readable landing
-    // until the end of its own travel window.
-    expect(block.arrivalSec).toBe(0.8);
-    expect(block.arrivalSec).toBe(scorePhrase.dominant.startSec);
-    expect(block.arrivalSec).toBeLessThan(scorePhrase.cueSec);
+    // target/lens intent while the graph owns the travel. A camera cue is a
+    // landing, not an instruction to call the move complete at its first frame.
+    expect(block.arrivalSec).toBe(2.2);
+    expect(block.arrivalSec).toBe(scorePhrase.dominant.endSec);
+    expect(block.arrivalSec).toBe(scorePhrase.cueSec);
     expect(block.dwell.endSec).toBeGreaterThanOrEqual(scorePhrase.settleUntilSec);
   });
 
@@ -233,6 +250,56 @@ describe("camera blocking director", () => {
     );
     expect(trace?.occupancy).toEqual({ min: 0.08, preferred: 0.16, max: 0.34 });
     expect(metric?.occupancy).toMatchObject({ min: 0.015, max: 0.24 });
+  });
+
+  it("frames a stable plugin unit instead of chasing one animated child", () => {
+    const storyboard: DirectScene[] = [{
+      id: "checks",
+      title: "Checks",
+      purpose: "show a notification cascade",
+      startSec: 0,
+      durationSec: 4,
+      plugins: [{
+        version: 1,
+        kind: "notification-stack",
+        id: "check-stack",
+        uid: "checks-check-stack",
+        params: { count: 3, tone: "mixed", topic: "rollout" },
+      }],
+      components: [{
+        version: 1,
+        id: "check-stack-toast-1",
+        kind: "toast",
+        role: "support",
+        pluginUid: "checks-check-stack",
+      }],
+      beats: [{
+        version: 1,
+        id: "toast-1",
+        sceneId: "checks",
+        component: "check-stack-toast-1",
+        kind: "open",
+        atSec: 0.5,
+        durationSec: 0.5,
+      }],
+      moments: [{
+        version: 1,
+        id: "checks-arrive",
+        sceneId: "checks",
+        atSec: 0.6,
+        title: "Checks arrive",
+        visualState: "The notification stack is readable",
+        change: "The first check opens",
+        motionIntent: "reveal",
+        importance: "supporting",
+      }],
+    }];
+    const block = resolveCameraBlockingPlan(
+      storyboard,
+      resolveContinuityGraph(storyboard),
+    ).scenes[0]!.phrases[0]!;
+    expect(block.target).toEqual({ kind: "part", id: "check-stack" });
+    expect(block.occupancy).toEqual({ min: 0.025, preferred: 0.1, max: 0.3 });
   });
 
   it("uses visual form and centered composition when a headline carries CTA continuity", () => {

@@ -1099,20 +1099,43 @@
     }
     var entryLandingState = start;
     var openingApproach = null;
-    if (entryBlock && entryMatchesFirst) {
+    if (
+      entryBlock &&
+      (entryMatchesFirst || (firstDirected && routeKey(entryBlock) === routeKey(firstDirected)))
+    ) {
+      // A cut-entry block can name the same pose as a later camera-owned
+      // primary. The cut establishes the destination, but the delayed authored
+      // whip still needs a real approach window after entry settle. Use that
+      // later landing as the opening deadline; otherwise the entry block's
+      // scene-start arrival makes the camera gesture a zero-length no-op.
+      var openingBlock = entryBlock;
+      if (
+        entryBlock.role === "entry" && firstDirected &&
+        Number(firstDirected.arrivalSec) > Number(entryBlock.arrivalSec) + 0.4
+      ) {
+        openingBlock = firstDirected;
+      }
       var sceneStart = Number(segments[0].startSec) || 0;
-      var entryArrival = Number(entryBlock.arrivalSec);
-      var openingWindow = entryArrival - sceneStart - 0.125;
+      var entryArrival = Number(openingBlock.arrivalSec);
+      var openingStart = sceneStart;
+      var openingWindow = entryArrival - openingStart - 0.125;
       var authoredOpening = null;
       for (var ai = 0; ai < segments.length; ai += 1) {
         var possibleOpening = segments[ai];
-        if (possibleOpening.startSec > sceneStart + 0.05) continue;
+        if (possibleOpening.startSec > entryArrival - 0.2) continue;
         if (possibleOpening.endSec < entryArrival - 0.2) continue;
         if (possibleOpening.move === "hold" || possibleOpening.move === "dive") continue;
         authoredOpening = possibleOpening;
         break;
       }
-      if (authoredOpening && openingWindow >= 0.45) {
+      if (authoredOpening) {
+        openingStart = Math.max(sceneStart, authoredOpening.startSec);
+        openingWindow = entryArrival - openingStart - 0.125;
+      }
+      // A delayed impact move can have only a compact post-cut window after
+      // the 125ms landing reserve. 280ms is still a readable whip/push gesture;
+      // the kinematic fit below continuously reduces its distance as needed.
+      if (authoredOpening && openingWindow >= 0.28) {
         var approach = {
           x: entryLandingState.x,
           y: entryLandingState.y,
@@ -1135,8 +1158,8 @@
         // still scales it down for genuinely short approaches.
         var screenTravel = Math.min(viewport.w, viewport.h) *
           clamp(0.14 + openingWindow * 0.012, 0.14, 0.18);
-        var direction = entryBlock.arrivalPose && entryBlock.arrivalPose.anchor &&
-            Number(entryBlock.arrivalPose.anchor.x) < 0.48
+        var direction = openingBlock.arrivalPose && openingBlock.arrivalPose.anchor &&
+            Number(openingBlock.arrivalPose.anchor.x) < 0.48
           ? 1
           : -1;
         if (
@@ -1186,7 +1209,7 @@
         if (!nearlySame(approach, entryLandingState)) {
           start = approach;
           openingApproach = {
-            startSec: sceneStart,
+            startSec: openingStart,
             endSec: entryArrival - 0.125,
           };
         }

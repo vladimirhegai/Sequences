@@ -932,7 +932,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "received data-camera-world or SequencesCamera.compile; every measured " +
       "target stayed tiny and the author paid two futile layout repairs. " +
       "ensureCameraBlockingChassis adds a neutral hold on the declared focal so " +
-      "the host route has its required transform plane. Telemetry tag: " +
+      "the host route has its required transform plane. GatePilot (2026-07-11) " +
+      "proved camera normalizers can later drop the sole authored move, so the " +
+      "chassis is reasserted after the final schedule pass as well as after an " +
+      "atomic rollback. Telemetry tag: " +
       "camera-blocking-chassis.",
   },
   {
@@ -1279,7 +1282,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "runtime degrades is a measured cut_degraded polish finding carrying the " +
       "endpoint geometry, so the author loop repairs it instead of silently " +
       "shipping a zoom-through. Volunteered hopeless cuts degrade deterministically " +
-      "(degradeVolunteeredBridgedCuts); brief-REQUIRED shape-match stays blocking.",
+      "(degradeVolunteeredBridgedCuts); cross-kind component morphs also become " +
+      "honest swipes at plan time because independent host skeletons cannot promise " +
+      "runtime DOM rhyme. Brief-REQUIRED shape-match stays blocking.",
   },
   {
     id: "camera.framing",
@@ -1375,6 +1380,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "A declared contextual framingTarget owns ensemble occupancy and anchor " +
       "semantics unless its painted union collapses to the subject; the subject's " +
       "solo range/anchor cannot contradict the host's delivery-safe station fit. " +
+      "GatePilot aligned the last seams: plugin children block as one stable unit, " +
+      "supporting phrases do not claim landings the runtime lets yield, camera cues " +
+      "arrive at their resolved travel rather than onset, cut exits cap readable " +
+      "dwell, and compact post-cut impact moves retain a real opening route. " +
       "This is measured geometry and stays advisory-late like camera.framing.",
   },
   {

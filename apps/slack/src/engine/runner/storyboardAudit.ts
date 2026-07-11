@@ -1610,6 +1610,50 @@ export function degradeMismatchedShapeHintCuts(
 }
 
 /**
+ * A cross-scene morph needs compatible runtime DOM, not only compatible
+ * silhouette hints. Different component kinds are rendered by independent
+ * host skeletons, so a volunteered stat-card -> progress-ring morph can pass
+ * paper validation and then deterministically degrade in browser QA. Preserve
+ * same-kind morphs; turn cross-kind volunteered morphs into honest swipes at
+ * plan time. Brief-required shape matching remains blocking and never enters
+ * this repair rung.
+ */
+export function degradeCrossKindComponentMorphCuts(
+  storyboard: DirectScene[],
+): { scenes: DirectScene[]; degraded: string[] } {
+  const degraded: string[] = [];
+  const scenes = storyboard.map((scene, index) => {
+    const next = storyboard[index + 1];
+    const cut = scene.cut;
+    const style = cut ? canonicalCutStyle(cut.style).style : undefined;
+    if (!next || !cut || style !== "morph" || !cut.focalPartOut || !cut.focalPartIn) {
+      return scene;
+    }
+    const outgoing = scene.components?.find((component) => component.id === cut.focalPartOut);
+    const incoming = next.components?.find((component) => component.id === cut.focalPartIn);
+    if (!outgoing || !incoming || outgoing.kind === incoming.kind) return scene;
+    degraded.push(
+      `${scene.id}->${next.id} (${outgoing.kind}:${outgoing.id}->${incoming.kind}:${incoming.id})`,
+    );
+    return {
+      ...scene,
+      cut: {
+        version: 1 as const,
+        style: "swipe" as const,
+        axis: "right" as const,
+        ...(cut.travelPx !== undefined ? { travelPx: cut.travelPx } : {}),
+        ...(cut.exitSec !== undefined ? { exitSec: cut.exitSec } : {}),
+        ...(cut.entrySec !== undefined ? { entrySec: cut.entrySec } : {}),
+      },
+      outgoingCut:
+        `Swipe into the next shot (a cross-kind ${outgoing.kind}->${incoming.kind} ` +
+        `morph was degraded at plan time because the host DOM structures differ).`,
+    };
+  });
+  return { scenes, degraded };
+}
+
+/**
  * Degrade support-map beat violations at parse instead of vetoing the plan
  * (fallback-elimination lever): the planner keeps reaching for a reasonable
  * beat on the wrong component kind (`type` on a list, `rows` on a stat-card)
@@ -1951,6 +1995,16 @@ export function parseStoryboardResponse(
       }
     }
   }
+  if (!requirements.requireShapeMatch) {
+    const crossKindCuts = degradeCrossKindComponentMorphCuts(storyboard);
+    if (crossKindCuts.degraded.length) {
+      storyboard = crossKindCuts.scenes;
+      for (const line of crossKindCuts.degraded) {
+        process.stderr.write(`[storyboard] degraded cross-kind morph to swipe: ${line}\n`);
+        degradations.push(`storyboard-cross-kind-cut-degraded:${findingSignature(line)}`);
+      }
+    }
+  }
   // Support-map beat violations degrade to the nearest supported analog
   // (load-bearing beats keep their blocking finding) — see
   // degradeUnsupportedComponentBeats.
@@ -2050,6 +2104,13 @@ export function parseStoryboardResponse(
   const earlySwap = delayEarlySwapBeats(moveSpacing.storyboard);
   const pacingStretch = stretchMarginalPacingMisses(earlySwap.storyboard);
   const connectiveSchedule = normalizeConnectiveCameraSchedule(pacingStretch.storyboard);
+  // Camera schedule normalizers can legitimately drop the only full move in a
+  // scene. Reassert the host-owned transform chassis after that final drop so
+  // continuity blocking never receives a scene it cannot frame.
+  const finalBlockingChassis = continuityGraphEnabled()
+    ? ensureCameraBlockingChassis(connectiveSchedule.storyboard)
+    : { storyboard: connectiveSchedule.storyboard, normalized: [] };
+  committedBlockingChassisNormalizations += finalBlockingChassis.normalized.length;
   const normalizationLines = [
     ...morphFix.changed,
     ...blockingChassis.normalized,
@@ -2068,8 +2129,9 @@ export function parseStoryboardResponse(
     ...earlySwap.normalized,
     ...pacingStretch.normalized,
     ...connectiveSchedule.normalized,
+    ...finalBlockingChassis.normalized,
   ];
-  if (normalizationLines.length) storyboard = connectiveSchedule.storyboard;
+  if (normalizationLines.length) storyboard = finalBlockingChassis.storyboard;
 
   // Moment paperwork the plan already proves is filled in by the host, not
   // retried: a marginal dead interval that has a typed beat/camera/cut in it

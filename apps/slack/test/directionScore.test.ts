@@ -265,4 +265,51 @@ describe("resolveFilmDirectionScore", () => {
     expect(phrase?.dominant).toMatchObject({ system: "component", part: "brand-lockup" });
     expect(phrase?.attention).toEqual({ part: "brand-lockup" });
   });
+
+  it("keeps a primary cue on the declared focal when nearby notifications overlap it", () => {
+    const proof = scene({
+      id: "proof",
+      startSec: 0,
+      durationSec: 4.5,
+      components: [
+        { version: 1, id: "toast-stack", kind: "toast", role: "support" },
+        { version: 1, id: "confidence", kind: "stat-card", role: "hero" },
+      ],
+      beats: [
+        {
+          version: 1, id: "count", sceneId: "proof", component: "confidence",
+          kind: "count", atSec: 1.8, durationSec: 1.2, value: 98,
+        },
+        {
+          version: 1, id: "toast-3", sceneId: "proof", component: "toast-stack",
+          kind: "open", atSec: 2.16, durationSec: 0.5,
+        },
+      ],
+      moments: [{
+        version: 1,
+        id: "confidence-lands",
+        sceneId: "proof",
+        atSec: 2.4,
+        title: "Confidence lands",
+        visualState: "The confidence metric is readable",
+        change: "The count resolves while notifications support it",
+        motionIntent: "ui-state",
+        importance: "primary",
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "confidence",
+        composition: "metric-led proof",
+        relationships: ["notifications support the confidence metric"],
+      },
+    });
+
+    const phrase = directionPhraseForMoment(
+      resolveFilmDirectionScore([proof]),
+      "proof",
+      "confidence-lands",
+    );
+    expect(phrase?.dominant).toMatchObject({ system: "component", part: "confidence" });
+    expect(phrase?.attention).toEqual({ part: "confidence" });
+  });
 });

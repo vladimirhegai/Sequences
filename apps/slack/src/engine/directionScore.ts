@@ -352,6 +352,19 @@ function chooseMomentAction(
   const ordered = [...candidates].sort((a, b) => {
     const preferredDelta = Number(b.system === preferred) - Number(a.system === preferred);
     if (preferredDelta) return preferredDelta;
+    // A primary cue describes the shot's declared subject, not merely the
+    // closest local animation. Notification-stack beats often overlap a hero
+    // metric's count; choosing the nearest toast made the eye bounce away from
+    // the focal metric and then back again (GatePilot stress probe). Keep the
+    // planner's focal hierarchy authoritative when both candidates belong to
+    // the requested system. Supporting cues remain free to follow local beats.
+    const focalPart = moment.importance === "primary"
+      ? scene.spatialIntent?.focalPart
+      : undefined;
+    if (focalPart && a.system === preferred && b.system === preferred) {
+      const focalDelta = Number(b.part === focalPart) - Number(a.part === focalPart);
+      if (focalDelta) return focalDelta;
+    }
     // A camera cue often names what is happening DURING travel rather than
     // its later arrival. Prefer the preferred-system action actually carrying
     // the cue over the move that happened to finish nearest it; at a shared

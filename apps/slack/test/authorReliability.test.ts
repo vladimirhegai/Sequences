@@ -33,6 +33,7 @@ import {
   topUpRowsMarkup,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
+import { degradeCrossKindComponentMorphCuts } from "../src/engine/runner/storyboardAudit.ts";
 import { hasPausedTimeline } from "../src/engine/directComposition.ts";
 import { auditKitMarkupCompleteness } from "../src/engine/kitMarkupAudit.ts";
 import { validateCameraContract } from "../src/engine/cameraContract.ts";
@@ -1202,6 +1203,60 @@ describe("reconcileComponentBindings — missing data-part recovery", () => {
     ]);
     expect(repairs).toBe(0);
     expect(out).toContain('data-part="row-mg204" data-component="list" style="display:none"');
+  });
+
+  it("degrades a volunteered cross-kind morph before browser structure QA", () => {
+    const storyboard = [
+      scene("proof", 0, {
+        components: [{ version: 1, id: "confidence", kind: "stat-card", role: "hero" }],
+        cut: {
+          version: 1,
+          style: "morph",
+          focalPartOut: "confidence",
+          focalPartIn: "gate-ring",
+          shapeOut: "card",
+          shapeIn: "circle",
+          exitSec: 0.35,
+          entrySec: 0.5,
+        },
+      }),
+      scene("gate", 4, {
+        components: [{ version: 1, id: "gate-ring", kind: "progress-ring", role: "hero" }],
+      }),
+    ];
+    const result = degradeCrossKindComponentMorphCuts(storyboard);
+    expect(result.degraded).toEqual([
+      "proof->gate (stat-card:confidence->progress-ring:gate-ring)",
+    ]);
+    expect(result.scenes[0]!.cut).toEqual({
+      version: 1,
+      style: "swipe",
+      axis: "right",
+      exitSec: 0.35,
+      entrySec: 0.5,
+    });
+    expect(result.scenes[0]!.outgoingCut).toContain("host DOM structures differ");
+  });
+
+  it("preserves same-kind component morphs", () => {
+    const storyboard = [
+      scene("before", 0, {
+        components: [{ version: 1, id: "card-a", kind: "stat-card", role: "hero" }],
+        cut: {
+          version: 1,
+          style: "morph",
+          focalPartOut: "card-a",
+          focalPartIn: "card-b",
+        },
+      }),
+      scene("after", 4, {
+        components: [{ version: 1, id: "card-b", kind: "stat-card", role: "hero" }],
+      }),
+    ];
+    expect(degradeCrossKindComponentMorphCuts(storyboard)).toEqual({
+      scenes: storyboard,
+      degraded: [],
+    });
   });
 });
 

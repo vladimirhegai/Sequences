@@ -9,6 +9,7 @@
  * than guessed pixel coordinates.
  */
 import type { DirectScene } from "./directComposition.ts";
+import { resolveCutPlan } from "./cutContract.ts";
 import { resolveFilmDirectionScore, type DirectionPhraseV1 } from "./directionScore.ts";
 import type { ContinuityEntityKind, ContinuityGraphV1 } from "./continuityGraph.ts";
 import type { ContinuousMotionEvidenceV1 } from "./continuousMotion.ts";
@@ -128,6 +129,15 @@ function occupancyFor(
       ? { min: 0.1, preferred: 0.22, max: 0.42 }
       : { min: 0.04, preferred: 0.12, max: 0.32 };
   }
+  if (plugin) {
+    // Plugin children animate locally inside one designed unit. Camera blocking
+    // targets that unit (notification stack, dashboard grid, tier stack, ...),
+    // so its occupancy contract must describe the unit rather than fall
+    // through to the compact unknown-part range.
+    return importance === "primary"
+      ? { min: 0.06, preferred: 0.18, max: 0.42 }
+      : { min: 0.025, preferred: 0.1, max: 0.3 };
+  }
   if (component?.kind === "progress" || component?.kind === "progress-ring") {
     return importance === "primary"
       ? { min: 0.02, preferred: 0.08, max: 0.22 }
@@ -217,15 +227,23 @@ function targetFor(
   phrase: DirectionPhraseV1,
   graph: ContinuityGraphV1,
 ): BlockingTargetV1 {
-  const part = phrase.attention?.part ?? scene.spatialIntent?.focalPart;
+  const addressedPart = phrase.attention?.part ?? scene.spatialIntent?.focalPart;
+  const addressedComponent = scene.components?.find((candidate) => candidate.id === addressedPart);
+  const plugin = addressedComponent?.pluginUid
+    ? scene.plugins?.find((candidate) => candidate.uid === addressedComponent.pluginUid)
+    : undefined;
+  // A plugin owns the internal cascade of its children. Let the lens frame the
+  // stable designed unit while its tiles/toasts animate within it; chasing one
+  // child produces partial landings and corrective camera motion.
+  const part = plugin?.id ?? addressedPart;
   const region = phrase.attention?.region;
   const selector = phrase.attention?.selector;
   const kind = part ? "part" as const : region ? "region" as const : selector ? "selector" as const : "part" as const;
   const id = part ?? region ?? selector ?? scene.components?.find((component) => component.role === "hero")?.id ??
     scene.components?.[0]?.id ?? scene.spatialIntent?.focalPart ?? "composition-root";
-  const entity = graph.entities.find((candidate) =>
+  const entity = !plugin ? graph.entities.find((candidate) =>
     candidate.appearances.some((appearance) => appearance.sceneId === scene.id && appearance.part === id)
-  );
+  ) : undefined;
   const component = scene.components?.find((candidate) => candidate.id === id);
   const inferredKind: ContinuityEntityKind | undefined = component?.kind === "app-window"
     ? "product-shell"
@@ -264,6 +282,9 @@ export function resolveCameraBlockingPlan(
   graph: ContinuityGraphV1,
 ): CameraBlockingPlanV1 {
   const score = resolveFilmDirectionScore(scenes);
+  const readableUntilByScene = new Map(
+    resolveCutPlan(scenes).cuts.map((cut) => [cut.fromScene, cut.atSec - cut.exitSec]),
+  );
   let previousAnchor = ANCHORS.center;
   const planScenes = score.scenes.map((scoreScene) => {
     const scene = scenes.find((entry) => entry.id === scoreScene.sceneId)!;
@@ -311,6 +332,9 @@ export function resolveCameraBlockingPlan(
           component.kind === "headline" && /-(?:headline|sub)$/.test(target.id)
         ? target.id.replace(/-(?:headline|sub)$/, "")
         : undefined;
+      const targetPlugin = target.kind === "part"
+        ? scene.plugins?.find((entry) => entry.id === target.id)
+        : undefined;
       const soleAppWindow = (scene.components ?? []).filter((entry) => entry.kind === "app-window");
       const entityHeadline = component?.kind === "button" && component.entityId
         ? scene.components?.find((entry) =>
@@ -326,6 +350,8 @@ export function resolveCameraBlockingPlan(
             ? { kind: "part" as const, id: entityHeadline.id }
         : pluginGroup
           ? { kind: "part" as const, id: pluginGroup }
+          : targetPlugin
+            ? { kind: "part" as const, id: targetPlugin.id }
           : undefined;
       const framingOccupancy = component?.kind === "progress" || component?.kind === "progress-ring"
         ? { min: 0.08, preferred: 0.14, max: 0.28 }
@@ -341,20 +367,28 @@ export function resolveCameraBlockingPlan(
           action.part === target.id || action.region === target.id || action.selector === target.id
         )
         .reduce((earliest, action) => Math.min(earliest, action.startSec), Infinity);
+      // Component/cursor actions need the lens ready at onset. A camera action
+      // is different: its declared end (or a cue genuinely inside its travel)
+      // is the landing. Treating camera start as camera arrival left the
+      // graph-owned opening route with a zero-length window, so an authored
+      // whip compiled as a static frame.
+      const actionArrival = phrase.dominant.system === "camera"
+        ? phrase.cueSec > phrase.dominant.startSec + 0.05
+          ? Math.min(phrase.cueSec, phrase.dominant.endSec)
+          : phrase.dominant.endSec
+        : Math.min(phrase.cueSec, phrase.dominant.startSec, matchingActionStart);
       const arrivalSec = round(Math.min(
         phrase.endSec,
-        Math.max(
-          phrase.startSec,
-          Math.min(
-            phrase.cueSec,
-            phrase.dominant.startSec,
-            matchingActionStart,
-          ),
-        ),
+        Math.max(phrase.startSec, actionArrival),
       ));
       const readableFloor = importance === "primary" ? 0.62 : 0.38;
+      // An outgoing cut owns the frame from the beginning of its exit window.
+      // Camera QA must sample the product while the scene is still readable,
+      // not after a swipe/morph has already started moving or hiding it.
+      const readableUntil = readableUntilByScene.get(scene.id) ??
+        scene.startSec + scene.durationSec;
       const dwellEnd = round(Math.min(
-        scene.startSec + scene.durationSec,
+        readableUntil,
         Math.max(
           phrase.dominant.endSec,
           phrase.settleUntilSec,
