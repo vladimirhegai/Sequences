@@ -4,13 +4,16 @@ import { CAMERA_PATTERNS } from "../src/engine/cameraPatterns.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 
 describe("camera pattern catalog", () => {
-  it("exposes the five curated discovery patterns", () => {
+  it("exposes the curated discovery patterns", () => {
     expect(CAMERA_PATTERNS.map((pattern) => pattern.id)).toEqual([
       "text-runway",
       "push-and-hold",
       "pullback-system-reveal",
       "lateral-stations",
       "proof-track",
+      "snap-to-proof",
+      "hero-arc-landing",
+      "compare-swing",
     ]);
   });
 

@@ -50,7 +50,7 @@ const WIDE_WORLD = {
 } as const;
 
 /**
- * Five deliberately different blocking patterns. Their station names are
+ * Deliberately different blocking patterns. Their station names are
  * semantic examples, not required production ids; callers may rename them as
  * long as every typed camera target and DOM data-region remain in agreement.
  */
@@ -60,7 +60,7 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     id: "text-runway",
     title: "Text Runway",
     purpose: "Carry one sentence across adjacent full-frame claims without resetting to center.",
-    durationSec: 8,
+    durationSec: 6.4,
     motionDescription:
       "Open already moving on claim one, accelerate laterally into the continuation, then hand residual drift into the final phrase. Each landing is readable before the next commit.",
     eyeTrace: "A single left-to-right rail; typography leads and the camera follows the reading direction.",
@@ -74,11 +74,11 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     camera: {
       version: 1,
       path: [
-        { version: 1, move: "drift", fromRegion: "claim-one", toRegion: "claim-one", zoom: 1.04, startSec: 0, durationSec: 1.2, ease: "seqDrift" },
-        { version: 1, move: "pan", toRegion: "claim-two", zoom: 1.08, startSec: 1.2, durationSec: 1.8, ease: "seqSwoosh" },
-        { version: 1, move: "drift", toRegion: "claim-two", zoom: 1.11, startSec: 3, durationSec: 1.2, ease: "seqDrift" },
-        { version: 1, move: "pan", toRegion: "claim-three", zoom: 1.06, startSec: 4.2, durationSec: 1.8, ease: "seqSwoosh" },
-        { version: 1, move: "drift", toRegion: "claim-three", zoom: 1.1, startSec: 6, durationSec: 2, ease: "seqDrift" },
+        { version: 1, move: "drift", fromRegion: "claim-one", toRegion: "claim-one", zoom: 1.03, startSec: 0, durationSec: 0.55, ease: "seqDrift" },
+        { version: 1, move: "pan", toRegion: "claim-two", zoom: 1.1, startSec: 0.55, durationSec: 1, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "claim-two", zoom: 1.13, startSec: 1.55, durationSec: 1.15, ease: "seqSettle" },
+        { version: 1, move: "pan", toRegion: "claim-three", zoom: 1.08, startSec: 2.7, durationSec: 1, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "claim-three", zoom: 1.12, startSec: 3.7, durationSec: 2.7, ease: "seqSettle" },
       ],
     },
   },
@@ -87,7 +87,7 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     id: "push-and-hold",
     title: "Push and Hold",
     purpose: "Commit to one proof detail, hold long enough to read it, and keep the held frame subtly alive.",
-    durationSec: 6,
+    durationSec: 5,
     motionDescription:
       "A measured push isolates the proof surface. A short explicit hold protects comprehension; two quiet drift windows carry chart, cursor, or light-travel micro-motion without abandoning the target.",
     eyeTrace: "The field contracts from product context to one proof panel and never asks the eye to reacquire it.",
@@ -100,10 +100,10 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     camera: {
       version: 1,
       path: [
-        { version: 1, move: "push-in", fromRegion: "surface", toRegion: "proof", zoom: 1.28, startSec: 0, durationSec: 1.4, ease: "seqSettle" },
-        { version: 1, move: "drift", toRegion: "proof", zoom: 1.31, startSec: 1.4, durationSec: 2.1, ease: "seqDrift" },
-        { version: 1, move: "hold", toRegion: "proof", zoom: 1.31, startSec: 3.5, durationSec: 0.65, ease: "none" },
-        { version: 1, move: "drift", toRegion: "proof", zoom: 1.34, startSec: 4.15, durationSec: 1.85, ease: "seqDrift" },
+        { version: 1, move: "push-in", fromRegion: "surface", toRegion: "proof", zoom: 1.3, startSec: 0, durationSec: 0.9, ease: "seqAnticipate" },
+        { version: 1, move: "drift", toRegion: "proof", zoom: 1.33, startSec: 0.9, durationSec: 1.6, ease: "seqSettle" },
+        { version: 1, move: "hold", toRegion: "proof", zoom: 1.33, startSec: 2.5, durationSec: 0.55, ease: "none" },
+        { version: 1, move: "drift", toRegion: "proof", zoom: 1.36, startSec: 3.05, durationSec: 1.95, ease: "seqSettle" },
       ],
     },
   },
@@ -112,7 +112,7 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     id: "pullback-system-reveal",
     title: "Pullback System Reveal",
     purpose: "Turn one local fact into a broader system explanation without cutting away from its origin.",
-    durationSec: 7,
+    durationSec: 5.8,
     motionDescription:
       "Begin tight on the triggering detail, pull back to expose the surrounding system, then use a parallax pass and residual drift to reveal relationships at different depths.",
     eyeTrace: "The detail remains the visual origin while context grows around it; the reveal expands understanding rather than changing subjects.",
@@ -125,10 +125,10 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     camera: {
       version: 1,
       path: [
-        { version: 1, move: "drift", fromRegion: "detail", toRegion: "detail", zoom: 1.18, startSec: 0, durationSec: 0.8, ease: "seqDrift" },
-        { version: 1, move: "pull-back", toRegion: "system", zoom: 0.8, startSec: 0.8, durationSec: 2, ease: "seqSettle" },
-        { version: 1, move: "parallax-pass", toRegion: "system", zoom: 0.84, startSec: 2.8, durationSec: 2.6, ease: "seqGlide" },
-        { version: 1, move: "drift", toRegion: "system", zoom: 0.87, startSec: 5.4, durationSec: 1.6, ease: "seqDrift" },
+        { version: 1, move: "drift", fromRegion: "detail", toRegion: "detail", zoom: 1.2, startSec: 0, durationSec: 0.45, ease: "seqDrift" },
+        { version: 1, move: "pull-back", toRegion: "system", zoom: 0.78, startSec: 0.45, durationSec: 1.05, ease: "seqAnticipate" },
+        { version: 1, move: "parallax-pass", toRegion: "system", zoom: 0.84, startSec: 1.5, durationSec: 2.5, ease: "seqGlide" },
+        { version: 1, move: "drift", toRegion: "system", zoom: 0.88, startSec: 4, durationSec: 1.8, ease: "seqSettle" },
       ],
     },
   },
@@ -137,7 +137,7 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     id: "lateral-stations",
     title: "Lateral Stations",
     purpose: "Travel through three product stations as one continuous world instead of presenting three slides.",
-    durationSec: 9,
+    durationSec: 7.2,
     motionDescription:
       "A quiet entry yields to a confident track across adjacent stations. The middle station gets a long parallax development window; a second pan carries its residual direction into the resolve.",
     eyeTrace: "Stable horizontal geography makes every destination predictable while scale and content change at each station.",
@@ -151,11 +151,11 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     camera: {
       version: 1,
       path: [
-        { version: 1, move: "drift", fromRegion: "input", toRegion: "input", zoom: 1.02, startSec: 0, durationSec: 0.9, ease: "seqDrift" },
-        { version: 1, move: "pan", toRegion: "process", zoom: 1.08, startSec: 0.9, durationSec: 2.1, ease: "seqSwoosh" },
-        { version: 1, move: "parallax-pass", toRegion: "process", zoom: 1.12, startSec: 3, durationSec: 2.5, ease: "seqGlide" },
-        { version: 1, move: "pan", toRegion: "outcome", zoom: 1.06, startSec: 5.5, durationSec: 1.9, ease: "seqSwoosh" },
-        { version: 1, move: "drift", toRegion: "outcome", zoom: 1.1, startSec: 7.4, durationSec: 1.6, ease: "seqDrift" },
+        { version: 1, move: "drift", fromRegion: "input", toRegion: "input", zoom: 1.02, startSec: 0, durationSec: 0.45, ease: "seqDrift" },
+        { version: 1, move: "pan", toRegion: "process", zoom: 1.1, startSec: 0.45, durationSec: 1, ease: "seqSwoosh" },
+        { version: 1, move: "parallax-pass", toRegion: "process", zoom: 1.14, startSec: 1.45, durationSec: 2.4, ease: "seqGlide" },
+        { version: 1, move: "pan", toRegion: "outcome", zoom: 1.08, startSec: 3.85, durationSec: 0.95, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "outcome", zoom: 1.12, startSec: 4.8, durationSec: 2.4, ease: "seqSettle" },
       ],
     },
   },
@@ -164,7 +164,7 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     id: "proof-track",
     title: "Proof Track",
     purpose: "Move from claim to evidence to outcome with one explicit visual argument and no decorative detours.",
-    durationSec: 8,
+    durationSec: 6.4,
     motionDescription:
       "The camera eases off the claim, tracks diagonally into measured evidence, then makes one energetic but level pan into the outcome. Drift windows let counters and annotations overlap the travel.",
     eyeTrace: "A descending diagonal connects claim and proof; the final move rises into the result, forming a clear argument-shaped path.",
@@ -178,11 +178,86 @@ export const CAMERA_PATTERNS: readonly CameraPatternV1[] = [
     camera: {
       version: 1,
       path: [
-        { version: 1, move: "drift", fromRegion: "claim", toRegion: "claim", zoom: 1.04, startSec: 0, durationSec: 0.8, ease: "seqDrift" },
-        { version: 1, move: "pan", toRegion: "evidence", zoom: 1.14, startSec: 0.8, durationSec: 2.2, ease: "seqSettle" },
-        { version: 1, move: "drift", toRegion: "evidence", zoom: 1.18, startSec: 3, durationSec: 1.8, ease: "seqDrift" },
-        { version: 1, move: "pan", toRegion: "result", zoom: 1.08, startSec: 4.8, durationSec: 1.6, ease: "seqSwoosh" },
-        { version: 1, move: "drift", toRegion: "result", zoom: 1.12, startSec: 6.4, durationSec: 1.6, ease: "seqDrift" },
+        { version: 1, move: "drift", fromRegion: "claim", toRegion: "claim", zoom: 1.04, startSec: 0, durationSec: 0.4, ease: "seqDrift" },
+        { version: 1, move: "pan", toRegion: "evidence", zoom: 1.16, startSec: 0.4, durationSec: 1, ease: "seqAnticipate" },
+        { version: 1, move: "drift", toRegion: "evidence", zoom: 1.2, startSec: 1.4, durationSec: 1.6, ease: "seqSettle" },
+        { version: 1, move: "pan", toRegion: "result", zoom: 1.1, startSec: 3, durationSec: 0.85, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "result", zoom: 1.14, startSec: 3.85, durationSec: 2.55, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "snap-to-proof",
+    title: "Snap to Proof",
+    purpose: "Turn a broad product claim into one undeniable UI result with a single fast, motivated reframe.",
+    durationSec: 4.2,
+    motionDescription:
+      "A short poised drift gives way to one sub-second whip into the proof detail; the remaining window settles forward while the product state develops.",
+    eyeTrace: "The eye starts on the claim and is carried directly into the result, with no intermediate station to reacquire.",
+    bestFor: ["feature proof", "search result", "automation payoff", "before-to-after reveal"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "claim", label: "PROMISE", role: "entry", x: 300, y: 520, width: 880, height: 620, description: "A clean claim or initiating UI state." },
+      { id: "proof", label: "SHIPPED RESULT", role: "proof", x: 1940, y: 570, width: 900, height: 620, description: "The exact result surface that pays off the claim." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "drift", fromRegion: "claim", toRegion: "claim", zoom: 1.02, startSec: 0, durationSec: 0.35, ease: "seqDrift" },
+        { version: 1, move: "whip", toRegion: "proof", zoom: 1.2, startSec: 0.35, durationSec: 0.55, ease: "seqWhip" },
+        { version: 1, move: "drift", toRegion: "proof", zoom: 1.25, startSec: 0.9, durationSec: 3.3, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "hero-arc-landing",
+    title: "Hero Arc Landing",
+    purpose: "Give one product hero a premium depth reveal, then land squarely on the control or metric that matters.",
+    durationSec: 5.4,
+    motionDescription:
+      "The camera anticipates into a shallow orbit-lite arc, lets depth layers separate, then makes one compact push to a stable proof landing.",
+    eyeTrace: "Context wraps around the hero without rolling the horizon; the final push pins attention to its actionable center.",
+    bestFor: ["browser hero", "AI workflow", "integration map", "premium product reveal"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "hero", label: "PRODUCT HERO", role: "entry", x: 920, y: 420, width: 1360, height: 920, description: "A layered product surface with a clear central subject." },
+      { id: "action", label: "DECISIVE ACTION", role: "proof", x: 1250, y: 650, width: 700, height: 500, description: "The control, metric, or generated result that closes the reveal." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "orbit-lite", fromRegion: "hero", toRegion: "hero", zoom: 1.06, startSec: 0, durationSec: 1.15, ease: "seqAnticipate" },
+        { version: 1, move: "parallax-pass", toRegion: "hero", zoom: 1.1, startSec: 1.15, durationSec: 1.55, ease: "seqGlide" },
+        { version: 1, move: "push-in", toRegion: "action", zoom: 1.3, startSec: 2.7, durationSec: 0.8, ease: "seqSwoosh" },
+        { version: 1, move: "drift", toRegion: "action", zoom: 1.33, startSec: 3.5, durationSec: 1.9, ease: "seqSettle" },
+      ],
+    },
+  },
+  {
+    version: 1,
+    id: "compare-swing",
+    title: "Compare Swing",
+    purpose: "Contrast two product states rapidly, then resolve on the winning state without a three-slide rhythm.",
+    durationSec: 5.8,
+    motionDescription:
+      "A quick anticipate launches a lateral compare, the losing state gets only a brief read, and a faster return swing lands deeper on the winning proof.",
+    eyeTrace: "One reversible horizontal rail makes the comparison legible; the deeper final zoom declares the winner.",
+    bestFor: ["before/after", "manual versus automated", "legacy versus new", "plan comparison"],
+    world: WIDE_WORLD,
+    stations: [
+      { id: "before", label: "BEFORE", role: "entry", x: 360, y: 560, width: 900, height: 620, description: "The constrained or manual state." },
+      { id: "after", label: "AFTER", role: "resolve", x: 1940, y: 560, width: 900, height: 620, description: "The product-powered winning state." },
+    ],
+    camera: {
+      version: 1,
+      path: [
+        { version: 1, move: "pan", fromRegion: "before", toRegion: "after", zoom: 1.1, startSec: 0, durationSec: 0.95, ease: "seqAnticipate" },
+        { version: 1, move: "drift", toRegion: "after", zoom: 1.14, startSec: 0.95, durationSec: 1.5, ease: "seqSettle" },
+        { version: 1, move: "pan", toRegion: "before", zoom: 1.04, startSec: 2.45, durationSec: 0.75, ease: "seqSwoosh" },
+        { version: 1, move: "pan", toRegion: "after", zoom: 1.22, startSec: 3.2, durationSec: 0.7, ease: "seqWhip" },
+        { version: 1, move: "drift", toRegion: "after", zoom: 1.26, startSec: 3.9, durationSec: 1.9, ease: "seqSettle" },
       ],
     },
   },
