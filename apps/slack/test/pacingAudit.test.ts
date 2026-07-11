@@ -1329,24 +1329,37 @@ describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-ret
     expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/reading:"))).toBe(true);
   });
 
-  it("never touches a scene inside a declared (resolvable) timeRamp hold", () => {
-    // A ramp only resolves when it is not scene 1 and fits its window — mirror
-    // the known-good resolvable ramp shape. The late type beat WOULD be a
-    // marginal miss the stretch pass closes, but the ramp guard skips it.
+  it("stretches a ramped scene in viewer time when its late surfaces need a bounded hold", () => {
+    // architecture-stress-2 attempt 1: a net-zero slow-motion scene introduced
+    // its third surface 2.0s before the cut, but three surfaces need 2.7s of
+    // development. Scene boundaries are identity points in the ramp contract,
+    // so a 0.7s cut extension buys the missing 0.7 viewer seconds exactly.
     const opener = scene({ id: "opener", startSec: 0, durationSec: 5 });
     const ramped = scene({
       id: "ramped",
       startSec: 5,
-      durationSec: 8,
-      timeRamp: { version: 1, atSec: 9.4, slowTo: 0.2, holdSec: 0.9, recoverSec: 1.2 },
-      components: [{ version: 1 as const, id: "query", kind: "search" as const }],
-      beats: [beat("ramped", { id: "b1", component: "query", kind: "type", atSec: 12.4, text: "ship it now" })],
+      durationSec: 5.5,
+      timeRamp: { version: 1, atSec: 6.5, slowTo: 0.35, holdSec: 0.7, recoverSec: 0.8 },
+      components: [
+        { version: 1 as const, id: "metric", kind: "stat-card" as const },
+        { version: 1 as const, id: "approve", kind: "button" as const },
+        { version: 1 as const, id: "confirmed", kind: "toast" as const },
+      ],
+      beats: [beat("ramped", {
+        id: "toast-confirms",
+        component: "confirmed",
+        kind: "open",
+        atSec: 8.5,
+        durationSec: 0.5,
+      })],
     });
     // Precondition: the ramp actually resolves (else this proves nothing).
     expect(resolveTimeRampPlan([opener, ramped]).ramps.some((r) => r.sceneId === "ramped")).toBe(true);
+    expect(auditPacing([opener, ramped]).some((finding) => finding.startsWith("pacing/holds:"))).toBe(true);
     const result = stretchMarginalPacingMisses([opener, ramped]);
-    expect(result.normalized).toEqual([]);
-    expect(result.storyboard.find((s) => s.id === "ramped")!.durationSec).toBe(8);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard.find((s) => s.id === "ramped")!.durationSec).toBeCloseTo(6.2, 2);
+    expect(auditPacing(result.storyboard).some((finding) => finding.startsWith("pacing/holds:"))).toBe(false);
   });
 });
 

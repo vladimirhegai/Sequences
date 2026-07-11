@@ -260,14 +260,11 @@ it the way a camera operator would.
   hero logo/graphic scene — text anti-aliases badly on a rotated plane, so
   keep long copy out of orbiting scenes, and never author `perspective`,
   `rotateY`, or `transform-style` yourself.
-- **Reveal on arrival.** Time each region's information beats to when the
-  camera arrives or drifts across it (the storyboard path tells you the
-  arrival seconds). Content the camera has not reached yet may sit at rest —
-  it does not need entrance tweens before it is ever framed.
-- **Overlap camera and content motion.** Let a region's first beat begin
-  during the last ~30% of the move that frames it, so the landing and the
-  state change read as one gesture; beats that wait for the camera to park
-  feel stop-start.
+- **Reveal on arrival.** A destination region's first beat may begin during
+  the last ~30% of the move framing it, joining landing and state change into
+  one gesture. Source-region type/swap/toast beats and their holds must finish
+  before departure; never fire new source content during a move away. Content
+  the camera has not reached yet may rest.
 - **Approach the opener; never pre-land.** If its first primary arrival is ≥0.6s,
   start one motivated pan/push/pull/track at scene entry. Land, rest briefly,
   then keep the readable frame alive with an operated hold or local motion.

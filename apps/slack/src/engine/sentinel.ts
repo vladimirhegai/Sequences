@@ -197,11 +197,13 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     test: "test/pacingAudit.test.ts",
     addedBecause:
       "Phase 3.1: stretchMarginalPacingMisses closes a marginal " +
-      "pacing/reading|outcome shortfall (<= MAX_PACING_STRETCH_SEC) by extending " +
+      "pacing/holds|reading|outcome shortfall (<= MAX_PACING_STRETCH_SEC) by extending " +
       "the scene's own cut boundary and cascade-shifting later scenes, so the " +
       "host does the subtraction instead of a paid retry — it PREVENTS " +
-      "pacing/reading and pacing/outcome. Skips ramped scenes; detection runs in " +
-      "each scene's unshifted frame; same atomic commit-or-revert as the clamp. " +
+      "those pacing findings. architecture-stress-2 (2026-07-11): detection is " +
+      "viewer-time aware in ramped scenes too; the ramp contract is net-zero at " +
+      "scene boundaries, so a bounded cut extension buys the missing viewer hold. " +
+      "Detection runs in each scene's unshifted frame; same atomic commit-or-revert as the clamp. " +
       "Telemetry tag: pacing-stretch. Visible in STORYBOARD.md.",
   },
 

@@ -1532,15 +1532,16 @@ function withShiftedSceneTimes(scene: DirectScene, delta: number): DirectScene {
  * constraining "next framing change" is the scene's OWN end (not an internal
  * camera move already in flight) are stretched: an internal-move conflict is
  * a genuine creative layout call the model should make, not host arithmetic.
- * Scenes inside a declared timeRamp hold are skipped — the ramp already
- * warps content seconds non-linearly, so stretching raw content time there
- * would not deliver the viewer-time hold the finding asks for.
+ * Shortfalls are measured in viewer time, including scenes with a time ramp.
+ * Ramps are net-zero and identity at scene boundaries, so extending the cut by
+ * N content seconds buys exactly N viewer seconds. Atomic convergence remains
+ * the backstop if the longer scene changes the ramp's internal recovery.
  */
 export function stretchMarginalPacingMisses(
   storyboard: DirectScene[],
 ): { storyboard: DirectScene[]; normalized: string[] } {
   const normalized: string[] = [];
-  const rampSceneIds = new Set(resolveTimeRampPlan(storyboard).ramps.map((ramp) => ramp.sceneId));
+  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
   const resolvedBeatsByScene = new Map<string, ResolvedComponentBeatV1[]>(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
@@ -1553,8 +1554,10 @@ export function stretchMarginalPacingMisses(
   // emitting the output scene.
   for (const original of storyboard) {
     let applied = 0;
-    if (!rampSceneIds.has(original.id)) {
+    {
       const sceneEnd = original.startSec + original.durationSec;
+      const viewerStart = toViewer(original.startSec);
+      const viewerEnd = toViewer(sceneEnd);
       const fullMoves = (original.camera?.path ?? []).filter((move) => CAMERA_FULL_MOVES.has(move.move));
       const stretchEvents = framingChangeEvents(fullMoves);
       const nextFramingChange = (afterSec: number): number =>
@@ -1580,17 +1583,18 @@ export function stretchMarginalPacingMisses(
       if (introductions.length && !isShortFinalResolve) {
         const lastIntro = introductions[introductions.length - 1]!;
         const neededDevelopment = DEVELOPMENT_SEC_PER_INTRODUCTION * introductions.length;
-        const availableDevelopment = sceneEnd - lastIntro;
+        const viewerIntro = toViewer(lastIntro);
+        const availableDevelopment = viewerEnd - viewerIntro;
         if (availableDevelopment + PACING_TOLERANCE_SEC < neededDevelopment) {
           shortfall = Math.max(shortfall, neededDevelopment - availableDevelopment);
         }
-        const latestAllowed =
-          original.startSec + original.durationSec * LAST_INTRODUCTION_MAX_FRACTION;
-        if (lastIntro > latestAllowed + PACING_TOLERANCE_SEC) {
-          const durationNeeded =
-            (lastIntro - original.startSec - PACING_TOLERANCE_SEC) /
+        const viewerLength = viewerEnd - viewerStart;
+        const latestAllowed = viewerStart + viewerLength * LAST_INTRODUCTION_MAX_FRACTION;
+        if (viewerIntro > latestAllowed + PACING_TOLERANCE_SEC) {
+          const viewerLengthNeeded =
+            (viewerIntro - viewerStart - PACING_TOLERANCE_SEC) /
             LAST_INTRODUCTION_MAX_FRACTION;
-          shortfall = Math.max(shortfall, durationNeeded - original.durationSec);
+          shortfall = Math.max(shortfall, viewerLengthNeeded - viewerLength);
         }
       }
       for (const beat of beats) {
@@ -1602,14 +1606,14 @@ export function stretchMarginalPacingMisses(
           const wordCount = words(beat.text);
           const needed = Math.min(READING_MAX_SEC, Math.max(READING_MIN_SEC, READING_SEC_PER_WORD * wordCount));
           if (nextFramingChange(beat.endSec) >= sceneEnd - 1e-6) {
-            const available = sceneEnd - beat.endSec;
+            const available = viewerEnd - toViewer(beat.endSec);
             if (available + PACING_TOLERANCE_SEC < needed) shortfall = Math.max(shortfall, needed - available);
           }
         }
         const isToastOpen = beat.kind === "open" && componentKinds.get(beat.component) === "toast";
         if (PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen) {
           if (nextFramingChange(beat.endSec) >= sceneEnd - 1e-6) {
-            const available = sceneEnd - beat.endSec;
+            const available = viewerEnd - toViewer(beat.endSec);
             if (available + PACING_TOLERANCE_SEC < OUTCOME_HOLD_SEC) {
               shortfall = Math.max(shortfall, OUTCOME_HOLD_SEC - available);
             }
