@@ -300,6 +300,32 @@
     #eef1f5;
 }
 
+/* A dark frame cannot place a near-white monitor behind transparent dark UI.
+ * The 2026-07-11 LaunchRelay probe did exactly that: the production pedestal
+ * became the dominant white card and erased the intended hazard-dark film.
+ * Keep the same physical screen shape, but honor the plan's committed basis. */
+.seq-env[data-env-basis="dark"] .seq-env__pedestal {
+  border-color: rgba(238, 241, 245, 0.24);
+  background: color-mix(in srgb, var(--surface, #171e2a) 92%, #eef1f5);
+}
+
+.seq-env[data-env-basis="dark"] .seq-env__pedestal-chrome {
+  background: color-mix(in srgb, var(--surface-2, #151b26) 94%, #d8dde5);
+  border-bottom-color: rgba(238, 241, 245, 0.14);
+}
+
+.seq-env[data-env-basis="dark"] .seq-env__pedestal-chrome i {
+  background: rgba(238, 241, 245, 0.4);
+}
+
+.seq-env[data-env-basis="dark"] .seq-env__pedestal-surface {
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--accent, #6ea8ff) 7%, var(--surface-2, #151b26)),
+      color-mix(in srgb, var(--surface, #171e2a) 96%, #eef1f5) 28%),
+    var(--surface, #171e2a);
+}
+
 /* Generated token field ---------------------------------------------- */
 
 .seq-env--generated-field {

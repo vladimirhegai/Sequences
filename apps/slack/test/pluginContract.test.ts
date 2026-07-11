@@ -260,6 +260,32 @@ describe("plugin reconciliation + lowering (Sentinel L2, degrade-never-veto)", (
     expect(componentUnitCount(relowered.components)).toBe(1);
   });
 
+  it("keeps every plugin child in its declared camera station across re-parses", () => {
+    const first = reconcileAndLowerPlugins([scene({
+      plugins: normalizeStoryboardPluginDeclarations([{
+        kind: "lockup",
+        id: "ship-lockup",
+        region: "cta-center",
+        params: {
+          headline: "Start shipping",
+          sub: "One board. One timeline. One confident ship.",
+          cta: "Get started",
+        },
+      }]),
+    })]).scenes[0]!;
+    expect((first.components ?? []).every((entry) => entry.region === "cta-center")).toBe(true);
+
+    const echoed: DirectScene = {
+      ...first,
+      components: (first.components ?? []).map(
+        ({ pluginUid: _uid, region: _region, ...entry }) => entry,
+      ),
+    };
+    const replayed = reconcileAndLowerPlugins([echoed]).scenes[0]!;
+    expect((replayed.components ?? []).every((entry) => entry.pluginUid === "s1-ship-lockup")).toBe(true);
+    expect((replayed.components ?? []).every((entry) => entry.region === "cta-center")).toBe(true);
+  });
+
   it("refreshes host beat timing when an existing plugin's camera arrival changes", () => {
     const first = reconcileAndLowerPlugins([scene({
       plugins: normalizeStoryboardPluginDeclarations([{

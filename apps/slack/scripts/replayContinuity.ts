@@ -28,6 +28,7 @@ import { cohereInteractionFocusItems } from "../src/engine/interactionContract.t
 import { inspectDirectComposition, type DirectBrowserQaResult } from "../src/engine/layoutInspector.ts";
 import { reconcileAndLowerPlugins } from "../src/engine/pluginContract.ts";
 import { reconcileRecipeDeclarations } from "../src/engine/recipeContract.ts";
+import { resolveCliInputPath } from "../src/engine/cliPaths.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const projectsDir = path.join(appDir, ".data", "projects");
@@ -40,8 +41,9 @@ if (!sourceArg) {
   console.error("usage: npm run continuity:replay -- <project-dir-or-id> [--out <new-project-id>]");
   process.exitCode = 2;
 } else {
-  const source = fs.existsSync(path.resolve(sourceArg))
-    ? path.resolve(sourceArg)
+  const resolvedSource = resolveCliInputPath(sourceArg, appDir);
+  const source = fs.existsSync(resolvedSource)
+    ? resolvedSource
     : path.join(projectsDir, sourceArg);
   if (!fs.existsSync(source)) throw new Error(`source project does not exist: ${source}`);
   const target = outId ? path.join(projectsDir, outId) : source;

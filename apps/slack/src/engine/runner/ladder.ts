@@ -2561,18 +2561,20 @@ function recordSlotScriptRepairs(repairs: {
   bareFromTo: number;
   pseudoTimeline: number;
   arrowEnvelope: number;
+  globalTween: number;
   timePosition: number;
   dataAttribute: number;
   localPosition: number;
 }): void {
   const total = repairs.bareFromTo + repairs.pseudoTimeline + repairs.arrowEnvelope +
-    repairs.timePosition + repairs.dataAttribute + repairs.localPosition;
+    repairs.globalTween + repairs.timePosition + repairs.dataAttribute + repairs.localPosition;
   if (!total) return;
   recordSentinelNormalization("slot-script-envelope", total);
   process.stderr.write(
     `[author] normalized ${total} invalid scene-slot timeline binding(s) ` +
       `(${repairs.bareFromTo} bare fromTo, ${repairs.pseudoTimeline} pseudo timeline, ` +
-      `${repairs.arrowEnvelope} uninvoked arrow envelope, ${repairs.timePosition} misplaced time, ` +
+      `${repairs.arrowEnvelope} uninvoked arrow envelope, ${repairs.globalTween} global tween, ` +
+      `${repairs.timePosition} misplaced time, ` +
       `${repairs.dataAttribute} data attribute, ${repairs.localPosition} local position)\n`,
   );
 }

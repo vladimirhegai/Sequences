@@ -464,6 +464,28 @@ describe("topUpStoryboardMoments", () => {
     expect(topped.storyboard).toBe(planned);
   });
 
+  it("removes stale host-auto moments when their typed evidence no longer exists", () => {
+    const planned = scenes.map((scene, index) => ({
+      ...scene,
+      moments: [
+        moment(scene.id, `${scene.id}-m1`, scene.startSec + 0.3),
+        moment(scene.id, `${scene.id}-m2`, scene.startSec + 2.3),
+        moment(scene.id, `${scene.id}-m3`, scene.startSec + 4.2),
+        ...(index === 2 ? [{
+          ...moment(scene.id, `${scene.id}-auto-1`, scene.startSec + 3.2),
+          title: "Camera pull-back develops toward CTA",
+          motionIntent: "camera",
+        }] : []),
+      ],
+    }));
+
+    const topped = topUpStoryboardMoments(planned, CAMERA_FULL_MOVES);
+    expect(topped.storyboard.flatMap((scene) => scene.moments ?? [])
+      .some((entry) => entry.id.endsWith("-auto-1"))).toBe(false);
+    expect(topped.storyboard.flatMap((scene) => scene.moments ?? [])
+      .some((entry) => entry.title.includes("Camera pull-back"))).toBe(false);
+  });
+
   it("leaves genuine dead air for the findings retry", () => {
     // No typed evidence anywhere near the dead windows: the host must not
     // paper over a real hole in the film.

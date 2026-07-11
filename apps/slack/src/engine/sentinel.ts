@@ -671,7 +671,11 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "the wrapper received undefined and threw on tl.fromTo. The later " +
       "direction-live-b probe wrapped every otherwise-valid slot in an uninvoked " +
       "(tl) => {...} expression (including a const-assigned variant), making all " +
-      "authored motion a silent no-op. Probes 4 and 6 added the equally mechanical " +
+      "authored motion a silent no-op. The 2026-07-11 architecture audit found a " +
+      "complete film whose slots used global gsap tweens plus delay: all motion ran " +
+      "on wall time and 28 cues were unplaceable by seek-time QA. Those calls now " +
+      "bind to tl and their delay becomes the explicit timeline position. Probes 4 " +
+      "and 6 added the equally mechanical " +
       "forms: window.__tl, two-argument `(tl, root) => {...}` envelopes, top-level " +
       "`time` variables used as GSAP positions, data-* names inside JS vars, and " +
       "later-scene cues expressed in unmistakably scene-local time. NodeHarbor added " +

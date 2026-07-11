@@ -681,6 +681,18 @@ export function topUpStoryboardMoments(
   fullCameraMoves: ReadonlySet<string>,
 ): MomentTopUpResult {
   if (!scenes.length) return { storyboard: scenes, added: [] };
+  // `-auto-N` ids are host paperwork, not planner-owned story. Rebuild them
+  // from the CURRENT typed plan on every parse. Without this refresh, a camera
+  // move dropped by a later pacing normalization left behind a promised
+  // "camera develops" moment and QA correctly found a dead final hold.
+  if (scenes.some((scene) =>
+    (scene.moments ?? []).some((moment) => /-auto-\d+$/i.test(moment.id))
+  )) {
+    scenes = scenes.map((scene) => ({
+      ...scene,
+      moments: (scene.moments ?? []).filter((moment) => !/-auto-\d+$/i.test(moment.id)),
+    }));
+  }
   const durationSec = scenes.reduce(
     (end, scene) => Math.max(end, scene.startSec + scene.durationSec),
     0,

@@ -272,6 +272,7 @@ describe("environment kit and runtime IO", () => {
     expect(runtime).toContain("SequencesEnvironment");
     expect(runtime).not.toMatch(/requestAnimationFrame|setInterval|setTimeout|repeat\s*:\s*-1|\.play\s*\(/);
     expect(kit).not.toMatch(/#(?:000000|000|ffffff|fff)\b/i);
+    expect(kit).toContain('.seq-env[data-env-basis="dark"] .seq-env__pedestal-surface');
     expect(environmentRuntimeHash()).toMatch(/^[a-f0-9]{64}$/);
     expect(environmentKitHash()).toMatch(/^[a-f0-9]{64}$/);
 

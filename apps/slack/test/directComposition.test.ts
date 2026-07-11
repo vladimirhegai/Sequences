@@ -1125,6 +1125,63 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     expect(focused?.focus).toEqual({ part: "chip", blurMaxPx: 6 });
   });
 
+  it("keeps the continuity camera chassis when unrelated arithmetic is reverted", () => {
+    const previous = process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH;
+    process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH = "1";
+    try {
+      const scenes = storyboard();
+      const raw = scenes.map((scene, index) => {
+        if (index === 0) {
+          return {
+            ...scene,
+            components: [{ version: 1 as const, id: "signal-headline", kind: "headline" as const, role: "hero" as const }],
+            spatialIntent: {
+              version: 1 as const,
+              focalPart: "signal-headline",
+              composition: "headline-led opening",
+              relationships: [],
+            },
+          };
+        }
+        if (index === 1) {
+          return {
+            ...scene,
+            camera: {
+              version: 1 as const,
+              path: [
+                { version: 1 as const, move: "pan" as const, toRegion: "left", startSec: 3.2, durationSec: 0.5 },
+                { version: 1 as const, move: "track-to-anchor" as const, toPart: "chip", startSec: 4.0, durationSec: 0.5 },
+                { version: 1 as const, move: "pull-back" as const, toRegion: "wide", startSec: 4.8, durationSec: 0.5 },
+              ],
+            },
+          };
+        }
+        return scene;
+      });
+      const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
+      let failure: StoryboardValidationError | undefined;
+      try {
+        parseStoryboardResponse(response, { minCameraMoves: 3 });
+      } catch (error) {
+        if (error instanceof StoryboardValidationError) failure = error;
+        else throw error;
+      }
+
+      expect(failure?.findings.some((finding) => finding.includes("pacing/camera-budget"))).toBe(true);
+      expect(failure?.storyboard[0]?.camera?.path).toEqual([{
+        version: 1,
+        move: "hold",
+        startSec: 0,
+        durationSec: 3,
+        toPart: "signal-headline",
+        zoom: 1,
+      }]);
+    } finally {
+      if (previous === undefined) delete process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH;
+      else process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH = previous;
+    }
+  });
+
   it("stretches a marginal scene-boundary reading miss and cascade-shifts later scenes", () => {
     // The 3s middle scene types a headline that lands too late to read before
     // its own cut — a marginal miss the host closes by extending the cut,

@@ -2022,6 +2022,7 @@ export function parseStoryboardResponse(
   const blockingChassis = continuityGraphEnabled()
     ? ensureCameraBlockingChassis(entranceRetime.scenes)
     : { storyboard: entranceRetime.scenes, normalized: [] };
+  let committedBlockingChassisNormalizations = blockingChassis.normalized.length;
   const componentTrim = trimOverBudgetComponents(blockingChassis.storyboard);
   const crossStationTravel = upgradeCrossStationDrifts(componentTrim.storyboard);
   const cameraBudget = normalizeCameraBudget(crossStationTravel.storyboard);
@@ -2146,6 +2147,19 @@ export function parseStoryboardResponse(
       errors = originalErrors;
       normalizationLines.length = 0;
       atomicNormalizationCommitted = false;
+      // The continuity chassis is an L1 execution seam, not creative
+      // arithmetic: camera blocking cannot run without a transformable world.
+      // Reapply it after an unrelated atomic rollback just like the monotonic
+      // required-focus modifier below. Otherwise a camera-budget/timing
+      // rollback can silently recreate the no-camera-world failure that the
+      // chassis exists to make impossible.
+      const recoveredChassis = continuityGraphEnabled()
+        ? ensureCameraBlockingChassis(storyboard)
+        : { storyboard, normalized: [] };
+      storyboard = recoveredChassis.storyboard;
+      errors = resolveErrors(storyboard);
+      normalizationLines.push(...recoveredChassis.normalized);
+      committedBlockingChassisNormalizations = recoveredChassis.normalized.length;
       // A rack-focus top-up is an explicit brief-contract repair on an
       // existing move/part, independent of the arithmetic group that was just
       // reverted. Probe 5 had a valid target, received the modifier, then lost
@@ -2174,8 +2188,11 @@ export function parseStoryboardResponse(
     if (atomicNormalizationCommitted && entranceRetime.normalized.length) {
       recordSentinelNormalization("entrance-retime", entranceRetime.normalized.length);
     }
-    if (atomicNormalizationCommitted && blockingChassis.normalized.length) {
-      recordSentinelNormalization("camera-blocking-chassis", blockingChassis.normalized.length);
+    if (committedBlockingChassisNormalizations) {
+      recordSentinelNormalization(
+        "camera-blocking-chassis",
+        committedBlockingChassisNormalizations,
+      );
     }
     if (atomicNormalizationCommitted && componentTrim.normalized.length) {
       recordSentinelNormalization("component-trim", componentTrim.normalized.length);

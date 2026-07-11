@@ -172,6 +172,7 @@ describe("assembleSlotComposition", () => {
       bareFromTo: 1,
       pseudoTimeline: 2,
       arrowEnvelope: 0,
+      globalTween: 0,
       timePosition: 0,
       dataAttribute: 0,
       localPosition: 0,
@@ -245,6 +246,21 @@ describe("assembleSlotComposition", () => {
     expect(result.script).toContain("})(tl);");
     expect(result.script).not.toContain("window.__tl");
     expect(result.repairs.pseudoTimeline).toBe(1);
+  });
+
+  it("moves global slot tweens and their delays onto the seekable host timeline", () => {
+    const result = normalizeSceneSlotScript([
+      "gsap.fromTo(label, { opacity: 0 }, { opacity: 1, duration: .4, delay: 9 });",
+      "if (tile) gsap.to(tile, { y: 0, duration: .5, delay: 9.8 });",
+      "gsap.set(badge, { opacity: 0 });",
+    ].join("\n"), { startSec: 8.4, durationSec: 5.5 });
+
+    expect(result.script).toContain("tl.fromTo(label, { opacity: 0 }, { opacity: 1, duration: .4 }, 9)");
+    expect(result.script).toContain("tl.to(tile, { y: 0, duration: .5 }, 9.8)");
+    expect(result.script).toContain("tl.set(badge, { opacity: 0 }, 8.4)");
+    expect(result.script).not.toMatch(/\bgsap\s*\.(?:fromTo|from|to|set)\s*\(/);
+    expect(result.script).not.toMatch(/\bdelay\s*:/);
+    expect(result.repairs.globalTween).toBe(3);
   });
 
   it("moves Probe 4's misplaced time keys into GSAP's position argument", () => {

@@ -277,14 +277,23 @@ export function resolveCameraBlockingPlan(
           (beat.kind === "type" || beat.kind === "open" || beat.kind === "rows" ||
             beat.kind === "morph" || beat.kind === "swap"))
         .sort((a, b) => a.atSec - b.atSec)[0]?.atSec;
+      const regionIsUnambiguous = Boolean(
+        component?.region &&
+        (scene.components ?? []).filter((entry) => entry.region === component.region).length === 1
+      );
       const explicitFullMoveDestination = component?.role !== "hero" &&
         (firstComponentEntrance === undefined || phrase.cueSec >= firstComponentEntrance - 0.05) &&
         (scene.camera?.path ?? []).some((move) =>
         move.move !== "drift" && move.move !== "hold" &&
-        (move.toPart === target.id || Boolean(move.toRegion && move.toRegion === component?.region))
+        (move.toPart === target.id || Boolean(
+          regionIsUnambiguous && move.toRegion && move.toRegion === component?.region
+        ))
       );
       // If the planner explicitly sends a full move to a nominally supporting
-      // component, that destination is camera-load-bearing in practice. Keep
+      // component, that destination is camera-load-bearing in practice. A
+      // region shared by a hero and supporting UI is not an explicit address:
+      // promoting every child there made the lens abandon the hero's readable
+      // dwell to chase a sidebar in the same station. Keep
       // ordinary supporting phrases from yanking the lens, but promote this
       // contradictory paperwork so the addressed station cannot remain
       // off-frame (RouteBoard Probe 5's publish button).

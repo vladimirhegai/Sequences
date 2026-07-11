@@ -111,6 +111,8 @@ export interface PluginLowerContext {
   /** The unit part name (wrapper data-part). */
   id: string;
   uid: string;
+  /** Every generated child lives in the declaration's camera station. */
+  region?: string;
   params: Record<string, string | number>;
   topic: SeedTopic;
   rng: SeededRandom;
@@ -179,7 +181,13 @@ function component(
   id: string,
   kind: SceneComponentSpecV1["kind"],
 ): SceneComponentSpecV1 {
-  return { version: 1, id, kind, pluginUid: ctx.uid };
+  return {
+    version: 1,
+    id,
+    kind,
+    pluginUid: ctx.uid,
+    ...(ctx.region ? { region: ctx.region } : {}),
+  };
 }
 
 /* ------------------------------------------------------------ the catalog */
@@ -1267,6 +1275,7 @@ function lowerContext(
     durationSec: scene.durationSec,
     id: declaration.id,
     uid,
+    ...(declaration.region ? { region: declaration.region } : {}),
     ...(arrivalSec !== undefined ? { arrivalSec } : {}),
     params: declaration.params,
     topic: deriveTopic(
@@ -1420,7 +1429,10 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
     /** Idempotent re-lowerings replace host beats so camera-aware timing stays current. */
     const refreshedPluginBeatPrefixes = new Set<string>();
     /** Existing components to re-mark as plugin-owned (idempotent re-parse). */
-    const restampByComponentId = new Map<string, string>();
+    const restampByComponentId = new Map<
+      string,
+      { uid: string; region?: string }
+    >();
     for (const declaration of scene.plugins) {
       const spec = CATALOG_BY_KIND.get(declaration.kind);
       if (!spec) {
@@ -1534,7 +1546,12 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
         replay.components.every((entry) => existingIds.has(entry.id))
       ) {
         const uid = `${scene.id}-${declaration.id}`;
-        for (const entry of replay.components) restampByComponentId.set(entry.id, uid);
+        for (const entry of replay.components) {
+          restampByComponentId.set(entry.id, {
+            uid,
+            ...(declaration.region ? { region: declaration.region } : {}),
+          });
+        }
         refreshedPluginBeatPrefixes.add(declaration.id);
         extraBeats.push(...replay.beats);
         seenKinds.add(declaration.kind);
@@ -1590,8 +1607,14 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
     const baseComponents = (scene.components ?? [])
       .filter((entry) => !retiredPluginChildren.has(entry.id))
       .map((entry) => {
-        const uid = restampByComponentId.get(entry.id);
-        return uid ? { ...entry, pluginUid: uid } : entry;
+        const stamp = restampByComponentId.get(entry.id);
+        return stamp
+          ? {
+              ...entry,
+              pluginUid: stamp.uid,
+              ...(stamp.region ? { region: stamp.region } : {}),
+            }
+          : entry;
       });
     const baseBeats = (scene.beats ?? [])
       .filter((entry) =>

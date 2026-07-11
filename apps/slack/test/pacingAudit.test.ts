@@ -1128,6 +1128,59 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
     )).toEqual([]);
   });
 
+  it("drops a same-station reframe that strands long plugin copy after a host auto moment", () => {
+    const lockup = scene({
+      id: "ship-resolve",
+      startSec: 22.4,
+      durationSec: 4.89,
+      components: [{
+        version: 1 as const,
+        id: "ship-lockup-sub",
+        kind: "headline" as const,
+        region: "cta-center",
+        pluginUid: "ship-resolve-ship-lockup",
+      }],
+      beats: [beat("ship-resolve", {
+        id: "ship-lockup-b2",
+        component: "ship-lockup-sub",
+        kind: "type",
+        atSec: 23.437,
+        durationSec: 1.45,
+        text: "One board. One timeline. One confident ship.",
+      })],
+      camera: {
+        version: 1,
+        path: [move({
+          move: "pull-back",
+          startSec: 24.79,
+          durationSec: 2.08,
+          toRegion: "cta-center",
+          zoom: 0.85,
+        })],
+      },
+      moments: [{
+        version: 1,
+        id: "ship-resolve-auto-2",
+        sceneId: "ship-resolve",
+        atSec: 26.04,
+        title: "Camera pull-back develops toward cta-center",
+        visualState: "camera traveling toward cta-center",
+        change: "camera pull-back travel develops the framing",
+        motionIntent: "camera",
+        importance: "supporting",
+      }],
+    });
+
+    expect(auditPacing([lockup]).some((finding) => finding.startsWith("pacing/reading:")))
+      .toBe(true);
+    const result = delayConflictingCameraMoves([lockup]);
+    expect(result.storyboard[0]!.camera).toBeUndefined();
+    expect(result.normalized[0]).toContain("crossed 1 reading/payoff holds");
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/reading:")
+    )).toEqual([]);
+  });
+
   it("still skips when the overflow exceeds the stretch cap", () => {
     // Delayed to 2.8s a 2.6s pan would end at 5.4s in a 3.2s scene — a 2.2s
     // overflow is past MAX_PACING_STRETCH_SEC, a genuine layout call for the

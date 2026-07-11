@@ -604,6 +604,10 @@ function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
 export function isLoadBearingMove(scene: DirectScene, move: CameraMoveIntentV1): boolean {
   const path = scene.camera?.path ?? [];
   return (scene.moments ?? []).some((moment) => {
+    // Host top-up paperwork describes surviving motion; it must never make
+    // that same optional move undeletable on the next parse. Only a director-
+    // declared moment can protect a camera move from deterministic cleanup.
+    if (/-auto-\d+$/i.test(moment.id)) return false;
     if (!momentNeedsCamera(scene, moment)) return false;
     const candidates = path.filter((candidate) =>
       candidate.startSec + candidate.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
@@ -922,6 +926,37 @@ export function delayConflictingCameraMoves(
           )
           .map(([id]) => id),
       );
+      const targetKey = (part: string | undefined, region: string | undefined): string | undefined => {
+        if (region) return `region:${region}`;
+        if (!part) return undefined;
+        const componentRegion = componentRegions.get(part);
+        if (componentRegion) return `region:${componentRegion}`;
+        const pluginRegion = scene.plugins?.find((plugin) => plugin.id === part)?.region;
+        return pluginRegion ? `region:${pluginRegion}` : `part:${part}`;
+      };
+      const namedCameraTargets = new Set(
+        path.flatMap((move) => [
+          targetKey(move.fromPart, move.fromRegion),
+          targetKey(move.toPart, move.toRegion),
+        ]).filter((target): target is string => Boolean(target)),
+      );
+      const focalTarget = targetKey(scene.spatialIntent?.focalPart, undefined);
+      if (focalTarget) namedCameraTargets.add(focalTarget);
+      const declaredContentStations = new Set([
+        ...(scene.components ?? []).flatMap((component) =>
+          component.region ? [`region:${component.region}`] : []
+        ),
+        ...(scene.plugins ?? []).flatMap((plugin) =>
+          plugin.region ? [`region:${plugin.region}`] : []
+        ),
+        ...(scene.worldLayout ?? []).map((station) => `region:${station.region}`),
+      ]);
+      // A single toRegion is not proof of a same-station move: its unseen
+      // source may be elsewhere. The scene's actual content must declare one
+      // and only one station, matching the camera target.
+      const sameStationReframe = namedCameraTargets.size === 1 &&
+        declaredContentStations.size === 1 &&
+        [...namedCameraTargets].every((target) => declaredContentStations.has(target));
       // The latest hold each too-early move must clear, from every beat it cuts.
       const requiredStart = new Map<number, number>();
       const conflictCount = new Map<number, number>();
@@ -942,7 +977,11 @@ export function delayConflictingCameraMoves(
           // A destination may enter while the lens travels toward it. Its own
           // reveal/payoff hold must not push the camera until after the thing
           // it exists to reveal (Probe 5's late publish button).
-          if (destinationIdsFor(entry.move).has(beat.component)) continue;
+          // A true travel move may reveal destination content while the lens is
+          // moving. A same-station reframe cannot: it is still interrupting copy
+          // that is already visible in the active station, and the pacing audit
+          // deliberately treats that overlap as a reading conflict.
+          if (!sameStationReframe && destinationIdsFor(entry.move).has(beat.component)) continue;
           const start = entry.move.startSec;
           const activeUntil = start + entry.move.durationSec;
           if (activeUntil <= beat.endSec + 0.05) continue;
@@ -995,9 +1034,9 @@ export function delayConflictingCameraMoves(
           );
           const shouldDropCrowdedOverflow =
             overflow > 1e-6 &&
-            (conflictCount.get(entry.index) ?? 0) >= 2 &&
+            ((conflictCount.get(entry.index) ?? 0) >= 2 || sameStationReframe) &&
             !isLoadBearingMove(scene, entry.move) &&
-            !servesGatedDestination;
+            (!servesGatedDestination || sameStationReframe);
           if (
             !fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene ||
             shouldDropCrowdedOverflow
@@ -1008,9 +1047,9 @@ export function delayConflictingCameraMoves(
             // the planner to solve contradictory timing (direction-live-a
             // attempt 1: one pull-back crossed two lockup lines + the metric).
             if (
-              (conflictCount.get(entry.index) ?? 0) >= 2 &&
+              ((conflictCount.get(entry.index) ?? 0) >= 2 || sameStationReframe) &&
               !isLoadBearingMove(scene, entry.move) &&
-              !servesGatedDestination
+              (!servesGatedDestination || sameStationReframe)
             ) {
               newPath[entry.index] = undefined;
               const note =

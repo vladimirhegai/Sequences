@@ -365,6 +365,53 @@ describe("camera blocking director", () => {
     expect(phrase.dwell.readableSec).toBeGreaterThanOrEqual(0.62);
   });
 
+  it("does not promote supporting UI merely because it shares the hero's destination region", () => {
+    const storyboard: DirectScene[] = [{
+      id: "board",
+      title: "Board composes",
+      purpose: "Hold the composed board while its sidebar updates",
+      startSec: 0,
+      durationSec: 4,
+      components: [
+        { version: 1, id: "launch-board", kind: "app-window", region: "board-center", role: "hero" },
+        { version: 1, id: "board-sidebar", kind: "sidebar", region: "board-center", role: "support" },
+      ],
+      beats: [
+        { version: 1, id: "board-rows", sceneId: "board", component: "launch-board", kind: "rows", atSec: 0.5, durationSec: 1.5 },
+        { version: 1, id: "sidebar-select", sceneId: "board", component: "board-sidebar", kind: "select", atSec: 2, durationSec: 0.6, item: 2 },
+      ],
+      moments: [{
+        version: 1,
+        id: "sidebar-updates",
+        sceneId: "board",
+        atSec: 2,
+        title: "Sidebar selects launch channel",
+        visualState: "The board stays framed while its sidebar selection changes",
+        change: "The sidebar updates",
+        motionIntent: "ui-state",
+        importance: "supporting",
+        evidence: { kind: "component", detail: "component:select→board-sidebar", startSec: 2, endSec: 2.6 },
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "launch-board",
+        composition: "centered product board",
+        relationships: ["sidebar supports the board"],
+      },
+      camera: { version: 1, path: [{
+        version: 1,
+        move: "push-in",
+        startSec: 0.8,
+        durationSec: 1.8,
+        toRegion: "board-center",
+      }] },
+    }];
+
+    const phrases = resolveCameraBlockingPlan(storyboard, resolveContinuityGraph(storyboard))
+      .scenes[0]!.phrases;
+    expect(phrases.find((phrase) => phrase.target.id === "board-sidebar")?.importance).toBe("supporting");
+  });
+
   it("joins browser geometry to landings and exposes the acceptance metrics", () => {
     const storyboard = scenes();
     const graph = resolveContinuityGraph(storyboard);
