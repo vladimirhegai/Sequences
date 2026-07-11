@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildDirectLayoutSampleTimes,
   inspectDirectComposition,
+  interactionPhase,
   primaryFocalReview,
   spatialFocalPartAt,
   transitionOutgoingStateMoved,
 } from "../src/engine/layoutInspector.ts";
+import type { InteractionIntentV1 } from "../src/engine/interactionContract.ts";
 import {
   CAMERA_RUNTIME_FILE,
   resolveCameraPlan,
@@ -17,6 +19,29 @@ import { findBrowserExecutable } from "../src/engine/render.ts";
 import type { DirectCompositionDraft, DirectScene } from "../src/engine/directComposition.ts";
 
 const roots: string[] = [];
+
+describe("interaction endpoint sampling", () => {
+  const intent: InteractionIntentV1 = {
+    version: 1,
+    id: "cursor-arrival",
+    sceneId: "proof",
+    cursorId: "cursor",
+    targetPart: "total",
+    action: "hover",
+    startSec: 8.4,
+    arriveSec: 10.6,
+    from: "frame:bottom-right",
+    path: "direct",
+    aimX: 0.5,
+    aimY: 0.5,
+    feedback: "none",
+  };
+
+  it("keeps a nearby pre-arrival tween boundary on the cursor path", () => {
+    expect(interactionPhase(intent, 10.588)).toBe("path");
+    expect(interactionPhase(intent, 10.6)).toBe("arrival");
+  });
+});
 
 describe("declared transition outgoing liveness", () => {
   const state = (overrides: Partial<Parameters<typeof transitionOutgoingStateMoved>[0]> = {}) => ({

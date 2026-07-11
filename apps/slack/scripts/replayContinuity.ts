@@ -6,9 +6,17 @@ import {
   applyDeterministicSourceRepairs,
   browserQualityPenalty,
   completeStoryboardWorldLayouts,
+  correctLayoutOverflow,
   repairContrastAaIssues,
 } from "../src/engine/compositionRunner.ts";
 import { retimeLateLoadBearingEntrances } from "../src/engine/componentContract.ts";
+import { delayConflictingCameraMoves } from "../src/engine/pacingAudit.ts";
+import {
+  alignCameraDestinationsWithLateEntrances,
+  ensureCameraBlockingChassis,
+  reserveFinalCameraLanding,
+  upgradeCrossStationDrifts,
+} from "../src/engine/cameraContract.ts";
 import {
   commitDirectComposition,
   loadDirectComposition,
@@ -72,10 +80,17 @@ if (!sourceArg) {
   // declaration governor used by fresh storyboards so a now-known duplicate
   // primary surface is absorbed before source injection and validation.
   const recipes = reconcileRecipeDeclarations(plugins.scenes);
+  const blockingChassis = ensureCameraBlockingChassis(recipes.scenes);
+  const crossStationTravel = upgradeCrossStationDrifts(blockingChassis.storyboard);
+  const landingReserve = reserveFinalCameraLanding(crossStationTravel.storyboard);
+  const destinationAlignment = alignCameraDestinationsWithLateEntrances(
+    landingReserve.storyboard,
+  );
+  const moveDelay = delayConflictingCameraMoves(destinationAlignment.storyboard);
   // Planning artifacts and older manifests may both carry only a partial map.
   // Complete after plugin lowering, matching parse-time ordering so generated
   // component regions participate too, while preserving every recovered cell.
-  const worldLayoutCompletion = completeStoryboardWorldLayouts(recipes.scenes);
+  const worldLayoutCompletion = completeStoryboardWorldLayouts(moveDelay.storyboard);
   let draft = applyDeterministicSourceRepairs(
     { html: current.html, storyboard: worldLayoutCompletion.scenes },
     target,
@@ -113,6 +128,21 @@ if (!sourceArg) {
     throw new Error(
       `replayed composition failed deterministic review${lastReviewFailure ? `:\n${lastReviewFailure}` : ""}`,
     );
+  }
+  const adoptedLayout: string[] = [];
+  for (let pass = 0; pass < 3; pass += 1) {
+    const layout = correctLayoutOverflow(draft.storyboard, reviewed.qa);
+    if (!layout.corrected.length) break;
+    const candidateDraft = applyDeterministicSourceRepairs(
+      { html: draft.html, storyboard: layout.storyboard },
+      target,
+      layout.storyboard,
+    );
+    const candidate = await review(candidateDraft);
+    if (!candidate || candidate.penalty >= reviewed.penalty) break;
+    draft = candidateDraft;
+    reviewed = candidate;
+    adoptedLayout.push(...layout.corrected);
   }
   const contrast = repairContrastAaIssues(draft, reviewed.qa);
   let adoptedContrast: string[] = [];
@@ -166,10 +196,16 @@ if (!sourceArg) {
       ...focus.normalized,
       ...plugins.notes,
       ...recipes.notes.map((note) => `recipe-reconcile: ${note}`),
+      ...crossStationTravel.normalized,
+      ...blockingChassis.normalized,
+      ...landingReserve.normalized,
+      ...destinationAlignment.normalized,
+      ...moveDelay.normalized,
     ],
     browserPenalty: reviewed.penalty,
     contrastRepairs: adoptedContrast,
     eyeTraceRepairs: adoptedEyeTrace,
+    layoutRepairs: adoptedLayout,
     validationWarnings: committed.validation.warnings,
   }, null, 2));
 }

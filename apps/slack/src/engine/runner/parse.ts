@@ -81,6 +81,18 @@ function extractStoryboardSource(raw: string): string {
   }
   const bare = firstJsonArray(raw);
   if (bare) return bare;
+  const normalized = raw.trim().replace(/^```(?:json)?\s*/i, "");
+  // Structured-output-capable planners may begin the requested root object (or
+  // bare array) and hit their completion ceiling before closing it. Without a
+  // balanced array `firstJsonArray` cannot recover anything, but this is still
+  // truncation—not a missing-format glitch. Classifying it correctly activates
+  // the compact-artifact retry instead of replaying the same verbose request.
+  if (/^\[/.test(normalized) || /^\{[\s\S]*?"storyboard"\s*:\s*\[/.test(normalized)) {
+    throw new Error(
+      "author response truncated: storyboard JSON began but never closed — the model likely hit " +
+        "its output token limit. The next attempt must emit a complete, more compact storyboard.",
+    );
+  }
   throw new Error("author response is missing <storyboard_json>");
 }
 

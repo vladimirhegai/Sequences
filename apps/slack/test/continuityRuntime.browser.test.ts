@@ -75,8 +75,26 @@ function storyboard(): DirectScene[] {
   }));
 }
 
-function film(): string {
+function film(options: { authoredLateSupport?: boolean; dimSecondTarget?: boolean } = {}): string {
   const scenes = storyboard();
+  if (options.authoredLateSupport) {
+    scenes[0]!.camera = {
+      version: 1,
+      path: [{
+        version: 1,
+        move: "hold",
+        toPart: "shell-1",
+        startSec: 0,
+        durationSec: 2,
+      }, {
+        version: 1,
+        move: "pan",
+        toPart: "late-support",
+        startSec: 2,
+        durationSec: 1,
+      }],
+    };
+  }
   const graph = resolveContinuityGraph(scenes);
   const blocking = resolveCameraBlockingPlan(scenes, graph);
   const firstPrimary = blocking.scenes[0]!.phrases.find((phrase) => phrase.importance === "primary")!;
@@ -111,7 +129,7 @@ function film(): string {
 <section id="${scene.id}" class="scene" data-scene="${scene.id}">
   <div class="world" data-camera-world>
     <div class="station" data-region="station-${index + 1}">
-      <div class="shell" data-component="app-window" data-part="shell-${index + 1}" data-continuity-entity="product-shell">Product ${index + 1}</div>
+      <div class="shell" data-component="app-window" data-part="shell-${index + 1}" data-continuity-entity="product-shell"${options.dimSecondTarget && index === 1 ? ' style="opacity:.35"' : ""}>Product ${index + 1}</div>
       ${index === 0 ? '<div class="late-support" data-part="late-support">Annotation</div>' : ""}
     </div>
   </div>
@@ -613,6 +631,93 @@ describe("continuity + camera blocking browser runtime", () => {
       await stateAt(0.2);
       expect(await stateAt(3.05)).toEqual(handoff);
       expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 45_000);
+
+  it("honors an authored full move to a supporting destination", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-authored-support-browser-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), film({ authoredLateSupport: true }), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, CONTINUITY_RUNTIME_FILE), continuityRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(String(error)));
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const landing = await page.evaluate(() => {
+        const timeline = (window as unknown as {
+          __timelines: Record<string, { seek: (time: number, suppress?: boolean) => void }>;
+        }).__timelines["continuity-browser"]!;
+        timeline.seek(2.8, false);
+        const rect = document.querySelector<HTMLElement>('[data-part="late-support"]')!
+          .getBoundingClientRect();
+        return {
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          centerX: rect.left + rect.width / 2,
+          centerY: rect.top + rect.height / 2,
+        };
+      });
+      expect(landing.left).toBeGreaterThanOrEqual(0);
+      expect(landing.top).toBeGreaterThanOrEqual(0);
+      expect(landing.right).toBeLessThanOrEqual(1920);
+      expect(landing.bottom).toBeLessThanOrEqual(1080);
+      expect(Math.abs(landing.centerX - 960)).toBeLessThanOrEqual(12);
+      expect(Math.abs(landing.centerY - 540)).toBeLessThanOrEqual(12);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 45_000);
+
+  it("restores a shared-element destination's authored resting opacity", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-dim-handoff-browser-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), film({ dimSecondTarget: true }), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, CONTINUITY_RUNTIME_FILE), continuityRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const opacity = await page.evaluate(() => {
+        const timeline = (window as unknown as {
+          __timelines: Record<string, { seek: (time: number, suppress?: boolean) => void }>;
+        }).__timelines["continuity-browser"]!;
+        timeline.seek(3.8, false);
+        return Number(getComputedStyle(
+          document.querySelector<HTMLElement>('[data-part="shell-2"]')!,
+        ).opacity);
+      });
+      expect(opacity).toBeCloseTo(0.35, 2);
     } finally {
       await browser.close();
       await server.close();

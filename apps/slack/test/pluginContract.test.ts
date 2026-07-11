@@ -717,6 +717,45 @@ describe("pricing-reveal plugin (seeded tier count-ups)", () => {
     expect((markup.match(/data-featured="true"/g) ?? [])).toHaveLength(1);
     expect(markup).toMatch(/€\d+\/yr/);
   });
+
+  it("retargets an unresolved morph carrier to the one featured plugin card", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        id: "plans",
+        cut: {
+          version: 1,
+          style: "morph",
+          focalPartOut: "growth-card",
+          focalPartIn: "invoice-panel",
+        },
+        spatialIntent: {
+          version: 1,
+          focalPart: "growth-card",
+          composition: "layout-split",
+          relationships: ["Featured plan resolves before the invoice"],
+        },
+        plugins: normalizeStoryboardPluginDeclarations([{
+          kind: "pricing-reveal",
+          id: "plan-cards",
+          params: { tiers: 3, featured: 2 },
+        }]),
+      }),
+      scene({
+        id: "invoice",
+        startSec: 6,
+        components: [{ version: 1, id: "invoice-panel", kind: "app-window" }],
+      }),
+    ]);
+    const plans = result.scenes[0]!;
+    expect(plans.spatialIntent?.focalPart).toBe("plan-cards-tier-2");
+    expect(plans.cut?.style).toBe("swipe");
+    expect(plans.sentinelNormalizations?.join(" ")).toContain(
+      'retargeted unresolved focal "growth-card" to selected plugin child "plan-cards-tier-2"',
+    );
+    expect(plans.sentinelNormalizations?.join(" ")).toContain(
+      "downgraded impossible metric->product-surface morph to swipe-right",
+    );
+  });
 });
 
 describe("generated plugin defaults", () => {
@@ -736,6 +775,40 @@ describe("generated plugin defaults", () => {
         tiers: 3, billing: "monthly", currency: "usd", featured: 2, topic: "",
       }],
     ]);
+  });
+});
+
+describe("asset metric ownership", () => {
+  it("retires a glass metric that duplicates a counted hero stat in its station", () => {
+    const result = reconcileAndLowerPlugins([scene({
+      components: [{
+        version: 1,
+        id: "savings-card",
+        kind: "stat-card",
+        region: "savings-station",
+        role: "hero",
+      }],
+      beats: [{
+        version: 1,
+        id: "savings-count",
+        sceneId: "s1",
+        component: "savings-card",
+        kind: "count",
+        atSec: 1,
+        value: 18,
+      }],
+      plugins: normalizeStoryboardPluginDeclarations([{
+        kind: "asset-glass-metric",
+        id: "savings-medallion",
+        region: "savings-station",
+        params: { value: "18%", label: "Team savings" },
+      }]),
+    })]);
+    expect(result.scenes[0]!.plugins).toBeUndefined();
+    expect(result.scenes[0]!.components?.map((entry) => entry.id)).toEqual(["savings-card"]);
+    expect(result.notes.join(" ")).toContain(
+      'load-bearing hero metric "savings-card" already owns region "savings-station"',
+    );
   });
 });
 

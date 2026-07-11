@@ -19,6 +19,8 @@ import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 const DEFAULT_SAMPLE_HZ = 5;
 const DEFAULT_MAX_SAMPLES = 150;
 const MOVING_SPEED = 0.008;
+/** Host wallpaper/light/furniture is intentionally subtler than component motion. */
+const AMBIENT_MOVING_SPEED = 1e-9;
 /** Low-amplitude operated camera movement still keeps a held frame alive. */
 const LIVENESS_SPEED = 0.002;
 /** Longer rendered stillness reads as a stopped slide, even between valid beats. */
@@ -79,6 +81,12 @@ export interface ContinuousMotionSampleV1 {
     acceleration?: number;
     jerk?: number;
   };
+  /**
+   * Camera-world transform speed, kept separate from focal DOM motion. A
+   * headline reveal or count reflow may move the focal box while the lens is
+   * correctly holding; camera-blocking rest evidence must not confuse them.
+   */
+  cameraSpeed?: number;
   independentMotionCount: number;
 }
 
@@ -355,7 +363,8 @@ function independentMotionCount(
       const b = later[id];
       if (!a || !b) continue;
       const vector = localVector(a, b, dt, diagonal);
-      if (magnitude(vector) >= MOVING_SPEED) voices.push(vector);
+      const threshold = id.startsWith("ambient:") ? AMBIENT_MOVING_SPEED : MOVING_SPEED;
+      if (magnitude(vector) > threshold) voices.push(vector);
     }
   };
   addMoving(before.layers, after.layers);
@@ -689,15 +698,39 @@ export function continuousMotionQualityFindings(
     return [...counts].sort((a, b) => b[1].count - a[1].count || a[1].first - b[1].first)[0];
   };
 
-  const jerkDensity = evidence.summary.jerkMarkerCount / duration;
-  if (evidence.summary.jerkMarkerCount >= 4 && jerkDensity > 0.15) {
-    const worst = markersByScene(evidence.jerkMarkers);
+  // A single eased gesture commonly remains above the derivative marker for
+  // two or three adjacent samples. Counting each sample made the verdict vary
+  // with sample density and charged one minimum-jerk route as several defects.
+  // Collapse cadence-adjacent markers into physical gesture clusters; repeated
+  // jolts separated in time still accumulate and trigger the quality finding.
+  const jerkClusterGapSec = Math.max(0.3, 2.25 / Math.max(1, evidence.sampleHz));
+  const jerkClusters: ContinuousMotionMarkerV1[] = [];
+  let lastJerkMarker: ContinuousMotionMarkerV1 | undefined;
+  for (const marker of [...evidence.jerkMarkers].sort((a, b) =>
+    a.time - b.time || a.sceneId.localeCompare(b.sceneId)
+  )) {
+    const previous = jerkClusters[jerkClusters.length - 1];
+    if (
+      previous && lastJerkMarker?.sceneId === marker.sceneId &&
+      marker.time - lastJerkMarker.time <= jerkClusterGapSec
+    ) {
+      // Retain the cluster's earliest routing time but its worst measured value.
+      previous.value = Math.max(previous.value, marker.value);
+      lastJerkMarker = marker;
+      continue;
+    }
+    jerkClusters.push({ ...marker });
+    lastJerkMarker = marker;
+  }
+  const jerkDensity = jerkClusters.length / duration;
+  if (jerkClusters.length >= 4 && jerkDensity > 0.15) {
+    const worst = markersByScene(jerkClusters);
     findings.push({
       code: "motion_jerk_excess",
       sceneId: worst?.[0] ?? evidence.scenes[0]?.sceneId ?? "unknown",
-      time: worst?.[1].first ?? evidence.jerkMarkers[0]?.time ?? 0,
+      time: worst?.[1].first ?? jerkClusters[0]?.time ?? 0,
       message:
-        `${evidence.summary.jerkMarkerCount} high-jerk focal samples over ` +
+        `${jerkClusters.length} distinct high-jerk focal gestures over ` +
         `${duration.toFixed(1)}s (${jerkDensity.toFixed(2)}/s) exceed the calibrated motion profile.`,
       fixHint:
         "Remove the corrective camera move or competing transform nearest the marker cluster; " +
@@ -777,6 +810,23 @@ export function analyzeContinuousMotionSnapshots(
     const sample = samples[index]!;
     const dt = after.time - before.time;
     sample.independentMotionCount = independentMotionCount(before, after, dt, diagonal);
+    const beforeCamera = before.layers.camera;
+    const afterCamera = after.layers.camera;
+    if (dt > 0 && before.sceneId === after.sceneId && beforeCamera && afterCamera) {
+      const scaleBefore = Math.max(
+        1e-6,
+        Math.sqrt(Math.abs(beforeCamera.scaleX * beforeCamera.scaleY)),
+      );
+      const scaleAfter = Math.max(
+        1e-6,
+        Math.sqrt(Math.abs(afterCamera.scaleX * afterCamera.scaleY)),
+      );
+      sample.cameraSpeed = round(Math.hypot(
+        (afterCamera.x - beforeCamera.x) / diagonal / dt,
+        (afterCamera.y - beforeCamera.y) / diagonal / dt,
+        Math.log(scaleAfter / scaleBefore) * FOCAL_SCALE_WEIGHT / dt,
+      ));
+    }
     const sameTarget = before.sceneId === after.sceneId &&
       before.attention?.kind === after.attention?.kind &&
       before.attention?.id === after.attention?.id;
@@ -797,11 +847,12 @@ export function analyzeContinuousMotionSnapshots(
     sample.focal.speed = round(Math.hypot(velocity.x, velocity.y, velocity.z));
     const previousVelocity = velocities[index - 1];
     if (!previousVelocity) continue;
-    // Exact cue/settle/cut boundaries can sit only 10ms apart. First and
-    // second derivatives across those nonuniform micro-steps explode even for
-    // smooth GSAP travel, so keep velocity evidence but require at least half
-    // an ordinary sampling interval for acceleration/jerk.
-    const minimumDerivativeStep = 0.5 / Math.max(1, sampleHz);
+    // Exact cue/settle/cut boundaries can sit only 10–150ms from the regular
+    // cadence. This simple finite difference is calibrated on uniform samples;
+    // applying it across those nonuniform inserts fabricates derivative spikes
+    // even for smooth GSAP travel. Keep velocity evidence, but derive
+    // acceleration/jerk only from near-cadence intervals.
+    const minimumDerivativeStep = 0.9 / Math.max(1, sampleHz);
     if (
       dt < minimumDerivativeStep ||
       (velocitySteps[index - 1] ?? 0) < minimumDerivativeStep
@@ -1113,6 +1164,16 @@ export async function captureContinuousMotionEvidence(
           layers.scene = localState(scene);
           const cameraWorld = scene.querySelector("[data-camera-world]") as HTMLElement | null;
           if (cameraWorld) layers.camera = localState(cameraWorld);
+          // The living-canvas contract keeps readable product copy still while
+          // wallpaper, furniture, and light carry ambient life. Sample those
+          // host-owned layers or a visibly moving hold is mislabeled quiet.
+          const ambientElements = Array.from(
+            scene.querySelectorAll("[data-sequences-ambient]"),
+          ) as HTMLElement[];
+          for (const [index, element] of ambientElements.slice(0, 16).entries()) {
+            layers[`ambient:${element.getAttribute("data-sequences-ambient") ?? index}:${index}`] =
+              localState(element);
+          }
           const partElements = (Array.from(scene.querySelectorAll("[data-part]")) as HTMLElement[])
             .filter((element: HTMLElement) => {
               if (element.closest("[data-layout-ignore],[data-sequences-runtime-cut]")) return false;

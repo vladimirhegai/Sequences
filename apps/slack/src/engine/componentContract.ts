@@ -1575,6 +1575,53 @@ export function componentUnitCount(
 }
 
 /**
+ * Film-wide complexity charges a stable entity once across scenes. `entityId`
+ * is the plan's explicit declaration that later appearances are the same
+ * continuity object, so charging every appearance as a newly introduced
+ * surface contradicts the governor's own reuse remedy. Same-scene duplicates,
+ * plugin children, and components absorbed into a paired app chassis retain
+ * their ordinary cost.
+ */
+function filmComponentUnitCount(
+  scenes: Array<Pick<DirectScene, "components">>,
+): number {
+  const rawTotal = scenes.reduce(
+    (count, scene) => count + componentUnitCount(scene.components),
+    0,
+  );
+  const entityScenes = new Map<string, Set<number>>();
+  for (const [sceneIndex, scene] of scenes.entries()) {
+    const components = scene.components ?? [];
+    const pairedChassisRegions = new Set(
+      [...new Set(components.map((component) => component.region).filter(Boolean))]
+        .filter((region) => {
+          const group = components.filter(
+            (component) => !component.pluginUid && component.region === region,
+          );
+          return group.length === 2 &&
+            group.some((component) => component.kind === "app-window") &&
+            group.every((component) =>
+              !STACKABLE_OVERLAY_KINDS.has(component.kind) && component.kind !== "toast"
+            );
+        }),
+    );
+    for (const component of components) {
+      const entityId = component.entityId?.trim();
+      if (!entityId || component.pluginUid ||
+        (component.region && pairedChassisRegions.has(component.region))) continue;
+      const appearances = entityScenes.get(entityId) ?? new Set<number>();
+      appearances.add(sceneIndex);
+      entityScenes.set(entityId, appearances);
+    }
+  }
+  const continuityReuse = [...entityScenes.values()].reduce(
+    (count, sceneIndexes) => count + Math.max(0, sceneIndexes.size - 1),
+    0,
+  );
+  return rawTotal - continuityReuse;
+}
+
+/**
  * Deterministic plan-complexity audit, run at storyboard validation. The
  * 2026-07-04 baseline failure mode: GLM declared 11 components (4 in one
  * 2.7s scene) for an 18s film, and the source author burned all three
@@ -1587,11 +1634,9 @@ export function auditComponentComplexity(
   scenes: Array<Pick<DirectScene, "id" | "durationSec" | "components">>,
 ): string[] {
   const findings: string[] = [];
-  let total = 0;
   let filmSec = 0;
   for (const scene of scenes) {
     const count = componentUnitCount(scene.components);
-    total += count;
     filmSec += scene.durationSec;
     const cap = Math.min(
       MAX_COMPONENTS_PER_SCENE,
@@ -1606,6 +1651,7 @@ export function auditComponentComplexity(
       );
     }
   }
+  const total = filmComponentUnitCount(scenes);
   const filmCap = Math.max(2, Math.ceil(filmSec / FILM_SEC_PER_COMPONENT));
   if (total > filmCap) {
     findings.push(
@@ -1740,7 +1786,7 @@ export function trimOverBudgetComponents(
   });
 
   // (2) Film-wide over-cap (recomputed after per-scene trims), over by 1-2.
-  const total = scenes.reduce((count, scene) => count + componentUnitCount(scene.components), 0);
+  const total = filmComponentUnitCount(scenes);
   const filmSec = scenes.reduce((sec, scene) => sec + scene.durationSec, 0);
   const filmCap = Math.max(2, Math.ceil(filmSec / FILM_SEC_PER_COMPONENT));
   const filmOver = total - filmCap;

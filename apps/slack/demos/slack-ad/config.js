@@ -1,6 +1,6 @@
 window.AD_CONFIG = Object.freeze({
   title: "From noise to momentum",
-  durationSec: 27,
+  durationSec: 28,
   fps: 30,
   output: "apps/slack/demo-output/slack-ad-luna",
   copy: {
@@ -19,8 +19,8 @@ window.AD_CONFIG = Object.freeze({
   },
   beats: {
     overload: [0, 3.25], momentum: [3.25, 5.45], consolidate: [5.45, 7.35],
-    messy: [7.35, 9.7], channel: [9.7, 12], workspace: [12, 16.25],
-    proof: [16.25, 19.4], promise: [19.4, 23.15], lockup: [23.15, 27]
+    messy: [7.35, 9.7], channel: [9.7, 12], workspace: [12, 17.75],
+    proof: [17.75, 20.4], promise: [20.4, 24.15], lockup: [24.15, 28]
   },
   palette: { aubergine: "#4a154b", cyan: "#36c5f0", green: "#2eb67d", yellow: "#ecb22e", red: "#e01e5a" }
 });

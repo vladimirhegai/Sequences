@@ -49,6 +49,7 @@ import {
   ENVIRONMENT_RUNTIME_FILE,
   environmentKitSource,
   environmentRuntimeSource,
+  parseEnvironmentPlan,
 } from "./environmentContract.ts";
 import {
   COMPONENT_RUNTIME_FILE,
@@ -658,7 +659,21 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // persist in the ordinary QA cache; every requested visual review is fresh.
 // v32: measured washout remains critic/ranking evidence but no longer lowers
 // strictOk or spends a paid source repair; invalidate cached v31 verdicts.
-const QA_CACHE_VERSION = 32;
+// v33: ensemble framing owns contextual occupancy/anchor semantics and host
+// plugin children are excluded from stale-surface overlap.
+// v34: living-canvas wallpaper/light/furniture layers participate in rendered
+// quiet-window evidence at their intentionally subtle motion threshold.
+// v35: any deterministic change on a host-declared ambient layer counts as the
+// micro-motion voice it is; static ambient nodes still contribute nothing.
+// v36: environment-backed scenes do not ask the source author to duplicate the
+// host's ambient-motion obligation; temporal evidence still reports the hold.
+// v37: cursor phases no longer promote nearby pre-arrival tween boundaries to
+// endpoint obligations; MeterlyQC4's 10.588s sample preceded its 10.600s pin.
+// v38: ensemble occupancy mirrors the camera runtime's painted-content union;
+// transparent semantic wrappers no longer fabricate a collapsed station.
+// v39: blocking rest evidence measures camera-world speed instead of focal DOM
+// entrance motion, and explicit full-move destinations become primary routes.
+const QA_CACHE_VERSION = 39;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -1347,11 +1362,16 @@ async function auditSequencesRelationships(
   }, time);
 }
 
-function interactionPhase(
+export function interactionPhase(
   intent: InteractionIntentV1,
   time: number,
 ): DirectInteractionEvidence["phase"] | undefined {
-  const tolerance = 0.035;
+  // Sample construction includes arbitrary tween boundaries. Treating every
+  // point within 35ms BEFORE arrival as the endpoint charged an in-flight
+  // cursor when another tween ended 12ms early (MeterlyQC4). Authored intent
+  // times are rounded to milliseconds, so 5ms absorbs serialization noise
+  // without turning a real path sample into a click/arrival obligation.
+  const tolerance = 0.005;
   if (Math.abs(time - intent.arriveSec) <= tolerance) return "arrival";
   if (intent.pressSec !== undefined && Math.abs(time - intent.pressSec) <= tolerance) return "press";
   if (intent.releaseSec !== undefined && Math.abs(time - intent.releaseSec) <= tolerance) return "release";
@@ -2336,7 +2356,13 @@ export async function auditCameraBlockingLandings(
   ]));
   const issues: DirectLayoutIssue[] = [];
   for (const block of plan.scenes.flatMap((scene) => scene.phrases)) {
-    if (block.importance !== "primary" || block.target.kind !== "part") continue;
+    if (block.target.kind !== "part") continue;
+    // Supporting ENTRY phrases may legitimately precede their component's
+    // host-owned entrance. Every developed/payoff/resolve phrase, however,
+    // promises that its addressed surface is readable even when it does not
+    // own a hero reframe. Auditing primary-only let cross-station CTA/support
+    // components remain completely off-frame with a clean report.
+    if (block.importance !== "primary" && block.role === "entry") continue;
     const sceneEnd = sceneEndById.get(block.sceneId);
     if (sceneEnd === undefined) continue;
     // Judge the settled readable landing, not the first 80ms after camera
@@ -2412,6 +2438,22 @@ export async function auditCameraBlockingLandings(
         : null;
       if (framingElement) {
         const MEDIA = new Set(["IMG", "SVG", "VIDEO", "CANVAS", "PICTURE"]);
+        const hasVisualPaint = (element: HTMLElement): boolean => {
+          const style = getComputedStyle(element);
+          const colorHasAlpha = (value: string): boolean => {
+            if (!value || value === "transparent") return false;
+            const match = value.match(/rgba?\(([^)]+)\)/i);
+            if (!match) return true;
+            const channels = match[1]!.split(",");
+            return channels.length < 4 || Number(channels[3]) > 0.02;
+          };
+          return colorHasAlpha(style.backgroundColor) || style.backgroundImage !== "none" ||
+            style.boxShadow !== "none" || style.outlineStyle !== "none" ||
+            (Number.parseFloat(style.borderTopWidth) || 0) > 0 ||
+            (Number.parseFloat(style.borderRightWidth) || 0) > 0 ||
+            (Number.parseFloat(style.borderBottomWidth) || 0) > 0 ||
+            (Number.parseFloat(style.borderLeftWidth) || 0) > 0;
+        };
         const nodes = [framingElement, ...Array.from(framingElement.querySelectorAll<HTMLElement>("*"))];
         const prefersSemantic = Boolean(
           framingElement.querySelector("[data-layout-important],[data-component],[data-part]"),
@@ -2428,7 +2470,12 @@ export async function auditCameraBlockingLandings(
             child.nodeType === Node.TEXT_NODE && /\S/.test(child.textContent ?? ""),
           );
           const isMedia = MEDIA.has(node.tagName.toUpperCase());
-          if (prefersSemantic ? !(isSemantic || hasText || isMedia) : !(hasText || isMedia)) continue;
+          const isPainted = hasVisualPaint(node);
+          if (
+            prefersSemantic
+              ? !(isSemantic || hasText || isMedia) || !(hasText || isMedia || isPainted)
+              : !(hasText || isMedia || isPainted)
+          ) continue;
           if (chainOpacity(node) < 0.35) continue;
           const nodeRect = node.getBoundingClientRect();
           if (nodeRect.width < 4 || nodeRect.height < 4) continue;
@@ -2483,8 +2530,7 @@ export async function auditCameraBlockingLandings(
       block.framingTarget && block.framingOccupancy &&
       measured.framingOccupancyFraction >= 0 && !measured.framingCollapsed &&
       measured.framingOccupancyFraction >= block.framingOccupancy.min - 1e-6 &&
-      measured.framingOccupancyFraction <= block.framingOccupancy.max + 1e-6 &&
-      measured.occupancyFraction <= block.occupancy.max + 1e-6,
+      measured.framingOccupancyFraction <= block.framingOccupancy.max + 1e-6,
     );
     const inRange = subjectInRange || ensembleInRange;
     if (visible && inRange) continue;
@@ -2822,6 +2868,10 @@ async function auditStaleAssets(
       // already done — its story job ended while this focal beat plays.
       const stale = components.filter((component) =>
         component.id !== beat.component &&
+        // A host plugin is one semantic surface. Its connector/row/tile
+        // children deliberately overlap inside that unit and must not be
+        // audited as independently expired authored surfaces.
+        !component.pluginUid &&
         roleById.get(component.id) !== "hero" &&
         (lastBeatEnd.get(component.id) ?? Infinity) < t - STALE_MIN_ELAPSED_SEC &&
         !flagged.has(`${scene.id}:${component.id}`)
@@ -5401,6 +5451,9 @@ export async function inspectDirectComposition(
     const motionQualityIssues: DirectLayoutIssue[] = [];
     if (continuousMotionEvidenceEnabled() && duration >= 8) {
       try {
+        const environmentSceneIds = new Set(
+          parseEnvironmentPlan(draft.html).plan?.scenes.map((scene) => scene.sceneId) ?? [],
+        );
         continuousMotion = await captureContinuousMotionEvidence(
           page,
           draft.storyboard,
@@ -5409,7 +5462,13 @@ export async function inspectDirectComposition(
           { mapSeekTime: toOutputTime },
         );
         for (const window of continuousMotion.quietWindows.filter(
-          (entry) => entry.durationSec >= QUIET_WINDOW_REVIEW_SEC,
+          (entry) =>
+            entry.durationSec >= QUIET_WINDOW_REVIEW_SEC &&
+            // The living-canvas contract owns ambient wallpaper, furniture,
+            // and light outside the camera world. Its low-amplitude pixels can
+            // sit below DOM velocity clustering while still preventing a
+            // rendered freeze; never pay the source author to duplicate it.
+            !environmentSceneIds.has(entry.sceneId),
         )) {
           const issue: DirectLayoutIssue = {
             code: "motion_quiet_window",
@@ -5460,7 +5519,7 @@ export async function inspectDirectComposition(
             landing.importance === "primary" && landing.measured
           );
           const anchorMiss = [...primary]
-            .filter((landing) => landing.anchorError > 0.14)
+            .filter((landing) => !landing.framingTarget && landing.anchorError > 0.14)
             .sort((a, b) => b.anchorError - a.anchorError)[0];
           if (anchorMiss) {
             const issue: DirectLayoutIssue = {

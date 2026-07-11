@@ -333,6 +333,38 @@ describe("camera blocking director", () => {
     expect(minimumJerkProgress(0.5)).toBeCloseTo(0.5, 8);
   });
 
+  it("treats an explicit full-move destination as camera-load-bearing", () => {
+    const storyboard: DirectScene[] = [{
+      id: "timeline",
+      title: "Timeline",
+      purpose: "Reveal a publish action",
+      startSec: 0,
+      durationSec: 5,
+      components: [
+        { version: 1, id: "timeline-list", kind: "list", region: "head", role: "hero" },
+        { version: 1, id: "publish-btn", kind: "button", region: "foot", role: "support" },
+      ],
+      beats: [{ version: 1, id: "publish-open", sceneId: "timeline", component: "publish-btn", kind: "open", atSec: 3.2, durationSec: 0.5 }],
+      moments: [{
+        version: 1,
+        id: "publish",
+        sceneId: "timeline",
+        atSec: 3.2,
+        title: "Publish appears",
+        visualState: "The publish button is readable",
+        change: "The action becomes available",
+        motionIntent: "reveal",
+        importance: "supporting",
+        evidence: { kind: "component", detail: "component:open→publish-btn", startSec: 3.2, endSec: 3.7 },
+      }],
+      camera: { version: 1, path: [{ version: 1, move: "whip", startSec: 0, durationSec: 1.2, fromRegion: "head", toRegion: "foot" }] },
+    }];
+    const phrase = resolveCameraBlockingPlan(storyboard, resolveContinuityGraph(storyboard))
+      .scenes[0]!.phrases.find((candidate) => candidate.target.id === "publish-btn")!;
+    expect(phrase.importance).toBe("primary");
+    expect(phrase.dwell.readableSec).toBeGreaterThanOrEqual(0.62);
+  });
+
   it("joins browser geometry to landings and exposes the acceptance metrics", () => {
     const storyboard = scenes();
     const graph = resolveContinuityGraph(storyboard);
@@ -462,12 +494,17 @@ describe("camera blocking director", () => {
       independentMotionCount: found ? 1 : 0,
     });
     const lateTime = Math.max(block.arrivalSec, block.dwell.endSec - 0.08);
+    const settled = {
+      ...sample(lateTime, true, 0.08),
+      phraseId: `${block.phraseId}:next`,
+      cameraSpeed: 0,
+    };
     const motion = {
       version: 1,
       advisory: true,
       sampleHz: 8,
       frame: { width: 1920, height: 1080 },
-      samples: [sample(block.arrivalSec, false, 0.08), sample(lateTime, true, 0)],
+      samples: [sample(block.arrivalSec, false, 0.08), settled],
       reversals: [],
       jerkMarkers: [],
       quietWindows: [],
@@ -491,6 +528,7 @@ describe("camera blocking director", () => {
     expect(landing.time).toBe(lateTime);
     expect(landing.measured).toBe(true);
     expect(landing.visibleFraction).toBe(1);
+    // The target is still finishing its own entrance, but the lens is holding.
     expect(landing.speed).toBe(0);
   });
 
@@ -572,5 +610,25 @@ describe("camera blocking director", () => {
     const unframedLanding = evidence.landings.find((landing) => landing.blockId === unframed.id)!;
     expect(framedLanding.occupancyInRange).toBe(true);
     expect(unframedLanding.occupancyInRange).toBe(false);
+
+    const offAnchorEnsemble: ContinuousMotionEvidenceV1 = {
+      ...motion,
+      samples: motion.samples.map((sample) => sample.phraseId === framed.phraseId
+        ? {
+            ...sample,
+            focal: {
+              ...sample.focal,
+              occupancyFraction: framed.occupancy.max * 1.5,
+              centerX: sample.focal.centerX + motion.frame.width * 0.25,
+            },
+          }
+        : sample),
+    };
+    const contextual = buildCameraBlockingEvidence(plan, graph, offAnchorEnsemble);
+    const contextualLanding = contextual.landings.find((landing) => landing.blockId === framed.id)!;
+    expect(contextualLanding.occupancyInRange).toBe(true);
+    expect(contextualLanding.framingTarget).toEqual(framed.framingTarget);
+    expect(contextualLanding.anchorError).toBeGreaterThan(0.14);
+    expect(contextual.summary.primaryReadableCount).toBeGreaterThan(0);
   });
 });

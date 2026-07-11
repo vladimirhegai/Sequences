@@ -18,9 +18,12 @@ import {
 import {
   CAMERA_FULL_MOVES,
   auditCameraEnergy,
+  alignCameraDestinationsWithLateEntrances,
+  ensureCameraBlockingChassis,
   diveLegCap,
   liftCameraEnergyPeak,
   normalizeConnectiveCameraSchedule,
+  upgradeCrossStationDrifts,
   normalizeStoryboardCameraIntent,
   reserveFinalCameraLanding,
   topUpRequiredRackFocus,
@@ -1653,7 +1656,15 @@ export function degradeUnsupportedComponentBeats(
       // turn; the model's eventual full re-plan chose this exact repair. It is
       // therefore safe even when a moment binds to the beat.
       const isButtonRowsAnalog = beat.kind === "rows" && kind === "button";
-      if (loadBearing && !isTextAnalog && !isNumericAnalog && !isButtonRowsAnalog) return beat;
+      // App-window roots already receive their entrance from the host entrance
+      // family; an `open` beat on that chassis can only mean reveal/populate
+      // its window content. `rows` is the supported same-root, same-time analog
+      // chosen by PatchworkQC6's successful retry, so do it before paying one.
+      const isAppWindowOpenAnalog = beat.kind === "open" && kind === "app-window";
+      if (
+        loadBearing && !isTextAnalog && !isNumericAnalog &&
+        !isButtonRowsAnalog && !isAppWindowOpenAnalog
+      ) return beat;
       const analog: ComponentBeatKind =
         isTextAnalog
           ? "swap"
@@ -1661,6 +1672,8 @@ export function degradeUnsupportedComponentBeats(
             ? "count"
             : isButtonRowsAnalog
               ? "set-state"
+              : isAppWindowOpenAnalog
+                ? "rows"
               : "highlight";
       degraded.push(
         `scene "${scene.id}" beat "${beat.id}": "${beat.kind}" is unsupported on a ` +
@@ -2006,8 +2019,12 @@ export function parseStoryboardResponse(
   // even reach the reading/outcome checks); then the framing-floor top-up (add
   // a move only after any over-budget drops) and the energy lift (see the final
   // move set); finally the delay + marginal-miss stretch.
-  const componentTrim = trimOverBudgetComponents(entranceRetime.scenes);
-  const cameraBudget = normalizeCameraBudget(componentTrim.storyboard);
+  const blockingChassis = continuityGraphEnabled()
+    ? ensureCameraBlockingChassis(entranceRetime.scenes)
+    : { storyboard: entranceRetime.scenes, normalized: [] };
+  const componentTrim = trimOverBudgetComponents(blockingChassis.storyboard);
+  const crossStationTravel = upgradeCrossStationDrifts(componentTrim.storyboard);
+  const cameraBudget = normalizeCameraBudget(crossStationTravel.storyboard);
   const framingTopUp = topUpFramingFloor(cameraBudget.storyboard);
   const energyLift = liftCameraEnergyPeak(framingTopUp.storyboard);
   const rackFocusTopUp = requirements.requireRackFocus
@@ -2016,7 +2033,11 @@ export function parseStoryboardResponse(
   let committedRackFocusTopUps = rackFocusTopUp.normalized.length;
   let atomicNormalizationCommitted = true;
   const landingReserve = reserveFinalCameraLanding(rackFocusTopUp.storyboard);
-  const moveDelay = delayConflictingCameraMoves(landingReserve.storyboard);
+  // Align destination travel before resolving protected reading/payoff holds.
+  // Probe 5 proved the reverse ordering could move a previously-safe whip into
+  // a primary set-state hold after the conflict pass had already finished.
+  const destinationAlignment = alignCameraDestinationsWithLateEntrances(landingReserve.storyboard);
+  const moveDelay = delayConflictingCameraMoves(destinationAlignment.storyboard);
   // Choreography spacing next (2026-07-08 probe set): moves out of interaction
   // arrive→result windows, then entry/stack settles — both pure retimes over
   // the surviving move set, before the marginal-miss stretch sees final times.
@@ -2030,14 +2051,17 @@ export function parseStoryboardResponse(
   const connectiveSchedule = normalizeConnectiveCameraSchedule(pacingStretch.storyboard);
   const normalizationLines = [
     ...morphFix.changed,
+    ...blockingChassis.normalized,
     ...entranceRetime.normalized,
     ...componentTrim.normalized,
+    ...crossStationTravel.normalized,
     ...cameraBudget.normalized,
     ...framingTopUp.normalized,
     ...energyLift.normalized,
     ...rackFocusTopUp.normalized,
     ...landingReserve.normalized,
     ...moveDelay.normalized,
+    ...destinationAlignment.normalized,
     ...interactionHold.normalized,
     ...moveSpacing.normalized,
     ...earlySwap.normalized,
@@ -2150,6 +2174,9 @@ export function parseStoryboardResponse(
     if (atomicNormalizationCommitted && entranceRetime.normalized.length) {
       recordSentinelNormalization("entrance-retime", entranceRetime.normalized.length);
     }
+    if (atomicNormalizationCommitted && blockingChassis.normalized.length) {
+      recordSentinelNormalization("camera-blocking-chassis", blockingChassis.normalized.length);
+    }
     if (atomicNormalizationCommitted && componentTrim.normalized.length) {
       recordSentinelNormalization("component-trim", componentTrim.normalized.length);
     }
@@ -2170,6 +2197,9 @@ export function parseStoryboardResponse(
     }
     if (atomicNormalizationCommitted && moveDelay.normalized.length) {
       recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);
+    }
+    if (atomicNormalizationCommitted && destinationAlignment.normalized.length) {
+      recordSentinelNormalization("camera-destination-align", destinationAlignment.normalized.length);
     }
     if (atomicNormalizationCommitted && interactionHold.normalized.length) {
       recordSentinelNormalization("interaction-hold-retime", interactionHold.normalized.length);

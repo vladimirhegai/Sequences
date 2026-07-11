@@ -575,6 +575,25 @@ export function isFloatingPointClipOverlap(finding: HyperframeLintFinding): bool
 }
 
 /**
+ * The pinned GSAP linter also compares floating-point tween endpoints with no
+ * epsilon. Its message rounds both overlap timestamps to centiseconds, so a
+ * contiguous `13.3 + 0.4 -> 13.7` pair is reported as overlapping from
+ * `13.70s` to `13.70s`. Equal displayed endpoints prove the alleged overlap
+ * is below the linter's own 10ms reporting precision and therefore below one
+ * rendered frame; keep every warning with a measurable displayed interval.
+ */
+export function isFloatingPointGsapTweenOverlap(
+  finding: HyperframeLintFinding,
+): boolean {
+  if (finding.code !== "overlapping_gsap_tweens") return false;
+  const match = finding.message.match(/between ([\d.eE+-]+)s and ([\d.eE+-]+)s/);
+  if (!match) return false;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  return Number.isFinite(start) && Number.isFinite(end) && end === start;
+}
+
+/**
  * True when a `font_family_without_font_face` finding names only var()-split
  * artifacts. The pinned linter splits `font-family` stacks on commas, so the
  * kit CSS's token indirection (`font-family: var(--font-display, inherit)`)
@@ -714,7 +733,9 @@ export async function validateDirectComposition(
     const lint = await lintHyperframeHtml(html, { filePath: "index.html" });
     findings = lint.findings.filter(
       (finding: HyperframeLintFinding) =>
-        !isFloatingPointClipOverlap(finding) && !isCssVarFontFamilyArtifact(finding),
+        !isFloatingPointClipOverlap(finding) &&
+        !isFloatingPointGsapTweenOverlap(finding) &&
+        !isCssVarFontFamilyArtifact(finding),
     );
     errors.push(...findings
       .filter((finding: HyperframeLintFinding) => finding.severity === "error")

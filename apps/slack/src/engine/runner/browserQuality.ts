@@ -121,7 +121,12 @@ export function measuredArtSignalPenalty(browserQa: DirectBrowserQaResult): numb
       entry.importance === "primary" && entry.measured
     )) {
       if (!landing.occupancyInRange) penalty += 2;
-      if (landing.anchorError > 0.14) {
+      // Ensemble phrases intentionally frame a region/station instead of
+      // forcing the individual subject onto its solo anchor. The blocking
+      // evidence and issue gate already waive that subject-only anchor check;
+      // ranking must mirror the same contract or a clean contextual landing
+      // still carries hidden least-bad/retry pressure (RouteBoardQC5).
+      if (!landing.framingTarget && landing.anchorError > 0.14) {
         penalty += Math.min(4, Math.max(1, Math.ceil((landing.anchorError - 0.14) * 20)));
       }
       if (landing.speed > 0.018) {
@@ -137,8 +142,19 @@ export function measuredArtSignalPenalty(browserQa: DirectBrowserQaResult): numb
       const missRatio = 1 - settled / measured.length;
       if (missRatio > 0.45) penalty += Math.min(4, Math.ceil((missRatio - 0.45) * 10));
     }
-    penalty += motion.quietWindows
-      .filter((window) => window.durationSec >= QUIET_WINDOW_REVIEW_SEC)
+    const surfacedQuietWindows = motion.quietWindows.filter((window) =>
+      window.durationSec >= QUIET_WINDOW_REVIEW_SEC &&
+      browserQa.issues.some((issue) =>
+        issue.code === "motion_quiet_window" && issue.sceneId === window.sceneId &&
+        (issue.time === undefined || Math.abs(issue.time - window.startSec) <= 0.1)
+      )
+    );
+    // The browser inspector intentionally waives DOM-quiet windows when the
+    // living environment carries rendered motion. Only degree-score windows
+    // that survived that contextual gate as an actual issue; otherwise a
+    // visually alive film receives hidden least-bad pressure with no finding
+    // the author can see or repair.
+    penalty += surfacedQuietWindows
       .reduce((sum, window) =>
         sum + Math.min(4, Math.max(1, Math.ceil(window.durationSec - 0.8))), 0);
     const deadFrames = motion.renderedDeadFrames;

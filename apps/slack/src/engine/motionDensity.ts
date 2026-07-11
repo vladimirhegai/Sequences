@@ -142,6 +142,28 @@ function constantsFromSource(html: string): Map<string, number> {
   return constants;
 }
 
+/**
+ * Scene-slot authors commonly repeat `const sceneStart = ...` inside one IIFE
+ * per scene. A film-wide constant map lets the LAST declaration overwrite all
+ * earlier scenes, moving their tweens into the closing shot and fabricating a
+ * density spike. Resolve constants from the nearest zero-argument arrow or
+ * function IIFE instead. Nested forEach callbacks deliberately do not count as
+ * a new root: they inherit the enclosing sceneStart and are handled below.
+ */
+function scopedConstantsAt(source: string, index: number): Map<string, number> {
+  const before = source.slice(0, index);
+  let scopeStart = -1;
+  for (const pattern of [
+    /\(\s*\(\s*\)\s*=>\s*\{/g,
+    /\(\s*function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{/g,
+  ]) {
+    for (const match of before.matchAll(pattern)) {
+      scopeStart = Math.max(scopeStart, match.index ?? -1);
+    }
+  }
+  return constantsFromSource(scopeStart >= 0 ? before.slice(scopeStart) : before);
+}
+
 function readNumberExpression(
   value: string | undefined,
   constants: Map<string, number>,
@@ -179,6 +201,39 @@ function readPositionExpression(
   const direct = readNumberExpression(value, constants);
   if (direct !== undefined || !value) return direct;
   const raw = value.trim();
+  // Scene slots commonly use `const t = (s) => sceneStart + s;` so every cue
+  // is film-absolute without repeating the offset. Resolve that exact local
+  // helper from the nearest IIFE instead of calling its positioned tweens
+  // "unpositioned" and spending author retries on nonexistent work.
+  const helperCall = raw.match(
+    /^([A-Za-z_$][\w$]*)\(\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*\)$/,
+  );
+  if (helperCall) {
+    const helper = helperCall[1]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    let scopeStart = -1;
+    for (const pattern of [
+      /\(\s*\(\s*\)\s*=>\s*\{/g,
+      /\(\s*function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^)]*\)\s*\{/g,
+    ]) {
+      for (const match of sourceBeforeCall.matchAll(pattern)) {
+        scopeStart = Math.max(scopeStart, match.index ?? -1);
+      }
+    }
+    const scope = sourceBeforeCall.slice(Math.max(0, scopeStart));
+    const declaration = new RegExp(
+      `\\bconst\\s+${helper}\\s*=\\s*\\(\\s*([A-Za-z_$][\\w$]*)\\s*\\)\\s*=>\\s*` +
+        `([A-Za-z_$][\\w$]*)\\s*\\+\\s*\\1\\s*;?`,
+    ).exec(scope);
+    if (declaration) {
+      const baseName = declaration[2]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const baseMatches = [...scope.matchAll(new RegExp(
+        `\\b(?:const|let|var)\\s+${baseName}\\s*=\\s*(-?\\d+(?:\\.\\d+)?)\\s*;?`,
+        "g",
+      ))];
+      const base = baseMatches.at(-1)?.[1];
+      if (base !== undefined) return Number(base) + Number(helperCall[2]);
+    }
+  }
   const identifiers = [...new Set(raw.match(/\b[A-Za-z_$][\w$]*\b/g) ?? [])]
     .filter((name) => !constants.has(name));
   if (identifiers.length !== 1) return undefined;
@@ -256,7 +311,6 @@ function authoredTweenActivities(
   html: string,
   scenes: DirectScene[],
 ): { activities: MotionActivity[]; unpositioned: number } {
-  const constants = constantsFromSource(html);
   const activities: MotionActivity[] = [];
   let unpositioned = 0;
   const methodPattern = /\.(fromTo|from|to|set)\s*\(/g;
@@ -266,6 +320,7 @@ function authoredTweenActivities(
     const openParen = (match.index ?? 0) + match[0].length - 1;
     const call = balancedCallSource(html, openParen);
     if (!call) continue;
+    const constants = scopedConstantsAt(html, match.index ?? 0);
     const args = splitTopLevel(call);
     const vars = method === "fromTo" ? args[2] : args[1];
     const position = readPositionExpression(

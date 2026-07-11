@@ -101,6 +101,51 @@ document.querySelectorAll('.severity-dot').forEach((dot, i) => {
     ]));
   });
 
+  it("resolves scene-local t(seconds) helpers to absolute film time", () => {
+    const report = analyzeMotionDensity(html(`
+(() => {
+  const sceneStart = 5;
+  const t = (s) => sceneStart + s;
+  tl.to("#proof-title", { opacity: 1, duration: .4 }, t(.6));
+  tl.to("#proof-copy", { opacity: 1, duration: .4 }, t(2.2));
+})();
+(() => {
+  const sceneStart = 10;
+  const t = (s) => sceneStart + s;
+  tl.to("#close-title", { opacity: 1, duration: .4 }, t(.5));
+  tl.to("#close-copy", { opacity: 1, duration: .4 }, t(2.4));
+})();
+`), scenes, 15);
+    expect(report.warnings.some((warning) => warning.includes("no absolute timeline position")))
+      .toBe(false);
+    expect(report.activities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "gsap.to", startSec: 5.6 }),
+      expect.objectContaining({ source: "gsap.to", startSec: 12.4 }),
+    ]));
+  });
+
+  it("keeps repeated sceneStart constants scoped to their function IIFEs", () => {
+    const report = analyzeMotionDensity(html(`
+(function (tl) {
+  const sceneStart = 0;
+  tl.to("#signal-title", { opacity: 1, duration: .4 }, sceneStart + .4);
+  tl.to("#signal-copy", { opacity: 1, duration: .4 }, sceneStart + 2.5);
+})(tl);
+(function (tl) {
+  const sceneStart = 5;
+  tl.to("#proof-title", { opacity: 1, duration: .4 }, sceneStart + .4);
+  tl.to("#proof-copy", { opacity: 1, duration: .4 }, sceneStart + 2.5);
+})(tl);
+(function (tl) {
+  const sceneStart = 10;
+  tl.to("#close-title", { opacity: 1, duration: .4 }, sceneStart + .4);
+  tl.to("#close-copy", { opacity: 1, duration: .4 }, sceneStart + 2.5);
+})(tl);
+`), scenes, 15);
+    expect(report.sceneReports.map((entry) => entry.authoredBeatCount)).toEqual([2, 2, 2]);
+    expect(report.warnings.some((warning) => warning.includes("motion/density"))).toBe(false);
+  });
+
   it("does not let ambient drift or decorative rules impersonate story beats", () => {
     const driftingScenes: DirectScene[] = scenes.map((scene) => ({
       ...scene,

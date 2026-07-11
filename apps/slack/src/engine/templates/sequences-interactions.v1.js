@@ -105,7 +105,12 @@
 
   function localize(root, point) {
     var rootRect = root.getBoundingClientRect();
-    return { x: point.x - rootRect.left, y: point.y - rootRect.top };
+    var scaleX = root.offsetWidth ? rootRect.width / root.offsetWidth : 1;
+    var scaleY = root.offsetHeight ? rootRect.height / root.offsetHeight : 1;
+    return {
+      x: (point.x - rootRect.left) / Math.max(0.0001, scaleX),
+      y: (point.y - rootRect.top) / Math.max(0.0001, scaleY),
+    };
   }
 
   function cursorHotspot(element) {
@@ -230,7 +235,11 @@
       onUpdate: function () {
         var point = targetPoint(scene, intent);
         if (!point) return;
-        var local = localize(root, point);
+        // Ripples live beside/inside their target and therefore inherit the
+        // camera-world transform. Localize into their actual positioning
+        // parent (including inverse camera scale), while the global cursor
+        // continues to use the composition root.
+        var local = localize(ripple.offsetParent || root, point);
         global.gsap.set(ripple, {
           x: local.x - (ripple.offsetWidth || 0) / 2,
           y: local.y - (ripple.offsetHeight || 0) / 2,

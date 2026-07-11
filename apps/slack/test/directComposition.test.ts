@@ -46,6 +46,7 @@ import {
   hasDirectComposition,
   isCssVarFontFamilyArtifact,
   isFloatingPointClipOverlap,
+  isFloatingPointGsapTweenOverlap,
   loadDirectComposition,
   momentSubjectPart,
   storyboardMarkdown,
@@ -216,6 +217,26 @@ describe("floating-point clip-overlap filter", () => {
       code: "timed_element_missing_clip_class",
       severity: "error" as const,
       message: "clip ending at 11.600000000000001s overlaps with clip starting at 11.6s",
+    })).toBe(false);
+  });
+
+  it("drops only sub-reporting-precision GSAP endpoint overlap artifacts", () => {
+    expect(isFloatingPointGsapTweenOverlap({
+      code: "overlapping_gsap_tweens",
+      severity: "warning" as const,
+      message:
+        'GSAP tweens overlap on "#metric" for scale between 13.70s and 13.70s.',
+    })).toBe(true);
+    expect(isFloatingPointGsapTweenOverlap({
+      code: "overlapping_gsap_tweens",
+      severity: "warning" as const,
+      message:
+        'GSAP tweens overlap on "#metric" for scale between 13.70s and 13.72s.',
+    })).toBe(false);
+    expect(isFloatingPointGsapTweenOverlap({
+      code: "timeline_track_too_dense",
+      severity: "warning" as const,
+      message: "between 13.70s and 13.70s",
     })).toBe(false);
   });
 });
@@ -1699,6 +1720,42 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
 
     expect(browserQualityPenalty(controlled)).toBe(0);
     expect(browserQualityPenalty(rough)).toBeGreaterThan(browserQualityPenalty(controlled));
+
+    const contextual: DirectBrowserQaResult = {
+      ...base,
+      cameraBlockingEvidence: {
+        ...evidence,
+        landings: [{
+          ...evidence.landings[0]!,
+          framingTarget: { kind: "region" as const, id: "proof-panel" },
+          anchorError: 0.28,
+        }],
+      },
+    };
+    expect(browserQualityPenalty(contextual)).toBe(0);
+  });
+
+  it("does not hide least-bad pressure behind context-waived quiet evidence", () => {
+    const quietEvidence = {
+      quietWindows: [{ sceneId: "proof", startSec: 2, endSec: 3.8, durationSec: 1.8 }],
+      settleWindows: [],
+    } as unknown as NonNullable<DirectBrowserQaResult["continuousMotion"]>;
+    const waived: DirectBrowserQaResult = { ...base, continuousMotion: quietEvidence };
+    expect(browserQualityPenalty(waived)).toBe(0);
+
+    const surfaced: DirectBrowserQaResult = {
+      ...waived,
+      issues: [{
+        code: "motion_quiet_window",
+        severity: "warning",
+        sceneId: "proof",
+        time: 2,
+        selector: '[data-scene="proof"]',
+        message: "Scene is visually still.",
+        source: "sequences",
+      }],
+    };
+    expect(browserQualityPenalty(surfaced)).toBeGreaterThan(0);
   });
 
   it("normalizes measurement jitter out of stagnation keys (digit-stripped)", () => {

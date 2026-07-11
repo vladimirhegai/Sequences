@@ -1454,6 +1454,40 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
         );
         continue;
       }
+      // A glass-metric asset is itself a complete hero metric (value + label +
+      // ring). Pairing it with a load-bearing counted stat-card in the same
+      // station renders the payoff twice; MeterlyQC4 showed the plugin medallion
+      // centered over a second giant 18% clipped below frame. The typed hero is
+      // the stronger owner because camera/continuity/moments already address it,
+      // so retire the optional asset unit and any children from an idempotent
+      // previously-lowered plan.
+      if (declaration.kind === "asset-glass-metric" && declaration.region) {
+        const typedMetric = (scene.components ?? []).find((component) =>
+          !component.pluginUid &&
+          component.kind === "stat-card" &&
+          component.region === declaration.region &&
+          component.role === "hero" &&
+          (scene.beats ?? []).some((beat) =>
+            beat.component === component.id &&
+            (beat.kind === "count" || beat.kind === "progress")
+          )
+        );
+        if (typedMetric) {
+          const retired = spec.lower(
+            lowerContext(scene, {
+              ...declaration,
+              params,
+              uid: `${scene.id}-${declaration.id}`,
+            }),
+          );
+          for (const child of retired.components) retiredPluginChildren.add(child.id);
+          sceneNotes.push(
+            `plugin "asset-glass-metric" retired because load-bearing hero metric ` +
+              `"${typedMetric.id}" already owns region "${declaration.region}"`,
+          );
+          continue;
+        }
+      }
       // One station gets one CTA. When a lockup is paired with an authored
       // button that already owns a cursor/camera/moment dependency, reuse that
       // load-bearing control instead of generating a second, visually competing
@@ -1594,7 +1628,139 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
     ]);
     return absorbDuplicatedPluginContent(merged, loweredKinds, scenes, notes);
   });
-  return { scenes: reconciled, notes };
+
+  // A bridged cut occasionally names a semantic carrier the source author is
+  // expected to draw (for example `growth-card`) while a declared plugin owns
+  // the real selected surface (`plan-cards-tier-2`). That forces the author to
+  // duplicate a host-generated card and can leave the cut bound to a hidden,
+  // off-station placeholder. When the original focal is not a typed component
+  // and the plugin lowering exposes exactly ONE highlighted child, that child
+  // is mechanically unambiguous. Retarget the typed references before the
+  // camera/cut/continuity derivations so the model never draws a carrier.
+  const selectedPluginFocal = new Map<string, string>();
+  for (const scene of reconciled) {
+    const pluginChildren = new Set(
+      (scene.components ?? []).filter((entry) => entry.pluginUid).map((entry) => entry.id),
+    );
+    const highlighted = [...new Set(
+      (scene.beats ?? [])
+        .filter((beat) => beat.kind === "highlight" && pluginChildren.has(beat.component))
+        .map((beat) => beat.component),
+    )];
+    if (highlighted.length === 1) selectedPluginFocal.set(scene.id, highlighted[0]!);
+  }
+  const replacements = new Map<string, Map<string, string>>();
+  const addReplacement = (sceneId: string, from: string | undefined): void => {
+    if (!from) return;
+    const scene = reconciled.find((entry) => entry.id === sceneId);
+    const to = selectedPluginFocal.get(sceneId);
+    if (!scene || !to || (scene.components ?? []).some((entry) => entry.id === from)) return;
+    const bucket = replacements.get(sceneId) ?? new Map<string, string>();
+    bucket.set(from, to);
+    replacements.set(sceneId, bucket);
+  };
+  for (let index = 0; index < reconciled.length - 1; index += 1) {
+    const scene = reconciled[index]!;
+    const next = reconciled[index + 1]!;
+    addReplacement(scene.id, scene.cut?.focalPartOut);
+    addReplacement(next.id, scene.cut?.focalPartIn);
+  }
+  if (!replacements.size) return { scenes: reconciled, notes };
+
+  const replace = (sceneId: string, part: string | undefined): string | undefined =>
+    part ? replacements.get(sceneId)?.get(part) ?? part : part;
+  const componentFamily = (kind: string | undefined): string => {
+    if (!kind) return "";
+    if (kind === "app-window" || kind === "modal") return "product-surface";
+    if (kind === "table" || kind === "list" || kind === "kanban") return "collection";
+    if (kind === "stat-card" || kind === "chart" || kind === "progress") return "metric";
+    if (kind === "button" || kind === "input" || kind === "toggle") return "control";
+    if (kind === "headline" || kind === "text" || kind === "logo") return "type";
+    return kind;
+  };
+  const retargeted = reconciled.map((scene, index) => {
+    const sceneReplacements = replacements.get(scene.id);
+    const next = reconciled[index + 1];
+    let cut = scene.cut
+      ? {
+          ...scene.cut,
+          ...(scene.cut.focalPartOut
+            ? { focalPartOut: replace(scene.id, scene.cut.focalPartOut) }
+            : {}),
+          ...(scene.cut.focalPartIn && next
+            ? { focalPartIn: replace(next.id, scene.cut.focalPartIn) }
+            : {}),
+        }
+      : undefined;
+    const retargetNotes = sceneReplacements
+      ? [...sceneReplacements].map(([from, to]) => {
+          const note = `retargeted unresolved focal "${from}" to selected plugin child "${to}"`;
+          notes.push(`${scene.id}: ${note}`);
+          return `plugin-reconcile: ${note}`;
+        })
+      : [];
+    if (cut?.style === "morph" && next && cut.focalPartOut && cut.focalPartIn) {
+      const outKind = scene.components?.find((entry) => entry.id === cut!.focalPartOut)?.kind;
+      const inKind = next.components?.find((entry) => entry.id === cut!.focalPartIn)?.kind;
+      const outFamily = componentFamily(outKind);
+      const inFamily = componentFamily(inKind);
+      if (outFamily && inFamily && outFamily !== inFamily) {
+        const note =
+          `downgraded impossible ${outFamily}->${inFamily} morph to swipe-right after ` +
+          `plugin focal reconciliation`;
+        notes.push(`${scene.id}: ${note}`);
+        retargetNotes.push(`plugin-reconcile: ${note}`);
+        cut = { version: 1, style: "swipe", axis: "right" };
+      }
+    }
+    return {
+      ...scene,
+      ...(cut ? { cut } : {}),
+      ...(scene.spatialIntent?.focalPart
+        ? {
+            spatialIntent: {
+              ...scene.spatialIntent,
+              focalPart: replace(scene.id, scene.spatialIntent.focalPart)!,
+            },
+          }
+        : {}),
+      ...(scene.camera?.path
+        ? {
+            camera: {
+              ...scene.camera,
+              path: scene.camera.path.map((move) => ({
+                ...move,
+                ...(move.fromPart ? { fromPart: replace(scene.id, move.fromPart) } : {}),
+                ...(move.toPart ? { toPart: replace(scene.id, move.toPart) } : {}),
+                ...(move.focus?.part
+                  ? { focus: { ...move.focus, part: replace(scene.id, move.focus.part)! } }
+                  : {}),
+              })),
+            },
+          }
+        : {}),
+      ...(scene.interactions
+        ? {
+            interactions: scene.interactions.map((intent) => ({
+              ...intent,
+              targetPart: replace(scene.id, intent.targetPart)!,
+              ...(intent.dragTargetPart
+                ? { dragTargetPart: replace(scene.id, intent.dragTargetPart) }
+                : {}),
+            })),
+          }
+        : {}),
+      ...(retargetNotes.length
+        ? {
+            sentinelNormalizations: [
+              ...(scene.sentinelNormalizations ?? []),
+              ...retargetNotes,
+            ],
+          }
+        : {}),
+    };
+  });
+  return { scenes: retargeted, notes };
 }
 
 /* ------------------------------------------------------- instantiation */

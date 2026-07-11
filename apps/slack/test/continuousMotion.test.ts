@@ -132,6 +132,35 @@ describe("continuous motion evidence", () => {
     expect(evidence.summary.peakSpeed).toBeGreaterThan(0.02);
   });
 
+  it("separates focal entrance motion from a camera-world hold", () => {
+    const evidence = analyzeContinuousMotionSnapshots(
+      [scene],
+      [
+        snapshot(0, 400, { layerX: 0 }),
+        snapshot(0.25, 500, { layerX: 0 }),
+      ],
+      { width: 1000, height: 1000 },
+      4,
+    );
+    expect(evidence.samples[1]!.focal.speed).toBeGreaterThan(0.1);
+    expect(evidence.samples[1]!.cameraSpeed).toBe(0);
+  });
+
+  it("counts low-amplitude host ambient motion as a living hold", () => {
+    const before = snapshot(0, 500);
+    const after = snapshot(0.25, 500);
+    before.layers["ambient:light:0"] = local(0);
+    after.layers["ambient:light:0"] = local(0.5);
+    const evidence = analyzeContinuousMotionSnapshots(
+      [scene],
+      [before, after],
+      { width: 1000, height: 1000 },
+      4,
+    );
+    expect(evidence.samples[1]!.independentMotionCount).toBe(1);
+    expect(evidence.quietWindows).toEqual([]);
+  });
+
   it("prefers phrase-directed regions over a scene's generic focal part", () => {
     const routed: DirectScene = {
       ...scene,
@@ -395,7 +424,7 @@ describe("continuous motion evidence", () => {
     const stressed = {
       ...base,
       jerkMarkers: Array.from({ length: 5 }, (_, index) => ({
-        time: 1 + index * 0.2,
+        time: 1 + index * 1.2,
         sceneId: "proof",
         phraseId: "proof:01",
         value: 8,
@@ -428,5 +457,25 @@ describe("continuous motion evidence", () => {
     expect(continuousMotionQualityFindings(stressed, 10).map((finding) => finding.code))
       .toEqual(["motion_jerk_excess", "motion_reversal_excess", "motion_settle_late"]);
     expect(continuousMotionQualityFindings(base, 10)).toEqual([]);
+  });
+
+  it("counts an adjacent high-jerk burst as one gesture, independent of sample density", () => {
+    const base = analyzeContinuousMotionSnapshots(
+      [scene],
+      [snapshot(0, 500), snapshot(0.2, 500), snapshot(0.4, 500)],
+      { width: 1000, height: 1000 },
+      5,
+    );
+    const burst = {
+      ...base,
+      jerkMarkers: Array.from({ length: 6 }, (_, index) => ({
+        time: 1 + index * 0.2,
+        sceneId: "proof",
+        phraseId: "proof:01",
+        value: 8 + index,
+      })),
+      summary: { ...base.summary, jerkMarkerCount: 6 },
+    };
+    expect(continuousMotionQualityFindings(burst, 10)).toEqual([]);
   });
 });

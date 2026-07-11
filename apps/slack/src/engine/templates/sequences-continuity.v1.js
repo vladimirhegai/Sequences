@@ -148,6 +148,10 @@
     }
     var outgoing = bridge(root, fromPart, edge.entityId, "outgoing");
     var incoming = bridge(root, toPart, edge.entityId, "incoming");
+    var fromOpacity = Number.parseFloat(getComputedStyle(fromPart).opacity);
+    var toOpacity = Number.parseFloat(getComputedStyle(toPart).opacity);
+    if (!isFinite(fromOpacity)) fromOpacity = 1;
+    if (!isFinite(toOpacity)) toOpacity = 1;
     var duration = Math.max(0.24, Number(edge.durationSec) || 0.48);
     var start = Math.max(0, edge.atSec - Math.min(0.18, duration * 0.38));
     var proxy = { p: 0 };
@@ -165,7 +169,7 @@
     }, 0);
     timeline.set(fromPart, { opacity: 0 }, start);
     timeline.set(toPart, { opacity: 0 }, Math.max(0, start - 0.001));
-    timeline.set(outgoing, { opacity: 1 }, start);
+    timeline.set(outgoing, { opacity: fromOpacity }, start);
     timeline.to(proxy, {
       p: 1,
       duration: duration,
@@ -183,12 +187,15 @@
         // Preserve each endpoint's internal layout. Reflowing clone width and
         // height on every frame rubber-sheets text and product UI; a uniform
         // scale plus crossfade keeps both representations intact.
-        placeBridge(outgoing, a, vars, 1 - t);
-        placeBridge(incoming, b, vars, t);
+        placeBridge(outgoing, a, vars, fromOpacity * (1 - t));
+        placeBridge(incoming, b, vars, toOpacity * t);
       },
     }, start);
     timeline.set([outgoing, incoming], { opacity: 0 }, start + duration);
-    timeline.set(toPart, { opacity: 1 }, start + duration);
+    // Restore the destination's authored resting opacity. Forcing every shared
+    // element to 1 undimmed deliberately receded supporting surfaces and made
+    // them cover the next focal metric (RouteBoardQC5).
+    timeline.set(toPart, { opacity: toOpacity }, start + duration);
     return { edgeId: edge.id, status: "bound", entityId: edge.entityId };
   }
 

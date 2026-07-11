@@ -87,6 +87,52 @@ describe("bounded eye-trace schedule repair", () => {
     expect(result.storyboard[0]!.sentinelNormalizations?.at(-1)).toContain("eye-trace ensemble");
   });
 
+  it("retimes a later beat after an earlier interaction on the same component has settled", () => {
+    const scene = roamlyScene();
+    scene.interactions = [{
+      version: 1,
+      id: "earlier-subtitle-click",
+      sceneId: "close",
+      cursorId: "default",
+      targetPart: "cta-sub",
+      action: "click",
+      startSec: 15.6,
+      arriveSec: 15.8,
+      pressSec: 15.9,
+      releaseSec: 16,
+      from: "frame:left-third",
+      path: "direct",
+      aimX: 0.5,
+      aimY: 0.5,
+      feedback: "press-ripple",
+    }];
+    const result = correctEyeTracePingPong([scene], qa(finding()));
+    expect(result.corrected).toEqual(["close:subtitle->metric"]);
+    expect(result.storyboard[0]!.beats?.find((beat) => beat.id === "subtitle")?.atSec)
+      .toBeCloseTo(16.8, 3);
+  });
+
+  it("resolves an A-B-A sequence before handing attention to B", () => {
+    const scene = roamlyScene();
+    scene.beats!.push({
+      version: 1,
+      id: "subtitle-resolved",
+      sceneId: "close",
+      component: "cta-sub",
+      kind: "set-state",
+      toState: "resolved",
+      atSec: 17.2,
+      durationSec: 0.5,
+    });
+    const result = correctEyeTracePingPong([scene], qa(finding()));
+    expect(result.corrected).toEqual(["close:subtitle->metric"]);
+    expect(result.storyboard[0]!.beats?.find((beat) => beat.id === "subtitle")?.atSec)
+      .toBe(16.65);
+    expect(result.storyboard[0]!.beats?.find((beat) => beat.id === "subtitle-resolved")?.atSec)
+      .toBe(16.95);
+    expect(result.storyboard[0]!.sentinelNormalizations?.at(-1)).toContain("A-B-A ping-pong");
+  });
+
   it("separates the second beat when the first is stateful and cannot be retimed", () => {
     const scene = roamlyScene();
     scene.startSec = 0;

@@ -16,6 +16,7 @@ const SYNTAX_ORDER = [
   "normalize.inline-source-syntax.css-var",
   "normalize.inline-source-syntax.template-selector",
   "normalize.inline-source-syntax.svg-placeholder",
+  "normalize.inline-source-syntax.persisted-scene-arrow",
   "normalize.inline-source-syntax.connector-svg-policy",
   "normalize.inline-source-syntax.visibility",
   "normalize.gsap-call-shape",
@@ -40,6 +41,7 @@ const FULL_ORDER = [
   "normalize.host-plan-islands.display-type",
   "normalize.plugin-lower.source-inject",
   "normalize.source-bindings.component-pre-continuity",
+  "normalize.source-bindings.component-region-home",
   "normalize.source-bindings.component-alias",
   "normalize.source-bindings.rows-markup",
   "normalize.source-bindings.underline-markup",
@@ -95,7 +97,9 @@ describe("ordered source normalizer registry (WS-F1)", () => {
     });
 
     expect(result.executedIds).toEqual(SYNTAX_ORDER);
-    expect(result.changedIds).toEqual(SYNTAX_ORDER);
+    expect(result.changedIds).toEqual(
+      SYNTAX_ORDER.filter((id) => id !== "normalize.inline-source-syntax.persisted-scene-arrow"),
+    );
     expect(telemetry).toEqual([
       ["root-data-start", 1],
       ["bare-css-var", 1],

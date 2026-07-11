@@ -34,12 +34,12 @@ import {
 import { reportTemporalEvidence } from "../src/engine/temporalInspector.ts";
 import { CAMERA_FULL_MOVES } from "../src/engine/cameraContract.ts";
 import { resolveCliInputPath } from "../src/engine/cliPaths.ts";
+import { summarizeSequenceCheckStatus } from "../src/engine/sequenceCheckStatus.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.env.SLACK_SEQUENCES_DATA_DIR ??= path.join(appDir, ".data");
 
 type OutputFormat = "json" | "markdown" | "both";
-type CheckStatus = "pass" | "warn" | "fail";
 
 interface FileEvidence {
   path: string;
@@ -57,20 +57,6 @@ interface DirectEvidence {
   validation: DirectValidationSummary;
   motionDensity: unknown;
   spatialQa: unknown;
-}
-
-interface StatusReport {
-  direct?: { validation?: { ok?: boolean; motionWarnings?: string[] } };
-  result: {
-    authoringMode: string;
-    thumbnailPaths: FileEvidence[];
-  };
-  artifacts: {
-    mp4?: FileEvidence | null;
-  };
-  options: {
-    render: boolean;
-  };
 }
 
 interface CliOptions extends BriefFields {
@@ -309,17 +295,6 @@ function markdownReport(report: Record<string, unknown>): string {
   ].join("\n");
 }
 
-function summarizeStatus(report: StatusReport): CheckStatus {
-  if (report.direct?.validation?.ok === false) return "fail";
-  if (report.result.thumbnailPaths.some((thumb) => !thumb.exists || thumb.bytes <= 0)) return "fail";
-  if (report.options.render && (!report.artifacts.mp4?.exists || report.artifacts.mp4.bytes <= 0)) {
-    return "fail";
-  }
-  if (report.result.authoringMode === "deterministic-fallback") return "warn";
-  if ((report.direct?.validation?.motionWarnings?.length ?? 0) > 0) return "warn";
-  return "pass";
-}
-
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const progress: Array<OrchestratorProgress & { atMs: number }> = [];
@@ -377,6 +352,14 @@ async function main(): Promise<void> {
     };
   }
 
+  const sentinelPath = path.join(result.projectDir, "planning", "sentinel-run.json");
+  const sentinel = fs.existsSync(sentinelPath)
+    ? JSON.parse(fs.readFileSync(sentinelPath, "utf8")) as {
+        disposition?: string;
+        degradations?: string[];
+      }
+    : undefined;
+
   const report = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -422,6 +405,8 @@ async function main(): Promise<void> {
       authoringMode: directAuthoringMode(result.projectDir, result.fallback?.stage),
       stages: result.stages ?? [],
       fallback: result.fallback ?? null,
+      sentinelDisposition: sentinel?.disposition ?? null,
+      sentinelDegradations: sentinel?.degradations ?? [],
       outline: result.outline,
       lint: result.lint,
       skillsUsed: result.skillsUsed,
@@ -487,7 +472,7 @@ async function main(): Promise<void> {
     },
     progress,
   };
-  report.status = summarizeStatus(report);
+  report.status = summarizeSequenceCheckStatus(report);
 
   const paths = reportPaths(result.projectDir, options.output, options.format);
   if (paths.json) {

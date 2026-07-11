@@ -92,7 +92,17 @@
 
   // ---------------------------------------------------------------- camera
   var ZOOM_MIN = 0.5;
+  // A measured blocking landing may need a little more room than an authored
+  // generic move. Keeping the generic floor at 0.5 preserves its look while
+  // letting a large typed surface satisfy its own occupancy maximum instead
+  // of becoming host-impossible by ~1% (RouteBoardQC5).
+  var BLOCKING_ZOOM_MIN = 0.44;
   var ZOOM_MAX = 2.8;
+  // Blocking occupancy is a typed readability contract. Compact headlines,
+  // buttons, and lockup CTAs inside viewport-sized stations may require a
+  // closer lens than an authored generic move; the fit/anchor solver still
+  // caps the pose against the delivery-safe viewport before adoption.
+  var BLOCKING_ZOOM_MAX = 8;
   // Dive leg fallbacks — kept in sync with cameraContract's diveWindows.
   var DIVE_LEG_MAX = 0.8;
   var DIVE_LEG_FRACTION = 0.25;
@@ -396,10 +406,11 @@
       var availableW = Math.max(1, 2 * Math.min(anchorX * viewport.w, (1 - anchorX) * viewport.w) - margin * 2);
       var availableH = Math.max(1, 2 * Math.min(anchorY * viewport.h, (1 - anchorY) * viewport.h) - margin * 2);
       var visibleFit = Math.min(availableW / Math.max(1, r.width), availableH / Math.max(1, r.height));
-      var upper = Math.max(ZOOM_MIN, Math.min(maximumScale, visibleFit));
+      var upper = Math.max(BLOCKING_ZOOM_MIN, Math.min(maximumScale, visibleFit));
       z = clamp(desired, Math.min(minimumScale, upper), upper);
     }
-    z = clamp(z, ZOOM_MIN, ZOOM_MAX);
+    z = clamp(z, occupancy ? BLOCKING_ZOOM_MIN : ZOOM_MIN,
+      occupancy ? BLOCKING_ZOOM_MAX : ZOOM_MAX);
     var centerX = r.x + r.width / 2;
     var centerY = r.y + r.height / 2;
     return {
@@ -439,10 +450,13 @@
       world, target.framingElement, target.framingKind, arrivalSec,
     );
     var contextCollapsesToSubject =
-      Math.abs(contextRect.x - subjectRect.x) <= 2 &&
-      Math.abs(contextRect.y - subjectRect.y) <= 2 &&
-      Math.abs(contextRect.width - subjectRect.width) <= 2 &&
-      Math.abs(contextRect.height - subjectRect.height) <= 2;
+      // Match the browser audit's four-pixel, post-layout tolerance. Using a
+      // tighter runtime-only threshold let borders/pixel rounding call the
+      // same rectangle an ensemble here but a collapsed subject in QA.
+      Math.abs(contextRect.x - subjectRect.x) <= 4 &&
+      Math.abs(contextRect.y - subjectRect.y) <= 4 &&
+      Math.abs(contextRect.width - subjectRect.width) <= 4 &&
+      Math.abs(contextRect.height - subjectRect.height) <= 4;
     if (contextCollapsesToSubject) {
       // A named station is not automatically independent visual context.
       // `regionContentRect` deliberately collapses an otherwise empty station
@@ -468,7 +482,7 @@
     // visible compact child when the measured ensemble is in range. Standalone
     // close-ups omit/collapse the framing target and take the subject path
     // above; local highlight/count/press motion supplies emphasis here.
-    var z = clamp(contextState.z, ZOOM_MIN, ZOOM_MAX);
+    var z = clamp(contextState.z, BLOCKING_ZOOM_MIN, BLOCKING_ZOOM_MAX);
     var preservesContext = true;
     if (preservesContext) {
       // A CTA inside a card/lockup is read with its promise, not as an isolated
@@ -479,7 +493,7 @@
         (viewport.w - contextSafe * 2) / Math.max(1, contextRect.width),
         (viewport.h - contextSafe * 2) / Math.max(1, contextRect.height),
       );
-      z = clamp(Math.min(z, contextFit), ZOOM_MIN, ZOOM_MAX);
+      z = clamp(Math.min(z, contextFit), BLOCKING_ZOOM_MIN, BLOCKING_ZOOM_MAX);
     }
     var anchor = blocking && blocking.arrivalPose && blocking.arrivalPose.anchor;
     var anchorX = anchor && isFinite(anchor.x) ? clamp(anchor.x, 0.2, 0.8) : 0.5;
@@ -773,6 +787,54 @@
     world.style.transformOrigin = "0 0";
     world.style.willChange = "transform";
 
+    // A transparent list root stretched to `height:100%` advertises an empty
+    // 1400x800 subject even when its three painted rows use only half of it.
+    // No camera scale can then satisfy both subject occupancy and ensemble
+    // coverage. Shrink only that mechanically measurable shape to its painted
+    // rows before any camera geometry is solved; filled panels and genuinely
+    // developed full-height lists remain untouched.
+    var collectionRoots = world.querySelectorAll('[data-component="list"]');
+    for (var collectionIndex = 0; collectionIndex < collectionRoots.length; collectionIndex += 1) {
+      var collection = collectionRoots[collectionIndex];
+      var collectionRegion = collection.closest("[data-region]");
+      if (!collectionRegion || hasVisualPaint(collection) || hasDirectText(collection)) continue;
+      var collectionBox = layoutRect(world, collection);
+      var regionBox = layoutRect(world, collectionRegion);
+      var regionContentHeight = parseFloat(getComputedStyle(collectionRegion).height) ||
+        regionBox.height;
+      var collectionTop = Infinity;
+      var collectionBottom = -Infinity;
+      var collectionDescendants = collection.querySelectorAll("*");
+      for (var descendantIndex = 0; descendantIndex < collectionDescendants.length; descendantIndex += 1) {
+        var descendant = collectionDescendants[descendantIndex];
+        if (!isFramingContent(descendant)) continue;
+        var descendantBox = layoutRect(world, descendant);
+        var descendantTag = descendant.tagName.toUpperCase();
+        var descendantMedia =
+          descendantTag === "IMG" || descendantTag === "SVG" || descendantTag === "VIDEO" ||
+          descendantTag === "CANVAS" || descendantTag === "PICTURE";
+        // A spine/hairline may span the full old list height but does not make
+        // the rows a full-height surface. Exclude only textless, non-media
+        // slivers from this shrinkwrap measurement.
+        var decorativeSliver = !hasDirectText(descendant) && !descendantMedia &&
+          (descendantBox.width < collectionBox.width * 0.08 ||
+            descendantBox.height < collectionBox.height * 0.08);
+        if (decorativeSliver) continue;
+        collectionTop = Math.min(collectionTop, descendantBox.y);
+        collectionBottom = Math.max(collectionBottom, descendantBox.y + descendantBox.height);
+      }
+      var paintedHeight = collectionBottom > collectionTop
+        ? collectionBottom - collectionTop
+        : collectionBox.height;
+      if (
+        collectionBox.height >= regionContentHeight * 0.7 &&
+        paintedHeight < collectionBox.height * 0.72
+      ) {
+        collection.style.height = "auto";
+        collection.setAttribute("data-sequences-camera-shrinkwrap", "1");
+      }
+    }
+
     // One depth vocabulary: data-depth is the semantic attribute; the older
     // data-parallax stays a full alias (same 0..1 scale, same 1-depth
     // translation factor), so existing worlds keep working unchanged.
@@ -783,7 +845,30 @@
       if (depthAttr === null) depthAttr = layerNodes[i].getAttribute("data-parallax");
       var depth = Number(depthAttr);
       if (isFinite(depth)) {
-        layers.push({ element: layerNodes[i], depth: clamp(depth, 0, 1) });
+        // Product/layout groups may use depth for rack focus, but translating
+        // those groups at different parallax rates destroys their authored
+        // spatial relationship during a reframe (RouteBoardQC5's timeline
+        // slid directly underneath its metric). Lateral parallax belongs to
+        // decorative texture/light layers; explicit depth3d orbit separation
+        // below remains available to every declared layer.
+        var ownsLayout = layerNodes[i].matches("[data-component],[data-layout-important]") ||
+          Boolean(layerNodes[i].querySelector("[data-component],[data-layout-important]"));
+        var layerParent = layerNodes[i].parentElement;
+        var parentDisplay = layerParent ? getComputedStyle(layerParent).display : "";
+        if (ownsLayout && (parentDisplay === "flex" || parentDisplay === "grid") &&
+            getComputedStyle(layerNodes[i]).position === "absolute" &&
+            !layerNodes[i].style.position) {
+          // Broad author CSS such as `[data-depth="0.3"]{position:absolute}`
+          // is valid for lights/textures but must not pull a product group out
+          // of its flex/grid station. That exact collision stacked RouteBoard's
+          // resolved timeline underneath the 100% metric.
+          layerNodes[i].style.position = "relative";
+        }
+        layers.push({
+          element: layerNodes[i],
+          depth: clamp(depth, 0, 1),
+          parallax: !ownsLayout,
+        });
       }
     }
 
@@ -798,17 +883,59 @@
       : [];
     // Camera reframes serve PRIMARY phrases. Supporting phrases remain explicit
     // in the blocking/previs artifact but do not yank the lens away from the
-    // product to satisfy a connective cue. Consecutive primary phrases on the
-    // same target collapse into one landing with the longest readable dwell.
+    // product to satisfy a connective cue. A supporting phrase is promoted to
+    // the route only when the authored camera plan independently commits a
+    // full move to that exact part/region during the phrase. This preserves the
+    // host's explicit cross-station landing (notably a final CTA) while keeping
+    // incidental annotations local. Consecutive blocks on the same target
+    // collapse into one landing with the longest readable dwell.
     var primaryBlocks = allDirectedBlocks.filter(function (block) {
       return block.importance === "primary";
+    });
+    function segmentCommitsToBlock(segment, block) {
+      if (!segment || !block ||
+          segment.move === "hold" || segment.move === "drift" || segment.move === "dive") {
+        return false;
+      }
+      var target = block.target || {};
+      var framing = block.framingTarget || {};
+      var exactTarget =
+        (segment.toPart && target.kind === "part" && segment.toPart === target.id) ||
+        (segment.toRegion && framing.kind === "region" && segment.toRegion === framing.id) ||
+        (segment.toRegion && target.kind === "region" && segment.toRegion === target.id);
+      if (!exactTarget) return false;
+      var blockStart = Number(block.startSec);
+      var blockEnd = Number(block.endSec);
+      return (!isFinite(blockEnd) || segment.startSec <= blockEnd + 0.05) &&
+        (!isFinite(blockStart) || segment.endSec >= blockStart - 0.25);
+    }
+    function sharesPrimaryDestination(block) {
+      return primaryBlocks.some(function (primary) {
+        var blockTarget = block.target || block.framingTarget || {};
+        var primaryTarget = primary.target || primary.framingTarget || {};
+        var blockFraming = block.framingTarget || {};
+        var primaryFraming = primary.framingTarget || {};
+        return (blockTarget.kind === primaryTarget.kind && blockTarget.id === primaryTarget.id) ||
+          (blockFraming.kind === "region" && primaryFraming.kind === "region" &&
+            blockFraming.id === primaryFraming.id);
+      });
+    }
+    var authoredSupportingBlocks = allDirectedBlocks.filter(function (block) {
+      if (block.importance === "primary" || sharesPrimaryDestination(block)) return false;
+      return segments.some(function (segment) {
+        return segmentCommitsToBlock(segment, block);
+      });
     });
     // Once a scene declares primary blocks, those blocks own the camera for
     // the full scene. Late supporting annotations can still animate locally,
     // but they must not manufacture an epilogue zoom/orbit after the payoff.
     // A scene with no primary remains backwards compatible and may route its
     // supporting blocks so sparse/legacy storyboards still receive framing.
-    var routeSource = primaryBlocks.length ? primaryBlocks : allDirectedBlocks;
+    var routeSource = primaryBlocks.length
+      ? primaryBlocks.concat(authoredSupportingBlocks).sort(function (a, b) {
+          return Number(a.arrivalSec) - Number(b.arrivalSec);
+        })
+      : allDirectedBlocks;
     var directedBlocks = [];
     for (var db = 0; db < routeSource.length; db += 1) {
       var candidate = routeSource[db];
@@ -1115,9 +1242,10 @@
       for (var index = 0; index < layers.length; index += 1) {
         var layer = layers[index];
         var factor = 1 - layer.depth;
-        var layerTransform =
-          "translate(" + (cameraX - reference.x) * factor + "px," +
-          (cameraY - reference.y) * factor + "px)";
+        var layerTransform = layer.parallax
+          ? "translate(" + (cameraX - reference.x) * factor + "px," +
+            (cameraY - reference.y) * factor + "px)"
+          : "translate(0px,0px)";
         if (depth3d) {
           var layerZ = depthEnvelope * (layer.depth - 0.5) * DEPTH_Z_RANGE_PX;
           layerTransform += " translateZ(" + layerZ.toFixed(2) + "px)";
@@ -1347,7 +1475,13 @@
         // Dense targets are normally preblocked as a union above; reclaiming a
         // small tail of the prior dwell is the deterministic fallback.
         var requiredDuration = minimumRouteDuration(routeState, blockState);
-        var travelStart = Math.min(requestedStart, routeArrival - requiredDuration);
+        var travelStart = routeBlock && routeBlock.importance === "primary"
+          ? requestedStart
+          : Math.min(requestedStart, routeArrival - requiredDuration);
+        // Never borrow time from a primary readable dwell to satisfy the next
+        // route's ideal kinematic duration. A short explicit handoff may need
+        // to travel decisively, but moving the prior focal while its blocking
+        // evidence promises rest is visibly incoherent (RouteBoard Probe 5).
         travelStart = Math.max(segments[0].startSec, travelStart);
         var travelDuration = routeArrival - travelStart;
         // Decimal cue times can represent an intended 150ms window as

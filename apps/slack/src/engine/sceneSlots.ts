@@ -334,16 +334,18 @@ export function normalizeSceneSlotScript(script: string, timing?: SlotScriptTimi
   let pseudoTimeline = 0;
   let arrowEnvelope = 0;
   const arrow = normalized.match(
-    /^\s*(?:(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*)?\(\s*tl(?:\s*,\s*([A-Za-z_$][\w$]*))?\s*\)\s*=>\s*\{([\s\S]*)\}\s*;?\s*$/,
+    /^\s*((?:(?:\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))\s*)*)(?:(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*)?\(\s*tl(?:\s*,\s*([A-Za-z_$][\w$]*))?\s*\)\s*=>\s*\{([\s\S]*)\}\s*;?\s*((?:(?:\/\*[\s\S]*?\*\/|\/\/[^\r\n]*(?:\r?\n|$))\s*)*)$/,
   );
   if (arrow) {
-    const rootName = arrow[1];
+    const rootName = arrow[2];
     normalized = [
+      arrow[1]!.trim(),
       ...(rootName
         ? [`const ${rootName} = document.querySelector("[data-composition-id]");`]
         : []),
-      arrow[2]!.trim(),
-    ].join("\n");
+      arrow[3]!.trim(),
+      arrow[4]!.trim(),
+    ].filter(Boolean).join("\n");
     arrowEnvelope = 1;
   }
   if (!/\b(?:function\s+fromTo|(?:const|let|var)\s+fromTo\b)/.test(normalized)) {
@@ -374,9 +376,30 @@ export function normalizeSceneSlotScript(script: string, timing?: SlotScriptTimi
     return "tl";
   });
 
+  let localPosition = 0;
+  if (timing) {
+    const helper = normalized.match(
+      /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*\(\s*([A-Za-z_$][\w$]*)\s*\)\s*=>\s*([A-Za-z_$][\w$]*)\s*\+\s*\2\s*;?/,
+    );
+    if (helper) {
+      const basePattern = new RegExp(
+        `\\b(?:const|let|var)\\s+${helper[3]}\\s*=\\s*(-?(?:\\d+(?:\\.\\d+)?|\\.\\d+))\\s*;?`,
+      );
+      const base = Number(basePattern.exec(normalized)?.[1]);
+      if (Number.isFinite(base) && Math.abs(base - timing.startSec) <= 0.01) {
+        const helperName = helper[1]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        normalized = normalized.replace(
+          new RegExp(`\\b${helperName}\\(\\s*(-?(?:\\d+(?:\\.\\d+)?|\\.\\d+))\\s*\\)`, "g"),
+          (_match, offset: string) => {
+            localPosition += 1;
+            return String(Math.round((timing.startSec + Number(offset)) * 1000) / 1000);
+          },
+        );
+      }
+    }
+  }
   const calls = rewriteTimelineCalls(normalized);
   normalized = calls.script;
-  let localPosition = 0;
   if (timing && timing.startSec > 0.5 && calls.positions.length) {
     const values = calls.positions.map((entry) => simpleNumberExpression(entry.expression));
     const known = values.every((value): value is number => value !== undefined);
@@ -392,7 +415,7 @@ export function normalizeSceneSlotScript(script: string, timing?: SlotScriptTimi
     if (sceneLocal) {
       const shifted = rewriteTimelineCalls(normalized, timing.startSec);
       normalized = shifted.script;
-      localPosition = shifted.positions.length;
+      localPosition += shifted.positions.length;
     }
   }
   return {

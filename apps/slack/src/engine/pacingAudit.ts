@@ -161,12 +161,14 @@ function isEnergeticCameraMove(move: CameraMoveIntentV1): boolean {
 function beatHoldWindows(
   scene: DirectScene,
   beats: ResolvedComponentBeatV1[],
+  excludedComponents: ReadonlySet<string> = new Set(),
 ): Array<{ from: number; until: number }> {
   const componentKinds = new Map(
     (scene.components ?? []).map((component) => [component.id, component.kind]),
   );
   const windows: Array<{ from: number; until: number }> = [];
   for (const beat of beats) {
+    if (excludedComponents.has(beat.component)) continue;
     let needed = 0;
     if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
       needed = Math.min(
@@ -600,11 +602,23 @@ function cameraMoveEnergyRank(move: CameraMoveIntentV1): number {
  * normalization).
  */
 export function isLoadBearingMove(scene: DirectScene, move: CameraMoveIntentV1): boolean {
-  const moveEnd = move.startSec + move.durationSec;
-  return (scene.moments ?? []).some((moment) => momentNeedsCamera(scene, moment) &&
-    moveEnd >= moment.atSec - EVIDENCE_BEFORE_SEC &&
-    move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
-  );
+  const path = scene.camera?.path ?? [];
+  return (scene.moments ?? []).some((moment) => {
+    if (!momentNeedsCamera(scene, moment)) return false;
+    const candidates = path.filter((candidate) =>
+      candidate.startSec + candidate.durationSec >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+      candidate.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
+    );
+    // Publication binds one best camera activity, not every move touching the
+    // evidence window. Protect the same closest-start candidate and leave
+    // redundant overlaps droppable; otherwise a track ending exactly where a
+    // whip begins defeats the budget normalizer.
+    const best = candidates.sort((a, b) =>
+      Math.abs(a.startSec - moment.atSec) - Math.abs(b.startSec - moment.atSec) ||
+      path.indexOf(a) - path.indexOf(b)
+    )[0];
+    return best === move;
+  });
 }
 
 function momentNeedsCamera(
@@ -896,8 +910,18 @@ export function delayConflictingCameraMoves(
       const componentKinds = new Map(
         (scene.components ?? []).map((component) => [component.id, component.kind]),
       );
+      const componentRegions = new Map(
+        (scene.components ?? []).map((component) => [component.id, component.region]),
+      );
       const beats = fullMoves.length ? resolvedBeatsByScene.get(scene.id) ?? [] : [];
-      const allBeatHolds = beatHoldWindows(scene, beats);
+      const destinationIdsFor = (move: CameraMoveIntentV1): Set<string> => new Set(
+        [...componentRegions.entries()]
+          .filter(([id, region]) =>
+            (move.toPart && id === move.toPart) ||
+            (move.toRegion && region === move.toRegion)
+          )
+          .map(([id]) => id),
+      );
       // The latest hold each too-early move must clear, from every beat it cuts.
       const requiredStart = new Map<number, number>();
       const conflictCount = new Map<number, number>();
@@ -915,6 +939,10 @@ export function delayConflictingCameraMoves(
         }
         if (!needed) continue;
         for (const entry of fullMoves) {
+          // A destination may enter while the lens travels toward it. Its own
+          // reveal/payoff hold must not push the camera until after the thing
+          // it exists to reveal (Probe 5's late publish button).
+          if (destinationIdsFor(entry.move).has(beat.component)) continue;
           const start = entry.move.startSec;
           const activeUntil = start + entry.move.durationSec;
           if (activeUntil <= beat.endSec + 0.05) continue;
@@ -936,7 +964,7 @@ export function delayConflictingCameraMoves(
             required,
             entry.move.durationSec,
             entry.move.startSec,
-            allBeatHolds,
+            beatHoldWindows(scene, beats, destinationIdsFor(entry.move)),
           );
           const delay = target - entry.move.startSec;
           const next = fullMoves.find((other) => other.move.startSec > entry.move.startSec + 1e-6);
@@ -957,10 +985,19 @@ export function delayConflictingCameraMoves(
           const fitsScene = overflow <= 1e-6 ||
             (overflow <= MAX_PACING_STRETCH_SEC + 1e-9 &&
               scene.durationSec + overflow <= 15 + 1e-9);
+          const destinationIds = destinationIdsFor(entry.move);
+          const servesGatedDestination = (scene.beats ?? []).some((candidate) =>
+            destinationIds.has(candidate.component) &&
+            (candidate.kind === "type" || candidate.kind === "open" ||
+              candidate.kind === "rows" || candidate.kind === "morph" ||
+              candidate.kind === "swap") &&
+            candidate.atSec > scene.startSec + 0.25
+          );
           const shouldDropCrowdedOverflow =
             overflow > 1e-6 &&
             (conflictCount.get(entry.index) ?? 0) >= 2 &&
-            !isLoadBearingMove(scene, entry.move);
+            !isLoadBearingMove(scene, entry.move) &&
+            !servesGatedDestination;
           if (
             !fitsDelay || !fitsBeforeNext || !keepsBindings || !fitsScene ||
             shouldDropCrowdedOverflow
@@ -972,7 +1009,8 @@ export function delayConflictingCameraMoves(
             // attempt 1: one pull-back crossed two lockup lines + the metric).
             if (
               (conflictCount.get(entry.index) ?? 0) >= 2 &&
-              !isLoadBearingMove(scene, entry.move)
+              !isLoadBearingMove(scene, entry.move) &&
+              !servesGatedDestination
             ) {
               newPath[entry.index] = undefined;
               const note =
@@ -1487,6 +1525,35 @@ export function stretchMarginalPacingMisses(
       );
       const beats = resolvedBeatsByScene.get(original.id) ?? [];
       let shortfall = 0;
+
+      // The introduction/development finding is also constrained by the
+      // scene's own cut. When the miss is bounded, extending that boundary is
+      // the same deterministic arithmetic as a reading/outcome hold and
+      // avoids paying a model to move an otherwise coherent late surface.
+      // Solve both clauses used by auditPacing: development seconds after the
+      // last introduction, and the 65%-of-scene latest-landing cap.
+      const introductions = sceneIntroductionTimes(original);
+      const isShortFinalResolve =
+        original === storyboard[storyboard.length - 1] &&
+        original.durationSec <= FINAL_RESOLVE_ALLOWANCE_SEC &&
+        introductions.length === 1 &&
+        COMPACT_RESOLVE_KINDS.has(original.components?.[0]?.kind ?? "");
+      if (introductions.length && !isShortFinalResolve) {
+        const lastIntro = introductions[introductions.length - 1]!;
+        const neededDevelopment = DEVELOPMENT_SEC_PER_INTRODUCTION * introductions.length;
+        const availableDevelopment = sceneEnd - lastIntro;
+        if (availableDevelopment + PACING_TOLERANCE_SEC < neededDevelopment) {
+          shortfall = Math.max(shortfall, neededDevelopment - availableDevelopment);
+        }
+        const latestAllowed =
+          original.startSec + original.durationSec * LAST_INTRODUCTION_MAX_FRACTION;
+        if (lastIntro > latestAllowed + PACING_TOLERANCE_SEC) {
+          const durationNeeded =
+            (lastIntro - original.startSec - PACING_TOLERANCE_SEC) /
+            LAST_INTRODUCTION_MAX_FRACTION;
+          shortfall = Math.max(shortfall, durationNeeded - original.durationSec);
+        }
+      }
       for (const beat of beats) {
         // Only a shortfall constrained by the scene's OWN end (not an internal
         // camera move already in flight) is host-stretchable: extending the

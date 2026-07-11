@@ -178,8 +178,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "Phase 3.1: normalizeCameraBudget clamps camera-move counts to auditPacing's " +
       "own ceilings (drop the lowest-energy extra full move; keep the earliest " +
       "MAX_WHIPS_PER_FILM whips) so the arithmetic never burns a paid storyboard " +
-      "retry — it PREVENTS pacing/camera-budget. It NEVER drops a move whose window " +
-      "overlaps a declared moment's evidence search (load-bearing guard) and " +
+      "retry — it PREVENTS pacing/camera-budget. It NEVER drops the one camera " +
+      "activity a declared moment would actually bind (closest eligible start); " +
+      "redundant moves that merely overlap the same evidence window stay droppable, and " +
       "commits ATOMICALLY: parseStoryboardResponse keeps the normalized plan only " +
       "if it re-validates clean, else logs 'sentinel-normalization reverted', " +
       "restores the model's own artifact, and retries THAT (so a clamp cannot mint " +
@@ -311,6 +312,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "targetPart, and NO camera toPart/focus.part or cut focalPartOut/In — the " +
       "finding's own 'drop the set dressing' fix. Over-count >= 3 or nothing " +
       "safely droppable keeps the blocking finding (ambiguity stays a finding). " +
+      "Film-wide accounting charges a stable entityId once across scenes because " +
+      "those appearances explicitly declare one reused continuity object; per-scene " +
+      "density and same-scene duplicates remain fully charged. " +
       "It PREVENTS the components.complexity row's components/complexity. " +
       "Telemetry tag: component-trim. Visible in STORYBOARD.md.",
   },
@@ -670,7 +674,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "authored motion a silent no-op. Probes 4 and 6 added the equally mechanical " +
       "forms: window.__tl, two-argument `(tl, root) => {...}` envelopes, top-level " +
       "`time` variables used as GSAP positions, data-* names inside JS vars, and " +
-      "later-scene cues expressed in unmistakably scene-local time. " +
+      "later-scene cues expressed in unmistakably scene-local time. NodeHarbor added " +
+      "the exact `const t=(s)=>sceneStart+s` helper: its numeric calls inline to the " +
+      "absolute film clock so static liveness and HyperFrames see the real cues. " +
       "normalizeSceneSlotScript binds or rewrites only those complete shapes to the " +
       "host-owned timeline/root/absolute film clock; it preserves targets, visual " +
       "vars, durations, and locally declared fromTo helpers. Telemetry tag: " +
@@ -898,6 +904,41 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "cell per camera-path region (first-appearance order) so " +
       "worldStationRects/cameraWorldStyle emit sane rects by construction. " +
       "Declared worldLayout always wins. Telemetry tag world-layout-derive.",
+  },
+  {
+    id: "normalize.camera-blocking-chassis",
+    group: "camera",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-11 PatchworkQC6: continuity blocking emitted typed routes for " +
+      "camera-less scenes, but without a neutral camera path the source never " +
+      "received data-camera-world or SequencesCamera.compile; every measured " +
+      "target stayed tiny and the author paid two futile layout repairs. " +
+      "ensureCameraBlockingChassis adds a neutral hold on the declared focal so " +
+      "the host route has its required transform plane. Telemetry tag: " +
+      "camera-blocking-chassis.",
+  },
+  {
+    id: "normalize.camera-destination-align",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/cameraContract.test.ts",
+    addedBecause:
+      "2026-07-11 RouteBoardQC5 frame audit: a full whip correctly named the " +
+      "late publish-button station but finished two seconds before the button " +
+      "opened. Primary blocking then returned to the timeline and the supporting " +
+      "CTA stayed completely off-frame. alignCameraDestinationsWithLateEntrances " +
+      "delays only a full move whose entire destination is entrance-gated and whose " +
+      "current landing precedes that entrance by at least 0.75s; targets, duration, " +
+      "and scene boundaries remain unchanged. Telemetry tag: " +
+      "camera-destination-align. Visible in STORYBOARD.md.",
   },
   {
     id: "normalize.station-size-fit",
@@ -1318,6 +1359,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "findings no longer describe the shipped route. Browser QA instead " +
       "seeks every primary blocking dwell and proves its exact target is at " +
       "least 85% visible and inside its entity/component occupancy range. " +
+      "A declared contextual framingTarget owns ensemble occupancy and anchor " +
+      "semantics unless its painted union collapses to the subject; the subject's " +
+      "solo range/anchor cannot contradict the host's delivery-safe station fit. " +
       "This is measured geometry and stays advisory-late like camera.framing.",
   },
   {
@@ -1382,6 +1426,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "prove that tweens were authored, but not that the rendered frame stays " +
       "alive. Continuous browser evidence raises motion_quiet_window only after " +
       "measuring at least 1.4s with no camera, component, FX, or micro-motion. " +
+      "Default-on environment scenes already receive host-owned wallpaper/light/" +
+      "furniture motion and never pay a source retry to duplicate that obligation; " +
+      "their quiet-window telemetry remains visible for human calibration. " +
       "This is strictOk polish pressure on the bounded author ladder, then " +
       "advisory-late so a healthy runnable film is never unpublished.",
   },
@@ -1471,7 +1518,8 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "2026-07-05 WS4: stale_asset_lingers (ALWAYS advisory, bounded seeks) flags " +
       "a component whose last beat has passed still at opacity >=0.9 overlapping " +
       "the focal element — the visible half of exit discipline the plan-stage " +
-      "auditSurfaceExits can't measure.",
+      "auditSurfaceExits can't measure. Host plugin children are one semantic unit " +
+      "and are excluded; flow-diagram edges deliberately overlap their nodes.",
   },
   {
     id: "layout",
@@ -1539,6 +1587,7 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "browser_runtime",
       "invalid_inline_script_syntax",
       "overlapping_clips_same_track",
+      "overlapping_gsap_tweens",
     ],
     promptCostChars: 900,
     test: "test/directComposition.test.ts",
@@ -1549,7 +1598,8 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "near_blank_film; a console error/warning surfaces as browser_runtime / " +
       "browser_warning; a patch that breaks inline-script parse is " +
       "invalid_inline_script_syntax (revert only that edit); the lint gate rejects " +
-      "overlapping_clips_same_track (sub-epsilon float overlaps excepted).",
+      "overlapping_clips_same_track and overlapping_gsap_tweens (sub-epsilon " +
+      "floating-point endpoint overlaps excepted).",
   },
 ];
 
@@ -1695,6 +1745,8 @@ export const SENTINEL_NORMALIZER_SCOPES: Readonly<
   "normalize.camera-energy-lift": ["storyboard"],
   "normalize.rack-focus-topup": ["storyboard"],
   "normalize.camera-landing-reserve": ["storyboard"],
+  "normalize.camera-blocking-chassis": ["storyboard"],
+  "normalize.camera-destination-align": ["storyboard"],
   "normalize.camera-connective-yield": ["storyboard"],
   "normalize.root-data-start": ["source"],
   "normalize.dive-window": ["storyboard"],

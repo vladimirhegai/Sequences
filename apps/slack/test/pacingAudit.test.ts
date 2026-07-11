@@ -837,6 +837,30 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
     expect(result.storyboard[0]!.sentinelNormalizations?.length).toBe(1);
   });
 
+  it("protects only the closest camera move when two moves overlap one camera moment", () => {
+    const overlap = scene({
+      id: "overlap",
+      startSec: 3.4,
+      durationSec: 3.8,
+      camera: {
+        version: 1,
+        path: [
+          move({ move: "pan", startSec: 3.4, durationSec: 1.4 }),
+          move({ move: "track-to-anchor", toPart: "node", startSec: 4.8, durationSec: 1.2 }),
+          move({ move: "whip", startSec: 6, durationSec: 0.6 }),
+        ],
+      },
+      moments: [moment("overlap", "whip-arrival", 6)],
+    });
+    const result = normalizeCameraBudget([overlap]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.camera!.path).toHaveLength(2);
+    expect(result.storyboard[0]!.camera!.path.some((entry) => entry.move === "whip")).toBe(true);
+    expect(auditPacing(result.storyboard).some((finding) =>
+      finding.startsWith("pacing/camera-budget:")
+    )).toBe(false);
+  });
+
   it("refuses to clamp when the budget cannot be met without load-bearing moves", () => {
     // Both moves carry moment evidence: the clamp leaves the scene alone so
     // the blocking finding goes back to the model (and the parse-side
@@ -1156,6 +1180,51 @@ describe("Sentinel Phase 3 — stretchMarginalPacingMisses (normalize-before-ret
     expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/reading:"))).toBe(false);
     // The note is carried on the stretched scene for STORYBOARD.md visibility.
     expect(stretchedOpener!.sentinelNormalizations?.length).toBe(1);
+  });
+
+  it("stretches a bounded late-introduction and outcome miss at the scene cut", () => {
+    // RouteBoardQC5: two coherent surfaces, but the publish button landed at
+    // 3.9s in a 5s scene and its press payoff ended only 0.3s before the cut.
+    // Extending the cut by 0.7s satisfies both obligations without a creative
+    // storyboard rewrite.
+    const timeline = scene({
+      id: "timeline",
+      startSec: 0,
+      durationSec: 5,
+      components: [
+        { version: 1 as const, id: "timeline-list", kind: "list" as const },
+        { version: 1 as const, id: "publish-btn", kind: "button" as const },
+      ],
+      beats: [
+        beat("timeline", {
+          id: "publish-open",
+          component: "publish-btn",
+          kind: "open",
+          atSec: 3.9,
+          durationSec: 0.5,
+        }),
+        beat("timeline", {
+          id: "publish-press",
+          component: "publish-btn",
+          kind: "press",
+          atSec: 4.3,
+          durationSec: 0.4,
+        }),
+      ],
+    });
+    const proof = scene({ id: "proof", startSec: 5, durationSec: 3 });
+    expect(auditPacing([timeline, proof])).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^pacing\/holds:/),
+      expect.stringMatching(/^pacing\/outcome:/),
+    ]));
+
+    const result = stretchMarginalPacingMisses([timeline, proof]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.durationSec).toBeCloseTo(5.7, 5);
+    expect(result.storyboard[1]!.startSec).toBeCloseTo(5.7, 5);
+    expect(auditPacing(result.storyboard).filter((finding) =>
+      finding.startsWith("pacing/holds:") || finding.startsWith("pacing/outcome:")
+    )).toEqual([]);
   });
 
   it("cascade-shifts a later scene's gradeShift with its scene (MD4 desync guard)", () => {

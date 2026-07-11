@@ -52,6 +52,7 @@ export {
   reconcileComponentInternalPartAliases,
   reconcileContractBindings,
   reconcileInteractionTargets,
+  rehomeRegionComponents,
   repairContrastAaIssues,
   repairMalformedFromToCalls,
   repairStationPositioning,

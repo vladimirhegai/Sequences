@@ -50,8 +50,17 @@ function boundMomentsStayBound(args: {
   );
 }
 
-function targetComponentIsInteractive(scene: DirectScene, component: string): boolean {
-  return (scene.interactions ?? []).some((intent) => intent.targetPart === component);
+function beatOverlapsInteraction(
+  scene: DirectScene,
+  component: string,
+  startSec: number,
+  endSec: number,
+): boolean {
+  return (scene.interactions ?? []).some((intent) => {
+    if (intent.targetPart !== component) return false;
+    const interactionEnd = intent.holdUntilSec ?? intent.releaseSec ?? intent.pressSec ?? intent.arriveSec;
+    return intent.startSec <= endSec + 0.05 && interactionEnd >= startSec - 0.05;
+  });
 }
 
 function contentTimeForViewerGap(args: {
@@ -138,9 +147,61 @@ export function correctEyeTracePingPong(
     if (!firstResolved || !secondResolved) continue;
     const sceneEnd = scene.startSec + scene.durationSec;
 
+    // Aâ†’Bâ†’A inside one gaze window is the most literal ping-pong. When the
+    // returning A beat is a state commit, land that commit immediately before
+    // B instead of nudging A toward B and merely exposing the neighboring Bâ†’A
+    // finding on the next browser pass (RouteBoardQC5: highlight list â†’ open
+    // publish button â†’ resolve same list). This is a bounded reorder of an
+    // existing state, with interaction and moment bindings preserved.
+    const returningIndex = beats.findIndex((beat) =>
+      beat.component === first.component &&
+      beat.atSec > second.atSec &&
+      beat.atSec - second.atSec <= PING_PONG_WINDOW_SEC + 1e-6
+    );
+    const returning = returningIndex >= 0 ? beats[returningIndex] : undefined;
+    const returningResolved = returning ? resolved?.get(returning.id) : undefined;
+    if (returning?.kind === "set-state" && returningResolved) {
+      const target = round(Math.max(first.atSec + 0.05, second.atSec - 0.05));
+      const duration = returningResolved.endSec - returningResolved.startSec;
+      const afterEnd = target + duration;
+      if (
+        target < returning.atSec - 1e-6 &&
+        afterEnd <= sceneEnd + 1e-6 &&
+        !beatOverlapsInteraction(
+          scene,
+          returning.component,
+          Math.min(target, returningResolved.startSec),
+          Math.max(afterEnd, returningResolved.endSec),
+        ) &&
+        boundMomentsStayBound({
+          scene,
+          beforeStart: returningResolved.startSec,
+          beforeEnd: returningResolved.endSec,
+          afterStart: target,
+          afterEnd,
+        })
+      ) {
+        const nextBeats = beats.map((beat, index) =>
+          index === returningIndex ? { ...beat, atSec: target } : beat
+        ).sort((a, b) => a.atSec - b.atSec);
+        const note =
+          `moved returning state beat "${returning.id}" from ${returning.atSec.toFixed(2)}s to ` +
+          `${target.toFixed(2)}s so ${first.component} resolves before attention hands to ` +
+          `${second.component}, removing the measured A-B-A ping-pong`;
+        const next = [...storyboard];
+        next[sceneIndex] = withNote({ ...scene, beats: nextBeats }, note);
+        return { storyboard: next, corrected: [`${scene.id}:${first.id}->${second.id}`] };
+      }
+    }
+
     if (
       SAFE_RETIME_KINDS.has(first.kind) &&
-      !targetComponentIsInteractive(scene, first.component)
+      !beatOverlapsInteraction(
+        scene,
+        first.component,
+        firstResolved.startSec,
+        firstResolved.endSec,
+      )
     ) {
       const target = contentTimeForViewerGap({
         start: first.atSec,
@@ -183,7 +244,12 @@ export function correctEyeTracePingPong(
 
     if (
       SAFE_RETIME_KINDS.has(second.kind) &&
-      !targetComponentIsInteractive(scene, second.component)
+      !beatOverlapsInteraction(
+        scene,
+        second.component,
+        secondResolved.startSec,
+        secondResolved.endSec,
+      )
     ) {
       const target = contentTimeForViewerGap({
         start: second.atSec,

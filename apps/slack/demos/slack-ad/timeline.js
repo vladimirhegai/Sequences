@@ -139,10 +139,12 @@
     .to("#channel-modal", { y: -28, opacity: 0, scale: .965, duration: .4, ease: "power2.in" }, 11.60)
     .to("#cursor2", { opacity: 0, duration: .2 }, 11.60);
 
-  // 12.0–16.25 — the window opens on the same desktop; a mild push, then the
+  // 12.0–17.25 — the window opens on the same desktop; a mild push, then the
   // superzoom: dive into the reply as it types and pan right with the words.
+  // Read holds: the question sits alone before the reply lands, the typed
+  // reply holds at full zoom, and the reaction gets its own settled beat.
   tl.set("#workspace-scene", { autoAlpha: 1 }, 11.84)
-    .fromTo("#workspace-scene .wallpaper", { scale: 1 }, { scale: 1.05, duration: 4.4, ease: "sine.inOut" }, 11.84)
+    .fromTo("#workspace-scene .wallpaper", { scale: 1 }, { scale: 1.05, duration: 5.4, ease: "sine.inOut" }, 11.84)
     .set("#channel-scene", { autoAlpha: 0 }, 12.06)
     .fromTo("#slack-window", { opacity: 0, y: 74, scale: .9 }, { opacity: 1, y: 0, scale: 1, duration: .8, ease: "power4.out" }, 11.9)
     .fromTo("#message-one", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: .42 }, 12.52)
@@ -150,65 +152,67 @@
     .to("#message-one .t", { width: m1W, duration: .78, ease: `steps(${C.copy.question.length})` }, 12.64)
     .set("#message-one .tcaret", { opacity: 0 }, 13.52)
     .to("#workspace-camera", { x: mild.x, y: mild.y, scale: 1.12, duration: .7, ease: "power2.inOut" }, 13.32)
-    .fromTo("#message-two", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: .4 }, 13.78)
-    .to("#workspace-camera", { x: zoomIn.x, y: zoomIn.y, scale: ZOOM, duration: .62, ease: "power3.inOut" }, 13.98)
+    .fromTo("#message-two", { opacity: 0, y: 25 }, { opacity: 1, y: 0, duration: .4 }, 14.08)
+    .to("#workspace-camera", { x: zoomIn.x, y: zoomIn.y, scale: ZOOM, duration: .62, ease: "power3.inOut" }, 14.28)
     // Anticipation: the caret blinks in the empty reply while the camera dives.
-    .fromTo("#message-two .tcaret", { opacity: 0 }, { opacity: 1, duration: .06 }, 13.88)
-    .set("#message-two .tcaret", { opacity: 0 }, 14.18)
-    .set("#message-two .tcaret", { opacity: 1 }, 14.40)
-    .to("#message-two .t", { width: m2W, duration: .95, ease: `steps(${C.copy.answer.length})` }, 14.62)
-    .to("#workspace-camera", { x: `-=${pan}`, duration: .95, ease: "power1.inOut" }, 14.62)
-    .set("#message-two .tcaret", { opacity: 0 }, 15.6)
-    .to("#workspace-camera", { x: 0, y: 0, scale: 1, duration: .68, ease: "power3.inOut" }, 15.62)
-    .fromTo("#message-two .reaction", { opacity: 0, scale: .45 }, { opacity: 1, scale: 1, duration: .34, ease: "back.out(1.9)" }, 15.72);
+    .fromTo("#message-two .tcaret", { opacity: 0 }, { opacity: 1, duration: .06 }, 14.18)
+    .set("#message-two .tcaret", { opacity: 0 }, 14.48)
+    .set("#message-two .tcaret", { opacity: 1 }, 14.70)
+    .to("#message-two .t", { width: m2W, duration: .95, ease: `steps(${C.copy.answer.length})` }, 14.92)
+    .to("#workspace-camera", { x: `-=${pan}`, duration: .95, ease: "power1.inOut" }, 14.92)
+    .set("#message-two .tcaret", { opacity: 0 }, 15.93)
+    // Zoomed read hold 15.87–16.30, pull back, then the reaction pops on a
+    // settled frame and holds so the beat actually reads.
+    .to("#workspace-camera", { x: 0, y: 0, scale: 1, duration: .68, ease: "power3.inOut" }, 16.30)
+    .fromTo("#message-two .reaction", { opacity: 0, scale: .45 }, { opacity: 1, scale: 1, duration: .34, ease: "back.out(1.9)" }, 17.05);
 
-  // 16.25–19.40 — parallel proof, no connective clutter, gentle parallax.
-  tl.set("#proof", { autoAlpha: 1 }, 16.12).to("#workspace-scene", { autoAlpha: 0, duration: .28 }, 16.18)
+  // 17.75–20.40 — parallel proof, no connective clutter, gentle parallax.
+  tl.set("#proof", { autoAlpha: 1 }, 17.72).to("#workspace-scene", { autoAlpha: 0, duration: .28 }, 17.78)
     .fromTo(".decision", { opacity: 0, x: -130, y: 70, rotation: -3, scale: 1.08 },
-      { opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: .7 }, 16.14)
+      { opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: .7 }, 17.74)
     .fromTo(".conversation", { opacity: 0, x: 135, y: 100, rotation: 3, scale: 1.08 },
-      { opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: .7 }, 16.48)
-    .fromTo(".mini-msg", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: .45 }, 16.82)
-    .fromTo(".channel-stack>*", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: .35, stagger: .11 }, 17.22)
-    .to(".decision", { y: -12, duration: 1.6, ease: "sine.inOut" }, 17.7)
-    .to(".conversation", { y: 10, duration: 1.6, ease: "sine.inOut" }, 17.7)
-    .to(".proof-card", { scale: .985, duration: .5, ease: "power2.inOut" }, 18.85);
+      { opacity: 1, x: 0, y: 0, rotation: 0, scale: 1, duration: .7 }, 18.08)
+    .fromTo(".mini-msg", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: .45 }, 18.42)
+    .fromTo(".channel-stack>*", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: .35, stagger: .11 }, 18.82)
+    .to(".decision", { y: -12, duration: 1.2, ease: "sine.inOut" }, 19.2)
+    .to(".conversation", { y: 10, duration: 1.2, ease: "sine.inOut" }, 19.2)
+    .to(".proof-card", { scale: .985, duration: .45, ease: "power2.inOut" }, 19.9);
 
-  // 19.40–23.15 — the promise evolves in place; the mark docks beside it.
-  tl.fromTo("#promise", { autoAlpha: 0 }, { autoAlpha: 1, duration: .36, ease: "power2.inOut" }, 19.16)
-    .to("#proof", { autoAlpha: 0, duration: .38, ease: "power2.inOut" }, 19.18)
+  // 20.40–24.15 — the promise evolves in place; the mark docks beside it.
+  tl.fromTo("#promise", { autoAlpha: 0 }, { autoAlpha: 1, duration: .36, ease: "power2.inOut" }, 20.16)
+    .to("#proof", { autoAlpha: 0, duration: .38, ease: "power2.inOut" }, 20.18)
     .fromTo("#all-place", { opacity: 0, y: 44, scale: .97, filter: "blur(12px)" },
-      { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: .55 }, 19.24)
-    .fromTo(".orbit-mark", { opacity: 0, scale: .15, rotation: -80 }, { opacity: 1, scale: .42, rotation: 0, duration: .7, ease: "back.out(1.5)" }, 20.0)
-    .to("#all-place", { opacity: 0, y: -36, filter: "blur(10px)", duration: .36, ease: "power2.in" }, 20.82)
-    .fromTo("#all-slack", { opacity: 0, y: 40, scale: .94 }, { opacity: 1, y: 0, scale: 1, duration: .55, ease: "back.out(1.25)" }, 21.02)
-    .to(".orbit-mark", { x: dock.x, y: dock.y, scale: .66, duration: .62, ease: "power3.inOut" }, 21.08)
-    .to("#all-slack", { scale: 1.025, duration: .27, ease: "power2.out" }, 21.6)
-    .to("#all-slack", { scale: 1, duration: .48 }, 21.87)
+      { opacity: 1, y: 0, scale: 1, filter: "blur(0px)", duration: .55 }, 20.24)
+    .fromTo(".orbit-mark", { opacity: 0, scale: .15, rotation: -80 }, { opacity: 1, scale: .42, rotation: 0, duration: .7, ease: "back.out(1.5)" }, 21.0)
+    .to("#all-place", { opacity: 0, y: -36, filter: "blur(10px)", duration: .36, ease: "power2.in" }, 21.82)
+    .fromTo("#all-slack", { opacity: 0, y: 40, scale: .94 }, { opacity: 1, y: 0, scale: 1, duration: .55, ease: "back.out(1.25)" }, 22.02)
+    .to(".orbit-mark", { x: dock.x, y: dock.y, scale: .66, duration: .62, ease: "power3.inOut" }, 22.08)
+    .to("#all-slack", { scale: 1.025, duration: .27, ease: "power2.out" }, 22.6)
+    .to("#all-slack", { scale: 1, duration: .48 }, 22.87)
     // Redundant focal pin across the final promise hold. It is pixel-aligned
     // with the authored claim and prevents a seek/capture opacity hole.
-    .set("#all-slack-guard", { opacity: 1 }, 22.2)
-    .set("#all-slack-guard", { opacity: 0 }, 22.98);
+    .set("#all-slack-guard", { opacity: 1 }, 23.2)
+    .set("#all-slack-guard", { opacity: 0 }, 23.98);
 
-  // 23.15–27.0 — the real lockup lands; the hold breathes almost invisibly.
-  tl.fromTo("#end", { autoAlpha: 0 }, { autoAlpha: 1, duration: .34, ease: "power2.inOut" }, 22.98)
-    .to("#promise", { autoAlpha: 0, duration: .34, ease: "power2.inOut" }, 22.98);
+  // 24.15–28.0 — the real lockup lands; the hold breathes almost invisibly.
+  tl.fromTo("#end", { autoAlpha: 0 }, { autoAlpha: 1, duration: .34, ease: "power2.inOut" }, 23.98)
+    .to("#promise", { autoAlpha: 0, duration: .34, ease: "power2.inOut" }, 23.98);
   qa(".lockup-mark path").forEach((p, i) => {
     tl.fromTo(p, { scale: .35, opacity: 0, y: i < 4 ? -10 : 10, transformOrigin: "50% 50%" },
-      { scale: 1, opacity: 1, y: 0, duration: .5, ease: "back.out(1.6)" }, 23.0 + i * .04);
+      { scale: 1, opacity: 1, y: 0, duration: .5, ease: "back.out(1.6)" }, 24.0 + i * .04);
   });
   tl.fromTo(".wordmark", { opacity: 0, x: 64, filter: "blur(16px)" },
-      { opacity: 1, x: 0, filter: "blur(0px)", duration: .65 }, 23.36);
+      { opacity: 1, x: 0, filter: "blur(0px)", duration: .65 }, 24.36);
   // Sign-off: the tagline words cascade up, then one quiet dark highlight
   // sweeps left-to-right through the settled phrase.
   qa("#tagline span").forEach((w, i) => {
     tl.fromTo(w, { opacity: 0, y: 24, filter: "blur(10px)" },
-      { opacity: 1, y: 0, filter: "blur(0px)", duration: .5 }, 23.88 + i * .14);
+      { opacity: 1, y: 0, filter: "blur(0px)", duration: .5 }, 24.88 + i * .14);
     tl.fromTo(w, { backgroundPosition: "100% 0%" },
-      { backgroundPosition: "0% 0%", duration: 1.3, ease: "power1.inOut" }, 24.85 + i * .1);
+      { backgroundPosition: "0% 0%", duration: 1.3, ease: "power1.inOut" }, 25.85 + i * .1);
   });
-  tl.fromTo(".lockup", { scale: 1 }, { scale: 1.014, duration: 2.4, ease: "sine.inOut" }, 24.5)
-    .to({}, { duration: .1 }, 26.9);
+  tl.fromTo(".lockup", { scale: 1 }, { scale: 1.014, duration: 2.4, ease: "sine.inOut" }, 25.5)
+    .to({}, { duration: .1 }, 27.9);
 
   window.__timeline = tl;
   window.__seek = (seconds) => {
@@ -219,7 +223,7 @@
     // GSAP's zero-duration set can be crossed differently after arbitrary
     // forward seeks. Pin this overlap from absolute time so offline capture,
     // reverse seeking, and a fresh browser all produce the same visible seam.
-    gsap.set("#all-slack-guard", { opacity: time >= 22.2 && time < 22.98 ? 1 : 0 });
+    gsap.set("#all-slack-guard", { opacity: time >= 23.2 && time < 23.98 ? 1 : 0 });
     return tl.time();
   };
   tl.seek(0);

@@ -94,6 +94,7 @@ describe("runner extraction parity (WS-F2)", () => {
       "reconcileInteractionTargets",
       "reconcileUndeclaredMorphTargets",
       "recoverPersistedStoryboardAttempt",
+      "rehomeRegionComponents",
       "repairContrastAaIssues",
       "repairMalformedFromToCalls",
       "repairSlotDraftForFindings",
@@ -162,10 +163,37 @@ describe("runner extraction parity (WS-F2)", () => {
     expect(JSON.parse(extractStoryboardSource(JSON.stringify({ storyboard: plan })))).toEqual(plan);
     expect(JSON.parse(extractStoryboardSource(`plan:\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\``)))
       .toEqual(plan);
+    expect(() => extractStoryboardSource('```json\n{"storyboard":[{"id":"cold-open"}'))
+      .toThrow(/truncated/i);
+    expect(() => extractStoryboardSource('[{"id":"cold-open"}'))
+      .toThrow(/truncated/i);
+    expect(() => extractStoryboardSource("I could not create a plan"))
+      .toThrow(/missing <storyboard_json>/i);
     expect(extractIndexHtmlSource("preface\n```html\n<html><body>proof</body></html>\n```"))
       .toBe("<html><body>proof</body></html>");
     expect(() => extractIndexHtmlSource("<index_html><html>unfinished"))
       .toThrow(/truncated/i);
+  });
+
+  it("reactivates persisted scene-slot arrow envelopes without touching ordinary scene bodies", () => {
+    const persisted = `<script>
+const tl = gsap.timeline({ paused: true });
+(function (tl) {
+/* Scene window: 4-8s. */
+(tl) => {
+  const root = document.querySelector("#proof");
+  tl.to(root, { opacity: 1, duration: 0.4 }, 4.2);
+}
+})(tl);
+(function (tl) {
+  tl.to("#cta", { opacity: 1, duration: 0.4 }, 8.2);
+})(tl);
+</script>`;
+    const repaired = directRepairs.unwrapPersistedSceneSlotArrows(persisted);
+    expect(repaired.repairs).toBe(1);
+    expect(repaired.html).not.toContain("(tl) => {");
+    expect(repaired.html).toContain('const root = document.querySelector("#proof");');
+    expect(repaired.html).toContain('tl.to("#cta", { opacity: 1, duration: 0.4 }, 8.2);');
   });
 
   it("preserves deterministic repair and registry export identity", () => {

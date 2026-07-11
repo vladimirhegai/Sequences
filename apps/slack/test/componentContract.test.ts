@@ -1181,6 +1181,52 @@ describe("auditComponentComplexity", () => {
     ])).toEqual([]);
   });
 
+  it("charges one stable continuity entity once across the film", () => {
+    const shots = ["token", "active-pill", "approve", "final-cta"].map((id, index) =>
+      scene({
+        id: `s${index}`,
+        startSec: index * 4,
+        durationSec: 4,
+        components: [
+          { version: 1, id, kind: "button", entityId: "cta" },
+          { version: 1, id: `surface-${index}`, kind: "stat-card" },
+        ],
+      })
+    );
+    // Eight declarations in 16s fit the cap either way; the extra two surfaces
+    // prove that the four CTA appearances cost one film-wide unit, not four.
+    shots[1]!.components!.push({ version: 1, id: "nav", kind: "sidebar" });
+    shots[2]!.components!.push({ version: 1, id: "toast", kind: "toast" });
+    expect(shots.reduce((count, shot) => count + shot.components!.length, 0)).toBe(10);
+    expect(auditComponentComplexity(shots)).toEqual([]);
+  });
+
+  it("still charges same-scene duplicates and unrelated entities independently", () => {
+    const shots = [
+      scene({
+        id: "a",
+        startSec: 0,
+        durationSec: 4,
+        components: [
+          { version: 1, id: "cta-a", kind: "button", entityId: "cta" },
+          { version: 1, id: "cta-a-copy", kind: "button", entityId: "cta" },
+          { version: 1, id: "card-a", kind: "stat-card" },
+        ],
+      }),
+      scene({
+        id: "b",
+        startSec: 4,
+        durationSec: 4,
+        components: [
+          { version: 1, id: "cta-b", kind: "button", entityId: "cta" },
+          { version: 1, id: "card-b", kind: "stat-card" },
+          { version: 1, id: "toast-b", kind: "toast" },
+        ],
+      }),
+    ];
+    expect(auditComponentComplexity(shots).some((finding) => finding.includes("across"))).toBe(true);
+  });
+
   it("counts one app-window chassis and its same-station child as one surface", () => {
     const bridge = scene({
       id: "lateral-collapse",

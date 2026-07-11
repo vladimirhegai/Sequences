@@ -513,6 +513,178 @@ export function normalizeConnectiveCameraSchedule(
 }
 
 /**
+ * A drift is a 24% connective blend, not a station transfer. If its explicit
+ * target belongs to a different world station, the viewer can never reach the
+ * requested component (MeterlyQC4's CTA remained fully off-frame). Promote
+ * that exact cross-station case to a budgeted full move before camera-budget
+ * normalization. Same-station part changes keep their subtle drift.
+ */
+export function upgradeCrossStationDrifts(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path?.length) return scene;
+    const stationForPart = (part: string | undefined): string | undefined =>
+      part
+        ? scene.components?.find((component) => component.id === part)?.region ?? `part:${part}`
+        : undefined;
+    const targetStation = (move: CameraMoveIntentV1): string | undefined =>
+      move.toRegion ?? stationForPart(move.toPart);
+    let currentStation = path[0]!.fromRegion ?? stationForPart(path[0]!.fromPart) ??
+      targetStation(path[0]!);
+    let upgraded = 0;
+    const nextPath = path.map((move) => {
+      const target = targetStation(move) ?? currentStation;
+      const crossStation = Boolean(currentStation && target && currentStation !== target);
+      const next = move.move === "drift" && crossStation
+        ? {
+            ...move,
+            move: (move.toPart ? "track-to-anchor" : "pan") as CameraMoveStyle,
+          }
+        : move;
+      if (next !== move) upgraded += 1;
+      currentStation = target;
+      return next;
+    });
+    if (!upgraded) return scene;
+    const note =
+      `promoted ${upgraded} cross-station drift(s) to full camera travel so the ` +
+      `declared destination can enter frame`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera!, path: nextPath },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+const DESTINATION_ENTRANCE_BEATS = new Set([
+  "type",
+  "open",
+  "rows",
+  "morph",
+  "swap",
+]);
+
+/**
+ * Align an authored full move with the first visible content in its destination
+ * station. A planner can correctly name a late cross-station CTA while placing
+ * the move at scene start; the blocking director then returns to earlier
+ * primary content and the CTA remains completely off-frame when it appears.
+ * Delay only that mechanically certain shape: every component in the named
+ * destination is entrance-gated, the move currently finishes at least 0.75s
+ * before the first entrance, and the same move still fits inside its scene.
+ */
+export function alignCameraDestinationsWithLateEntrances(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const path = scene.camera?.path;
+    if (!path?.length || !scene.components?.length || !scene.beats?.length) return scene;
+    const sceneEnd = scene.startSec + scene.durationSec;
+    let aligned = 0;
+    const nextPath = path.map((move) => {
+      if (!CAMERA_FULL_MOVES.has(move.move) || move.move === "dive") return move;
+      const destinationComponents = move.toPart
+        ? scene.components!.filter((component) => component.id === move.toPart)
+        : move.toRegion
+          ? scene.components!.filter((component) => component.region === move.toRegion)
+          : [];
+      if (!destinationComponents.length) return move;
+      const destinationIds = new Set(destinationComponents.map((component) => component.id));
+      const loadBearingDestination = destinationComponents.some((component) => component.role === "hero") ||
+        (scene.moments ?? []).some((moment) =>
+          moment.importance === "primary" &&
+          moment.evidence?.kind === "component" &&
+          [...destinationIds].some((id) => moment.evidence?.detail.includes(id))
+        );
+      // Ordinary supporting phrases do not own the lens. Camera blocking
+      // reconciles an explicit full-move destination when it becomes primary;
+      // moving the authored path itself for a supporting surface can create a
+      // new conflict with the actual hero's readable hold (RouteBoard Probe 5).
+      if (!loadBearingDestination) return move;
+      const introductions = destinationComponents.map((component) =>
+        scene.beats!
+          .filter((beat) =>
+            beat.component === component.id && DESTINATION_ENTRANCE_BEATS.has(beat.kind)
+          )
+          .sort((a, b) => a.atSec - b.atSec)[0]?.atSec
+      );
+      // If any destination surface is already authored visible at scene start,
+      // the early establishing move is coherent and remains untouched.
+      if (introductions.some((at) => at === undefined)) return move;
+      const firstIntroduction = Math.min(...introductions as number[]);
+      const currentEnd = move.startSec + move.durationSec;
+      if (firstIntroduction - currentEnd < 0.75) return move;
+      const desiredEnd = Math.min(
+        sceneEnd - 0.25,
+        firstIntroduction + Math.min(0.55, move.durationSec * 0.45),
+      );
+      const desiredStart = Math.max(scene.startSec, desiredEnd - move.durationSec);
+      if (desiredStart <= move.startSec + 0.01) return move;
+      aligned += 1;
+      return { ...move, startSec: round(desiredStart) };
+    });
+    if (!aligned) return scene;
+    const note =
+      `aligned ${aligned} full camera destination(s) with their late component entrance so ` +
+      `the addressed surface is on-frame when it becomes readable`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: { ...scene.camera!, path: nextPath },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+/**
+ * Continuity camera blocking needs a transformable camera world even when the
+ * planner delegates every route to the host and declares no authored move.
+ * Add a neutral full-scene hold on the declared focal/first hero so the normal
+ * camera contract injects the world plane, runtime, and compile call. Blocking
+ * phrases still own every actual x/y/zoom route.
+ */
+export function ensureCameraBlockingChassis(
+  storyboard: DirectScene[],
+): { storyboard: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    if (scene.camera?.path?.length || !(scene.components?.length || scene.moments?.length)) {
+      return scene;
+    }
+    const target = scene.spatialIntent?.focalPart ??
+      scene.components?.find((component) => component.role === "hero")?.id ??
+      scene.components?.[0]?.id;
+    if (!target) return scene;
+    const note = `added a neutral camera chassis on "${target}" so host blocking owns the scene route`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      camera: {
+        version: 1 as const,
+        path: [{
+          version: 1 as const,
+          move: "hold" as const,
+          startSec: scene.startSec,
+          durationSec: scene.durationSec,
+          toPart: target,
+          zoom: 1,
+        }],
+      },
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { storyboard: scenes, normalized };
+}
+
+/**
  * Planners routinely stage "pan to the region, then push in on it" as two
  * serial moves, which plays as travel → dead stop → zoom — the awkward-pause
  * tell. A reframe immediately followed by a push-in/pull-back on the SAME

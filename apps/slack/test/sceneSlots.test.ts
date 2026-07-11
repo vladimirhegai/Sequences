@@ -204,6 +204,21 @@ describe("assembleSlotComposition", () => {
     expect(result.scriptRepairs.arrowEnvelope).toBe(2);
   });
 
+  it("unwraps an arrow envelope even when boundary comments describe the slot", () => {
+    const result = normalizeSceneSlotScript([
+      "/* Scene window: 11.0 - 16.6s. */",
+      "// The host owns the typed beat.",
+      "(tl) => {",
+      "  tl.to('.ring', { opacity: 1, duration: .5 }, 12);",
+      "}",
+    ].join("\n"), { startSec: 11, durationSec: 5.6 });
+
+    expect(result.script).toContain("Scene window");
+    expect(result.script).toContain("tl.to('.ring'");
+    expect(result.script).not.toContain("(tl) =>");
+    expect(result.repairs.arrowEnvelope).toBe(1);
+  });
+
   it("binds a two-argument slot envelope to the host composition root", () => {
     const result = normalizeSceneSlotScript([
       "(tl, root) => {",
@@ -265,6 +280,20 @@ describe("assembleSlotComposition", () => {
 
     expect(result.script).toContain("4.9 + (0)");
     expect(result.script).toContain("4.9 + (.3)");
+    expect(result.repairs.localPosition).toBe(2);
+  });
+
+  it("inlines a deterministic scene-local time helper", () => {
+    const result = normalizeSceneSlotScript([
+      "const sceneStart = 4.9;",
+      "const t = (s) => sceneStart + s;",
+      "tl.to(pane, { opacity: 1, duration: .4 }, t(.6));",
+      "tl.to(rows, { y: 0, duration: .5 }, t(2.2));",
+    ].join("\n"), { startSec: 4.9, durationSec: 5 });
+
+    expect(result.script).toContain("}, 5.5)");
+    expect(result.script).toContain("}, 7.1)");
+    expect(result.script).not.toContain("t(.6)");
     expect(result.repairs.localPosition).toBe(2);
   });
 

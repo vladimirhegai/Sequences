@@ -19,6 +19,7 @@ import {
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
   reconcileContractBindings,
+  rehomeRegionComponents,
   repairMalformedFromToCalls,
   quoteBareCssVarsInInlineScripts,
   stripInvalidSvgPathPlaceholders,
@@ -1201,6 +1202,84 @@ describe("reconcileComponentBindings — missing data-part recovery", () => {
     ]);
     expect(repairs).toBe(0);
     expect(out).toContain('data-part="row-mg204" data-component="list" style="display:none"');
+  });
+});
+
+describe("component camera-station ownership", () => {
+  it("rehomes one typed CTA from a sibling station into its declared station", () => {
+    const html =
+      '<section data-scene="close" id="close" data-start="0" data-duration="5">' +
+      '<div data-camera-world>' +
+      '<div data-region="savings-station"><div class="hero">' +
+      '<button data-part="cta" data-component="button" data-region="cta-station">Go</button>' +
+      '</div></div>' +
+      '<div data-region="cta-station"></div>' +
+      '</div></section>';
+    const result = rehomeRegionComponents(html, [{
+      id: "close",
+      title: "Close",
+      purpose: "Land the CTA",
+      startSec: 0,
+      durationSec: 5,
+      components: [{
+        version: 1,
+        id: "cta",
+        kind: "button",
+        region: "cta-station",
+      }],
+    }]);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toMatch(
+      /<div data-region="cta-station"><button data-part="cta"(?![^>]*data-region)[\s\S]*?<\/button><\/div>/,
+    );
+    expect(result.html).not.toMatch(
+      /data-region="savings-station"[\s\S]*?data-part="cta"[\s\S]*?data-region="cta-station"><\/div>/,
+    );
+  });
+
+  it("creates a station when the component itself was used as the region", () => {
+    const html =
+      '<section data-scene="close" id="close" data-start="0" data-duration="5">' +
+      '<div data-camera-world><div data-region="savings-station">' +
+      '<button data-part="cta" data-component="button" data-region="cta-station">Go</button>' +
+      '</div></div></section>';
+    const result = rehomeRegionComponents(html, [{
+      id: "close",
+      title: "Close",
+      purpose: "Land the CTA",
+      startSec: 0,
+      durationSec: 5,
+      components: [{ version: 1, id: "cta", kind: "button", region: "cta-station" }],
+    }]);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toMatch(
+      /<\/div><div data-region="cta-station"><button data-part="cta"(?![^>]*data-region)/,
+    );
+    expect(result.html.match(/data-region="cta-station"/g)).toHaveLength(1);
+  });
+
+  it("preserves a later ambiguous component after an earlier repair", () => {
+    const html =
+      '<section data-scene="close" id="close" data-start="0" data-duration="5">' +
+      '<div data-camera-world><div data-region="wrong">' +
+      '<button data-part="cta" data-component="button">Go</button></div>' +
+      '<div data-region="cta-station"></div>' +
+      '<div data-part="badge" data-component="badge" data-region="badge-station">New</div>' +
+      '</div><div data-camera-world></div></section>';
+    const result = rehomeRegionComponents(html, [{
+      id: "close",
+      title: "Close",
+      purpose: "Land the CTA",
+      startSec: 0,
+      durationSec: 5,
+      components: [
+        { version: 1, id: "cta", kind: "button", region: "cta-station" },
+        { version: 1, id: "badge", kind: "toast", region: "badge-station" },
+      ],
+    }]);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toContain('data-part="badge"');
+    expect(result.html).toContain('data-region="badge-station"');
   });
 });
 

@@ -11,8 +11,8 @@ if (!OUT.endsWith(path.join("demo-output", "slack-ad-luna"))) throw new Error(`r
 const fullRender = process.argv.includes("--render");
 const resume = process.argv.includes("--resume");
 const FPS = 30;
-const DURATION = 27;
-const representative = [0.45,1.35,2.35,3.7,5.72,6.45,7.85,9.25,10.2,11.15,12.35,13.72,14.45,15.3,16.65,17.75,18.65,19.7,20.6,21.4,22.55,23.4,24.15,26.1];
+const DURATION = 28;
+const representative = [0.45,1.35,2.35,3.7,5.72,6.45,7.85,9.25,10.2,11.15,12.35,13.72,14.45,15.3,17.45,18.75,19.65,20.7,21.6,22.4,23.55,24.4,25.15,27.1];
 
 function findBrowser(): string {
   const candidates = [
@@ -81,13 +81,13 @@ function focusFor(t: number): string {
   if (t < 9.7) return "#messy .typed";
   if (t < 12) return "#channel-modal";
   if (t < 12.6) return "#slack-window";
-  if (t < 13.9) return "#message-one p";
-  // The superzoom holds until ~16.3; the full row and window exceed the frame
+  if (t < 14.1) return "#message-one p";
+  // The superzoom holds until ~17.0; the full row and window exceed the frame
   // by design there, so the focal proof rides the typed reply text itself.
-  if (t < 16.25) return "#message-two p";
-  if (t < 17.1) return ".decision";
-  if (t < 19.4) return ".conversation";
-  if (t < 23.15) return t < 20.9 ? "#all-place" : "#all-slack";
+  if (t < 17.75) return "#message-two p";
+  if (t < 18.8) return ".decision";
+  if (t < 20.4) return ".conversation";
+  if (t < 24.15) return t < 21.9 ? "#all-place" : "#all-slack";
   return ".lockup";
 }
 
@@ -174,5 +174,5 @@ const report = {
   samples: qa, representativeHashes: hashes,
 };
 fs.writeFileSync(path.join(OUT, "qa-report.json"), JSON.stringify(report, null, 2));
-fs.writeFileSync(path.join(OUT, "README.txt"), `Slack ad Luna render\nDuration: 27.0 seconds\nAudio: none\nQA safe frame: ${report.safeFrame.ok ? "PASS" : "REVIEW"}\nSource: apps/slack/demos/slack-ad\n`);
+fs.writeFileSync(path.join(OUT, "README.txt"), `Slack ad Luna render\nDuration: ${DURATION.toFixed(1)} seconds\nAudio: none\nQA safe frame: ${report.safeFrame.ok ? "PASS" : "REVIEW"}\nSource: apps/slack/demos/slack-ad\n`);
 console.log(JSON.stringify({ output: OUT, mp4: fullRender, safeFrame: report.safeFrame.ok, unsafe: qa.filter((sample) => !sample.safe) }, null, 2));

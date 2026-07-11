@@ -64,6 +64,7 @@ import type { StoryboardPlanRequirements } from "./storyboardAudit.ts";
 import type { CompositionRunResult } from "./types.ts";
 import { cutSignatureBoundary, findingSignature } from "./findingSignatures.ts";
 import { HOST_CONTRACTS, hostContract } from "../hostContract.ts";
+import { normalizeSceneSlotScript } from "../sceneSlots.ts";
 
 export const MAX_REPAIR_PATCHES = 16;
 export const PATCH_RESPONSE_FORMAT: NonNullable<CompleteOptions["responseFormat"]> = {
@@ -480,8 +481,16 @@ export function reconcileCameraWorldPlanes(
   let repairs = 0;
   for (const scope of [...sceneScopeLocations(html)].reverse()) {
     if (!cameraSceneIds.has(scope.id)) continue;
-    const content = html.slice(scope.openEnd, scope.closeStart);
+    let content = html.slice(scope.openEnd, scope.closeStart);
     if (/\bdata-camera-world\b/i.test(content)) continue;
+    // Preserve percentage centering as the independent CSS translate property.
+    // GSAP component entrances own `transform` (scale/y); leaving centering in
+    // that same shorthand lets the first tween erase translate(-50%,-50%) and
+    // throws a large app window out of frame (PatchworkQC6 trail assembly).
+    content = content.replace(
+      /transform\s*:\s*translate\(\s*-50%\s*,\s*-50%\s*\)\s*;/gi,
+      "translate:-50% -50%;transform:none;",
+    );
     const wrapped =
       `\n<div data-camera-world style="${cameraWorldStyle(byId.get(scope.id))}">` +
       `${content}` +
@@ -1549,6 +1558,34 @@ function elementInnerContentAt(
   return undefined;
 }
 
+function elementBlockBoundsAt(
+  html: string,
+  opening: { tag: string; index: number },
+): { start: number; contentStart: number; contentEnd: number; end: number } | undefined {
+  const name = opening.tag.match(/^<([a-z][\w:-]*)\b/i)?.[1]?.toLowerCase();
+  if (!name || /\/>$/.test(opening.tag)) return undefined;
+  const contentStart = opening.index + opening.tag.length;
+  const walker = new RegExp(`<${regexpEscape(name)}\\b[^>]*>|</${regexpEscape(name)}\\s*>`, "gi");
+  walker.lastIndex = contentStart;
+  let depth = 1;
+  for (let step = walker.exec(html); step; step = walker.exec(html)) {
+    if (step[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          start: opening.index,
+          contentStart,
+          contentEnd: step.index,
+          end: step.index + step[0].length,
+        };
+      }
+    } else if (!/\/>$/.test(step[0])) {
+      depth += 1;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Some dense authored surfaces contain the real metric plus a hidden kit
  * placeholder carrying the storyboard binding. In that state a count beat
@@ -1814,6 +1851,114 @@ export function reconcileComponentBindings(
       (_match, prefix: string, quote: string, suffix: string) =>
         prefix + quote + rename.to + quote + suffix,
     );
+  }
+  return { html, repairs };
+}
+
+/**
+ * Put a typed component inside the camera station named by its `region`.
+ *
+ * Slot scaffolds already nest these correctly, but a source response can move
+ * the component into a sibling station while retaining the data-region label.
+ * The camera then travels to an empty station and the real CTA/value slides
+ * off-frame (MeterlyQC4). Rehome only the mechanically certain shape: one
+ * component root and one non-component station in the same scene. Ambiguous or
+ * void markup remains untouched for browser QA to report.
+ */
+export function rehomeRegionComponents(
+  source: string,
+  scenes: DirectScene[],
+): { html: string; repairs: number } {
+  let html = source;
+  let repairs = 0;
+  for (const scene of scenes) {
+    const scoped = [...sceneScopeLocations(html)].find((entry) => entry.id === scene.id);
+    if (!scoped) continue;
+    let scope = html.slice(scoped.openEnd, scoped.closeStart);
+    let changed = false;
+    for (const component of scene.components ?? []) {
+      if (!component.region || component.pluginUid) continue;
+      const openings = (value = scope): Array<{ tag: string; index: number }> =>
+        [...value.matchAll(/<[a-z][\w:-]*\b[^>]*>/gi)].map((match) => ({
+          tag: match[0],
+          index: match.index ?? 0,
+        }));
+      const componentTags = openings().filter((entry) =>
+        htmlAttr(entry.tag, "data-part") === component.id
+      );
+      const stationTags = openings().filter((entry) =>
+        htmlAttr(entry.tag, "data-region") === component.region &&
+        !htmlAttr(entry.tag, "data-part")
+      );
+      if (componentTags.length !== 1 || stationTags.length > 1) continue;
+      const componentBlock = elementBlockBoundsAt(scope, componentTags[0]!);
+      if (!componentBlock) continue;
+      const stripChildRegion = (value: string): string => value.replace(
+        /\sdata-region\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i,
+        "",
+      );
+
+      if (stationTags.length === 1) {
+        const stationBlock = elementBlockBoundsAt(scope, stationTags[0]!);
+        if (!stationBlock) continue;
+        if (
+          componentBlock.start >= stationBlock.contentStart &&
+          componentBlock.end <= stationBlock.contentEnd
+        ) {
+          if (htmlAttr(componentTags[0]!.tag, "data-region") === component.region) {
+            const cleanedTag = stripChildRegion(componentTags[0]!.tag);
+            scope = scope.slice(0, componentTags[0]!.index) + cleanedTag +
+              scope.slice(componentTags[0]!.index + componentTags[0]!.tag.length);
+            repairs += 1;
+            changed = true;
+          }
+          continue;
+        }
+
+        const componentHtml = stripChildRegion(
+          scope.slice(componentBlock.start, componentBlock.end),
+        );
+        const candidateScope =
+          scope.slice(0, componentBlock.start) + scope.slice(componentBlock.end);
+        const refreshedStation = openings(candidateScope).filter((entry) =>
+          htmlAttr(entry.tag, "data-region") === component.region &&
+          !htmlAttr(entry.tag, "data-part")
+        );
+        if (refreshedStation.length !== 1) continue;
+        const refreshedBlock = elementBlockBoundsAt(candidateScope, refreshedStation[0]!);
+        if (!refreshedBlock) continue;
+        scope = candidateScope.slice(0, refreshedBlock.contentEnd) + componentHtml +
+          candidateScope.slice(refreshedBlock.contentEnd);
+        repairs += 1;
+        changed = true;
+        continue;
+      }
+
+      // No station exists because the component itself was labeled as the
+      // region. Create the missing camera-world child and make the component a
+      // normal child of that station. A unique camera world is required.
+      if (htmlAttr(componentTags[0]!.tag, "data-region") !== component.region) continue;
+      const componentHtml = stripChildRegion(
+        scope.slice(componentBlock.start, componentBlock.end),
+      );
+      const candidateScope =
+        scope.slice(0, componentBlock.start) + scope.slice(componentBlock.end);
+      const worlds = openings(candidateScope).filter((entry) =>
+        /\bdata-camera-world\b/i.test(entry.tag)
+      );
+      if (worlds.length !== 1) continue;
+      const worldBlock = elementBlockBoundsAt(candidateScope, worlds[0]!);
+      if (!worldBlock) continue;
+      const station = `<div data-region="${component.region.replace(/["&<>]/g, "")}">` +
+        `${componentHtml}</div>`;
+      scope = candidateScope.slice(0, worldBlock.contentEnd) + station +
+        candidateScope.slice(worldBlock.contentEnd);
+      repairs += 1;
+      changed = true;
+    }
+    if (changed) {
+      html = html.slice(0, scoped.openEnd) + scope + html.slice(scoped.closeStart);
+    }
   }
   return { html, repairs };
 }
@@ -3438,6 +3583,31 @@ export interface SourceNormalizerContext {
 }
 
 /**
+ * Recover scene-slot arrow envelopes that were persisted before the slot
+ * assembler learned to unwrap them. The host already wraps every scene body
+ * in `(function (tl) { ... })(tl)`. If a model returned `(tl) => { ... }`, an
+ * older assembler nested that arrow as an uninvoked expression and silently
+ * disabled the entire scene's authored choreography. Re-run the same narrow
+ * slot normalizer over the body of canonical scene IIFEs; ordinary bodies are
+ * byte-preserved and only a complete arrow envelope is unwrapped.
+ */
+export function unwrapPersistedSceneSlotArrows(
+  source: string,
+): { html: string; repairs: number } {
+  let repairs = 0;
+  const html = source.replace(
+    /(\(function\s*\(\s*tl\s*\)\s*\{)([\s\S]*?)(\}\s*\)\s*\(\s*tl\s*\)\s*;)/g,
+    (match, prefix: string, body: string, suffix: string) => {
+      const normalized = normalizeSceneSlotScript(body);
+      if (!normalized.repairs.arrowEnvelope) return match;
+      repairs += normalized.repairs.arrowEnvelope;
+      return `${prefix}\n${normalized.script}\n${suffix}`;
+    },
+  );
+  return { html, repairs };
+}
+
+/**
  * Ordered deterministic source repair pipeline (WS-F1). Array order is
  * load-bearing: in particular, host compile injections must precede the time
  * wrapper and the two final ordering guards.
@@ -3500,6 +3670,23 @@ export const NORMALIZERS = [
         diagnostics: result.repairs
           ? [
               `[author] removed ${result.repairs} decorative SVG path placeholder(s) with invalid geometry\n`,
+            ]
+          : [],
+      };
+    },
+  },
+  {
+    id: "normalize.inline-source-syntax.persisted-scene-arrow",
+    telemetryTag: "scene-slot-arrow-envelope",
+    run: (html: string) => {
+      const result = unwrapPersistedSceneSlotArrows(html);
+      return {
+        state: result.html,
+        repairCount: result.repairs,
+        diagnostics: result.repairs
+          ? [
+              `[author] unwrapped ${result.repairs} persisted scene-slot arrow envelope(s) ` +
+              `inside host timeline IIFEs\n`,
             ]
           : [],
       };
@@ -4046,6 +4233,20 @@ export const NORMALIZERS = [
           : undefined,
         diagnostics: result.repairs
           ? [`[author] reconciled ${result.repairs} component binding(s)\n`]
+          : [],
+      };
+    },
+  },
+  {
+    id: "normalize.source-bindings.component-region-home",
+    telemetryTag: "component-region-home",
+    run: (html: string, { draft, lockedStoryboard }: SourceNormalizerContext) => {
+      const result = rehomeRegionComponents(html, lockedStoryboard ?? draft.storyboard);
+      return {
+        state: result.html,
+        repairCount: result.repairs,
+        diagnostics: result.repairs
+          ? [`[author] rehomed ${result.repairs} typed component(s) into declared camera station(s)\n`]
           : [],
       };
     },
@@ -4839,7 +5040,7 @@ export const NORMALIZERS = [
 export const SOURCE_SYNTAX_NORMALIZERS: readonly OrderedNormalizer<
   string,
   SourceNormalizerContext
->[] = NORMALIZERS.slice(0, 7);
+>[] = NORMALIZERS.slice(0, 8);
 
 export function runSourceSyntaxNormalizerRegistry(
   html: string,
