@@ -30,6 +30,10 @@
   var SWIPE_BLUR_PX = 6;
   // The cover panel fully hides the frame for ~3 frames spanning the swap.
   var COVER_HOLD_SEC = 0.1;
+  // A bridged cut needs an authored-looking outgoing phrase, not a clone that
+  // appears only a few frames before the scene swap. The resolved cut window
+  // remains authoritative: explicit shorter exits and short-scene clamps win.
+  var BRIDGE_OUTGOING_LEAD_SEC = 0.4;
 
   function sceneOf(root, id) {
     return root.querySelector('[data-scene="' + CSS.escape(id) + '"]');
@@ -56,17 +60,23 @@
     return layer;
   }
 
-  function flashElement(root) {
+  function tagCutElement(element, cut) {
+    element.setAttribute("data-sequences-cut-from", cut.fromScene);
+    element.setAttribute("data-sequences-cut-to", cut.toScene);
+  }
+
+  function flashElement(root, cut) {
     var layer = overlayLayer(root);
     var flash = document.createElement("div");
     flash.setAttribute("data-sequences-runtime-cut", "flash");
+    tagCutElement(flash, cut);
     flash.setAttribute("data-layout-ignore", "");
     flash.style.cssText = "position:absolute;inset:0;background:#fff;opacity:0";
     layer.appendChild(flash);
     return flash;
   }
 
-  function bridgeElement(root, source) {
+  function bridgeElement(root, source, cut) {
     var layer = overlayLayer(root);
     var bridge = source.cloneNode(true);
     // A transition clone is paint only. Strip every nested contract/id so
@@ -81,6 +91,7 @@
       clonedNodes[n].removeAttribute("data-layout-important");
     }
     bridge.setAttribute("data-sequences-runtime-cut", "bridge");
+    tagCutElement(bridge, cut);
     bridge.setAttribute("data-layout-ignore", "");
     bridge.style.position = "absolute";
     bridge.style.left = "0";
@@ -274,7 +285,7 @@
   }
 
   function bindFlash(timeline, cut, from, to, root) {
-    var flash = flashElement(root);
+    var flash = flashElement(root, cut);
     timeline.set(flash, { opacity: 0 }, 0);
     tween(timeline, from, { scale: 1 }, {
       scale: 1.05,
@@ -303,9 +314,9 @@
     var toPart = part(to, cut.focalPartIn);
     if (!fromPart) fail(cut, 'outgoing part "' + cut.focalPartOut + '" is absent');
     if (!toPart) fail(cut, 'incoming part "' + cut.focalPartIn + '" is absent');
-    var bridge = bridgeElement(root, fromPart);
-    var incomingBridge = bridgeElement(root, toPart);
-    var lead = Math.min(0.24, cut.exitSec);
+    var bridge = bridgeElement(root, fromPart, cut);
+    var incomingBridge = bridgeElement(root, toPart, cut);
+    var lead = Math.max(0, Math.min(BRIDGE_OUTGOING_LEAD_SEC, cut.exitSec, cut.atSec));
     var start = cut.atSec - lead;
     var settle = cut.entrySec;
     var proxy = { p: 0 };
@@ -369,6 +380,11 @@
   // zoom-through instead of flying a broken bridge. The audit is part of the
   // runtime compile step so QA and render run the identical decision.
   var SHAPE_ASPECT_LIMIT = 2.5;
+  // Small material shells survive a larger silhouette change because the
+  // bridge preserves each endpoint's internal layout with uniform scaling and
+  // crossfades detail around the midpoint. This is the toast -> metric-card
+  // class from the Meridian probe. Dense surfaces retain the conservative cap.
+  var LIGHT_SHELL_ASPECT_LIMIT = 3.5;
   var SHAPE_NODE_CAP = 60;
   var SHAPE_MIN_ONFRAME = 0.5;
   // Structure-mismatch (probe-audit-03: a row list morphing into a
@@ -432,8 +448,9 @@
       var cursor = node;
       while (cursor && cursor.nodeType === 1) {
         var style = getComputedStyle(cursor);
+        var hostAnimatedRoot = cursor === root && cursor.hasAttribute("data-component");
         if (style.display === "none" || style.visibility === "hidden" ||
-            (parseFloat(style.opacity || "1") || 0) <= 0.02) return false;
+            (!hostAnimatedRoot && (parseFloat(style.opacity || "1") || 0) <= 0.02)) return false;
         if (cursor === root) break;
         cursor = cursor.parentElement;
       }
@@ -499,9 +516,14 @@
     var aspectA = a.width / a.height;
     var aspectB = b.width / b.height;
     var ratio = Math.max(aspectA / aspectB, aspectB / aspectA);
-    if (ratio > SHAPE_ASPECT_LIMIT) {
+    var maxNodes = Math.max(
+      fromPart.querySelectorAll("*").length,
+      toPart.querySelectorAll("*").length,
+    );
+    var aspectLimit = maxNodes <= 12 ? LIGHT_SHELL_ASPECT_LIMIT : SHAPE_ASPECT_LIMIT;
+    if (ratio > aspectLimit) {
       return "focal silhouettes differ " + ratio.toFixed(1) +
-        "x in aspect ratio (cap " + SHAPE_ASPECT_LIMIT + "x)";
+        "x in aspect ratio (cap " + aspectLimit + "x)";
     }
     // Bridges are live clones; a heavy subtree doubles paint cost for the
     // whole flight, twice.
@@ -588,15 +610,15 @@
     var ECHO_OPACITIES = [];
     var ghosts = [];
     for (var g = 0; g < ECHO_DELAYS.length; g += 1) {
-      var ghost = bridgeElement(root, fromPart);
+      var ghost = bridgeElement(root, fromPart, cut);
       ghost.setAttribute("data-sequences-runtime-cut", "echo");
       ghosts.push(ghost);
     }
-    var bridgeA = bridgeElement(root, fromPart);
-    var bridgeB = bridgeElement(root, toPart);
+    var bridgeA = bridgeElement(root, fromPart, cut);
+    var bridgeB = bridgeElement(root, toPart, cut);
     var radiusA = radiusPx(fromPart);
     var radiusB = radiusPx(toPart);
-    var lead = Math.min(0.24, cut.exitSec);
+    var lead = Math.max(0, Math.min(BRIDGE_OUTGOING_LEAD_SEC, cut.exitSec, cut.atSec));
     var start = cut.atSec - lead;
     var settle = cut.entrySec;
     var total = lead + settle;

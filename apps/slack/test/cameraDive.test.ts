@@ -210,6 +210,39 @@ describe("deriveDiveWindows (the L2 arithmetic normalizer)", () => {
       storyboard[0]!.camera!.path.find((move) => move.move === "dive"),
     ).toBeDefined();
   });
+
+  it("retargets a sibling dive to the explicit interaction in the same station", () => {
+    const sibling = diveScene({
+      components: [
+        { version: 1, id: "release-card", kind: "stat-card", region: "focus-station" },
+        { version: 1, id: "approve-btn", kind: "button", region: "focus-station" },
+      ],
+      beats: [{
+        version: 1, id: "card-state", sceneId: "workbench", component: "release-card",
+        kind: "set-state", atSec: 3, durationSec: 0.5, toState: "ready",
+      }],
+      interactions: [{
+        version: 1, id: "approve", sceneId: "workbench", cursorId: "cursor",
+        targetPart: "approve-btn", action: "click", startSec: 3.2, arriveSec: 3.7,
+        pressSec: 3.8, releaseSec: 4, from: "frame:bottom-right", path: "arc",
+        aimX: 0.5, aimY: 0.5, feedback: "press-ripple",
+      }],
+      camera: {
+        version: 1,
+        path: [{
+          version: 1, move: "dive", toRegion: "focus-station", toPart: "release-card",
+          startSec: 2.2, durationSec: 5, zoom: 1.3,
+          focus: { part: "release-card", blurMaxPx: 6 },
+        }],
+      },
+    });
+    const result = deriveDiveWindows([sibling]);
+    const dive = result.storyboard[0]!.camera!.path[0]!;
+    expect(dive).toMatchObject({ move: "dive", toPart: "approve-btn" });
+    expect(dive.focus?.part).toBe("approve-btn");
+    expect(result.normalized.some((line) => line.includes("retargeted"))).toBe(true);
+    expect(auditDiveInteractions(result.storyboard)).toEqual([]);
+  });
 });
 
 describe("auditDiveInteractions", () => {

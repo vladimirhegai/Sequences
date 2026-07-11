@@ -315,7 +315,7 @@ note), `package.json` (`studio:canvas` script).
 `last-word-roulette` recipe files (see §1).
 
 **NOT touched by me** (pre-existing uncommitted work, left alone):
-`SENTINEL_PLAN.md`, `SENTINEL_REPORT.md`.
+the pre-existing Sentinel design and implementation-report files.
 
 **Live-pipeline code changed: none.** Everything shipped is additive studio
 tooling under `apps/slack/studio/` + a new test + docs. `SLACK_SEQUENCES_RECIPES=0`

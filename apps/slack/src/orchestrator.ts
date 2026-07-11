@@ -66,13 +66,14 @@ import {
   recordSentinelTierFromRunStart,
 } from "./engine/sentinelTelemetry.ts";
 import { sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./engine/sentinelFlags.ts";
+import { slackSequencesEnvRawValue } from "./engine/featureFlags.ts";
 
 /* ----------------------------------------------------------- provider choice */
 
 /** Default planning brain: a key-free CLI login, else the Anthropic API. */
 export function resolveProvider(explicit?: ProviderId): ProviderId {
   if (explicit) return explicit;
-  const env = process.env.SLACK_SEQUENCES_PROVIDER as ProviderId | undefined;
+  const env = slackSequencesEnvRawValue("SLACK_SEQUENCES_PROVIDER") as ProviderId | undefined;
   if (env && PROVIDERS[env]) return env;
   if (process.env.ANTHROPIC_API_KEY) return "anthropic-api";
   return "claude-code-cli";
@@ -81,7 +82,7 @@ export function resolveProvider(explicit?: ProviderId): ProviderId {
 /** MCP is opt-out: set SLACK_SEQUENCES_USE_MCP=0 only for local diagnosis. */
 export function mcpEnabled(prefer?: boolean): boolean {
   if (prefer !== undefined) return prefer;
-  return process.env.SLACK_SEQUENCES_USE_MCP !== "0";
+  return slackSequencesEnvRawValue("SLACK_SEQUENCES_USE_MCP") !== "0";
 }
 
 /* ------------------------------------------------------------------- briefs */
@@ -147,7 +148,9 @@ export function assembleBrief(fields: BriefFields): string {
  */
 export function canResumeFailedProject(
   dir: string,
-  recoverySelector = process.env.SLACK_SEQUENCES_RECOVER_REJECTED_STORYBOARD?.trim(),
+  recoverySelector = slackSequencesEnvRawValue(
+    "SLACK_SEQUENCES_RECOVER_REJECTED_STORYBOARD",
+  )?.trim(),
 ): boolean {
   return Boolean(
     recoverySelector &&
@@ -849,7 +852,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       const fullReason = failError instanceof Error ? failError.message : String(failError);
       const allowFallback =
         options.allowDeterministicFallback ??
-        process.env.SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK !== "0";
+        slackSequencesEnvRawValue("SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK") !== "0";
       // Always assemble + persist the full diagnostic — whether we fail loud or
       // ship the labeled safe film, the operator can retrieve the complete log
       // (stage, per-attempt findings, artifact paths) from FAILURE.md / Railway.

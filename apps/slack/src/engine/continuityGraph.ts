@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalCutStyle } from "./cutContract.ts";
 import type { DirectScene } from "./directComposition.ts";
+import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 
 export const CONTINUITY_RUNTIME_VERSION = 1;
 export const CONTINUITY_RUNTIME_FILE = "sequences-continuity.v1.js";
@@ -110,7 +111,12 @@ function classifyEntity(id: string, componentKind?: string): ContinuityEntityKin
 }
 
 export function continuityGraphEnabled(): boolean {
-  return process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH === "1";
+  // The exact-source A/B in PROBE_LOG proved the blocking director is the
+  // safer production path (substantially fewer off-frame samples and roughly
+  // half the focal jerk). Keep one release rollback, but make the proven path
+  // the default so an omitted Railway variable cannot silently restore the
+  // independent-shot camera.
+  return slackSequencesEnvRawValue("SLACK_SEQUENCES_CONTINUITY_GRAPH") !== "0";
 }
 
 /** Malformed/duplicate declarations degrade away; this feature never earns a retry. */

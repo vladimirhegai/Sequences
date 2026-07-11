@@ -5,8 +5,12 @@ import type {
   DirectBoundaryInventory,
 } from "../src/engine/layoutInspector.ts";
 import {
+  classifyCutDegradationReason,
+  cutDegradationBoundary,
   discoverShapeMatchUpgrade,
+  discoverShapeMatchUpgrades,
   scoreShapePair,
+  summarizeCutDegradationReasons,
 } from "../src/engine/cutDiscovery.ts";
 
 function part(overrides: Partial<BoundaryPartMeasurement> & { part: string }): BoundaryPartMeasurement {
@@ -116,7 +120,7 @@ describe("shape-match discovery policy", () => {
     expect(upgrade?.focalPartOut).toBe("query-pill");
   });
 
-  it("returns at most ONE upgrade per film — the best-scoring boundary", () => {
+  it("keeps the backward-compatible single decision on the best-scoring boundary", () => {
     const square = part({ part: "tile-a", width: 200, height: 200, radiusPx: 0 });
     const squareIn = part({ part: "tile-b", width: 200, height: 200, radiusPx: 0 });
     const upgrade = discoverShapeMatchUpgrade(
@@ -128,6 +132,45 @@ describe("shape-match discovery policy", () => {
     );
     // The perfect square→square rhyme outranks the pill→bar pair.
     expect(upgrade).toMatchObject({ fromScene: "two", focalPartOut: "tile-a" });
+  });
+
+  it("permits a second premium seam only when stable entity ids prove continuity", () => {
+    const tileOut = part({ part: "tile-a", width: 200, height: 200, radiusPx: 0 });
+    const tileIn = part({ part: "tile-b", width: 200, height: 200, radiusPx: 0 });
+    const scenes = [
+      scene("one", {
+        components: [{ version: 1, id: "query-pill", kind: "search", entityId: "query" }],
+      }),
+      scene("two", {
+        startSec: 3,
+        components: [
+          { version: 1, id: "status-bar", kind: "toast", entityId: "query" },
+          { version: 1, id: "tile-a", kind: "stat-card", entityId: "result" },
+        ],
+      }),
+      scene("three", {
+        startSec: 6,
+        components: [{ version: 1, id: "tile-b", kind: "stat-card", entityId: "result" }],
+      }),
+    ];
+    const upgrades = discoverShapeMatchUpgrades(scenes, [
+      boundary("one", "two", [rhymingPair.outgoing], [rhymingPair.incoming]),
+      boundary("two", "three", [tileOut], [tileIn]),
+    ]);
+    expect(upgrades).toHaveLength(2);
+    expect(upgrades.map((entry) => entry.sharedEntityId).sort()).toEqual(["query", "result"]);
+
+    const withoutIdentity = discoverShapeMatchUpgrades(
+      scenes.map((entry) => ({
+        ...entry,
+        components: entry.components?.map((component) => ({ ...component, entityId: undefined })),
+      })),
+      [
+        boundary("one", "two", [rhymingPair.outgoing], [rhymingPair.incoming]),
+        boundary("two", "three", [tileOut], [tileIn]),
+      ],
+    );
+    expect(withoutIdentity).toHaveLength(1);
   });
 
   it("prefers parts the storyboard names (component ids beat anonymous parts)", () => {
@@ -159,5 +202,72 @@ describe("shape-match discovery policy", () => {
       ],
     );
     expect(upgrade).toBeUndefined();
+  });
+});
+
+describe("cut degradation reason evidence (WS-D2)", () => {
+  it("classifies every current runtime mechanical reason and extracts its boundary", () => {
+    const samples = [
+      ["outgoing focal part has no visible painted content", "paint-invisible"],
+      ["a focal part measured zero size at bind time", "zero-size"],
+      ["focal silhouettes differ 7.9x in aspect ratio (cap 2.5x)", "aspect-ratio"],
+      ["focal surfaces have mismatched structure (2 vs 4 children, depth 1 vs 3)", "structure-mismatch"],
+      ["focal surfaces belong to different semantic families (collection vs metric)", "semantic-family"],
+      ["a focal part subtree exceeds 60 nodes", "subtree-complexity"],
+      ["incoming focal part is mostly outside the frame at bind time", "off-frame"],
+      ['incoming part "hero" is absent', "missing-endpoint"],
+    ] as const;
+    for (const [detail, reason] of samples) {
+      const warning = `cut_degraded: morph opener->proof compiled as swipe-left: ${detail}`;
+      expect(classifyCutDegradationReason(warning), detail).toBe(reason);
+      expect(cutDegradationBoundary(warning)).toBe("opener->proof");
+    }
+    expect(classifyCutDegradationReason("cut_degraded")).toBeUndefined();
+    expect(classifyCutDegradationReason("cut_degraded:opener->proof")).toBeUndefined();
+    expect(classifyCutDegradationReason("camera_framed_sparse: opener->proof")).toBeUndefined();
+  });
+
+  it("deduplicates warning/finding/signature encodings per project boundary and reason", () => {
+    const summary = summarizeCutDegradationReasons([
+      {
+        source: "meridian",
+        message: "cut_degraded: morph chaos-open->triage-demo compiled as swipe-left: outgoing focal part has no visible painted content",
+      },
+      {
+        source: "meridian",
+        message: "cut_degraded [data-part=alert-stack]: morph cut chaos-open->triage-demo degraded it to swipe-left: outgoing focal part has no visible painted content",
+      },
+      { source: "meridian", message: "cut_degraded:chaos-open->triage-demo" },
+      {
+        source: "meridian-rerender",
+        message: "cut_degraded: morph chaos-open->triage-demo compiled as swipe-left: outgoing focal part has no visible painted content",
+      },
+      {
+        source: "meridian",
+        message: "cut_degraded: morph chaos-open->triage-demo compiled as swipe-left: focal silhouettes differ 3.7x in aspect ratio (cap 2.5x)",
+      },
+      {
+        source: "older-probe",
+        message: "cut_degraded: morph table->close compiled as swipe-right: focal surfaces have mismatched structure (4 vs 1 children, depth 3 vs 1)",
+      },
+    ]);
+    expect(summary.total).toBe(4);
+    expect(summary.counts).toEqual([
+      { reason: "paint-invisible", count: 2, boundaries: ["chaos-open->triage-demo"] },
+      { reason: "aspect-ratio", count: 1, boundaries: ["chaos-open->triage-demo"] },
+      { reason: "structure-mismatch", count: 1, boundaries: ["table->close"] },
+    ]);
+    expect(summary.unclassifiedSamples).toEqual([]);
+  });
+
+  it("retains bounded samples for genuinely new reason text", () => {
+    const summary = summarizeCutDegradationReasons([
+      {
+        source: "future",
+        message: "cut_degraded: morph a->b compiled as swipe-left: endpoint colors disagree",
+      },
+    ]);
+    expect(summary.counts[0]).toMatchObject({ reason: "unknown", count: 1 });
+    expect(summary.unclassifiedSamples[0]).toContain("endpoint colors disagree");
   });
 });

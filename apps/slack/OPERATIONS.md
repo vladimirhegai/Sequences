@@ -85,8 +85,11 @@ changes. Run those; they are not repeated here.
 
 The deterministic demos and MCP smoke do not call a paid model. `film:demo`
 exercises typed cuts and writes compact temporal evidence under the ignored
-project data directory. `npm run test --workspace @sequences/slack` includes
-the static motion-density liveness guard that feeds live authoring repairs.
+project data directory. Use `npm run test:unit --workspace @sequences/slack`
+for the fast inner loop and `npm run test:browser --workspace @sequences/slack`
+for the explicit Chrome suite; `npm run test --workspace @sequences/slack`
+runs both projects and includes the static motion-density guard that feeds live
+authoring repairs.
 `sequence:check -- --demo` runs the same create/preview plumbing as a local
 Slack-free simulator and writes a consolidated report under
 `<project>/build/qa/sequence-check.{json,md}`.
@@ -227,12 +230,12 @@ OPENROUTER_API_KEY=sk-or-v1-...
 # SLACK_SEQUENCES_STORYBOARD_THINKING=medium # reasoning-effort override (storyboard)
 # SLACK_SEQUENCES_AUTHOR_THINKING=none # reasoning-effort override (source author)
 #   auto|none|minimal|low|medium|high|xhigh|max; unset keeps built-in defaults.
-# SLACK_SEQUENCES_INTERACTION_QA=enforce
+# SLACK_SEQUENCES_INTERACTION_QA=block # or audit (report-only)
 # When storyboard/source authoring is exhausted, the labeled model-free proof
 # film ships by DEFAULT (VideoResult.fallback + the Slack fallback banner +
 # `/sequences debug on` receipts keep it honest). Set to 0 to FAIL LOUD instead:
 # no video/storyboard, Slack shows the full diagnostic log + a FAILURE.md is
-# written to the project dir (see FALLBACKS.md). ⚠️ Prep-mode is currently 0
+# written to the project dir (see SENTINEL.md). ⚠️ Prep-mode is currently 0
 # (fail-loud) so failures are visible — SET IT BACK TO 1 (or unset) ON RAILWAY
 # BEFORE JUDGES TEST so a stray failure degrades to the labeled film, not a raw log:
 # SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0
@@ -246,6 +249,11 @@ OPENROUTER_API_KEY=sk-or-v1-...
 # ANTHROPIC_API_KEY=sk-ant-...
 # SEQUENCES_ANTHROPIC_MODEL=claude-sonnet-4-6
 ```
+
+The complete behavior-switch/default/rollback table is maintained once in
+[SENTINEL.md](SENTINEL.md#behavior-switch-table); operational model, timeout,
+directory, and budget inputs are classified in `src/engine/featureFlags.ts`.
+Do not add an unregistered `SLACK_SEQUENCES_*` variable to Railway.
 
 **Do not add:** `PORT` (Railway injects it), `SLACK_SIGNING_SECRET` (Socket Mode),
 `NODE_ENV`/`HOST`/`SLACK_SEQUENCES_DATA_DIR`/`PUPPETEER_EXECUTABLE_PATH`/
@@ -396,8 +404,10 @@ can coexist — and vice versa.
   the request did not reach GLM or DeepSeek.
 - A result whose scene ids are `fallback-hook`, `fallback-proof`, and
   `fallback-close` is the model-free proof, not model-authored creative output.
-  Normal creates no longer publish it; check whether the emergency fallback
-  variable was enabled.
+  It is the default audience safety net after creative recovery is exhausted;
+  check the named failure stage and [SENTINEL.md](SENTINEL.md#fallback-contract).
+  Prep/probe runs should set the fallback flag to `0` so the same failure writes
+  `FAILURE.md` instead.
 - `storyboard-plan` truncation: verify the current code logs a 30,720-token GLM
   budget and a lower-reasoning second attempt. A 16,384-token line means the
   deployment is stale.

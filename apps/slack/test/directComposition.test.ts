@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ProviderOutputTruncatedError,
@@ -36,6 +37,8 @@ import {
   injectBrandBase,
   brandBaseStyleBlock,
   StoryboardValidationError,
+  auditDisplayTypeBudget,
+  injectDisplayTypeMoments,
 } from "../src/engine/compositionRunner.ts";
 import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
 import {
@@ -58,9 +61,13 @@ import {
 } from "../src/engine/gradeShift.ts";
 import {
   inspectDirectComposition,
+  publishCanonicalVisionEvidence,
+  visionCriticDraftHash,
   type DirectBrowserQaResult,
   type DirectLayoutIssue,
 } from "../src/engine/layoutInspector.ts";
+import { applyContinuityCritique } from "../src/engine/runner/ladder.ts";
+import { OPENROUTER_VISION_CRITIC_MODEL } from "../src/engine/modelPolicy.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
 import { buildJobFrame } from "../src/engine/frameDesign.ts";
@@ -68,6 +75,10 @@ import { injectCinemaKit } from "../src/engine/cinemaKit.ts";
 import { injectCameraRuntimeTag } from "../src/engine/cameraContract.ts";
 import { injectComponentKit } from "../src/engine/componentContract.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
+import {
+  assembleSlotComposition,
+  extractSceneSlots,
+} from "../src/engine/sceneSlots.ts";
 
 // The authoring-loop suites below prove the LEGACY whole-doc path, which stays
 // supported behind `SLACK_SEQUENCES_SENTINEL_SKELETON=0` /
@@ -78,6 +89,11 @@ import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 // test/promptBudget.test.ts, and the live probe set.
 process.env.SLACK_SEQUENCES_SENTINEL_SKELETON = "0";
 process.env.SLACK_SEQUENCES_SENTINEL_SLOTS = "0";
+// This suite proves the legacy whole-document author ladder with byte-exact
+// expected HTML. Continuity default-on injection has its own graph/runtime
+// suites; keep these fixtures on the explicit one-release rollback path.
+process.env.SLACK_SEQUENCES_CONTINUITY_GRAPH = "0";
+process.env.SLACK_SEQUENCES_ENVIRONMENT = "0";
 
 /** Every published draft carries the host-injected runtimes and kits. */
 function withHostInjections(html: string): string {
@@ -107,8 +123,12 @@ function withHostInjections(html: string): string {
   return injectCinemaKit(injectComponentKit(injectCameraRuntimeTag(withCinemaProfile)));
 }
 
-vi.mock("../src/engine/layoutInspector.ts", () => ({
-  inspectDirectComposition: vi.fn(async () => ({
+vi.mock("../src/engine/layoutInspector.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/engine/layoutInspector.ts")>();
+  return {
+    ...actual,
+    publishCanonicalVisionEvidence: vi.fn(),
+    inspectDirectComposition: vi.fn(async () => ({
     ok: true,
     strictOk: true,
     samples: [0, 2, 4, 6, 8],
@@ -150,8 +170,9 @@ vi.mock("../src/engine/layoutInspector.ts", () => ({
     issues: [],
     errors: [],
     warnings: [],
-  })),
-}));
+    })),
+  };
+});
 
 const roots: string[] = [];
 
@@ -1593,6 +1614,65 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     })).toBe(1);
   });
 
+  it("ranks fuller, on-anchor, settled blocking evidence ahead of a rough landing", () => {
+    const evidence = {
+      version: 1 as const,
+      advisory: true as const,
+      planSummary: {
+        phraseCount: 1,
+        explicitTargetCount: 1,
+        primaryPhraseCount: 1,
+        primaryWithReadableLandingCount: 1,
+      },
+      landings: [{
+        blockId: "proof:block",
+        sceneId: "proof",
+        phraseId: "proof:01",
+        time: 2,
+        importance: "primary" as const,
+        target: { kind: "part" as const, id: "hero" },
+        measured: true,
+        visibleFraction: 1,
+        occupancyFraction: 0.2,
+        occupancyInRange: true,
+        anchorError: 0.04,
+        speed: 0.006,
+        dwellSec: 0.8,
+      }],
+      trajectories: [],
+      continuityEdges: [],
+      summary: {
+        landingCount: 1,
+        measuredLandingCount: 1,
+        visibleLandingCount: 1,
+        occupancyInRangeCount: 1,
+        primaryLandingCount: 1,
+        primaryReadableCount: 1,
+        threeShotEntityCount: 1,
+        peakSpeed: 0.006,
+        peakAcceleration: 0.02,
+        peakJerk: 0.1,
+      },
+      advisories: [],
+    };
+    const controlled: DirectBrowserQaResult = { ...base, cameraBlockingEvidence: evidence };
+    const rough: DirectBrowserQaResult = {
+      ...base,
+      cameraBlockingEvidence: {
+        ...evidence,
+        landings: [{
+          ...evidence.landings[0]!,
+          occupancyInRange: false,
+          anchorError: 0.28,
+          speed: 0.09,
+        }],
+      },
+    };
+
+    expect(browserQualityPenalty(controlled)).toBe(0);
+    expect(browserQualityPenalty(rough)).toBeGreaterThan(browserQualityPenalty(controlled));
+  });
+
   it("normalizes measurement jitter out of stagnation keys (digit-stripped)", () => {
     // The same defect re-measured: contrast moved 4.4:1 → 3.39:1 and the
     // window shifted, but the defect LIST is unchanged — the classKey
@@ -1899,6 +1979,510 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
   });
 });
 
+describe("WS-I critic adoption transaction", () => {
+  const evidence = (label: string, draftHash?: string) => {
+    const strip = Buffer.from(`strip:${label}`).toString("base64");
+    const digest = createHash("sha256").update(Buffer.from(strip, "base64")).digest("hex");
+    return {
+      version: 1 as const,
+      draftHash: draftHash ?? createHash("sha256").update(`draft:${label}`).digest("hex"),
+      evidenceHash: createHash("sha256").update(`evidence:${label}`).digest("hex"),
+      stripPngBase64: strip,
+      stripSha256: digest,
+      stripPath: path.join("build", "qa", "critic", label, "strip.png"),
+      manifestPath: path.join("build", "qa", "critic", label, "evidence.json"),
+      stripTimes: [1],
+      blockingTimes: [],
+    };
+  };
+
+  const longDraft = (): DirectCompositionDraft => {
+    const value = draft();
+    value.storyboard[1] = { ...value.storyboard[1]!, durationSec: 6 };
+    value.html = value.html
+      .replace('data-duration="8"', 'data-duration="10"')
+      .replace(
+        'data-scene="payoff" data-start="4" data-duration="4"',
+        'data-scene="payoff" data-start="4" data-duration="6"',
+      )
+      .replace('tl.set("#payoff", { opacity: 0 }, 8);', 'tl.set("#payoff", { opacity: 0 }, 10);');
+    return value;
+  };
+
+  const cleanQa = (): DirectBrowserQaResult => ({
+    ok: true,
+    strictOk: true,
+    samples: [0, 4, 8],
+    issues: [],
+    errors: [],
+    warnings: [],
+  });
+
+  it("never sends critic images to the configured text-only OpenRouter source model", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    // This recreates the dangerous inheritance path: `primary` omits a
+    // storyboard override, so OpenRouter would otherwise fall through to the
+    // configured source model while retaining the PNG attachments.
+    vi.stubEnv("SLACK_SEQUENCES_STORYBOARD_MODEL", "primary");
+    vi.stubEnv("SEQUENCES_OPENROUTER_MODEL", "deepseek/deepseek-v4-pro");
+    const value = longDraft();
+    const dir = projectDir();
+    const visualQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence(
+        "source-model-route",
+        visionCriticDraftHash(dir, value),
+      ),
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(visualQa);
+    const complete = vi.fn().mockResolvedValue(JSON.stringify({
+      verdict: "ship",
+      directives: [],
+    }));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "capability-safe visual critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: cleanQa(),
+      });
+
+      expect(result.draft).toBe(value);
+      expect(result.browserQa).toBe(visualQa);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(complete.mock.calls[0]?.[1]).toMatchObject({
+        images: expect.any(Array),
+        model: OPENROUTER_VISION_CRITIC_MODEL,
+        thinkingMode: "minimal",
+      });
+      expect(complete.mock.calls[0]?.[1]?.images).toHaveLength(1);
+      expect(complete.mock.calls[0]?.[1]?.model).not.toBe("deepseek/deepseek-v4-pro");
+      expect(complete.mock.calls[0]?.[1]?.model).not.toBe("z-ai/glm-5.2");
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("fails safe before dispatch when an API provider has no audited image model", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    const value = longDraft();
+    const dir = projectDir();
+    const visualQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence(
+        "unsupported-api-route",
+        visionCriticDraftHash(dir, value),
+      ),
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(visualQa);
+    const complete = vi.fn();
+    const provider: AgentProvider = {
+      id: "deepseek-api",
+      label: "text-only API critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const before = {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: cleanQa(),
+      };
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, before);
+
+      expect(result.draft).toBe(before.draft);
+      expect(result.browserQa).toBe(visualQa);
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("uses the fresh visual baseline and publishes only the accepted candidate generation", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "0");
+    const value = longDraft();
+    const dir = projectDir();
+    const staleQa = cleanQa();
+    const baselineEvidence = evidence("baseline", visionCriticDraftHash(dir, value));
+    const deterministicCandidate = applyDeterministicSourceRepairs({
+      storyboard: value.storyboard,
+      html: value.html.replace("Ship with nerve.", "Ship with clarity."),
+    }, dir, value.storyboard);
+    const candidateEvidence = evidence(
+      "candidate",
+      visionCriticDraftHash(dir, deterministicCandidate),
+    );
+    const freshBaseline = {
+      ...cleanQa(),
+      strictOk: false,
+      issues: [{
+        code: "camera_blocking_landing",
+        severity: "warning" as const,
+        time: 6,
+        selector: "[data-part=payoff]",
+        message: "rough landing",
+        source: "sequences" as const,
+      }],
+      visionCriticEvidence: baselineEvidence,
+    };
+    const candidateQa = {
+      ...cleanQa(),
+      issues: [{
+        code: "composition_washed_out",
+        severity: "warning" as const,
+        time: 8,
+        selector: "[data-part=payoff]",
+        message: "low focal separation",
+        source: "sequences" as const,
+      }],
+      warnings: ["composition_washed_out: low focal separation"],
+      visionCriticEvidence: candidateEvidence,
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector
+      .mockResolvedValueOnce(freshBaseline)
+      .mockResolvedValueOnce(candidateQa);
+    const publisher = vi.mocked(publishCanonicalVisionEvidence);
+    publisher.mockClear();
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        verdict: "repair",
+        directives: ["Strengthen the final value hierarchy."],
+      }))
+      .mockResolvedValueOnce(patchResponse("Ship with nerve.", "Ship with clarity."));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "test critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: staleQa,
+      });
+
+      // Candidate penalty 3 would regress the stale penalty-0 report, but it
+      // improves the fresh visual baseline's penalty 8 and is therefore valid.
+      expect(result.draft.html).toContain("Ship with clarity.");
+      expect(result.browserQa).toBe(candidateQa);
+      expect(complete).toHaveBeenCalledTimes(2);
+      expect(complete.mock.calls[0]?.[1]?.images).toHaveLength(1);
+      expect(publisher).toHaveBeenCalledTimes(1);
+      expect(publisher).toHaveBeenCalledWith(expect.any(String), candidateEvidence);
+      expect(inspector.mock.calls[0]?.[2]).toMatchObject({
+        captureGuide: false,
+        captureVisualReview: true,
+      });
+      expect(inspector.mock.calls[1]?.[2]).toMatchObject({
+        captureGuide: false,
+        captureVisualReview: true,
+        publishVisualReview: false,
+      });
+      expect(inspector.mock.invocationCallOrder[1])
+        .toBeLessThan(publisher.mock.invocationCallOrder[0]!);
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("rejects the repaired film when final evidence publication fails", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "0");
+    const value = longDraft();
+    const dir = projectDir();
+    const baselineQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence("publish-baseline", visionCriticDraftHash(dir, value)),
+    };
+    const deterministicCandidate = applyDeterministicSourceRepairs({
+      storyboard: value.storyboard,
+      html: value.html.replace("Ship with nerve.", "Ship with rollback."),
+    }, dir, value.storyboard);
+    const candidateQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence(
+        "publish-candidate",
+        visionCriticDraftHash(dir, deterministicCandidate),
+      ),
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(baselineQa).mockResolvedValueOnce(candidateQa);
+    const publisher = vi.mocked(publishCanonicalVisionEvidence);
+    publisher.mockReset();
+    publisher.mockImplementationOnce(() => {
+      throw new Error("simulated atomic publish failure");
+    });
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        verdict: "repair",
+        directives: ["Strengthen the final resolve."],
+      }))
+      .mockResolvedValueOnce(patchResponse("Ship with nerve.", "Ship with rollback."));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "test critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: cleanQa(),
+      });
+      expect(result.draft).toBe(value);
+      expect(result.browserQa).toBe(baselineQa);
+      expect(result.draft.html).not.toContain("Ship with rollback.");
+      expect(complete).toHaveBeenCalledTimes(2);
+      expect(publisher).toHaveBeenCalledTimes(1);
+    } finally {
+      publisher.mockReset();
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("applies the same unpublished-evidence transaction to a scene-scoped repair", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "1");
+    const dir = projectDir();
+    const storyboard = longDraft().storyboard;
+    const initialSlots = extractSceneSlots([
+      "<film_style>.critic-panel{width:1200px;padding:80px;color:#fff;background:#111}</film_style>",
+      '<scene_html id="hook"><div class="critic-panel" data-layout-important ' +
+        'data-layout-anchor="frame:center"><h1 class="hook-copy">Trace the impossible.</h1></div></scene_html>',
+      '<scene_script id="hook">tl.fromTo(".hook-copy",{opacity:0,y:40},' +
+        '{opacity:1,y:0,duration:.7},.2);</scene_script>',
+      '<scene_html id="payoff"><div class="critic-panel" data-layout-important ' +
+        'data-layout-anchor="frame:center"><h1 class="payoff-copy">Ship with nerve.</h1></div></scene_html>',
+      '<scene_script id="payoff">tl.fromTo(".payoff-copy",{opacity:0,scale:.9},' +
+        '{opacity:1,scale:1,duration:.7},4.2);</scene_script>',
+    ].join("\n"));
+    const compositionId = `${path.basename(dir).replace(/[^a-zA-Z0-9_-]/g, "-")}-slots`;
+    const initialDraft = applyDeterministicSourceRepairs({
+      storyboard,
+      html: assembleSlotComposition({ storyboard, slots: initialSlots, compositionId }).html,
+    }, dir, storyboard);
+    const repairRaw = [
+      '<scene_html id="payoff"><div class="critic-panel" data-layout-important ' +
+        'data-layout-anchor="frame:center"><h1 class="payoff-copy">Ship with clarity.</h1></div></scene_html>',
+      '<scene_script id="payoff">tl.fromTo(".payoff-copy",{opacity:0,scale:.88},' +
+        '{opacity:1,scale:1,duration:.8},4.15);</scene_script>',
+    ].join("\n");
+    const repairedSlots = extractSceneSlots(repairRaw);
+    const mergedSlots = {
+      ...initialSlots,
+      scenes: new Map(initialSlots.scenes),
+      order: [...initialSlots.order],
+    };
+    mergedSlots.scenes.set("payoff", {
+      ...mergedSlots.scenes.get("payoff"),
+      ...repairedSlots.scenes.get("payoff"),
+    });
+    const deterministicCandidate = applyDeterministicSourceRepairs({
+      storyboard,
+      html: assembleSlotComposition({ storyboard, slots: mergedSlots, compositionId }).html,
+    }, dir, storyboard);
+    const baselineQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence(
+        "slot-baseline",
+        visionCriticDraftHash(dir, initialDraft),
+      ),
+    };
+    const candidateEvidence = evidence(
+      "slot-candidate",
+      visionCriticDraftHash(dir, deterministicCandidate),
+    );
+    const candidateQa = {
+      ...cleanQa(),
+      visionCriticEvidence: candidateEvidence,
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(baselineQa).mockResolvedValueOnce(candidateQa);
+    const publisher = vi.mocked(publishCanonicalVisionEvidence);
+    publisher.mockClear();
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        verdict: "repair",
+        directives: ["payoff: strengthen the final value hierarchy."],
+      }))
+      .mockResolvedValueOnce(repairRaw);
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "slot critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: storyboard,
+      }, {
+        draft: initialDraft,
+        raw: "slot baseline",
+        attempts: 1,
+        browserQa: cleanQa(),
+        slots: initialSlots,
+      });
+      expect(result.draft.html).toContain("Ship with clarity.");
+      expect(result.browserQa).toBe(candidateQa);
+      expect(result.slots?.scenes.get("payoff")?.html).toContain("Ship with clarity.");
+      expect(complete).toHaveBeenCalledTimes(2);
+      expect(inspector.mock.calls[1]?.[2]).toMatchObject({
+        captureVisualReview: true,
+        publishVisualReview: false,
+      });
+      expect(publisher).toHaveBeenCalledWith(dir, candidateEvidence);
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("keeps the pre-critique draft when the enabled vision transport is unavailable", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    const value = longDraft();
+    const dir = projectDir();
+    const visualQa = {
+      ...cleanQa(),
+      visionCriticEvidence: evidence("unsupported", visionCriticDraftHash(dir, value)),
+    };
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(visualQa);
+    const complete = vi.fn();
+    const provider: AgentProvider = {
+      id: "antigravity-cli",
+      label: "unsupported visual critic",
+      kind: "cli",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const before = {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: cleanQa(),
+      };
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: dir,
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, before);
+      expect(result.draft).toBe(before.draft);
+      expect(result.browserQa).toBe(visualQa);
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+
+  it("retains the legacy text critic when the independent vision switch is off", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "0");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "0");
+    const value = longDraft();
+    const inspector = vi.mocked(inspectDirectComposition);
+    const priorInspector = inspector.getMockImplementation();
+    inspector.mockClear();
+    inspector.mockResolvedValueOnce(cleanQa());
+    const publisher = vi.mocked(publishCanonicalVisionEvidence);
+    publisher.mockClear();
+    const complete = vi.fn()
+      .mockResolvedValueOnce(JSON.stringify({
+        verdict: "repair",
+        directives: ["Tighten the final resolve."],
+      }))
+      .mockResolvedValueOnce(patchResponse("Ship with nerve.", "Ship with confidence."));
+    const provider: AgentProvider = {
+      id: "antigravity-cli",
+      label: "text-only critic",
+      kind: "cli",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    try {
+      const result = await applyContinuityCritique(provider, {
+        brief: "Launch Relay",
+        projectDir: projectDir(),
+        skills: skills(),
+        lockedStoryboard: value.storyboard,
+      }, {
+        draft: value,
+        raw: response(value),
+        attempts: 1,
+        browserQa: cleanQa(),
+      });
+      expect(result.draft.html).toContain("Ship with confidence.");
+      expect(complete).toHaveBeenCalledTimes(2);
+      expect(complete.mock.calls[0]?.[1]?.images).toBeUndefined();
+      expect(publisher).not.toHaveBeenCalled();
+    } finally {
+      inspector.mockImplementation(priorInspector!);
+    }
+  });
+});
+
 describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
   const cameraScene = (
     id: string,
@@ -1958,13 +2542,32 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
       qa([sparseIssue("lonely", 0.1, { region: "lonely" })]),
     );
     expect(result.corrected).toEqual(["lonely"]);
-    // sqrt(0.22/0.1) = 1.483..., with headroom beyond the 18% audit floor.
+    // sqrt(0.26/0.1) = 1.612..., with whole-cell headroom beyond the 17.5% grid floor.
     const zoom = result.storyboard[0]!.camera!.path[0]!.zoom!;
-    expect(zoom).toBeCloseTo(1.483, 2);
+    expect(zoom).toBeCloseTo(1.612, 2);
     expect(zoom).toBeGreaterThan(1.05);
     expect(result.storyboard[0]!.camera!.path[0]!.framingCorrection).toBe("camera-sparse-zoom");
     // The input storyboard is never mutated in place.
     expect(storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
+  });
+
+  it("tightens a declared station box before adding camera zoom (WS-A2)", () => {
+    const scene: DirectScene = {
+      ...cameraScene("compact", "metric-station"),
+      worldLayout: [{ region: "metric-station", cell: [0, 0] }],
+    };
+    const result = correctSparseFraming(
+      [scene],
+      qa([sparseIssue("compact", 0.1, { region: "metric-station" })]),
+    );
+    expect(result.corrected).toEqual(["compact"]);
+    expect(result.stationSized).toEqual(["compact/metric-station"]);
+    expect(result.storyboard[0]!.worldLayout![0]!.fitScale).toBeCloseTo(0.62, 2);
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeUndefined();
+    expect(scene.worldLayout![0]!.fitScale).toBeUndefined();
+
+    const styled = injectWorldLayoutStyles(draft().html, result.storyboard);
+    expect(styled.html).toContain("width:868px !important;height:496px !important");
   });
 
   it("clamps the zoom factor at the camera contract ceiling for an extremely sparse landing", () => {
@@ -1972,7 +2575,7 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
       [cameraScene("tiny", "tiny")],
       qa([sparseIssue("tiny", 0.02, { region: "tiny" })]),
     );
-    // sqrt(0.22/0.02) > 3 -> clamped to the camera contract's 2.8 ceiling.
+    // sqrt(0.26/0.02) > 3 -> clamped to the camera contract's 2.8 ceiling.
     expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeCloseTo(2.8, 5);
   });
 
@@ -2224,6 +2827,75 @@ describe("correctLayoutOverflow (browser-measured overflow repair)", () => {
 });
 
 describe("direct HyperFrames composition", () => {
+  it("budgets one typed ghost word and injects its bounded host-owned moment idempotently", () => {
+    const value = draft();
+    const scenes = value.storyboard.map((scene, index): DirectScene => index === 0
+      ? {
+          ...scene,
+          displayType: {
+            version: 1,
+            kind: "ghost-word",
+            text: "SHIP IT",
+            atSec: scene.startSec + 0.5,
+            focalPart: "hero",
+          },
+        }
+      : scene);
+    expect(auditDisplayTypeBudget(scenes)).toEqual([]);
+    const first = injectDisplayTypeMoments(value.html, scenes);
+    expect(first.injected).toEqual([scenes[0]!.id]);
+    expect(first.html).toContain('data-sequences-display-type="ghost-word"');
+    expect(first.html).toContain('data-display-focal="hero"');
+    expect(first.html).toContain("SHIP IT");
+    expect(first.html).toContain(".fromTo(");
+    expect(first.html).toContain("getBoundingClientRect()");
+    expect(first.html).toContain("focalScale*.34");
+    expect(first.html).not.toContain("clamp(92px,16vw,280px)");
+    expect(injectDisplayTypeMoments(first.html, scenes).html).toBe(first.html);
+
+    const duplicated = scenes.map((scene, index): DirectScene => index === 1
+      ? {
+          ...scene,
+          displayType: {
+            version: 1,
+            kind: "ghost-word",
+            text: "TOO MANY",
+            atSec: scene.startSec + 0.5,
+            focalPart: "proof",
+          },
+        }
+      : scene);
+    expect(auditDisplayTypeBudget(duplicated).join("\n")).toContain(
+      "display_type_budget_exceeded",
+    );
+  });
+
+  it("integrates one canonical host environment and stages only its selected wallpaper", () => {
+    const dir = projectDir();
+    const value = draft();
+    process.env.SLACK_SEQUENCES_ENVIRONMENT = "1";
+    try {
+      const first = applyDeterministicSourceRepairs(value, dir, value.storyboard);
+      expect(first.html).toContain('id="sequences-environment"');
+      expect(first.html).toContain('id="sequences-environment-kit"');
+      expect(first.html).toContain('src="sequences-environment.v1.js"');
+      expect(first.html).toContain("SequencesEnvironment.compile(tl");
+      expect(first.html.match(/data-sequences-environment=/g)).toHaveLength(
+        value.storyboard.length,
+      );
+      const wallpaper = first.html.match(
+        /src="(assets\/wallpapers\/[^"]+\.jpg)(?:\?seq-scene=[^"]+)?"/,
+      )?.[1];
+      expect(wallpaper).toBeTruthy();
+      expect(fs.existsSync(path.join(dir, wallpaper!))).toBe(true);
+      expect(fs.existsSync(path.join(dir, "assets", "wallpapers", "LICENSE"))).toBe(true);
+      const second = applyDeterministicSourceRepairs(first, dir, value.storyboard);
+      expect(second.html).toBe(first.html);
+    } finally {
+      process.env.SLACK_SEQUENCES_ENVIRONMENT = "0";
+    }
+  });
+
   it("parses the bounded author response contract", () => {
     const value = draft();
     expect(parseCompositionResponse(response(value))).toEqual(value);

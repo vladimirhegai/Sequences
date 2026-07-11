@@ -3,8 +3,7 @@
 The lightweight "start here for the next session" pointer. The detailed
 inventories live in [ROADMAP.md](../../ROADMAP.md) (feature-by-feature current state),
 [SENTINEL.md](../../SENTINEL.md)/[SENTINEL_REPORT.md](SENTINEL_REPORT.md) (the
-correctness system + its shipped evidence), and [FALLBACKS.md](../../FALLBACKS.md)
-(fallback classes + the recoverable-paperwork catalog). This file is just the
+current correctness/fallback contract + its shipped evidence). This file is just the
 map + the ordered plan + the gotchas.
 
 ## What is shipped (the three completed mandates)
@@ -19,8 +18,8 @@ map + the ordered plan + the gotchas.
    Every mechanically-decidable obligation moved to the lowest owning layer (L0
    schema / L1 scaffold / L2 normalize), scene-scoped slot retries, the contract
    registry + closed-world test, the prompt budget test, telemetry
-   (`sentinel:report`). System doc: [SENTINEL.md](../../SENTINEL.md); design contract:
-   [SENTINEL_PLAN.md](SENTINEL_PLAN.md); shipped evidence: [SENTINEL_REPORT.md](SENTINEL_REPORT.md).
+   (`sentinel:report`). Current contract: [SENTINEL.md](../../SENTINEL.md);
+   shipped evidence: [SENTINEL_REPORT.md](SENTINEL_REPORT.md).
 3. **Motion-design texture (2026-07-06/07, MD1–MD6).** The FX runtime
    (sweep/glow/draw/echo), the `dive` camera move, the `headline` kind + letter
    machinery, animated grade shifts, playful pops. IMPLEMENTED and registered in

@@ -7,6 +7,7 @@ import {
   inspectDirectComposition,
   primaryFocalReview,
   spatialFocalPartAt,
+  transitionOutgoingStateMoved,
 } from "../src/engine/layoutInspector.ts";
 import {
   CAMERA_RUNTIME_FILE,
@@ -16,6 +17,26 @@ import { findBrowserExecutable } from "../src/engine/render.ts";
 import type { DirectCompositionDraft, DirectScene } from "../src/engine/directComposition.ts";
 
 const roots: string[] = [];
+
+describe("declared transition outgoing liveness", () => {
+  const state = (overrides: Partial<Parameters<typeof transitionOutgoingStateMoved>[0]> = {}) => ({
+    missing: false,
+    opacity: 1,
+    left: 100,
+    top: 100,
+    width: 400,
+    height: 180,
+    transform: "none",
+    clipPath: "none",
+    ...overrides,
+  });
+
+  it("distinguishes a genuinely static outgoing leg from visible bridge movement", () => {
+    expect(transitionOutgoingStateMoved(state(), state())).toBe(false);
+    expect(transitionOutgoingStateMoved(state(), state({ left: 103 }))).toBe(true);
+    expect(transitionOutgoingStateMoved(state(), state({ opacity: 0.9 }))).toBe(true);
+  });
+});
 
 describe("morph-aware spatial focal review", () => {
   const morphScene: DirectScene = {

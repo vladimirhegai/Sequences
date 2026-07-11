@@ -25,7 +25,7 @@ function jpegDimensions(file: string): { width: number; height: number } {
   throw new Error(`JPEG dimensions not found: ${file}`);
 }
 
-describe("background moodboard catalog", () => {
+describe("production wallpaper catalog", () => {
   it("describes every vendored wallpaper exactly once", () => {
     expect(BACKGROUND_CATALOG).toHaveLength(18);
     expect(BACKGROUND_CATALOG.map((entry) => entry.id)).toEqual(
@@ -51,13 +51,19 @@ describe("background moodboard catalog", () => {
     }
   });
 
-  it("is explicitly blocked from customer-project use without a license manifest", () => {
+  it("is MIT-cleared for customer-project use with a complete license manifest", () => {
+    const licenseFile = path.join(APP_ROOT, "vendor", "wallpapers", "LICENSE");
+    const license = fs.readFileSync(licenseFile, "utf8");
+    expect(license).toContain("SPDX-License-Identifier: MIT");
+    expect(license).toContain("Permission is hereby granted");
     for (const entry of BACKGROUND_CATALOG) {
       expect(entry.provenance).toMatchObject({
-        status: "moodboard-only",
-        licenseManifestPresent: false,
-        customerProjectUse: "blocked",
+        status: "production-cleared",
+        licenseManifestPresent: true,
+        customerProjectUse: "allowed",
+        license: "MIT",
       });
+      expect(license).toContain(path.basename(entry.file));
       expect(backgroundById(entry.id)).toBe(entry);
     }
   });

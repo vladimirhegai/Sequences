@@ -97,7 +97,7 @@ export const PACING_TOLERANCE_SEC = 0.35;
  * of being reported to the model as a findings-retry. A miss this size is
  * mechanical arithmetic (extend a cut by at most a beat and a half); a larger one is a
  * genuine creative deficit and stays blocking, per Sentinel's decision rule
- * (SENTINEL_PLAN.md §3 Phase 3.1: normalize what deletes/degrades/retimes,
+ * (SENTINEL.md L2 rule: normalize what deletes/degrades/retimes,
  * send content deficits back to the model).
  */
 export const MAX_PACING_STRETCH_SEC = 1.5;

@@ -64,11 +64,16 @@ describe("plugin declarations — parse-time normalization", () => {
   it("defaults the unit id from the kind and keeps unknown kinds for the reconciler", () => {
     const declarations = normalizeStoryboardPluginDeclarations([
       { kind: "notification-stack" },
+      { kind: "flow-diagram" },
+      { kind: "comparison-table" },
+      { kind: "pricing-reveal" },
       { kind: "made-up-plugin" },
       { bogus: true },
       "junk",
     ]);
-    expect(declarations.map((entry) => entry.id)).toEqual(["notices", "made-up-plugin"]);
+    expect(declarations.map((entry) => entry.id)).toEqual([
+      "notices", "flow", "comparison", "pricing", "made-up-plugin",
+    ]);
   });
 });
 
@@ -612,6 +617,125 @@ describe("team-strip plugin (seedNames avatar stack)", () => {
     const value = Number(match![1]);
     expect(value).toBeGreaterThanOrEqual(5);
     expect(value).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("flow-diagram plugin (endpoint-bound topology)", () => {
+  const DECL = [{
+    kind: "flow-diagram",
+    params: { nodes: 5, topology: "fan-out", topic: "deploy approval workflow" },
+  }];
+
+  it("lowers seeded nodes and connector paths into typed component beats", () => {
+    const first = reconcileAndLowerPlugins([declared(DECL)]);
+    const second = reconcileAndLowerPlugins([declared(DECL)]);
+    expect(JSON.stringify(first.scenes)).toBe(JSON.stringify(second.scenes));
+    expect(resolvePluginPlan(first.scenes)).toEqual(resolvePluginPlan(second.scenes));
+    const lowered = first.scenes[0]!;
+    const components = lowered.components ?? [];
+    const nodes = components.filter((entry) => entry.kind === "stat-card");
+    const edges = components.filter((entry) => entry.kind === "chart-line");
+    expect(nodes).toHaveLength(5);
+    expect(edges).toHaveLength(6);
+    expect(new Set(components.map((entry) => entry.pluginUid))).toEqual(new Set(["s1-flow"]));
+    expect((lowered.beats ?? []).filter((entry) => entry.kind === "open")).toHaveLength(5);
+    expect((lowered.beats ?? []).filter((entry) => entry.kind === "chart")).toHaveLength(6);
+    for (const entry of lowered.beats ?? []) {
+      expect(entry.atSec).toBeGreaterThanOrEqual(0);
+      expect(entry.atSec).toBeLessThanOrEqual(6);
+    }
+  });
+
+  it("binds every edge to emitted node parts and their exact anchor sides", () => {
+    const scenes = reconcileAndLowerPlugins([declared(DECL)]).scenes;
+    const markup = resolvePluginPlan(scenes)[0]!.markup;
+    const nodeParts = new Set(
+      [...markup.matchAll(/data-flow-node="\d+" data-part="([^"]+)"/g)]
+        .map((match) => match[1]!),
+    );
+    const edges = [...markup.matchAll(
+      /data-flow-edge="[^"]+" data-part="[^"]+" data-edge-from="([^"]+)" data-edge-from-anchor="([^"]+)" data-edge-to="([^"]+)" data-edge-to-anchor="([^"]+)"/g,
+    )];
+    expect(nodeParts.size).toBe(5);
+    expect(edges).toHaveLength(6);
+    for (const edge of edges) {
+      expect(nodeParts.has(edge[1]!)).toBe(true);
+      expect(edge[2]).toBe("right");
+      expect(nodeParts.has(edge[3]!)).toBe(true);
+      expect(edge[4]).toBe("left");
+    }
+    expect((markup.match(/<path class="cmp-stroke"/g) ?? [])).toHaveLength(6);
+    expect(markup).not.toMatch(/Item \d/);
+  });
+});
+
+describe("comparison-table plugin (seeded aligned matrix)", () => {
+  const DECL = [{
+    kind: "comparison-table",
+    params: { choices: 3, features: 5, topic: "agent evaluation controls" },
+  }];
+
+  it("lowers to one table and one rows beat with deterministic real content", () => {
+    const first = reconcileAndLowerPlugins([declared(DECL)]);
+    const second = reconcileAndLowerPlugins([declared(DECL)]);
+    expect(JSON.stringify(first.scenes)).toBe(JSON.stringify(second.scenes));
+    expect(resolvePluginPlan(first.scenes)).toEqual(resolvePluginPlan(second.scenes));
+    const lowered = first.scenes[0]!;
+    expect(lowered.components).toEqual([
+      { version: 1, id: "comparison-matrix", kind: "table", pluginUid: "s1-comparison" },
+    ]);
+    expect(lowered.beats).toHaveLength(2);
+    expect(lowered.beats?.map((entry) => entry.kind)).toEqual(["rows", "highlight"]);
+    const markup = resolvePluginPlan(first.scenes)[0]!.markup;
+    expect((markup.match(/data-comparison-row=/g) ?? [])).toHaveLength(5);
+    expect((markup.match(/data-comparison-choice=/g) ?? [])).toHaveLength(15);
+    expect(markup).toContain("--seq-comparison-choices:3");
+    expect(markup).not.toMatch(/Item \d/);
+  });
+});
+
+describe("pricing-reveal plugin (seeded tier count-ups)", () => {
+  const DECL = [{
+    kind: "pricing-reveal",
+    params: { tiers: 4, billing: "annual", currency: "eur", featured: 3, topic: "analytics" },
+  }];
+
+  it("lowers every card to an open plus count beat and one featured tier", () => {
+    const first = reconcileAndLowerPlugins([declared(DECL)]);
+    const second = reconcileAndLowerPlugins([declared(DECL)]);
+    expect(JSON.stringify(first.scenes)).toBe(JSON.stringify(second.scenes));
+    expect(resolvePluginPlan(first.scenes)).toEqual(resolvePluginPlan(second.scenes));
+    const lowered = first.scenes[0]!;
+    expect(lowered.components).toHaveLength(4);
+    expect(lowered.components?.every((entry) => entry.kind === "stat-card")).toBe(true);
+    expect((lowered.beats ?? []).filter((entry) => entry.kind === "open")).toHaveLength(4);
+    const countBeats = (lowered.beats ?? []).filter((entry) => entry.kind === "count");
+    expect(countBeats).toHaveLength(4);
+    expect(countBeats.every((entry) => Number(entry.value) > 0)).toBe(true);
+    const markup = resolvePluginPlan(first.scenes)[0]!.markup;
+    expect((markup.match(/data-price-tier=/g) ?? [])).toHaveLength(4);
+    expect((markup.match(/data-featured="true"/g) ?? [])).toHaveLength(1);
+    expect(markup).toMatch(/€\d+\/yr/);
+  });
+});
+
+describe("generated plugin defaults", () => {
+  it("ships complete no-paperwork defaults for all three generated set-pieces", () => {
+    const result = reconcileAndLowerPlugins([
+      declared([
+        { kind: "flow-diagram", params: {} },
+        { kind: "comparison-table", params: {} },
+        { kind: "pricing-reveal", params: {} },
+      ]),
+    ]);
+    expect(result.notes).toEqual([]);
+    expect(result.scenes[0]!.plugins?.map((entry) => [entry.kind, entry.params])).toEqual([
+      ["flow-diagram", { nodes: 4, topology: "pipeline", topic: "" }],
+      ["comparison-table", { choices: 3, features: 4, topic: "" }],
+      ["pricing-reveal", {
+        tiers: 3, billing: "monthly", currency: "usd", featured: 2, topic: "",
+      }],
+    ]);
   });
 });
 

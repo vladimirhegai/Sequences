@@ -366,6 +366,231 @@ function teamStripMarkup(part: string, people: SeedPerson[], more: number): stri
   );
 }
 
+/* ------------------------------------------------ generated set-pieces */
+
+const FLOW_STAGE_LABELS: Record<SeedTopic["domain"], readonly string[]> = {
+  devtools: ["Commit", "Build", "Test", "Review", "Deploy", "Observe"],
+  analytics: ["Collect", "Model", "Segment", "Compare", "Explain", "Act"],
+  comms: ["Capture", "Route", "Summarize", "Review", "Reply", "Archive"],
+  commerce: ["Browse", "Qualify", "Checkout", "Approve", "Fulfill", "Retain"],
+  design: ["Brief", "Explore", "Prototype", "Review", "Handoff", "Ship"],
+  ai: ["Prompt", "Retrieve", "Reason", "Evaluate", "Respond", "Learn"],
+  generic: ["Capture", "Organize", "Enrich", "Review", "Deliver", "Measure"],
+};
+
+const COMPARISON_FEATURES: Record<SeedTopic["domain"], readonly string[]> = {
+  devtools: ["Setup time", "Test coverage", "Deploy control", "Rollback", "Observability", "Audit trail"],
+  analytics: ["Live data", "Segmentation", "Forecasting", "Annotations", "Sharing", "Alerts"],
+  comms: ["Thread context", "Routing", "Summaries", "Escalation", "Search", "Ownership"],
+  commerce: ["Checkout", "Payments", "Inventory", "Fraud controls", "Reporting", "Retention"],
+  design: ["Libraries", "Prototyping", "Review", "Handoff", "Versioning", "Design QA"],
+  ai: ["Context", "Tool use", "Evaluation", "Guardrails", "Tracing", "Cost control"],
+  generic: ["Setup", "Automation", "Collaboration", "Insights", "Controls", "Support"],
+};
+
+const COMPARISON_CHOICES: Record<SeedTopic["domain"], readonly string[]> = {
+  devtools: ["Manual", "Scripts", "Pipeline", "Platform"],
+  analytics: ["Sheets", "Reports", "Signals", "Decisioning"],
+  comms: ["Inbox", "Rules", "Assistant", "Operations"],
+  commerce: ["Basic", "Managed", "Optimized", "Adaptive"],
+  design: ["Files", "Libraries", "System", "Platform"],
+  ai: ["Prompt", "Workflow", "Agent", "Agent fleet"],
+  generic: ["Manual", "Assisted", "Automated", "Adaptive"],
+};
+
+const PRICING_TIER_LABELS: Record<SeedTopic["domain"], readonly string[]> = {
+  devtools: ["Hobby", "Team", "Scale", "Enterprise"],
+  analytics: ["Starter", "Growth", "Scale", "Enterprise"],
+  comms: ["Solo", "Team", "Business", "Enterprise"],
+  commerce: ["Launch", "Growth", "Scale", "Enterprise"],
+  design: ["Creator", "Studio", "Organization", "Enterprise"],
+  ai: ["Build", "Ship", "Scale", "Enterprise"],
+  generic: ["Starter", "Team", "Scale", "Enterprise"],
+};
+
+const COMPARISON_VALUE_SCALES = [
+  ["Manual", "Assisted", "Automated", "Adaptive"],
+  ["Limited", "Standard", "Advanced", "Custom"],
+  ["Hours", "Minutes", "Live", "Predictive"],
+  ["Add-on", "Included", "Included", "Priority"],
+] as const;
+
+interface FlowNodePlacement {
+  id: string;
+  label: string;
+  meta: string;
+  x: number;
+  y: number;
+}
+
+interface FlowEdgePlacement {
+  id: string;
+  from: number;
+  to: number;
+  path: string;
+}
+
+/**
+ * Pick evenly across a four-step maturity scale, so a two-column comparison
+ * still contrasts the true endpoints rather than two adjacent tiers.
+ */
+function scaleIndexes(count: number): number[] {
+  if (count <= 2) return [0, 3];
+  if (count === 3) return [0, 2, 3];
+  return [0, 1, 2, 3];
+}
+
+/**
+ * Flow geometry has one owner. Nodes and SVG endpoints are computed from the
+ * same 1200x520 coordinate system; connector metadata names the exact node
+ * parts and the boundary anchors the path touches. Seeded lane variation keeps
+ * repeated diagrams from looking cloned without allowing collisions.
+ */
+function flowPlacements(
+  ctx: PluginLowerContext,
+  count: number,
+  topology: "pipeline" | "fan-out",
+): { nodes: FlowNodePlacement[]; edges: FlowEdgePlacement[] } {
+  const stages = FLOW_STAGE_LABELS[ctx.topic.domain];
+  const labels = topology === "fan-out" && count > 2
+    ? [stages[0]!, ...ctx.rng.shuffle(stages.slice(1, -1)).slice(0, count - 2), stages.at(-1)!]
+    : stages.slice(0, count);
+  const topicLabel = ctx.topic.terms[0] ?? "Workflow";
+  const nodes: FlowNodePlacement[] = labels.map((label, index) => {
+    if (topology === "fan-out" && count > 2) {
+      if (index === 0) {
+        return { id: `${ctx.id}-node-1`, label, meta: `${topicLabel} source`, x: 110, y: 260 };
+      }
+      if (index === count - 1) {
+        return { id: `${ctx.id}-node-${count}`, label, meta: `${topicLabel} result`, x: 1090, y: 260 };
+      }
+      const branches = count - 2;
+      const lane = index - 1;
+      const y = branches === 1 ? 260 : 92 + (336 * lane) / (branches - 1);
+      return {
+        id: `${ctx.id}-node-${index + 1}`,
+        label,
+        meta: `${ctx.rng.int(2, 18)}m avg`,
+        x: 600,
+        y: round(y + ctx.rng.int(-8, 8)),
+      };
+    }
+    const x = count === 1 ? 600 : 110 + (980 * index) / (count - 1);
+    return {
+      id: `${ctx.id}-node-${index + 1}`,
+      label,
+      meta: index === 0 ? `${topicLabel} source` : `${ctx.rng.int(2, 18)}m avg`,
+      x: round(x),
+      y: index === 0 || index === count - 1 ? 260 : 260 + ctx.rng.int(-34, 34),
+    };
+  });
+  const pairs: Array<[number, number]> = topology === "fan-out" && count > 2
+    ? Array.from({ length: count - 2 }, (_, index) => [0, index + 1] as [number, number])
+      .concat(Array.from({ length: count - 2 }, (_, index) => [index + 1, count - 1]))
+    : Array.from({ length: count - 1 }, (_, index) => [index, index + 1]);
+  const edges = pairs.map(([from, to], index) => {
+    const source = nodes[from]!;
+    const target = nodes[to]!;
+    // Node boxes are 160x96 in this same viewBox. Touch the right/left box
+    // boundaries exactly, then bend only the interior control points.
+    const startX = source.x + 80;
+    const endX = target.x - 80;
+    const control = Math.max(44, (endX - startX) * 0.44);
+    return {
+      id: `${ctx.id}-edge-${index + 1}`,
+      from,
+      to,
+      path:
+        `M ${round(startX)} ${round(source.y)} ` +
+        `C ${round(startX + control)} ${round(source.y)}, ` +
+        `${round(endX - control)} ${round(target.y)}, ${round(endX)} ${round(target.y)}`,
+    };
+  });
+  return { nodes, edges };
+}
+
+function flowNodeMarkup(node: FlowNodePlacement, index: number): string {
+  const left = round(((node.x - 80) / 1200) * 100);
+  const top = round(((node.y - 48) / 520) * 100);
+  return (
+    `<div class="cmp cmp-stat material seq-flow-node" data-component="stat-card" ` +
+    `data-flow-node="${index + 1}" data-part="${node.id}" ` +
+    `style="left:${left}%;top:${top}%">` +
+    `<div class="cmp-label">Step ${String(index + 1).padStart(2, "0")}</div>` +
+    `<div class="seq-flow-node-title">${escapeHtml(node.label)}</div>` +
+    `<div class="cmp-meta">${escapeHtml(node.meta)}</div></div>`
+  );
+}
+
+function flowEdgeMarkup(
+  edge: FlowEdgePlacement,
+  nodes: readonly FlowNodePlacement[],
+): string {
+  const from = nodes[edge.from]!.id;
+  const to = nodes[edge.to]!.id;
+  return (
+    `<div class="cmp cmp-chart-line seq-flow-edge" data-component="chart-line" ` +
+    `data-flow-edge="${edge.id}" data-part="${edge.id}" ` +
+    `data-edge-from="${from}" data-edge-from-anchor="right" ` +
+    `data-edge-to="${to}" data-edge-to-anchor="left">` +
+    `<svg viewBox="0 0 1200 520" preserveAspectRatio="none" aria-hidden="true">` +
+    `<path class="cmp-stroke" vector-effect="non-scaling-stroke" d="${edge.path}"/></svg></div>`
+  );
+}
+
+function comparisonTableMarkup(
+  part: string,
+  choices: readonly string[],
+  features: readonly string[],
+  rng: SeededRandom,
+): string {
+  const header = choices
+    .map((choice, index) =>
+      `<span${index === choices.length - 1 ? ' class="seq-comparison-best"' : ""}>` +
+      `${escapeHtml(choice)}</span>`,
+    )
+    .join("");
+  const indexes = scaleIndexes(choices.length);
+  const rows = features.map((feature, rowIndex) => {
+    const scale = COMPARISON_VALUE_SCALES[rng.int(0, COMPARISON_VALUE_SCALES.length - 1)]!;
+    const cells = indexes
+      .map((choiceIndex, index) =>
+        `<span data-comparison-choice="${index + 1}"` +
+        `${index === choices.length - 1 ? ' class="seq-comparison-best"' : ""}>` +
+        `${escapeHtml(scale[choiceIndex]!)}</span>`,
+      )
+      .join("");
+    return (
+      `<div class="cmp-row" data-cmp-item data-comparison-row="${rowIndex + 1}">` +
+      `<span class="seq-comparison-feature">${escapeHtml(feature)}</span>${cells}</div>`
+    );
+  }).join("");
+  return (
+    `<div class="cmp cmp-table material seq-comparison-table" data-component="table" ` +
+    `data-part="${part}" style="--seq-comparison-choices:${choices.length}">` +
+    `<div class="cmp-head"><span>Capability</span>${header}</div>${rows}</div>`
+  );
+}
+
+function pricingCardMarkup(
+  part: string,
+  tier: string,
+  price: number,
+  currency: string,
+  cadence: string,
+  feature: string,
+  featured: boolean,
+): string {
+  return (
+    `<div class="cmp cmp-stat material seq-price-card${featured ? " seq-price-featured" : ""}" ` +
+    `data-component="stat-card" data-part="${part}" data-price-tier="${escapeHtml(tier)}" ` +
+    `data-featured="${featured ? "true" : "false"}">` +
+    `<div class="cmp-label">${escapeHtml(tier)}</div>` +
+    `<div class="cmp-value" data-cmp-value>${escapeHtml(currency)}${price}/${cadence}</div>` +
+    `<div class="cmp-delta cmp-up">${escapeHtml(feature)}</div></div>`
+  );
+}
+
 export const PLUGIN_CATALOG: PluginSpec[] = [
   {
     kind: "dashboard-grid",
@@ -693,6 +918,201 @@ export const PLUGIN_CATALOG: PluginSpec[] = [
       };
     },
   },
+  {
+    kind: "flow-diagram",
+    purpose: "a host-laid-out process graph with node-bound connector geometry",
+    params: [
+      { name: "nodes", kind: "number", default: 4, min: 3, max: 6 },
+      {
+        name: "topology",
+        kind: "enum",
+        default: "pipeline",
+        options: ["pipeline", "fan-out"],
+      },
+      { name: "topic", kind: "text", default: "", maxChars: 60 },
+    ],
+    planningLine:
+      "- flow-diagram — host-bound process graph; nodes 3-6, topology pipeline|fan-out, topic. Do not draw connectors.",
+    style:
+      ".seq-plugin-flow-diagram .seq-flow-edge{position:absolute;inset:0;width:100%;height:100%;" +
+      "background:none;pointer-events:none;z-index:0}\n" +
+      ".seq-plugin-flow-diagram .seq-flow-edge svg{display:block;width:100%;height:100%;overflow:visible}\n" +
+      ".seq-plugin-flow-diagram .seq-flow-edge .cmp-stroke{fill:none;stroke:var(--accent,#6ea8ff);" +
+      "stroke-width:4;stroke-linecap:round;stroke-linejoin:round}\n" +
+      ".seq-plugin-flow-diagram .seq-flow-node{position:absolute;width:13.333%;height:18.462%;" +
+      "min-width:0;padding:12px 14px;justify-content:center;overflow:hidden;z-index:1}\n" +
+      ".seq-plugin-flow-diagram .seq-flow-node-title{font-size:clamp(15px,1.25vw,22px);" +
+      "font-weight:750;line-height:1.05;letter-spacing:-.02em}\n" +
+      ".seq-plugin-flow-diagram .seq-flow-node .cmp-meta{font-size:clamp(10px,.72vw,13px);" +
+      "color:var(--muted,#94a3b8);white-space:nowrap}",
+    lower(ctx) {
+      const count = Number(ctx.params.nodes ?? 4);
+      const topology = String(ctx.params.topology ?? "pipeline") === "fan-out"
+        ? "fan-out"
+        : "pipeline";
+      const { nodes, edges } = flowPlacements(ctx, count, topology);
+      const t0 = entranceSec(ctx);
+      const nodeOffsets = cascadeOffsets(count, clampSec(ctx.durationSec * 0.22, 0.5, 1));
+      const components: SceneComponentSpecV1[] = [
+        ...nodes.map((node) => component(ctx, node.id, "stat-card")),
+        ...edges.map((edge) => component(ctx, edge.id, "chart-line")),
+      ];
+      const beats: ComponentBeatIntentV1[] = [];
+      let beatIndex = 1;
+      nodes.forEach((node, index) => {
+        beats.push(
+          beat(ctx, beatIndex++, node.id, "open", t0 + nodeOffsets[index]!, {
+            durationSec: 0.5,
+          }),
+        );
+      });
+      edges.forEach((edge, index) => {
+        const topologyOffset = Math.max(nodeOffsets[edge.from]!, nodeOffsets[edge.to]!);
+        beats.push(
+          beat(ctx, beatIndex++, edge.id, "chart", t0 + topologyOffset + 0.14 + index * 0.025, {
+            durationSec: clampSec(ctx.durationSec * 0.18, 0.55, 1.1),
+          }),
+        );
+      });
+      // A late typed payoff keeps a flow shot developing after the connector
+      // draw and gives the destination node one readable focal resolve.
+      beats.push(
+        beat(ctx, beatIndex++, nodes.at(-1)!.id, "highlight", ctx.startSec + ctx.durationSec * 0.64, {
+          durationSec: 0.8,
+          style: "ring",
+        }),
+      );
+      return {
+        components,
+        beats,
+        markup:
+          edges.map((edge) => flowEdgeMarkup(edge, nodes)).join("") +
+          nodes.map((node, index) => flowNodeMarkup(node, index)).join(""),
+        wrapperStyle:
+          "position:relative;width:min(100%,1200px);aspect-ratio:30/13;" +
+          "margin:0 auto;overflow:visible",
+      };
+    },
+  },
+  {
+    kind: "comparison-table",
+    purpose: "a seeded feature comparison with aligned columns and one row cascade",
+    params: [
+      { name: "choices", kind: "number", default: 3, min: 2, max: 4 },
+      { name: "features", kind: "number", default: 4, min: 3, max: 6 },
+      { name: "topic", kind: "text", default: "", maxChars: 60 },
+    ],
+    planningLine:
+      "- comparison-table — seeded capability matrix; choices 2-4, features 3-6, topic.",
+    style:
+      ".seq-plugin-comparison-table .seq-comparison-table{width:100%;font-size:clamp(15px,1.15vw,21px)}\n" +
+      ".seq-plugin-comparison-table .seq-comparison-table>.cmp-head," +
+      ".seq-plugin-comparison-table .seq-comparison-table>.cmp-row{" +
+      "grid-auto-flow:unset;grid-template-columns:minmax(160px,1.35fr) " +
+      "repeat(var(--seq-comparison-choices),minmax(100px,1fr));gap:18px}\n" +
+      ".seq-plugin-comparison-table .seq-comparison-feature{font-weight:650}\n" +
+      ".seq-plugin-comparison-table .seq-comparison-best{color:var(--accent,#6ea8ff);font-weight:750}",
+    lower(ctx) {
+      const choiceCount = Number(ctx.params.choices ?? 3);
+      const featureCount = Number(ctx.params.features ?? 4);
+      const indexes = scaleIndexes(choiceCount);
+      const choices = indexes.map((index) => COMPARISON_CHOICES[ctx.topic.domain][index]!);
+      const features = ctx.rng.take(COMPARISON_FEATURES[ctx.topic.domain], featureCount);
+      const part = `${ctx.id}-matrix`;
+      return {
+        components: [component(ctx, part, "table")],
+        beats: [
+          beat(ctx, 1, part, "rows", entranceSec(ctx), {
+            durationSec: clampSec(ctx.durationSec * 0.34, 0.9, 2),
+          }),
+          beat(ctx, 2, part, "highlight", ctx.startSec + ctx.durationSec * 0.62, {
+            durationSec: 0.85,
+            item: ctx.rng.int(1, featureCount),
+            style: "sweep",
+          }),
+        ],
+        markup: comparisonTableMarkup(part, choices, features, ctx.rng),
+        wrapperStyle: stackWrapperStyle({ widthPx: 1120, gapIndex: 0 }),
+      };
+    },
+  },
+  {
+    kind: "pricing-reveal",
+    purpose: "seeded pricing tiers whose cards arrive and count to their final prices",
+    params: [
+      { name: "tiers", kind: "number", default: 3, min: 2, max: 4 },
+      { name: "billing", kind: "enum", default: "monthly", options: ["monthly", "annual"] },
+      { name: "currency", kind: "enum", default: "usd", options: ["usd", "eur", "gbp"] },
+      { name: "featured", kind: "number", default: 2, min: 1, max: 4 },
+      { name: "topic", kind: "text", default: "", maxChars: 60 },
+    ],
+    planningLine:
+      "- pricing-reveal — seeded tier count-ups; tiers 2-4, billing monthly|annual, currency usd|eur|gbp, featured 1-4, topic.",
+    style:
+      ".seq-plugin-pricing-reveal .seq-price-card{min-width:0;min-height:220px;" +
+      "justify-content:center;text-align:left}\n" +
+      ".seq-plugin-pricing-reveal .seq-price-card .cmp-value{font-size:clamp(34px,3.1vw,58px)}\n" +
+      ".seq-plugin-pricing-reveal .seq-price-featured{top:-13px;border-color:var(--accent,#6ea8ff);" +
+      "box-shadow:0 18px 50px color-mix(in srgb,var(--accent,#6ea8ff) 18%,transparent)}",
+    lower(ctx) {
+      const tiers = Number(ctx.params.tiers ?? 3);
+      const indexes = scaleIndexes(tiers);
+      const labels = indexes.map((index) => PRICING_TIER_LABELS[ctx.topic.domain][index]!);
+      const billing = String(ctx.params.billing ?? "monthly") === "annual" ? "annual" : "monthly";
+      const currency = ({ usd: "$", eur: "€", gbp: "£" } as const)[
+        String(ctx.params.currency ?? "usd") as "usd" | "eur" | "gbp"
+      ] ?? "$";
+      const featured = Math.min(tiers, Math.max(1, Number(ctx.params.featured ?? 2))) - 1;
+      const features = ctx.rng.take(COMPARISON_FEATURES[ctx.topic.domain], tiers);
+      const baseMonthly = ctx.rng.int(12, 28);
+      const multipliers = [1, 2.4, 4.8, 8.5] as const;
+      const offsets = cascadeOffsets(tiers, clampSec(ctx.durationSec * 0.24, 0.5, 1));
+      const t0 = entranceSec(ctx);
+      const components: SceneComponentSpecV1[] = [];
+      const beats: ComponentBeatIntentV1[] = [];
+      const markups: string[] = [];
+      let beatIndex = 1;
+      labels.forEach((label, index) => {
+        const part = `${ctx.id}-tier-${index + 1}`;
+        const monthly = Math.max(9, Math.round(baseMonthly * multipliers[index]!));
+        const price = billing === "annual" ? Math.round(monthly * 10) : monthly;
+        const at = t0 + offsets[index]!;
+        components.push(component(ctx, part, "stat-card"));
+        beats.push(beat(ctx, beatIndex++, part, "open", at, { durationSec: 0.5 }));
+        beats.push(
+          beat(ctx, beatIndex++, part, "count", at + 0.24, {
+            durationSec: clampSec(ctx.durationSec * 0.24, 0.7, 1.35),
+            value: price,
+          }),
+        );
+        markups.push(
+          pricingCardMarkup(
+            part,
+            label,
+            price,
+            currency,
+            billing === "annual" ? "yr" : "mo",
+            features[index]!,
+            index === featured,
+          ),
+        );
+      });
+      // Resolve on the selected offer after the count-ups instead of leaving
+      // the back half of a pricing shot mechanically static.
+      beats.push(
+        beat(ctx, beatIndex++, `${ctx.id}-tier-${featured + 1}`, "highlight", ctx.startSec + ctx.durationSec * 0.64, {
+          durationSec: 0.85,
+          style: "ring",
+        }),
+      );
+      return {
+        components,
+        beats,
+        markup: markups.join(""),
+        wrapperStyle: gridWrapperStyle(tiers, { maxWidthPx: 1180, gapIndex: 2 }),
+      };
+    },
+  },
 ];
 
 /* Pre-built asset library (assetContract.ts, ASSETS.md): each asset rides
@@ -715,6 +1135,9 @@ function defaultUnitId(kind: string): string {
     : kind === "activity-feed" ? "activity"
     : kind === "terminal-log" ? "terminal"
     : kind === "team-strip" ? "roster"
+    : kind === "flow-diagram" ? "flow"
+    : kind === "comparison-table" ? "comparison"
+    : kind === "pricing-reveal" ? "pricing"
     : kind;
 }
 

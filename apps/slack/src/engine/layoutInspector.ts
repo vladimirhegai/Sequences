@@ -37,8 +37,19 @@ import {
 import {
   CONTINUITY_RUNTIME_FILE,
   continuityRuntimeSource,
+  parseContinuityGraph,
 } from "./continuityGraph.ts";
-import { parseCameraBlockingPlan } from "./cameraBlocking.ts";
+import {
+  buildCameraBlockingEvidence,
+  parseCameraBlockingPlan,
+  type CameraBlockingEvidenceV1,
+  type CameraBlockingPlanV1,
+} from "./cameraBlocking.ts";
+import {
+  ENVIRONMENT_RUNTIME_FILE,
+  environmentKitSource,
+  environmentRuntimeSource,
+} from "./environmentContract.ts";
 import {
   COMPONENT_RUNTIME_FILE,
   componentMotionWindows,
@@ -66,9 +77,19 @@ import { findBrowserExecutable } from "./render.ts";
 import {
   captureContinuousMotionEvidence,
   continuousMotionEvidenceEnabled,
+  continuousMotionQualityFindings,
   QUIET_WINDOW_REVIEW_SEC,
   type ContinuousMotionEvidenceV1,
 } from "./continuousMotion.ts";
+import {
+  analyzeCompositionWashout,
+  type CompositionWashoutEvidenceV1,
+} from "./washoutAnalysis.ts";
+import { slackSequencesEnvRawValue } from "./featureFlags.ts";
+import {
+  primaryBlockingTransitTimes,
+  temporalSceneSampleTimes,
+} from "./temporalSampling.ts";
 
 export type LayoutSeverity = "error" | "warning" | "info";
 
@@ -129,8 +150,10 @@ export interface DirectLayoutIssue {
    */
   framing?: {
     sceneId: string;
-    /** Bounding footprint of the composed content in the frame. */
+    /** Fraction of the 24x14 semantic occupancy grid covered by content. */
     fraction: number;
+    /** Legacy union-bbox footprint, retained as corroborating diagnostics. */
+    bboxFraction?: number;
     /** Union area of actual painted/text/media rectangles in the frame. */
     occupiedFraction?: number;
     part?: string;
@@ -166,11 +189,227 @@ export interface DirectBrowserQaResult {
   boundaries?: DirectBoundaryInventory[];
   /** Rendered temporal judge: per-moment before/after frame-difference evidence. */
   temporalJudge?: TemporalJudgeMomentEvidence[];
-  /** Advisory playback time series; never contributes to ok/strictOk. */
+  /** Outgoing-leg liveness for storyboard-declared transitions. */
+  transitionOutgoing?: TransitionOutgoingEvidence[];
+  /** Advisory luminance/value-separation evidence at representative hero frames. */
+  washoutEvidence?: CompositionWashoutEvidenceV1[];
+  /** Playback time series; bounded polish thresholds may affect strictOk, never ok. */
   continuousMotion?: ContinuousMotionEvidenceV1;
+  /** Blocking-director plan joined to the same bounded browser samples. */
+  cameraBlockingEvidence?: CameraBlockingEvidenceV1;
   errors: string[];
   warnings: string[];
   guidePngBase64?: string;
+  /** Bounded visual evidence passed natively to the optional vision critic. */
+  visionCriticEvidence?: VisionCriticEvidenceV1;
+  /** Browser proof that WS-B2 follow-through exists and decays to rest. */
+  settleBlooms?: ComponentSettleBloomEvidenceV1[];
+}
+
+export interface ComponentSettleBloomEvidenceV1 {
+  sceneId: string;
+  beatId: string;
+  startSec: number;
+  endSec: number;
+  startOpacity: number;
+  endOpacity: number;
+}
+
+export interface VisionCriticEvidenceV1 {
+  version: 1;
+  /** Hash of the exact pre-critique source/storyboard generation. */
+  draftHash: string;
+  /** Content address of source/assets/runtime plus both rendered sheets. */
+  evidenceHash: string;
+  /** Canonical temporal-strip interior samples (five per shot, capped at six shots). */
+  stripPngBase64: string;
+  stripSha256: string;
+  /** The actual pre-critique temporal strip artifact consumed by the critic. */
+  stripPath: string;
+  /** Immutable manifest that links the source generation to model-seen bytes. */
+  manifestPath: string;
+  /** Matching transit/landing samples with their measured target outlined. */
+  blockingPngBase64?: string;
+  blockingSha256?: string;
+  /** The actual pre-critique blocking artifact consumed by the critic. */
+  blockingPath?: string;
+  stripTimes: number[];
+  blockingTimes: number[];
+}
+
+interface VisionEvidenceManifestV1 {
+  version: 1;
+  draftHash: string;
+  evidenceHash: string;
+  strip: { file: "strip.png"; sha256: string };
+  blocking?: { file: "blocking.png"; sha256: string };
+  stripTimes: number[];
+  blockingTimes: number[];
+}
+
+let atomicEvidenceWriteSerial = 0;
+
+function sha256Bytes(bytes: Buffer): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function visionEvidenceHash(
+  draftHash: string,
+  stripSha256: string,
+  blockingSha256?: string,
+): string {
+  return createHash("sha256")
+    .update(draftHash)
+    .update("\0")
+    .update(stripSha256)
+    .update("\0")
+    .update(blockingSha256 ?? "no-blocking")
+    .digest("hex");
+}
+
+function writeEvidenceFileAtomic(file: string, bytes: Buffer): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  atomicEvidenceWriteSerial += 1;
+  const temporary = file + "." + process.pid + "." + Date.now() + "." +
+    atomicEvidenceWriteSerial + ".tmp";
+  try {
+    fs.writeFileSync(temporary, bytes);
+    try {
+      fs.renameSync(temporary, file);
+    } catch {
+      // Windows can refuse an atomic replacement when the destination exists.
+      // The caller snapshots both aliases and restores them if either write
+      // fails, so this fallback preserves transactional end-state semantics.
+      fs.rmSync(file, { force: true });
+      fs.renameSync(temporary, file);
+    }
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function readOptionalFile(file: string): Buffer | undefined {
+  return fs.existsSync(file) ? fs.readFileSync(file) : undefined;
+}
+
+function restoreOptionalFile(file: string, bytes: Buffer | undefined): void {
+  if (bytes) writeEvidenceFileAtomic(file, bytes);
+  else fs.rmSync(file, { force: true });
+}
+
+/**
+ * Publish one already-persisted, content-addressed visual generation to the
+ * operator-facing temporal aliases. All hashes, manifest fields, and immutable
+ * source paths are verified before either alias is touched. A write failure
+ * restores the previous strip/blocking pair before surfacing the error.
+ */
+export function publishCanonicalVisionEvidence(
+  projectDir: string,
+  evidence: VisionCriticEvidenceV1,
+): void {
+  if (!/^[a-f0-9]{64}$/.test(evidence.draftHash) ||
+      !/^[a-f0-9]{64}$/.test(evidence.evidenceHash) ||
+      !/^[a-f0-9]{64}$/.test(evidence.stripSha256) ||
+      (evidence.blockingSha256 && !/^[a-f0-9]{64}$/.test(evidence.blockingSha256))) {
+    throw new Error("vision evidence contains an invalid content digest");
+  }
+  const blockingFields = [
+    evidence.blockingPngBase64,
+    evidence.blockingSha256,
+    evidence.blockingPath,
+  ];
+  const hasBlocking = blockingFields.every((value) => value !== undefined);
+  if (!hasBlocking && blockingFields.some((value) => value !== undefined)) {
+    throw new Error("vision blocking evidence is incomplete");
+  }
+  const expectedEvidenceHash = visionEvidenceHash(
+    evidence.draftHash,
+    evidence.stripSha256,
+    evidence.blockingSha256,
+  );
+  if (expectedEvidenceHash !== evidence.evidenceHash) {
+    throw new Error("vision evidence content address does not match its digests");
+  }
+
+  const generationDir = path.resolve(
+    projectDir,
+    "build",
+    "qa",
+    "critic",
+    evidence.evidenceHash,
+  );
+  const expectedStripPath = path.join(generationDir, "strip.png");
+  const expectedBlockingPath = path.join(generationDir, "blocking.png");
+  const expectedManifestPath = path.join(generationDir, "evidence.json");
+  if (path.resolve(evidence.stripPath) !== expectedStripPath ||
+      path.resolve(evidence.manifestPath) !== expectedManifestPath ||
+      (hasBlocking && path.resolve(evidence.blockingPath!) !== expectedBlockingPath)) {
+    throw new Error("vision evidence path escapes its content-addressed generation");
+  }
+  for (const file of [
+    expectedStripPath,
+    expectedManifestPath,
+    ...(hasBlocking ? [expectedBlockingPath] : []),
+  ]) {
+    if (!fs.existsSync(file) || !fs.lstatSync(file).isFile()) {
+      throw new Error("vision evidence source is missing or not a file: " + file);
+    }
+  }
+
+  const stripBytes = Buffer.from(evidence.stripPngBase64, "base64");
+  if (!stripBytes.length || sha256Bytes(stripBytes) !== evidence.stripSha256 ||
+      !fs.readFileSync(expectedStripPath).equals(stripBytes)) {
+    throw new Error("vision strip bytes do not match their digest and immutable source");
+  }
+  const blockingBytes = hasBlocking
+    ? Buffer.from(evidence.blockingPngBase64!, "base64")
+    : undefined;
+  if (blockingBytes &&
+      (!blockingBytes.length || sha256Bytes(blockingBytes) !== evidence.blockingSha256 ||
+        !fs.readFileSync(expectedBlockingPath).equals(blockingBytes))) {
+    throw new Error("vision blocking bytes do not match their digest and immutable source");
+  }
+
+  let manifest: VisionEvidenceManifestV1;
+  try {
+    manifest = JSON.parse(
+      fs.readFileSync(expectedManifestPath, "utf8"),
+    ) as VisionEvidenceManifestV1;
+  } catch {
+    throw new Error("vision evidence manifest is not valid JSON");
+  }
+  if (manifest.version !== 1 || manifest.draftHash !== evidence.draftHash ||
+      manifest.evidenceHash !== evidence.evidenceHash ||
+      manifest.strip?.file !== "strip.png" ||
+      manifest.strip.sha256 !== evidence.stripSha256 ||
+      (hasBlocking
+        ? manifest.blocking?.file !== "blocking.png" ||
+          manifest.blocking.sha256 !== evidence.blockingSha256
+        : manifest.blocking !== undefined)) {
+    throw new Error("vision evidence manifest does not match the captured generation");
+  }
+
+  const temporalDir = path.resolve(projectDir, "build", "qa", "temporal");
+  const canonicalStrip = path.join(temporalDir, "strip.png");
+  const canonicalBlocking = path.join(temporalDir, "blocking.png");
+  const previousStrip = readOptionalFile(canonicalStrip);
+  const previousBlocking = readOptionalFile(canonicalBlocking);
+  try {
+    writeEvidenceFileAtomic(canonicalStrip, stripBytes);
+    if (blockingBytes) writeEvidenceFileAtomic(canonicalBlocking, blockingBytes);
+    else fs.rmSync(canonicalBlocking, { force: true });
+  } catch (error) {
+    try {
+      restoreOptionalFile(canonicalStrip, previousStrip);
+      restoreOptionalFile(canonicalBlocking, previousBlocking);
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "vision evidence publication and rollback both failed",
+      );
+    }
+    throw error;
+  }
 }
 
 /**
@@ -191,6 +430,18 @@ export interface TemporalJudgeMomentEvidence {
   changedRatio: number;
   /** Mean per-pixel max channel delta (0..255) of the stronger comparison. */
   meanDelta: number;
+  verdict: "changed" | "static";
+}
+
+/** Rendered-DOM evidence for the outgoing leg of one declared transition. */
+export interface TransitionOutgoingEvidence {
+  fromScene: string;
+  toScene: string;
+  style: string;
+  atSec: number;
+  beforeSec: number;
+  afterSec: number;
+  selector: string;
   verdict: "changed" | "static";
 }
 
@@ -386,7 +637,28 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // to the first matching element and mint one shared, ineffective repair rule.
 // v21: interaction seek stability compares the cursor-to-anchor relationship,
 // not absolute viewport coordinates that legitimately move with the camera.
-const QA_CACHE_VERSION = 21;
+// v22: continuous-motion thresholds and measured blocking anchor/rest evidence
+// participate in strict polish acceptance and least-bad ranking.
+// v23: sparse framing is judged by a 24x14 occupancy grid at every scene and
+// graph-owned primary landing; compact final frames no longer bypass it.
+// v24: storyboard-declared transitions carry boundary-scoped outgoing-leg
+// liveness evidence into strict polish acceptance.
+// v25: whole-frame composition coverage credits explicit host environments
+// while excluding bare canvas paint (audit by default, optional strict mode).
+// v26: representative hero screenshots carry luminance/value-separation
+// washout evidence for browser polish and draft ranking.
+// v27: the final vision critic may request two bounded visual contact sheets;
+// normal QA cache hits remain reusable when no visual pack is requested.
+// v28: browser evidence proves host settle blooms exist and decay to rest.
+// v29: measured washout is strict polish feedback (never an `ok` veto), so
+// cached v28 reports cannot retain the old advisory-only `strictOk` verdict.
+// v30: substantial exact copy rendered in two distinct same-scene surfaces is
+// strict polish feedback; cache entries must include that new browser truth.
+// v31: visual-critic PNGs are immutable, hash-addressed artifacts and never
+// persist in the ordinary QA cache; every requested visual review is fresh.
+// v32: measured washout remains critic/ranking evidence but no longer lowers
+// strictOk or spends a paid source repair; invalidate cached v31 verdicts.
+const QA_CACHE_VERSION = 32;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -404,13 +676,17 @@ function qaStaticFingerprint(): string {
         timeRampRuntimeSource(),
         fxRuntimeSource(),
         assetRuntimeSource(),
+        environmentRuntimeSource(),
+        environmentKitSource(),
       ].map((source) => createHash("sha256").update(source).digest("hex")),
       audits: [
         loadBrowserAudit("layout-audit.browser.js"),
         loadBrowserAudit("contrast-audit.browser.js"),
       ].map((source) => createHash("sha256").update(source).digest("hex")),
-      interactionQaMode: process.env.SLACK_SEQUENCES_INTERACTION_QA?.trim().toLowerCase() ?? "",
+      interactionQaMode:
+        slackSequencesEnvRawValue("SLACK_SEQUENCES_INTERACTION_QA")?.trim().toLowerCase() ?? "",
       eyeTraceMode: eyeTraceMode(),
+      compositionFloorMode: compositionFloorMode(),
     }))
     .digest("hex");
   return cachedStaticFingerprint;
@@ -424,24 +700,53 @@ function qaStaticFingerprint(): string {
  * advisory regardless of mode.
  */
 function eyeTraceMode(): "block" | "audit" | "off" {
-  const raw = process.env.SLACK_SEQUENCES_EYE_TRACE?.trim().toLowerCase() ?? "";
+  const raw = slackSequencesEnvRawValue("SLACK_SEQUENCES_EYE_TRACE")?.trim().toLowerCase() ?? "";
   if (raw === "0" || raw === "off") return "off";
   if (raw === "audit") return "audit";
   return "block";
 }
 
 function qaCacheEnabled(): boolean {
-  return process.env.SLACK_SEQUENCES_QA_CACHE !== "0";
+  return slackSequencesEnvRawValue("SLACK_SEQUENCES_QA_CACHE") !== "0";
 }
 
-function qaCacheKey(draft: DirectCompositionDraft): string {
+function projectAssetFingerprint(projectDir: string): string {
+  const root = path.join(path.resolve(projectDir), "assets");
+  const hash = createHash("sha256");
+  if (!fs.existsSync(root)) return hash.update("missing-assets").digest("hex");
+  const visit = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const absolute = path.join(directory, entry.name);
+      const relative = path.relative(root, absolute).replace(/\\/g, "/");
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile()) {
+        hash.update(relative).update("\0").update(fs.readFileSync(absolute)).update("\0");
+      }
+    }
+  };
+  visit(root);
+  return hash.digest("hex");
+}
+
+function qaCacheKey(projectDir: string, draft: DirectCompositionDraft): string {
   return createHash("sha256")
     .update(qaStaticFingerprint())
+    .update("\0")
+    .update(projectAssetFingerprint(projectDir))
     .update("\0")
     .update(draft.html)
     .update("\0")
     .update(JSON.stringify(draft.storyboard))
     .digest("hex");
+}
+
+/** Content identity used by immutable WS-I evidence for one exact draft/runtime/assets set. */
+export function visionCriticDraftHash(
+  projectDir: string,
+  draft: DirectCompositionDraft,
+): string {
+  return qaCacheKey(projectDir, draft);
 }
 
 function qaCacheFile(projectDir: string, key: string): string {
@@ -469,12 +774,13 @@ function writeQaCache(projectDir: string, key: string, result: DirectBrowserQaRe
   // re-measured live, and an infra fault is not evidence about the draft.
   if (!result.ok || result.infraError) return;
   try {
+    const { visionCriticEvidence: _visualEvidence, ...cacheResult } = result;
     const file = qaCacheFile(projectDir, key);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(
       temporary,
-      JSON.stringify({ version: QA_CACHE_VERSION, key, result }) + "\n",
+      JSON.stringify({ version: QA_CACHE_VERSION, key, result: cacheResult }) + "\n",
       "utf8",
     );
     fs.renameSync(temporary, file);
@@ -526,6 +832,11 @@ function prepareScratch(projectDir: string, draft: DirectCompositionDraft): stri
   fs.writeFileSync(
     path.join(scratch, ASSET_RUNTIME_FILE),
     assetRuntimeSource(),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(scratch, ENVIRONMENT_RUNTIME_FILE),
+    environmentRuntimeSource(),
     "utf8",
   );
   const assets = path.join(projectDir, "assets");
@@ -1498,6 +1809,255 @@ async function renderSpatialGuide(
   return String(image);
 }
 
+interface VisionFrameCapture {
+  time: number;
+  label: string;
+  image: string;
+}
+
+function htmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function stitchVisionFrames(
+  browser: import("puppeteer-core").Browser,
+  frames: VisionFrameCapture[],
+  title: string,
+): Promise<string | undefined> {
+  if (!frames.length) return undefined;
+  const sheet = await browser.newPage();
+  try {
+    const columns = frames.length > 6 ? 5 : 3;
+    const rows = Math.ceil(frames.length / columns);
+    const width = columns === 5 ? 1600 : 1280;
+    const horizontal = 56 + (columns - 1) * 12;
+    const cardWidth = (width - horizontal) / columns;
+    const cardHeight = Math.round(cardWidth * 9 / 16);
+    const height = 68 + rows * cardHeight + Math.max(0, rows - 1) * 12 + 24;
+    await sheet.setViewport({ width, height, deviceScaleFactor: 1 });
+    const cards = frames.map((frame) =>
+      `<figure><img alt="" src="data:image/png;base64,${frame.image}">` +
+      `<figcaption>${htmlText(frame.label)}</figcaption></figure>`
+    ).join("");
+    await sheet.setContent(
+      `<!doctype html><style>` +
+      `*{box-sizing:border-box}html,body{margin:0;width:${width}px;height:${height}px;overflow:hidden;` +
+      `background:#090d14;color:#f4f6fa;font-family:Arial,sans-serif}` +
+      `body{padding:44px 28px 24px}h1{position:absolute;left:28px;top:12px;margin:0;` +
+      `font:700 20px/1 Arial;letter-spacing:.02em}main{width:100%;height:100%;display:grid;` +
+      `grid-template-columns:repeat(${columns},1fr);grid-template-rows:repeat(${rows},${cardHeight}px);gap:12px}` +
+      `figure{position:relative;margin:0;min-width:0;min-height:0;background:#121925;` +
+      `border:1px solid #344155;overflow:hidden}img{width:100%;height:100%;object-fit:cover;display:block}` +
+      `figcaption{position:absolute;left:0;right:0;bottom:0;padding:8px 10px;` +
+      `background:linear-gradient(transparent,rgba(0,0,0,.88));font:600 14px/1.2 Arial}` +
+      `</style><h1>${htmlText(title)}</h1><main>${cards}</main>`,
+      { waitUntil: "load" },
+    );
+    await sheet.waitForFunction(
+      () => Array.from(document.images).every(
+        (image) => image.complete && image.naturalWidth > 0,
+      ),
+      { timeout: 10_000 },
+    );
+    return String(await sheet.screenshot({ encoding: "base64", type: "png" }));
+  } finally {
+    await sheet.close();
+  }
+}
+
+/**
+ * Capture the bounded visual evidence WS-I needs at the existing critic seam.
+ * It is opt-in because ordinary repair passes already have numeric evidence;
+ * the final critic alone pays for these two compact contact sheets.
+ */
+async function captureVisionCriticEvidence(
+  projectDir: string,
+  draftHash: string,
+  browser: import("puppeteer-core").Browser,
+  page: import("puppeteer-core").Page,
+  storyboard: DirectScene[],
+  blockingPlan: CameraBlockingPlanV1 | undefined,
+  seekContent: (time: number) => Promise<void>,
+  publishVisualReview: boolean,
+): Promise<VisionCriticEvidenceV1 | undefined> {
+  const temporalDir = path.join(projectDir, "build", "qa", "temporal");
+  if (publishVisualReview) {
+    fs.rmSync(path.join(temporalDir, "strip.png"), { force: true });
+    fs.rmSync(path.join(temporalDir, "blocking.png"), { force: true });
+  }
+  const stripEntries = storyboard.flatMap((scene) => {
+    const transitTimes = primaryBlockingTransitTimes(blockingPlan, scene.id);
+    return temporalSceneSampleTimes(scene.startSec, scene.durationSec, transitTimes)
+      .map((time) => {
+      return {
+        sceneId: scene.id,
+        time,
+        label: `${scene.id} · ${time.toFixed(2)}s`,
+      };
+      });
+  });
+  const capture = async (
+    entries: Array<{
+      time: number;
+      label: string;
+      outline?: { sceneId: string; kind: "part" | "region" | "selector"; id: string };
+    }>,
+  ): Promise<VisionFrameCapture[]> => {
+    const frames: VisionFrameCapture[] = [];
+    for (const entry of entries) {
+      await seekContent(entry.time);
+      if (entry.outline) {
+        await page.evaluate((outline) => {
+          document.getElementById("__sequences-vision-outline")?.remove();
+          const scene = document.querySelector<HTMLElement>(
+            `[data-scene="${CSS.escape(outline.sceneId)}"]`,
+          );
+          const selector = outline.kind === "part"
+            ? `[data-part="${CSS.escape(outline.id)}"]`
+            : outline.kind === "region"
+            ? `[data-region="${CSS.escape(outline.id)}"]`
+            : outline.id;
+          let target: HTMLElement | null = null;
+          try {
+            target = scene?.querySelector<HTMLElement>(selector) ?? null;
+          } catch {
+            target = null;
+          }
+          if (!target) return;
+          const rect = target.getBoundingClientRect();
+          const marker = document.createElement("div");
+          marker.id = "__sequences-vision-outline";
+          marker.style.cssText =
+            `position:fixed;z-index:2147483647;pointer-events:none;left:${rect.left}px;` +
+            `top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+            `border:5px solid #ffcc33;box-shadow:0 0 0 2px #111,0 0 24px #ffcc33;`;
+          marker.setAttribute("data-layout-ignore", "");
+          document.body.appendChild(marker);
+        }, entry.outline);
+      }
+      frames.push({
+        time: entry.time,
+        label: entry.label,
+        image: String(await page.screenshot({ encoding: "base64", type: "png" })),
+      });
+      await page.evaluate(() => document.getElementById("__sequences-vision-outline")?.remove());
+    }
+    return frames;
+  };
+  const stripFrames = await capture(stripEntries);
+  const blockingEntries = stripEntries.flatMap((entry) => {
+    const scene = storyboard.find((candidate) => candidate.id === entry.sceneId);
+    const primaryPhrases = blockingPlan?.scenes
+      .find((candidate) => candidate.sceneId === entry.sceneId)?.phrases
+      .filter((phrase) => phrase.importance === "primary") ?? [];
+    const active = primaryPhrases.find((phrase) =>
+      entry.time >= phrase.startSec && entry.time <= phrase.endSec
+    ) ?? [...primaryPhrases].sort((a, b) =>
+      Math.abs(a.dwell.startSec - entry.time) - Math.abs(b.dwell.startSec - entry.time)
+    )[0];
+    if (active) {
+      return [{
+        time: entry.time,
+        label: `${entry.sceneId}/${active.phraseId} · ${entry.time.toFixed(2)}s`,
+        outline: {
+          sceneId: entry.sceneId,
+          kind: active.target.kind,
+          id: active.target.id,
+        },
+      }];
+    }
+    const focalPart = scene ? spatialFocalPartAt(scene, entry.time) : undefined;
+    return focalPart
+      ? [{
+          time: entry.time,
+          label: `${entry.sceneId}/focal · ${entry.time.toFixed(2)}s`,
+          outline: { sceneId: entry.sceneId, kind: "part" as const, id: focalPart },
+        }]
+      : [];
+  });
+  const blockingFrames = await capture(blockingEntries);
+  const stripPngBase64 = await stitchVisionFrames(browser, stripFrames, "film strip · representative shots");
+  if (!stripPngBase64) return undefined;
+  const blockingPngBase64 = await stitchVisionFrames(
+    browser,
+    blockingFrames,
+    "blocking · primary landings",
+  );
+  const stripBuffer = Buffer.from(stripPngBase64, "base64");
+  const blockingBuffer = blockingPngBase64
+    ? Buffer.from(blockingPngBase64, "base64")
+    : undefined;
+  const stripSha256 = sha256Bytes(stripBuffer);
+  const blockingSha256 = blockingBuffer
+    ? sha256Bytes(blockingBuffer)
+    : undefined;
+  const evidenceHash = visionEvidenceHash(draftHash, stripSha256, blockingSha256);
+  const criticDir = path.join(projectDir, "build", "qa", "critic", evidenceHash);
+  // The hash-addressed generation is immutable provenance for the exact bytes
+  // shown to the model. Canonical temporal paths are refreshed for the operator
+  // and may later be replaced by the final post-critique temporal report.
+  const stripPath = path.join(criticDir, "strip.png");
+  const blockingPath = blockingBuffer ? path.join(criticDir, "blocking.png") : undefined;
+  const manifestPath = path.join(criticDir, "evidence.json");
+  const manifest = Buffer.from(JSON.stringify({
+    version: 1,
+    draftHash,
+    evidenceHash,
+    strip: { file: "strip.png", sha256: stripSha256 },
+    ...(blockingSha256
+      ? { blocking: { file: "blocking.png", sha256: blockingSha256 } }
+      : {}),
+    stripTimes: stripFrames.map((frame) => frame.time),
+    blockingTimes: blockingFrames.map((frame) => frame.time),
+  }, null, 2) + "\n");
+  const pendingCriticDir = `${criticDir}.${process.pid}.${Date.now()}.tmp`;
+  if (fs.existsSync(criticDir)) {
+    const existingStrip = createHash("sha256").update(fs.readFileSync(stripPath)).digest("hex");
+    const existingBlocking = blockingPath && fs.existsSync(blockingPath)
+      ? createHash("sha256").update(fs.readFileSync(blockingPath)).digest("hex")
+      : undefined;
+    if (
+      existingStrip !== stripSha256 ||
+      existingBlocking !== blockingSha256 ||
+      !fs.existsSync(manifestPath)
+    ) {
+      throw new Error(`vision evidence hash collision or incomplete generation ${evidenceHash}`);
+    }
+  } else {
+    try {
+      writeEvidenceFileAtomic(path.join(pendingCriticDir, "strip.png"), stripBuffer);
+      if (blockingBuffer) {
+        writeEvidenceFileAtomic(path.join(pendingCriticDir, "blocking.png"), blockingBuffer);
+      }
+      writeEvidenceFileAtomic(path.join(pendingCriticDir, "evidence.json"), manifest);
+      fs.renameSync(pendingCriticDir, criticDir);
+    } catch (error) {
+      fs.rmSync(pendingCriticDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
+  const evidence: VisionCriticEvidenceV1 = {
+    version: 1,
+    draftHash,
+    evidenceHash,
+    stripPngBase64,
+    stripSha256,
+    stripPath,
+    manifestPath,
+    ...(blockingPngBase64 ? { blockingPngBase64 } : {}),
+    ...(blockingSha256 ? { blockingSha256 } : {}),
+    ...(blockingPath ? { blockingPath } : {}),
+    stripTimes: stripFrames.map((frame) => frame.time),
+    blockingTimes: blockingFrames.map((frame) => frame.time),
+  };
+  if (publishVisualReview) publishCanonicalVisionEvidence(projectDir, evidence);
+  return evidence;
+}
+
 /** Follow a declared focal through completed component morphs in one scene. */
 export function spatialFocalPartAt(scene: DirectScene, time: number): string | undefined {
   let focalPart = scene.spatialIntent?.focalPart;
@@ -1779,9 +2339,15 @@ export async function auditCameraBlockingLandings(
     if (block.importance !== "primary" || block.target.kind !== "part") continue;
     const sceneEnd = sceneEndById.get(block.sceneId);
     if (sceneEnd === undefined) continue;
+    // Judge the settled readable landing, not the first 80ms after camera
+    // arrival. Host component/entrance motion may legitimately begin at the
+    // phrase boundary; sampling there charged LumaFlow for invisible
+    // release-card/shipped-badge roots that were fully readable later inside
+    // the declared dwell. A target that never becomes readable still fails at
+    // the end of that same bounded window.
     const sampleAt = Math.min(
       sceneEnd - 0.08,
-      Math.max(block.arrivalSec + 0.08, block.dwell.startSec + 0.08),
+      Math.max(block.arrivalSec + 0.08, block.dwell.endSec - 0.08),
     );
     if (sampleAt <= 0) continue;
     await seekContent(sampleAt);
@@ -1964,8 +2530,9 @@ export async function auditCameraBlockingLandings(
  */
 async function measureContentCoverage(
   page: import("puppeteer-core").Page,
+  includeCompositionCredit = false,
 ): Promise<number> {
-  return page.evaluate(() => {
+  return page.evaluate((includeCredit: boolean) => {
     const root = document.querySelector<HTMLElement>(
       "[data-composition-id][data-width][data-height]",
     );
@@ -1988,13 +2555,15 @@ async function measureContentCoverage(
     };
     const rects: Array<{ left: number; top: number; right: number; bottom: number }> = [];
     for (const element of Array.from(root.querySelectorAll<HTMLElement>("*"))) {
-      if (element.closest("[data-layout-ignore]")) continue;
+      const credited = includeCredit && element.hasAttribute("data-composition-credit");
+      if (element.closest("[data-layout-ignore]") && !credited) continue;
       const hasText = Array.from(element.childNodes).some((node) =>
         node.nodeType === Node.TEXT_NODE && /\S/.test(node.textContent ?? ""),
       );
       const isContent = hasText ||
         MEDIA.has(element.tagName.toUpperCase()) ||
-        element.hasAttribute("data-part");
+        element.hasAttribute("data-part") ||
+        credited;
       if (!isContent) continue;
       const rect = element.getBoundingClientRect();
       if (rect.width < 4 || rect.height < 4) continue;
@@ -2022,7 +2591,7 @@ async function measureContentCoverage(
       }
     }
     return covered / (COLUMNS * ROWS);
-  });
+  }, includeCompositionCredit);
 }
 
 /** Parts smaller than this on either axis cannot carry a readable bridge. */
@@ -2297,33 +2866,259 @@ async function auditStaleAssets(
   return issues;
 }
 
-/**
- * Below this union-bbox fraction of the frame area, a framed landing reads as
- * a tiny subject adrift in a void (probe-cutfix-3 m06 measured ~6-8% and the
- * operator called it "messy"); deliberate holds with supporting content
- * measure well above it.
- */
-const SPARSE_COVERAGE_MIN = 0.18;
+/** Below this 24x14 semantic-grid fraction, a frame reads as mostly void. */
+// 59 occupied cells is the calibrated floor; 60/336 (17.86%) is the first
+// stable post-correction tier while the known void compositions remain far
+// below it.
+const SPARSE_COVERAGE_MIN = 0.175;
 /**
  * A large union bbox can be faked by a few tiny fragments in opposite corners.
  * Require a modest amount of actually painted/text/media area as well.
  */
 const SPARSE_OCCUPANCY_MIN = 0.055;
-/**
- * Lower floor for camera landings in the film's FINAL scene: a deliberate
- * compact resolve (badge + CTA pair ~10-15%) reached by a pull-back is the
- * genre's signature and must pass, while a true disaster (a 2% lone CTA — the
- * improve-ws15-1 finding, confirmed by eye) still fails. Camera-less final
- * scenes are fully exempt below; landings keep this reduced tier instead so
- * an end card the camera itself frames still cannot ship near-empty.
- */
-const SPARSE_COVERAGE_MIN_FINAL = 0.08;
 /** Content spanning this much of one frame axis is a deliberate composition. */
 const SPARSE_AXIS_ESCAPE = 0.6;
 /** A true band/rail stays compact on the perpendicular axis. */
 const SPARSE_AXIS_ESCAPE_THICKNESS = 0.35;
 /** Scenes shorter than this are stings/flashes — never judged for coverage. */
 const SPARSE_MIN_SCENE_SEC = 2;
+
+/** Whole-frame semantic + intentional-environment composition floor. */
+const COMPOSITION_COVERAGE_MIN = 0.3;
+function compositionFloorMode(): "off" | "audit" | "block" {
+  const value = slackSequencesEnvRawValue("SLACK_SEQUENCES_COMPOSITION")?.trim().toLowerCase();
+  if (value === "0" || value === "off") return "off";
+  if (value === "block") return "block";
+  return "audit";
+}
+
+/** Exact-copy audit thresholds: deliberately too high for brand/CTA tokens. */
+export const REPEATED_VISIBLE_COPY_MIN_CHARS = 30;
+export const REPEATED_VISIBLE_COPY_MIN_WORDS = 5;
+const REPEATED_VISIBLE_COPY_MAX_PER_SAMPLE = 6;
+
+/**
+ * High-confidence same-landing copy audit (owner ledger: QuillSign duplicate
+ * liability clause). Browser truth is required: static markup cannot know
+ * whether responsive twins, transition clones, or component split spans are
+ * actually visible together. The finding is strict polish only; it never
+ * enters `errors` and therefore never changes browser `ok`.
+ */
+async function auditRepeatedVisibleCopy(
+  page: import("puppeteer-core").Page,
+  time: number,
+): Promise<DirectLayoutIssue[]> {
+  const findings = await page.evaluate((thresholds: {
+    minChars: number;
+    minWords: number;
+    maxFindings: number;
+  }) => {
+    const composition = document.querySelector<HTMLElement>(
+      "[data-composition-id][data-width][data-height]",
+    );
+    if (!composition) return [];
+    const compositionRect = composition.getBoundingClientRect();
+    const candidateSelector = [
+      "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote",
+      "label", "button", "[role='heading']", "[data-copy-root]",
+      "[data-part]", "[data-component]",
+    ].join(",");
+    const excludedAncestorSelector = [
+      "[aria-hidden='true']", "[hidden]", "[inert]", "[data-layout-ignore]",
+      "[data-sequences-host]", "[data-sequences-plugin]",
+      "[data-sequences-plugin-duplicate]", "[data-sequences-runtime-cut]",
+      "[data-sequences-fx]", "[data-sequences-display-type]",
+      ".seq-component-morph-bridge", ".cmp-split",
+    ].join(",");
+    const excludedContentSelector = [
+      "[aria-hidden='true']", "[data-sequences-runtime-cut]",
+      "[data-sequences-fx]", ".seq-component-morph-bridge", ".cmp-split",
+    ].join(",");
+    const escapeAttr = (value: string): string =>
+      value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const escapeCss = (value: string): string =>
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(value)
+        : value.replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+    const normalizedText = (value: string): string =>
+      value.normalize("NFKC").replace(/\s+/g, " ").trim();
+    const opacityThrough = (element: Element, stop: Element): number => {
+      let opacity = 1;
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (
+          style.display === "none" || style.visibility === "hidden" ||
+          style.visibility === "collapse"
+        ) return 0;
+        opacity *= Number.parseFloat(style.opacity) || 0;
+        if (node === stop) break;
+      }
+      return opacity;
+    };
+    const visibleRect = (element: HTMLElement, scene: HTMLElement): DOMRect | undefined => {
+      if (opacityThrough(element, scene) < 0.15) return undefined;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return undefined;
+      const left = Math.max(rect.left, compositionRect.left);
+      const top = Math.max(rect.top, compositionRect.top);
+      const right = Math.min(rect.right, compositionRect.right);
+      const bottom = Math.min(rect.bottom, compositionRect.bottom);
+      return right - left >= 2 && bottom - top >= 2 ? rect : undefined;
+    };
+    const sceneSelector = (scene: HTMLElement): string => {
+      const id = scene.getAttribute("data-scene");
+      return id ? `[data-scene="${escapeAttr(id)}"]` : `#${escapeCss(scene.id)}`;
+    };
+    const stableSelector = (element: HTMLElement, scene: HTMLElement): string => {
+      if (element.id && composition.querySelectorAll(`#${escapeCss(element.id)}`).length === 1) {
+        return `#${escapeCss(element.id)}`;
+      }
+      const part = element.getAttribute("data-part");
+      if (part && scene.querySelectorAll(`[data-part="${escapeAttr(part)}"]`).length === 1) {
+        return `${sceneSelector(scene)} [data-part="${escapeAttr(part)}"]`;
+      }
+      const path: string[] = [];
+      for (let node: Element | null = element; node && node !== scene; node = node.parentElement) {
+        const tag = node.tagName.toLowerCase();
+        const siblings = node.parentElement
+          ? Array.from(node.parentElement.children).filter((entry) => entry.tagName === node!.tagName)
+          : [node];
+        path.unshift(`${tag}:nth-of-type(${siblings.indexOf(node) + 1})`);
+      }
+      return `${sceneSelector(scene)} > ${path.join(" > ")}`;
+    };
+    const rectValue = (rect: DOMRect) => ({
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+    });
+    type Candidate = {
+      element: HTMLElement;
+      owner: Element;
+      sceneId: string;
+      text: string;
+      key: string;
+      selector: string;
+      rect: DOMRect;
+    };
+    const results: Array<{
+      sceneId: string;
+      text: string;
+      selector: string;
+      peerSelector: string;
+      rect: ReturnType<typeof rectValue>;
+      peerRect: ReturnType<typeof rectValue>;
+    }> = [];
+
+    for (const scene of Array.from(composition.querySelectorAll<HTMLElement>("[data-scene]"))) {
+      if (!visibleRect(scene, scene)) continue;
+      const sceneId = scene.getAttribute("data-scene") || scene.id || "scene";
+      const initial: Candidate[] = [];
+      for (const element of Array.from(scene.querySelectorAll<HTMLElement>(candidateSelector))) {
+        // CTA/brand tokens are explicitly out of scope, even if localization
+        // makes one exceed the general length threshold.
+        if (element.closest("a,button,[role='button']")) continue;
+        if (element.closest("[data-brand],[data-logo],[data-wordmark],[data-component='logo'],[data-component='wordmark']")) {
+          continue;
+        }
+        if (element.closest(excludedAncestorSelector)) continue;
+        // A kinetic/split root is one authored phrase rendered as many spans,
+        // not repeated copy. Exclude the whole aggregate, not merely each span.
+        if (element.querySelector(excludedContentSelector)) continue;
+        const text = normalizedText(element.innerText || element.textContent || "");
+        const wordCount = text.match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
+        if (text.length < thresholds.minChars || wordCount < thresholds.minWords) continue;
+        const rect = visibleRect(element, scene);
+        if (!rect) continue;
+        const owner = element.closest("[data-component][data-part],[data-part],[data-component]") ??
+          element;
+        initial.push({
+          element,
+          owner,
+          sceneId,
+          text,
+          key: text.toLocaleLowerCase(),
+          selector: stableSelector(element, scene),
+          rect,
+        });
+      }
+      // Prefer the smallest semantic text root. A data-part wrapper containing
+      // one paragraph otherwise repeats the same DOM text before comparison.
+      const candidates = initial.filter((candidate) =>
+        !initial.some((other) =>
+          other !== candidate && other.key === candidate.key &&
+          candidate.element.contains(other.element)
+        )
+      );
+      const groups = new Map<string, Candidate[]>();
+      for (const candidate of candidates) {
+        const group = groups.get(candidate.key);
+        if (group) group.push(candidate);
+        else groups.set(candidate.key, [candidate]);
+      }
+      for (const group of groups.values()) {
+        const byOwner = new Map<Element, Candidate>();
+        for (const candidate of group) {
+          if (!byOwner.has(candidate.owner)) byOwner.set(candidate.owner, candidate);
+        }
+        const distinct = [...byOwner.values()];
+        let pair: [Candidate, Candidate] | undefined;
+        for (let left = 0; left < distinct.length && !pair; left += 1) {
+          for (let right = left + 1; right < distinct.length; right += 1) {
+            const a = distinct[left]!;
+            const b = distinct[right]!;
+            if (a.element.contains(b.element) || b.element.contains(a.element)) continue;
+            // Byte-identical overlay twins are usually responsive/runtime
+            // mirrors. Named host mirrors are already excluded; retain this
+            // geometry backstop for unannotated accessibility twins.
+            const sameBox = Math.abs(a.rect.left - b.rect.left) < 2 &&
+              Math.abs(a.rect.top - b.rect.top) < 2 &&
+              Math.abs(a.rect.width - b.rect.width) < 2 &&
+              Math.abs(a.rect.height - b.rect.height) < 2;
+            if (!sameBox) pair = [a, b];
+          }
+        }
+        if (!pair) continue;
+        results.push({
+          sceneId,
+          text: pair[0].text,
+          selector: pair[0].selector,
+          peerSelector: pair[1].selector,
+          rect: rectValue(pair[0].rect),
+          peerRect: rectValue(pair[1].rect),
+        });
+        if (results.length >= thresholds.maxFindings) return results;
+      }
+    }
+    return results;
+  }, {
+    minChars: REPEATED_VISIBLE_COPY_MIN_CHARS,
+    minWords: REPEATED_VISIBLE_COPY_MIN_WORDS,
+    maxFindings: REPEATED_VISIBLE_COPY_MAX_PER_SAMPLE,
+  });
+
+  return findings.map((finding): DirectLayoutIssue => ({
+    code: "repeated_visible_copy",
+    severity: "warning",
+    time,
+    selector: finding.selector,
+    sceneId: finding.sceneId,
+    text: finding.text,
+    rect: finding.rect,
+    peerRect: finding.peerRect,
+    message:
+      `Scene "${finding.sceneId}" renders the same substantial copy in distinct visible ` +
+      `surfaces (${finding.selector} and ${finding.peerSelector}): ` +
+      `"${finding.text.slice(0, 120)}${finding.text.length > 120 ? "…" : ""}"`,
+    fixHint:
+      "Remove one copy or make the two surfaces advance different facts. Keep one clear " +
+      "owner for this statement; do not merely hide it behind another visible surface.",
+    source: "sequences",
+  }));
+}
 
 /** Below this content-coverage fraction a sampled frame reads as blank. */
 const NEAR_BLANK_COVERAGE = 0.005;
@@ -2630,7 +3425,129 @@ const TEMPORAL_JUDGE_STATIC_RATIO = 0.0012;
 const TEMPORAL_JUDGE_STATIC_MEAN_DELTA = 0.35;
 
 function temporalJudgeEnabled(): boolean {
-  return process.env.SLACK_SEQUENCES_TEMPORAL_JUDGE !== "0";
+  return slackSequencesEnvRawValue("SLACK_SEQUENCES_TEMPORAL_JUDGE") !== "0";
+}
+
+interface TransitionDomState {
+  missing: boolean;
+  opacity: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  transform: string;
+  clipPath: string;
+}
+
+/** Pure comparison kept exported so the liveness tolerance has cheap coverage. */
+export function transitionOutgoingStateMoved(
+  before: TransitionDomState,
+  after: TransitionDomState,
+): boolean {
+  if (before.missing !== after.missing) return true;
+  if (before.missing && after.missing) return false;
+  return Math.abs(before.opacity - after.opacity) >= 0.025 ||
+    Math.abs(before.left - after.left) >= 1 ||
+    Math.abs(before.top - after.top) >= 1 ||
+    Math.abs(before.width - after.width) >= 1 ||
+    Math.abs(before.height - after.height) >= 1 ||
+    before.transform !== after.transform ||
+    before.clipPath !== after.clipPath;
+}
+
+/**
+ * Declaring a transition promises motion on both sides of the boundary. The
+ * temporal report already measures this after render; repeat the cheap DOM
+ * half in browser QA so an invisible outgoing leg consumes bounded repair
+ * budget before publication. Hard cuts have no outgoing motion promise.
+ */
+async function judgeDeclaredTransitionOutgoing(
+  page: import("puppeteer-core").Page,
+  draft: DirectCompositionDraft,
+  seekContent: (time: number) => Promise<void>,
+): Promise<TransitionOutgoingEvidence[]> {
+  if (!temporalJudgeEnabled()) return [];
+  const declared = new Set(
+    draft.storyboard.flatMap((scene, index) => {
+      const next = draft.storyboard[index + 1];
+      return scene.cut && next ? [`${scene.id}\u0000${next.id}`] : [];
+    }),
+  );
+  const cuts = (parseCutPlan(draft.html).plan?.cuts ?? []).filter((cut) =>
+    cut.style !== "hard" && declared.has(`${cut.fromScene}\u0000${cut.toScene}`) &&
+    cut.exitSec >= 0.12
+  );
+  const escapeAttribute = (value: string): string =>
+    value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const readState = async (selector: string, fallbackSelector: string): Promise<TransitionDomState> =>
+    page.evaluate((payload: { selector: string; fallbackSelector: string }) => {
+      const element = document.querySelector<HTMLElement>(payload.selector) ??
+        document.querySelector<HTMLElement>(payload.fallbackSelector);
+      if (!element) {
+        return {
+          missing: true,
+          opacity: 0,
+          left: 0,
+          top: 0,
+          width: 0,
+          height: 0,
+          transform: "none",
+          clipPath: "none",
+        };
+      }
+      let opacity = 1;
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden") {
+          opacity = 0;
+          break;
+        }
+        const own = Number.parseFloat(style.opacity);
+        opacity *= Number.isFinite(own) ? own : 1;
+      }
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        missing: false,
+        opacity,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        transform: style.transform,
+        clipPath: style.clipPath,
+      };
+    }, { selector, fallbackSelector });
+  const evidence: TransitionOutgoingEvidence[] = [];
+  for (const cut of cuts) {
+    const from = escapeAttribute(cut.fromScene);
+    const to = escapeAttribute(cut.toScene);
+    const selector = cut.style === "match" || cut.style === "morph"
+      ? `[data-sequences-runtime-cut="bridge"][data-sequences-cut-from="${from}"]` +
+        `[data-sequences-cut-to="${to}"]`
+      : cut.style === "flash-white"
+        ? `[data-sequences-runtime-cut="flash"][data-sequences-cut-from="${from}"]` +
+          `[data-sequences-cut-to="${to}"]`
+        : `[data-scene="${from}"]`;
+    const fallbackSelector = `[data-scene="${from}"]`;
+    const beforeSec = roundTime(Math.max(0, cut.atSec - cut.exitSec + 0.02));
+    const afterSec = roundTime(Math.max(beforeSec, cut.atSec - 0.02));
+    await seekContent(beforeSec);
+    const before = await readState(selector, fallbackSelector);
+    await seekContent(afterSec);
+    const after = await readState(selector, fallbackSelector);
+    evidence.push({
+      fromScene: cut.fromScene,
+      toScene: cut.toScene,
+      style: cut.style,
+      atSec: cut.atSec,
+      beforeSec,
+      afterSec,
+      selector,
+      verdict: transitionOutgoingStateMoved(before, after) ? "changed" : "static",
+    });
+  }
+  return evidence;
 }
 
 /**
@@ -2801,18 +3718,74 @@ async function judgeRenderedMoments(
   return evidence;
 }
 
+async function measureComponentSettleBlooms(
+  page: import("puppeteer-core").Page,
+  draft: DirectCompositionDraft,
+  seekContent: (time: number) => Promise<void>,
+): Promise<ComponentSettleBloomEvidenceV1[]> {
+  const plan = parseComponentPlan(draft.html).plan;
+  if (!plan) return [];
+  const candidates = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>("[data-sequences-settle-bloom]"))
+      .map((element) => ({
+        beatId: element.getAttribute("data-sequences-settle-bloom") ?? "",
+        sceneId: element.closest<HTMLElement>("[data-scene]")?.dataset.scene ?? "",
+      }))
+      .filter((entry) => entry.beatId && entry.sceneId)
+  );
+  const evidence: ComponentSettleBloomEvidenceV1[] = [];
+  for (const candidate of candidates.slice(0, 12)) {
+    const scenePlan = plan.scenes.find((scene) => scene.sceneId === candidate.sceneId);
+    const beat = scenePlan?.beats.find((entry) => entry.id === candidate.beatId);
+    const scene = draft.storyboard.find((entry) => entry.id === candidate.sceneId);
+    if (!beat || !scene) continue;
+    const duration = Math.min(1, scene.startSec + scene.durationSec - beat.endSec - 0.02);
+    if (duration < 0.18) continue;
+    const startSec = beat.endSec + Math.min(0.03, duration * 0.1);
+    const endSec = beat.endSec + duration - 0.01;
+    const opacityAt = async (time: number): Promise<number> => {
+      await seekContent(time);
+      return page.evaluate(({ beatId, sceneId }) => {
+        const scene = document.querySelector<HTMLElement>(
+          `[data-scene="${CSS.escape(sceneId)}"]`,
+        );
+        const bloom = scene?.querySelector<HTMLElement>(
+          `[data-sequences-settle-bloom="${CSS.escape(beatId)}"]`,
+        );
+        return Number.parseFloat(bloom ? getComputedStyle(bloom).opacity : "0") || 0;
+      }, candidate);
+    };
+    evidence.push({
+      sceneId: candidate.sceneId,
+      beatId: candidate.beatId,
+      startSec,
+      endSec,
+      startOpacity: await opacityAt(startSec),
+      endOpacity: await opacityAt(endSec),
+    });
+  }
+  return evidence;
+}
+
 export async function inspectDirectComposition(
   projectDir: string,
   draft: DirectCompositionDraft,
   // captureGuide is retained for call-site compatibility but no longer skips
   // the guide: every pass with interactions captures it (one extra screenshot)
   // so a cached result is a superset any later caller can reuse verbatim.
-  _options: { captureGuide?: boolean } = {},
+  options: {
+    captureGuide?: boolean;
+    captureVisualReview?: boolean;
+    /** Persist captured sheets to canonical temporal aliases (default true). */
+    publishVisualReview?: boolean;
+  } = {},
 ): Promise<DirectBrowserQaResult> {
-  const cacheKey = qaCacheEnabled() ? qaCacheKey(draft) : undefined;
+  const cacheKey = qaCacheEnabled() ? qaCacheKey(projectDir, draft) : undefined;
   if (cacheKey) {
     const cached = readQaCache(projectDir, cacheKey);
-    if (cached) {
+    // A vision request always renders fresh, hash-addressed evidence. Native
+    // image bytes and local artifact existence are intentionally not cached.
+    if (cached && !options.captureVisualReview) {
       process.stderr.write(
         `[layout-qa] reusing cached browser QA evidence (${cacheKey.slice(0, 8)})\n`,
       );
@@ -2956,9 +3929,17 @@ export async function inspectDirectComposition(
     const rawIssues: DirectLayoutIssue[] = [];
     const interactionEvidence: DirectInteractionEvidence[] = [];
     const coverageSamples: Array<{ time: number; coverage: number }> = [];
+    const compositionMode = compositionFloorMode();
+    const compositionCoverageSamples: Array<{ time: number; coverage: number }> = [];
     for (const time of samples) {
       await seekContent(time);
       coverageSamples.push({ time, coverage: await measureContentCoverage(page) });
+      if (compositionMode !== "off") {
+        compositionCoverageSamples.push({
+          time,
+          coverage: await measureContentCoverage(page, true),
+        });
+      }
       const hyperframes = await page.evaluate(
         (options: { time: number; tolerance: number }) => {
           const audit = (window as unknown as {
@@ -2969,6 +3950,7 @@ export async function inspectDirectComposition(
         { time, tolerance: 2 },
       );
       const interactionAudit = await auditInteractions(page, interactionIntents, time);
+      const repeatedCopyIssues = await auditRepeatedVisibleCopy(page, time);
       const hyperframesIssues = (hyperframes as Record<string, unknown>[])
         .map(normalizeHyperframesIssue);
       const sequenceRelationshipIssues = await auditSequencesRelationships(page, time);
@@ -3041,6 +4023,7 @@ export async function inspectDirectComposition(
           !(issue.code === "container_overflow" && issue.isCameraWorld)
         ),
         ...enrichedSequence,
+        ...repeatedCopyIssues,
         ...await auditFocalParts(page, draft.storyboard, time),
         ...interactionAudit.issues,
       );
@@ -3133,9 +4116,84 @@ export async function inspectDirectComposition(
     // div at five ratios 4.23–4.46 in ONE attempt). Keep the worst ratio per
     // selector+text.
     const contrastWorst = new Map<string, DirectLayoutIssue>();
+    const washoutEvidence: CompositionWashoutEvidenceV1[] = [];
     for (const time of contrastTimes) {
       await seekContent(time);
       const screenshot = await page.screenshot({ encoding: "base64", type: "png" });
+      const washoutScene = draft.storyboard.find((scene) =>
+        time >= scene.startSec && time < scene.startSec + scene.durationSec
+      );
+      const washoutFocal = washoutScene ? spatialFocalPartAt(washoutScene, time) : undefined;
+      if (washoutScene && washoutFocal) {
+        const pixels = await page.evaluate(async (payload: {
+          image: string;
+          sceneId: string;
+          focalPart: string;
+        }) => {
+          const root = document.querySelector<HTMLElement>(
+            "[data-composition-id][data-width][data-height]",
+          );
+          const scene = root?.querySelector<HTMLElement>(
+            `[data-scene="${CSS.escape(payload.sceneId)}"]`,
+          );
+          const focal = scene?.querySelector<HTMLElement>(
+            `[data-part="${CSS.escape(payload.focalPart)}"]`,
+          );
+          if (!root || !focal) return null;
+          const image = new Image();
+          await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error("washout screenshot decode failed"));
+            image.src = "data:image/png;base64," + payload.image;
+          });
+          const width = 192;
+          const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          if (!context) return null;
+          context.drawImage(image, 0, 0, width, height);
+          const rootRect = root.getBoundingClientRect();
+          const focalRect = focal.getBoundingClientRect();
+          if (rootRect.width < 1 || rootRect.height < 1 || focalRect.width < 1 || focalRect.height < 1) {
+            return null;
+          }
+          return {
+            width,
+            height,
+            data: Array.from(context.getImageData(0, 0, width, height).data),
+            focalRect: {
+              left: (focalRect.left - rootRect.left) / rootRect.width * width,
+              top: (focalRect.top - rootRect.top) / rootRect.height * height,
+              right: (focalRect.right - rootRect.left) / rootRect.width * width,
+              bottom: (focalRect.bottom - rootRect.top) / rootRect.height * height,
+            },
+          };
+        }, { image: String(screenshot), sceneId: washoutScene.id, focalPart: washoutFocal });
+        if (pixels) {
+          const washout = analyzeCompositionWashout({
+            ...pixels,
+            time,
+            sceneId: washoutScene.id,
+            focalPart: washoutFocal,
+          });
+          washoutEvidence.push(washout.evidence);
+          if (washout.finding) {
+            rawIssues.push({
+              code: "composition_washed_out",
+              severity: "warning",
+              time,
+              selector: `[data-part="${washoutFocal}"]`,
+              sceneId: washoutScene.id,
+              part: washoutFocal,
+              message: washout.finding.message,
+              fixHint: washout.finding.fixHint,
+              source: "sequences",
+            });
+          }
+        }
+      }
       const contrast = await page.evaluate(
         (payload: { image: string; time: number }) => {
           const audit = (window as unknown as {
@@ -3639,6 +4697,7 @@ export async function inspectDirectComposition(
     ): Promise<
       {
         fraction: number;
+        bboxFraction: number;
         occupiedFraction: number;
         widthFraction: number;
         heightFraction: number;
@@ -3720,7 +4779,13 @@ export async function inspectDirectComposition(
           rects.push({ left: l, top: t, right: r, bottom: b });
         }
         if (right <= left || bottom <= top) {
-          return { fraction: 0, occupiedFraction: 0, widthFraction: 0, heightFraction: 0 };
+          return {
+            fraction: 0,
+            bboxFraction: 0,
+            occupiedFraction: 0,
+            widthFraction: 0,
+            heightFraction: 0,
+          };
         }
         // Exact rectangle-union area. Nested text inside a painted panel does
         // not double-count, while widely separated tiny cards no longer earn
@@ -3756,8 +4821,32 @@ export async function inspectDirectComposition(
           occupiedArea += (x2 - x1) * coveredY;
         }
         const frameArea = rootRect.width * rootRect.height;
+        // The union bbox was easy to game with two tiny islands in opposite
+        // corners. Judge the composition on a deterministic 24x14 semantic
+        // occupancy grid instead, while retaining exact painted area and bbox
+        // as corroborating diagnostics. A cell counts only when visible
+        // content actually intersects it; backgrounds and ignored environment
+        // layers never enter `rects` above.
+        const columns = 24;
+        const rows = 14;
+        const cellWidth = rootRect.width / columns;
+        const cellHeight = rootRect.height / rows;
+        let occupiedCells = 0;
+        for (let row = 0; row < rows; row += 1) {
+          const cellTop = rootRect.top + row * cellHeight;
+          const cellBottom = cellTop + cellHeight;
+          for (let column = 0; column < columns; column += 1) {
+            const cellLeft = rootRect.left + column * cellWidth;
+            const cellRight = cellLeft + cellWidth;
+            if (rects.some((rect) =>
+              rect.left < cellRight && rect.right > cellLeft &&
+              rect.top < cellBottom && rect.bottom > cellTop
+            )) occupiedCells += 1;
+          }
+        }
         return {
-          fraction: ((right - left) * (bottom - top)) / frameArea,
+          fraction: occupiedCells / (columns * rows),
+          bboxFraction: ((right - left) * (bottom - top)) / frameArea,
           occupiedFraction: occupiedArea / frameArea,
           widthFraction: (right - left) / rootRect.width,
           heightFraction: (bottom - top) / rootRect.height,
@@ -3767,13 +4856,14 @@ export async function inspectDirectComposition(
     const isSparseCoverage = (
       coverage: {
         fraction: number;
+        bboxFraction: number;
         occupiedFraction: number;
         widthFraction: number;
         heightFraction: number;
       } | undefined,
-      minFraction: number = SPARSE_COVERAGE_MIN,
     ): coverage is {
       fraction: number;
+      bboxFraction: number;
       occupiedFraction: number;
       widthFraction: number;
       heightFraction: number;
@@ -3781,10 +4871,8 @@ export async function inspectDirectComposition(
       Boolean(
         coverage &&
         (
-          coverage.fraction < minFraction ||
-          coverage.occupiedFraction < (
-            minFraction === SPARSE_COVERAGE_MIN_FINAL ? 0.03 : SPARSE_OCCUPANCY_MIN
-          )
+          coverage.fraction < SPARSE_COVERAGE_MIN ||
+          coverage.occupiedFraction < SPARSE_OCCUPANCY_MIN
         ) &&
         // A composition that spans one axis while staying compact on the
         // other (a full-width headline band, a tall rail) is deliberate. Two
@@ -3800,18 +4888,13 @@ export async function inspectDirectComposition(
           )
         ),
       );
-    const finalSceneId = draft.storyboard[draft.storyboard.length - 1]?.id;
-    const graphOwnedCamera = parseCameraBlockingPlan(draft.html)?.enabled === true;
+    const blockingPlan = parseCameraBlockingPlan(draft.html);
+    const graphOwnedCamera = blockingPlan?.enabled === true;
     if (!graphOwnedCamera) {
       for (const scenePlan of parseCameraPlan(draft.html).plan?.scenes ?? []) {
       const scene = draft.storyboard.find((entry) => entry.id === scenePlan.sceneId);
       if (!scene) continue;
       const sceneEnd = scene.startSec + scene.durationSec;
-      // Two-tier floor: final-scene landings judge against the compact-resolve
-      // tier, mirroring (not duplicating) the static path's final exemption.
-      const sparseFloor = scene.id === finalSceneId
-        ? SPARSE_COVERAGE_MIN_FINAL
-        : SPARSE_COVERAGE_MIN;
       // Selectors already reported for this scene — the moment-time re-check
       // below must not duplicate a landing finding.
       const flaggedClips = new Set<string>();
@@ -3885,13 +4968,13 @@ export async function inspectDirectComposition(
         // A fully-empty landing is the near-blank audit's finding; sparse is
         // strictly the "content exists but is tiny" class (same skip as the
         // static mid-window path).
-        if (isSparseCoverage(coverage, sparseFloor) && coverage.fraction > 0) {
+        if (isSparseCoverage(coverage) && coverage.fraction > 0) {
           // Double-sample like the clipping audit: an entrance still tweening
           // at the settle sample must not masquerade as a sparse framing.
           const confirmedCoverage = canConfirm
             ? await measureFramedCoverage(confirmAt, scenePlan.sceneId)
             : coverage;
-          if (isSparseCoverage(confirmedCoverage, sparseFloor) && confirmedCoverage.fraction > 0) {
+          if (isSparseCoverage(confirmedCoverage) && confirmedCoverage.fraction > 0) {
             rawIssues.push({
               code: "camera_framed_sparse",
               severity: "warning",
@@ -3902,6 +4985,7 @@ export async function inspectDirectComposition(
               framing: {
                 sceneId: scenePlan.sceneId,
                 fraction: confirmedCoverage.fraction,
+                bboxFraction: confirmedCoverage.bboxFraction,
                 occupiedFraction: confirmedCoverage.occupiedFraction,
                 ...(segment.toPart ? { part: segment.toPart } : {}),
                 ...(segment.toRegion ? { region: segment.toRegion } : {}),
@@ -3909,7 +4993,7 @@ export async function inspectDirectComposition(
               message:
                 `Camera ${segment.move} lands on ${station} in scene "${scenePlan.sceneId}" at ` +
                 `${arriveSec.toFixed(1)}s, but the scene's visible content fills only ` +
-                `${Math.round(confirmedCoverage.fraction * 100)}% of the frame footprint and ` +
+                `${Math.round(confirmedCoverage.fraction * 100)}% of the 24x14 occupancy grid and ` +
                 `${Math.round(confirmedCoverage.occupiedFraction * 100)}% painted area — a small ` +
                 `subject adrift in empty space.`,
               fixHint:
@@ -4008,6 +5092,74 @@ export async function inspectDirectComposition(
       }
     }
 
+    // The continuity director overrides the legacy camera plan, so its own
+    // primary phrase arrivals must carry the same whole-frame composition
+    // floor. Target occupancy alone is insufficient: a perfectly readable
+    // CTA can still float in an otherwise empty frame.
+    const graphLandingSampledScenes = new Set<string>();
+    if (graphOwnedCamera && blockingPlan) {
+      const sampledPhrases = new Set<string>();
+      for (const phrase of blockingPlan.scenes.flatMap((scene) => scene.phrases)) {
+        if (phrase.importance !== "primary" || sampledPhrases.has(phrase.id)) continue;
+        sampledPhrases.add(phrase.id);
+        const scene = draft.storyboard.find((entry) => entry.id === phrase.sceneId);
+        if (!scene) continue;
+        const sceneEnd = scene.startSec + scene.durationSec;
+        const sampleAt = Math.min(
+          sceneEnd - 0.08,
+          Math.max(phrase.arrivalSec + 0.08, phrase.dwell.startSec + 0.08),
+        );
+        if (sampleAt <= scene.startSec || insideCutWindow(sampleAt)) continue;
+        graphLandingSampledScenes.add(scene.id);
+        const coverage = await measureFramedCoverage(sampleAt, scene.id);
+        if (!isSparseCoverage(coverage) || coverage.fraction <= 0) continue;
+        const confirmAt = Math.min(
+          sampleAt + 0.8,
+          phrase.dwell.endSec - 0.05,
+          sceneEnd - 0.05,
+        );
+        const confirmedCoverage = confirmAt > sampleAt + 0.05 && !insideCutWindow(confirmAt)
+          ? await measureFramedCoverage(confirmAt, scene.id)
+          : coverage;
+        if (!isSparseCoverage(confirmedCoverage) || confirmedCoverage.fraction <= 0) continue;
+        const framingTarget = phrase.framingTarget ??
+          (phrase.target.kind === "part" || phrase.target.kind === "region"
+            ? phrase.target
+            : undefined);
+        const selector = framingTarget?.kind === "part"
+          ? `[data-part="${framingTarget.id}"]`
+          : framingTarget?.kind === "region"
+            ? `[data-region="${framingTarget.id}"]`
+            : phrase.target.kind === "selector"
+              ? phrase.target.id
+              : `[data-scene="${scene.id}"]`;
+        rawIssues.push({
+          code: "camera_framed_sparse",
+          severity: "warning",
+          time: sampleAt,
+          selector,
+          framing: {
+            sceneId: scene.id,
+            fraction: confirmedCoverage.fraction,
+            bboxFraction: confirmedCoverage.bboxFraction,
+            occupiedFraction: confirmedCoverage.occupiedFraction,
+            ...(framingTarget?.kind === "part" ? { part: framingTarget.id } : {}),
+            ...(framingTarget?.kind === "region" ? { region: framingTarget.id } : {}),
+          },
+          message:
+            `Primary blocking phrase "${phrase.phraseId}" lands in scene "${scene.id}", but ` +
+            `visible content covers only ${Math.round(confirmedCoverage.fraction * 100)}% of ` +
+            `the 24x14 occupancy grid and ` +
+            `${Math.round(confirmedCoverage.occupiedFraction * 100)}% painted area - a small ` +
+            `subject adrift in empty space.`,
+          fixHint:
+            "Fill the whole landing composition: enlarge or tighten the framed station, or " +
+            "bring supporting evidence into the frame without weakening the declared focal.",
+          source: "sequences",
+        });
+      }
+    }
+
     // Scenes without a full-move landing get the same coverage discipline
     // once at mid-window: a held framing whose content fills a sliver of the
     // frame is the same "tiny content in the void" defect whether the scene
@@ -4015,18 +5167,17 @@ export async function inspectDirectComposition(
     // anywhere (live probe fix-ws-probe-3: a toast at ~3% coverage drifted
     // for 3.5s and was never sampled, because the landing pass has nothing to
     // sample and the old camera-less check skipped any scene with a camera).
-    // The film's FINAL scene is exempt — a closing resolve legitimately
-    // compresses to one small focal point (logo sting, lone CTA); the
-    // deterministic fallback film's end card is the proof case.
+    // Final frames participate too: a closing lockup is still a composed
+    // frame, and a tiny logo/CTA adrift in void is the defect this gate owns.
     const landingSampledScenes = graphOwnedCamera
-      ? new Set<string>()
+      ? graphLandingSampledScenes
       : new Set(
           (parseCameraPlan(draft.html).plan?.scenes ?? [])
             .filter((scene) =>
               scene.segments.some((segment) => CAMERA_FULL_MOVES.has(segment.move)))
             .map((scene) => scene.sceneId),
         );
-    for (const scene of draft.storyboard.slice(0, -1)) {
+    for (const scene of draft.storyboard) {
       if (landingSampledScenes.has(scene.id)) continue;
       if (scene.durationSec < SPARSE_MIN_SCENE_SEC) continue;
       const sceneEnd = scene.startSec + scene.durationSec;
@@ -4050,11 +5201,12 @@ export async function inspectDirectComposition(
         framing: {
           sceneId: scene.id,
           fraction: confirmedCoverage.fraction,
+          bboxFraction: confirmedCoverage.bboxFraction,
           occupiedFraction: confirmedCoverage.occupiedFraction,
         },
         message:
           `Scene "${scene.id}" holds one framing whose visible content fills only ` +
-          `${Math.round(confirmedCoverage.fraction * 100)}% of the frame footprint and ` +
+          `${Math.round(confirmedCoverage.fraction * 100)}% of the 24x14 occupancy grid and ` +
           `${Math.round(confirmedCoverage.occupiedFraction * 100)}% painted area — a small ` +
           `subject adrift in empty space.`,
         fixHint:
@@ -4073,6 +5225,40 @@ export async function inspectDirectComposition(
     // at full opacity over the focal element is the "assets don't disappear and
     // overlap" mess. Always advisory, bounded seeks.
     rawIssues.push(...await auditStaleAssets(page, draft, seekContent, insideCutWindow));
+
+    // Whole-frame composition floor (WS-A3). Semantic content and an explicit
+    // host environment receive credit; root/body canvas paint does not. Start
+    // in audit mode so corpus calibration cannot spend a paid author attempt;
+    // operators may promote the same measured finding with =block.
+    if (compositionMode !== "off") {
+      for (const scene of draft.storyboard) {
+        if (scene.durationSec < SPARSE_MIN_SCENE_SEC) continue;
+        const eligible = compositionCoverageSamples.filter((sample) =>
+          sample.time >= scene.startSec + 0.2 &&
+          sample.time <= scene.startSec + scene.durationSec - 0.12 &&
+          !insideCutWindow(sample.time)
+        );
+        if (!eligible.length) continue;
+        const worst = [...eligible].sort((a, b) => a.coverage - b.coverage || a.time - b.time)[0]!;
+        if (worst.coverage >= COMPOSITION_COVERAGE_MIN) continue;
+        rawIssues.push({
+          code: "composition_frame_underfilled",
+          severity: "warning",
+          time: worst.time,
+          selector: `[data-scene="${scene.id}"]`,
+          sceneId: scene.id,
+          message:
+            `Scene "${scene.id}" fills only ${Math.round(worst.coverage * 100)}% of the ` +
+            `whole-frame composition grid; expected at least ` +
+            `${Math.round(COMPOSITION_COVERAGE_MIN * 100)}% from semantic content or a ` +
+            `deliberate host environment (mode=${compositionMode}).`,
+          fixHint:
+            "Develop the full frame with a staged environment or enlarge/group the primary " +
+            "product composition; changing only the bare canvas color earns no coverage.",
+          source: "sequences",
+        });
+      }
+    }
 
     // Blank-frame guard (2026-07-03 incident: a live film published with the
     // promised content never on frame). A scene is near-blank when EVERY
@@ -4136,13 +5322,15 @@ export async function inspectDirectComposition(
       // Suppressing it merely because that cue sits inside a motion window made
       // hidden/zero-area primary targets invisible to QA.
       issue.code === "camera_blocking_landing" ||
+      issue.code === "composition_frame_underfilled" ||
+      issue.code === "composition_washed_out" ||
       !insideCutWindow(issue.time)
     )).slice(0, 80);
     const interactionIssues = issues.filter((issue) =>
       issue.code.startsWith("interaction_")
     );
     const enforceInteractions =
-      process.env.SLACK_SEQUENCES_INTERACTION_QA?.trim().toLowerCase() !== "audit";
+      slackSequencesEnvRawValue("SLACK_SEQUENCES_INTERACTION_QA")?.trim().toLowerCase() !== "audit";
     const errors = [
       ...runtime
       .filter((entry) => entry.level === "error")
@@ -4166,8 +5354,13 @@ export async function inspectDirectComposition(
       ...(!enforceInteractions ? interactionIssues.map(formatIssue) : []),
       ...issues.filter((issue) => issue.severity === "warning").map(formatIssue),
     ];
+    // E1 washout is rendered taste evidence, not a deterministic authoring
+    // obligation. Keep it in `issues`/`warnings` so critic and draft ranking
+    // can see its measured penalty, but do not lower strictOk or spend a paid
+    // source retry on a class whose safe deterministic repair is unknowable.
     const repairWarnings = issues.filter((issue) =>
       issue.severity === "warning" &&
+      issue.code !== "composition_washed_out" &&
       // Ping-pong is always advisory; the boundary jump is advisory only in
       // audit mode — both stay in `warnings` so repair prompts still see them.
       issue.code !== "eye_trace_pingpong" &&
@@ -4175,6 +5368,7 @@ export async function inspectDirectComposition(
       // must never block a runnable film — the plan-stage exit audit carries
       // the blocking pressure.
       issue.code !== "stale_asset_lingers" &&
+      (issue.code !== "composition_frame_underfilled" || compositionMode === "block") &&
       (issue.code !== "eye_trace_jump" || eyeTrace === "block") &&
       // Kit avatar stacks overlap BY DESIGN (negative-margin monograms) —
       // a content_overlap on them is a false positive that burned a paid
@@ -4202,7 +5396,9 @@ export async function inspectDirectComposition(
     // request one bounded polish pass: this is rendered evidence, not the
     // planner merely counting a declared beat that may be visually inert.
     let continuousMotion: ContinuousMotionEvidenceV1 | undefined;
+    let cameraBlockingEvidence: CameraBlockingEvidenceV1 | undefined;
     const motionQuietIssues: DirectLayoutIssue[] = [];
+    const motionQualityIssues: DirectLayoutIssue[] = [];
     if (continuousMotionEvidenceEnabled() && duration >= 8) {
       try {
         continuousMotion = await captureContinuousMotionEvidence(
@@ -4236,6 +5432,81 @@ export async function inspectDirectComposition(
           issues.push(issue);
           warnings.push(formatIssue(issue));
         }
+        for (const finding of continuousMotionQualityFindings(continuousMotion, duration)) {
+          const issue: DirectLayoutIssue = {
+            code: finding.code,
+            severity: "warning",
+            time: finding.time,
+            selector: `[data-scene="${finding.sceneId}"]`,
+            sceneId: finding.sceneId,
+            message: finding.message,
+            fixHint: finding.fixHint,
+            source: "sequences",
+          };
+          motionQualityIssues.push(issue);
+          issues.push(issue);
+          warnings.push(formatIssue(issue));
+        }
+
+        const blockingPlan = parseCameraBlockingPlan(draft.html);
+        const continuityGraph = parseContinuityGraph(draft.html);
+        if (blockingPlan && continuityGraph) {
+          cameraBlockingEvidence = buildCameraBlockingEvidence(
+            blockingPlan,
+            continuityGraph,
+            continuousMotion,
+          );
+          const primary = cameraBlockingEvidence.landings.filter((landing) =>
+            landing.importance === "primary" && landing.measured
+          );
+          const anchorMiss = [...primary]
+            .filter((landing) => landing.anchorError > 0.14)
+            .sort((a, b) => b.anchorError - a.anchorError)[0];
+          if (anchorMiss) {
+            const issue: DirectLayoutIssue = {
+              code: "camera_blocking_anchor",
+              severity: "warning",
+              time: anchorMiss.time,
+              selector: `[data-part="${anchorMiss.target.id}"]`,
+              sceneId: anchorMiss.sceneId,
+              part: anchorMiss.target.id,
+              message:
+                `Primary blocking landing "${anchorMiss.phraseId}" misses its declared screen ` +
+                `anchor by ${(anchorMiss.anchorError * 100).toFixed(1)}% of the frame diagonal ` +
+                `(14% maximum).`,
+              fixHint:
+                "Remove the corrective pan and let the blocking route land directly on the " +
+                "declared screen anchor before the readable dwell.",
+              source: "sequences",
+            };
+            motionQualityIssues.push(issue);
+            issues.push(issue);
+            warnings.push(formatIssue(issue));
+          }
+          const movingLanding = [...primary]
+            .filter((landing) => landing.speed > 0.018)
+            .sort((a, b) => b.speed - a.speed)[0];
+          if (movingLanding) {
+            const issue: DirectLayoutIssue = {
+              code: "camera_blocking_unsettled",
+              severity: "warning",
+              time: movingLanding.time,
+              selector: `[data-part="${movingLanding.target.id}"]`,
+              sceneId: movingLanding.sceneId,
+              part: movingLanding.target.id,
+              message:
+                `Primary blocking landing "${movingLanding.phraseId}" is still moving at ` +
+                `${movingLanding.speed.toFixed(3)} frame-diagonals/s (0.018 rest ceiling).`,
+              fixHint:
+                "Finish the route before the readable dwell; move ambient life on a background " +
+                "layer instead of carrying the camera through the landing.",
+              source: "sequences",
+            };
+            motionQualityIssues.push(issue);
+            issues.push(issue);
+            warnings.push(formatIssue(issue));
+          }
+        }
       } catch (error) {
         process.stderr.write(
           `[layout-qa] continuous motion evidence skipped: ${
@@ -4244,6 +5515,74 @@ export async function inspectDirectComposition(
         );
       }
     }
+    let transitionOutgoing: TransitionOutgoingEvidence[] = [];
+    try {
+      transitionOutgoing = await judgeDeclaredTransitionOutgoing(page, draft, seekContent);
+    } catch (error) {
+      process.stderr.write(
+        `[layout-qa] transition outgoing judge skipped: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+    }
+    const staticTransitionOutgoing = transitionOutgoing
+      .filter((entry) => entry.verdict === "static");
+    for (const transition of staticTransitionOutgoing) {
+      const issue: DirectLayoutIssue = {
+        code: "transition_static_outgoing",
+        severity: "warning",
+        time: transition.atSec,
+        selector: transition.selector,
+        sceneId: transition.fromScene,
+        message:
+          `Declared ${transition.style} transition "${transition.fromScene}" -> ` +
+          `"${transition.toScene}" has a static outgoing leg between ` +
+          `${transition.beforeSec.toFixed(2)}s and ${transition.afterSec.toFixed(2)}s.`,
+        fixHint:
+          "Make the outgoing subject visibly accelerate into the boundary; keep the host bridge " +
+          "selector intact and reserve enough pre-cut lead for the movement to read.",
+        source: "sequences",
+      };
+      motionQualityIssues.push(issue);
+      issues.push(issue);
+      warnings.push(formatIssue(issue));
+    }
+
+    let settleBlooms: ComponentSettleBloomEvidenceV1[] = [];
+    try {
+      settleBlooms = await measureComponentSettleBlooms(page, draft, seekContent);
+    } catch (error) {
+      process.stderr.write(
+        `[layout-qa] component settle-bloom evidence skipped: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+    }
+
+    let visionCriticEvidence: VisionCriticEvidenceV1 | undefined;
+    if (options.captureVisualReview) {
+      try {
+        visionCriticEvidence = await captureVisionCriticEvidence(
+          projectDir,
+          visionCriticDraftHash(projectDir, draft),
+          browser,
+          page,
+          draft.storyboard,
+          parseCameraBlockingPlan(draft.html),
+          seekContent,
+          options.publishVisualReview !== false,
+        );
+      } catch (error) {
+        // Taste-tail evidence is enhancement-only. A capture/codec failure
+        // keeps the numeric critic pack and, ultimately, the pre-critique draft.
+        process.stderr.write(
+          `[layout-qa] vision critic evidence skipped: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
+      }
+    }
+
     // Rendered temporal judge — must run LAST: it drops the device scale for
     // cheap frame pairs, so every full-resolution capture is already done.
     // A judge failure is diagnostics lost, never a QA failure.
@@ -4304,13 +5643,20 @@ export async function inspectDirectComposition(
         visualErrors.length === 0 &&
         repairWarnings.length === 0 &&
         staticPrimaryMoments.length === 0 &&
-        motionQuietIssues.length === 0,
+        staticTransitionOutgoing.length === 0 &&
+        motionQuietIssues.length === 0 &&
+        motionQualityIssues.length === 0,
       samples,
       issues,
       interactions: interactionEvidence,
       ...(boundaryInventories.length ? { boundaries: boundaryInventories } : {}),
       ...(temporalJudge.length ? { temporalJudge } : {}),
+      ...(transitionOutgoing.length ? { transitionOutgoing } : {}),
+      ...(washoutEvidence.length ? { washoutEvidence } : {}),
       ...(continuousMotion ? { continuousMotion } : {}),
+      ...(cameraBlockingEvidence ? { cameraBlockingEvidence } : {}),
+      ...(settleBlooms.length ? { settleBlooms } : {}),
+      ...(visionCriticEvidence ? { visionCriticEvidence } : {}),
       errors: [...new Set(errors)],
       warnings: [...new Set(warnings)],
       ...(guidePngBase64 ? { guidePngBase64 } : {}),

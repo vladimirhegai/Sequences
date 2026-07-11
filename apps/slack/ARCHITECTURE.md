@@ -6,7 +6,7 @@
 > user-value, or hackathon-demo testing.
 
 > **Submission warning:** this is a target architecture, not the hackathon
-> submission diagram. Use the "Current Architecture" section of
+> submission diagram. Use the "Shipped architecture" section of
 > [ROADMAP.md](ROADMAP.md) to document what is implemented. Railway
 > currently hosts the Bolt app, OAuth callback, renderer, and internal stdio
 > Sequences MCP process. Slack hosts the workspace-context MCP server; there is

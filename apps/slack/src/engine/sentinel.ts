@@ -1,12 +1,12 @@
 /**
  * Sentinel contract registry — the closed-world manifest of every authoring
- * obligation and the layer that owns it (SENTINEL_PLAN.md §3 Phase 4 item 1,
- * §2 layer model). This is the airtight-system half of the deliverable the
+ * obligation and the layer that owns it (SENTINEL.md layer model and executable
+ * registry). This is the airtight-system half of the deliverable the
  * project owner asked for: one typed row per obligation, and a CI test
  * (`test/sentinel.test.ts`) that walks the registered `findingPrefixes` against
- * the validators' *actually emitted* finding strings so a NEW finding class can
- * never ship unregistered — the closed-world guarantee the FALLBACKS.md catalog
- * never had.
+ * validators' *actually emitted* finding strings and the runner's persisted
+ * canonical signatures, so a NEW finding class can never ship unregistered —
+ * the closed-world guarantee documented in SENTINEL.md.
  *
  * How to read a row:
  * - `id`     — stable slug, `<group>.<facet>` where an obligation is enforced
@@ -19,7 +19,8 @@
  * - `layer`  — where the obligation is OWNED today (the lowest layer that can);
  *              moving an obligation down a layer is the whole Sentinel thesis.
  * - `blocking` — the enforcement disposition (see `SentinelBlocking`).
- * - `findingPrefixes` — the finding-code prefixes this row owns. A scaffold /
+ * - `findingPrefixes` — the emitted or canonical finding-code prefixes this row
+ *              owns. A scaffold /
  *              normalize row that prevents or repairs a class still lists the
  *              L3/L4 backstop codes it prevents (the gate is never removed — the
  *              flag-OFF path and brief-required cases still fire them), so the
@@ -38,7 +39,7 @@
  * the manifest can never itself break a build.
  */
 
-/** The Sentinel layer model (SENTINEL_PLAN.md §2). Lower owns more cheaply. */
+/** The Sentinel layer model (SENTINEL.md). Lower owns more cheaply. */
 export type SentinelLayerName =
   | "schema" // L0 — structured outputs; invalid output can't parse
   | "scaffold" // L1 — host-emitted chassis + final shipped binding coverage
@@ -89,7 +90,8 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "audit): the model returns the interiors, so omission stays representable " +
       "— the ladder is: template → slotScaffoldViolations scene-scoped repair " +
       "(missing stations re-request ONLY that scene) → reconcileCameraWorldPlanes " +
-      "L2 plane wrap → these codes as the L3 gate. The old 'impossible' label " +
+      "L2 plane wrap → L3 prose findings canonicalized by findingSignature as " +
+      "camera_region_missing / camera_part_missing. The old 'impossible' label " +
       "overstated the guarantee (p6/p7 probes still hit the codes); the L1 " +
       "telemetry now counts bindings PRESERVED in the shipped document, not " +
       "planned by the template.",
@@ -681,7 +683,7 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     blocking: "deterministic-repair",
     findingPrefixes: [],
     promptCostChars: 0,
-    test: "test/authorReliability.test.ts",
+    test: "test/normalizerRegistry.test.ts",
     addedBecause:
       "2026-07-10 session26-camera-probe-6: one otherwise usable source put a " +
       "bare CSS `var(--positive)` token in a GSAP object and another used a " +
@@ -689,8 +691,11 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "as JavaScript; the second is not SVG geometry. Executable inline scripts " +
       "now quote only bare var() values, leaving styles/JSON untouched. Invalid " +
       "ellipsis paths are removed only when decorative; any path carrying a part, " +
-      "component, or important-layout binding stays blocking. Telemetry tags: " +
-      "bare-css-var and invalid-svg-placeholder.",
+      "component, or important-layout binding stays blocking. GSAP display/visibility " +
+      "keys lower to opacity before validation. WS-E2 also removes only SVG roots " +
+      "explicitly named as connector/graph art when they carry no host, endpoint, " +
+      "component, or layout binding; ambiguous/bound graphics survive and endpoint-bound " +
+      "topology comes from flow-diagram. Registry telemetry tags remain stage-specific.",
   },
   {
     id: "normalize.moment-demote-last-resort",
@@ -777,7 +782,14 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "MAX_RECIPES_PER_FILM budget trims — degrade-never-veto, because the " +
       "recipe knowledge already reached the planner at Level 0 (retrieval), " +
       "so a dropped declaration costs influence, never a paid attempt. " +
-      "Telemetry tags: recipe-reconcile, recipe-inject.",
+      "WS-G1 also auto-declares only high-confidence (score >=6) matches whose " +
+      "entire parameter schema has safe defaults; missing required creative copy " +
+      "always skips. 2026-07-11 Lumaflow exact-project lesson: a complete " +
+      "app-window/stat/chart dashboard recipe is absorbed when the scene already " +
+      "owns a dashboard-grid plugin or the equivalent authored primary surface; " +
+      "this also cleans pre-governor cached auto-declarations while incomplete or " +
+      "ambiguous surfaces remain eligible. Telemetry tags: recipe-reconcile, " +
+      "recipe-auto-declare, recipe-primary-surface-absorb, recipe-inject.",
   },
   {
     id: "normalize.plugin-lower",
@@ -886,6 +898,23 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "cell per camera-path region (first-appearance order) so " +
       "worldStationRects/cameraWorldStyle emit sane rects by construction. " +
       "Declared worldLayout always wins. Telemetry tag world-layout-derive.",
+  },
+  {
+    id: "normalize.station-size-fit",
+    group: "camera",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: ["camera_framed_sparse"],
+    promptCostChars: 0,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "WS-A2 station sizing discipline: when browser QA measures a declared " +
+      "station's painted content union as a small fraction of its default " +
+      "viewport cell, correctSparseFraming first tightens that station box " +
+      "around the union (bounded fitScale 0.55..1) so the ordinary camera fit " +
+      "lands composed. The candidate is adopted only after full static/browser " +
+      "replay clears sparse framing without adding clipping or quality penalty; " +
+      "otherwise the prior geometry ships unchanged. Telemetry tag station-size-fit.",
   },
   {
     id: "normalize.gsap-repeat-clamp",
@@ -1133,9 +1162,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     addedBecause:
       "The moment contract: validatePlannedMoments enforces the duration-scaled " +
       "floor / spacing / no-dead-interval, and publication binds every declared " +
-      "moment to executable timeline evidence (moment_unbound rejects an unbound " +
-      "one). topUpStoryboardMoments first fills paperwork the plan already proves " +
-      "so it is never vetoed for a moment it demonstrably delivers.",
+      "moment to executable timeline evidence. The blocking prose remains under " +
+      "storyboard/moments; findingSignature persists an unbound one as " +
+      "moment_unbound. topUpStoryboardMoments first fills paperwork the plan " +
+      "already proves so it is never vetoed for a moment it demonstrably delivers.",
   },
   {
     id: "liveness",
@@ -1208,21 +1238,83 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     addedBecause:
       "2026-07-04: the camera-arrival framing audit seeks each full-move landing " +
       "and proves the framed station's content is on frame (camera_framed_clipped, " +
-      "double-sampled so entrances can't false-positive) and fills >=18% of the " +
-      "frame (camera_framed_sparse, WS5). strictOk-blocking polish, never " +
-      "unpublishing; final-scene / full-width escapes.",
+      "double-sampled so entrances can't false-positive) and fills the calibrated " +
+      "24x14 semantic grid (camera_framed_sparse, WS5 v2). strictOk-blocking " +
+      "polish, never unpublishing; closing frames participate.",
+  },
+  {
+    id: "components.settle-bloom",
+    group: "components",
+    layer: "scaffold",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/componentContract.test.ts",
+    addedBecause:
+      "2026-07-10 WS-B2: after a component's final visible typed beat, the " +
+      "runtime adds a pointer-transparent child highlight that decays to rest " +
+      "within one second. Close beats, morph sources, and assets skip it; camera- " +
+      "and layout-owned root geometry/filter/transform are never touched.",
+  },
+  {
+    id: "composition.whole-frame-floor",
+    group: "layout",
+    layer: "browser",
+    blocking: "advisory",
+    findingPrefixes: ["composition_frame_underfilled"],
+    promptCostChars: 0,
+    test: "test/framingCoverage.browser.test.ts",
+    addedBecause:
+      "2026-07-10 WS-A3: a 32x18 whole-frame grid counts semantic content and " +
+      "explicit data-composition-credit environments but never bare canvas paint. " +
+      "SLACK_SEQUENCES_COMPOSITION=audit is the default calibration mode; =block " +
+      "promotes the same measured warning into strict polish pressure and =0 rolls back.",
+  },
+  {
+    id: "composition.washout",
+    group: "layout",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["composition_washed_out"],
+    promptCostChars: 0,
+    test: "test/washoutAnalysis.browser.test.ts",
+    addedBecause:
+      "2026-07-10 WS-E1: representative contrast screenshots are downsampled " +
+      "into a 64-bin luminance histogram. A finding requires a high-key narrow " +
+      "field and weak focal/field value separation together; it requests one " +
+      "bounded strict-polish repair and ranks banked drafts, but never changes " +
+      "browser `ok` or prevents advisory-late delivery.",
+  },
+  {
+    id: "composition.repeated-visible-copy",
+    group: "layout",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["repeated_visible_copy"],
+    promptCostChars: 0,
+    test: "test/duplicateCopyAudit.browser.test.ts",
+    addedBecause:
+      "2026-07-11 owner-ledger follow-up: browser QA flags only substantial " +
+      "exact copy visible in two distinct same-scene owners. Host/plugin/cut " +
+      "mirrors, aria-hidden content, kinetic split spans, CTA/brand tokens, " +
+      "same-owner repeats, overlay twins, and cross-scene reuse are excluded. " +
+      "The finding requests bounded strict-polish repair but never changes `ok`.",
   },
   {
     id: "camera.blocking",
     group: "camera",
     layer: "browser",
     blocking: "advisory-late",
-    findingPrefixes: ["camera_blocking_landing"],
+    findingPrefixes: [
+      "camera_blocking_landing",
+      "camera_blocking_anchor",
+      "camera_blocking_unsettled",
+    ],
     promptCostChars: 0,
     test: "test/layoutInspector.test.ts",
     addedBecause:
       "2026-07-10 Continuity Graph + Camera Blocking Director: when the " +
-      "default-off graph owns the camera, legacy authored-segment framing " +
+      "default-on graph owns the camera, legacy authored-segment framing " +
       "findings no longer describe the shipped route. Browser QA instead " +
       "seeks every primary blocking dwell and proves its exact target is at " +
       "least 85% visible and inside its entity/component occupancy range. " +
@@ -1245,7 +1337,7 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "(normalize.source-bindings); ambiguity and measured invisibility stay here.",
   },
   {
-    id: "interactions.near-miss-normalize",
+    id: "normalize.source-bindings.interaction-near-miss",
     group: "interactions",
     layer: "normalize",
     blocking: "deterministic-repair",
@@ -1292,6 +1384,65 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "measuring at least 1.4s with no camera, component, FX, or micro-motion. " +
       "This is strictOk polish pressure on the bounded author ladder, then " +
       "advisory-late so a healthy runnable film is never unpublished.",
+  },
+  {
+    id: "transitions.outgoing-liveness",
+    group: "cuts",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["transition_static_outgoing"],
+    promptCostChars: 0,
+    test: "test/cutShapeMatch.browser.test.ts",
+    addedBecause:
+      "2026-07-10 WS-0e/D1: a storyboard-declared transition must visibly move " +
+      "on its outgoing leg, not begin only after the cut. Browser QA measures the " +
+      "boundary-scoped bridge/flash/scene before the cut and applies bounded " +
+      "strictOk pressure; runtime validity and late publication remain unchanged.",
+  },
+  {
+    id: "liveness.rendered-dead-frame",
+    group: "liveness",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: ["motion_dead_frame"],
+    promptCostChars: 0,
+    test: "test/temporalInspector.test.ts",
+    addedBecause:
+      "2026-07-10 WS-B3: the rendered temporal change curve measures exact " +
+      ">1.5s frozen spans, subtracts typed camera-hold intervals, and persists " +
+      "the eligible/dead duration ratio. It ranks evidence when present but " +
+      "remains post-render advisory and never unpublishes a runnable film.",
+  },
+  {
+    id: "motion.continuous-quality",
+    group: "liveness",
+    layer: "browser",
+    blocking: "advisory-late",
+    findingPrefixes: [
+      "motion_jerk_excess",
+      "motion_reversal_excess",
+      "motion_settle_late",
+    ],
+    promptCostChars: 0,
+    test: "test/continuousMotion.test.ts",
+    addedBecause:
+      "2026-07-10 WS-0c: cross-film 5 Hz browser evidence calibrated bounded " +
+      "thresholds for repeated jerk markers, focal reversals, and late settles. " +
+      "Each class emits at most one scene-attributed strictOk polish finding; " +
+      "runtime ok never changes and late attempts may still ship honestly.",
+  },
+  {
+    id: "display-type.budget",
+    group: "storyboard",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["display_type_invalid", "display_type_budget_exceeded"],
+    promptCostChars: 220,
+    test: "test/directComposition.test.ts",
+    addedBecause:
+      "2026-07-10 WS-E3: ghost display type is a typed, host-injected moment " +
+      "with a one-per-film budget, bounded copy, in-scene timing, and declared " +
+      "focal relationship. Violations retry at storyboard cost before source authoring.",
   },
   {
     id: "eye-trace",
@@ -1404,9 +1555,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
 
 /**
  * The finding-producing source files the closed-world test scans. Scoped to the
- * validators/audits/runner so infrastructure modules that use finding-shaped
- * literals for other purposes (mcp.ts tool names, modelPolicy.ts model ids,
- * thumbs.ts MIME types) are out of scope. Relative to `src/engine/`.
+ * validators/audits plus the runner's canonical finding-signature normalizer,
+ * so infrastructure modules that use finding-shaped literals for other purposes
+ * (mcp.ts tool names, modelPolicy.ts model ids, thumbs.ts MIME types) are out of
+ * scope. Relative to `src/engine/`.
  */
 export const FINDING_SOURCE_FILES: readonly string[] = [
   "pacingAudit.ts",
@@ -1416,6 +1568,7 @@ export const FINDING_SOURCE_FILES: readonly string[] = [
   "interactionContract.ts",
   "eyeTrace.ts",
   "motionDensity.ts",
+  "continuousMotion.ts",
   "storyboardMoments.ts",
   "kitMarkupAudit.ts",
   "recipeContract.ts",
@@ -1424,7 +1577,13 @@ export const FINDING_SOURCE_FILES: readonly string[] = [
   "frameValidation.ts",
   "layoutInspector.ts",
   "directComposition.ts",
-  "compositionRunner.ts",
+  "runner/findingSignatures.ts",
+  "runner/ladder.ts",
+  "runner/orchestration.ts",
+  "runner/prompts.ts",
+  "runner/repairs.ts",
+  "runner/scaffold.ts",
+  "runner/storyboardAudit.ts",
   "sceneSlots.ts",
   // timeRamp's findings are prose-form today (no codes), but its errors flow
   // into direct validation — scanned so a future typed code cannot slip past.
@@ -1496,6 +1655,137 @@ export function isRegisteredFinding(code: string): boolean {
   return SENTINEL_CONTRACT.some((row) =>
     row.findingPrefixes.some((prefix) => code.startsWith(prefix)),
   );
+}
+
+export interface SentinelNormalizerRegistryAudit {
+  readonly duplicateIds: readonly string[];
+  readonly unknownIds: readonly string[];
+  readonly wrongLayerIds: readonly string[];
+  /** Source-pipeline Sentinel rows with no execution-registry owner. */
+  readonly unmigratedSentinelIds: readonly string[];
+  /** Normalize rows omitted from the explicit execution-scope ledger. */
+  readonly unclassifiedSentinelIds: readonly string[];
+  /** Explicitly non-source rows, grouped so the source audit cannot claim them. */
+  readonly nonSourceSentinelIds: Readonly<
+    Record<Exclude<SentinelNormalizerScope, "source">, readonly string[]>
+  >;
+}
+
+export type SentinelNormalizerScope = "source" | "storyboard" | "browser" | "source-slot";
+
+/**
+ * Normalize is a Sentinel ownership layer, not one runtime pipeline. This
+ * ledger makes that distinction executable: source repair rows must be driven
+ * by `NORMALIZERS`; storyboard, browser-remediation, and slot-envelope rows
+ * retain their independent commit/revalidation loops.
+ */
+export const SENTINEL_NORMALIZER_SCOPES: Readonly<
+  Record<string, readonly SentinelNormalizerScope[]>
+> = {
+  "normalize.host-plan-islands": ["source"],
+  "normalize.source-bindings": ["source"],
+  "normalize.camera-budget-clamp": ["storyboard"],
+  "normalize.pacing-stretch": ["storyboard"],
+  "normalize.camera-move-delay": ["storyboard"],
+  "normalize.interaction-hold-retime": ["storyboard"],
+  "normalize.move-spacing": ["storyboard"],
+  "normalize.early-swap-delay": ["storyboard"],
+  "normalize.component-trim": ["storyboard"],
+  "normalize.framing-floor-topup": ["storyboard"],
+  "normalize.camera-energy-lift": ["storyboard"],
+  "normalize.rack-focus-topup": ["storyboard"],
+  "normalize.camera-landing-reserve": ["storyboard"],
+  "normalize.camera-connective-yield": ["storyboard"],
+  "normalize.root-data-start": ["source"],
+  "normalize.dive-window": ["storyboard"],
+  "normalize.fx-plan": ["source"],
+  "normalize.auto-pop-style": ["storyboard"],
+  "normalize.open-pop": ["storyboard"],
+  "normalize.auto-headline-style": ["storyboard"],
+  "normalize.assemble-cap": ["storyboard"],
+  "normalize.auto-grade-shift": ["storyboard"],
+  "normalize.grade-shift": ["storyboard"],
+  "normalize.timeramp-retime": ["storyboard"],
+  "normalize.morph-twin-reconcile": ["storyboard"],
+  "normalize.embedded-development-fold": ["storyboard"],
+  "normalize.gsap-call-shape": ["source"],
+  "normalize.slot-script-envelope": ["source-slot"],
+  "normalize.inline-source-syntax": ["source"],
+  "normalize.moment-demote-last-resort": ["browser"],
+  "normalize.camera-sparse-zoom": ["browser"],
+  "normalize.focal-late-sample": ["browser"],
+  "normalize.recipe-reconcile": ["source", "storyboard"],
+  "normalize.plugin-lower": ["source", "storyboard"],
+  "normalize.asset-lower": ["source", "storyboard"],
+  "normalize.kit-chart-complete": ["source"],
+  "normalize.kit-progress-complete": ["source"],
+  "normalize.world-layout-derive": ["source", "storyboard"],
+  "normalize.station-size-fit": ["browser"],
+  "normalize.gsap-repeat-clamp": ["source"],
+  "normalize.lint-font-var-artifact": ["source"],
+  "normalize.station-position": ["source"],
+  "normalize.brand-base": ["source"],
+  "normalize.dead-tween-strip": ["source"],
+  "normalize.source-bindings.interaction-near-miss": ["source"],
+};
+
+/**
+ * Validate an execution registry against Sentinel without importing runtime
+ * normalizers into this pure manifest. A row owns its exact id and dotted child
+ * stages (`normalize.inline-source-syntax.css-var`), allowing one obligation to
+ * expose several ordered mechanics without duplicating Sentinel paperwork.
+ */
+export function auditSentinelNormalizerRegistry(
+  registryIds: readonly string[],
+): SentinelNormalizerRegistryAudit {
+  const counts = new Map<string, number>();
+  for (const id of registryIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const duplicateIds = [...counts]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id)
+    .sort();
+  const ownerFor = (id: string): SentinelContractRow | undefined =>
+    [...SENTINEL_CONTRACT]
+      .filter((row) => id === row.id || id.startsWith(`${row.id}.`))
+      .sort((a, b) => b.id.length - a.id.length)[0];
+  const unknownIds = [...new Set(registryIds.filter((id) => !ownerFor(id)))].sort();
+  const wrongLayerIds = [...new Set(
+    registryIds.filter((id) => {
+      const owner = ownerFor(id);
+      return owner !== undefined && owner.layer !== "normalize";
+    }),
+  )].sort();
+  const normalizeRows = SENTINEL_CONTRACT.filter((row) => row.layer === "normalize");
+  const unclassifiedSentinelIds = normalizeRows
+    .filter((row) => !SENTINEL_NORMALIZER_SCOPES[row.id]?.length)
+    .map((row) => row.id);
+  const sourceRows = normalizeRows.filter((row) =>
+    SENTINEL_NORMALIZER_SCOPES[row.id]?.includes("source")
+  );
+  const unmigratedSentinelIds = sourceRows
+    .filter((row) =>
+      !registryIds.some((id) => id === row.id || id.startsWith(`${row.id}.`))
+    )
+    .map((row) => row.id);
+  const nonSourceSentinelIds = {
+    storyboard: normalizeRows
+      .filter((row) => SENTINEL_NORMALIZER_SCOPES[row.id]?.includes("storyboard"))
+      .map((row) => row.id),
+    browser: normalizeRows
+      .filter((row) => SENTINEL_NORMALIZER_SCOPES[row.id]?.includes("browser"))
+      .map((row) => row.id),
+    "source-slot": normalizeRows
+      .filter((row) => SENTINEL_NORMALIZER_SCOPES[row.id]?.includes("source-slot"))
+      .map((row) => row.id),
+  };
+  return {
+    duplicateIds,
+    unknownIds,
+    wrongLayerIds,
+    unmigratedSentinelIds,
+    unclassifiedSentinelIds,
+    nonSourceSentinelIds,
+  };
 }
 
 // A finding code is a namespaced token (>=1 `/` or `_` separator) that sits

@@ -1,6 +1,6 @@
 /**
  * Sentinel run telemetry — the before/after instrument for the
- * correctness-by-construction rework (SENTINEL_PLAN.md §0/§3 Phase 0).
+ * correctness-by-construction system (SENTINEL.md telemetry contract).
  *
  * One `planning/sentinel-run.json` per job records the numbers the mission
  * table is measured against: per-stage wall-clock + attempts, model-call count,
@@ -18,15 +18,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import path from "node:path";
+import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 
-/** The four honest end-states of a create (SENTINEL_PLAN.md §0). */
+/** The four honest end-states of a create (SENTINEL.md). */
 export type SentinelDisposition =
   | "published"
   | "published-degraded"
   | "fallback"
   | "fail-loud";
 
-/** The Sentinel layer model (SENTINEL_PLAN.md §2) — where a finding was caught. */
+/** The Sentinel layer model (SENTINEL.md) — where a finding was caught. */
 export type SentinelLayer =
   | "schema" // L0 — invalid output can't parse
   | "scaffold" // L1 — host chassis + bindings present in the shipped document
@@ -163,7 +164,7 @@ export function recordSentinelHedge(stage: string): void {
 }
 
 function hedgeReserveForSourceAuthor(): number {
-  const raw = Number(process.env.SLACK_SEQUENCES_HEDGE_SOURCE_AUTHOR_RESERVE);
+  const raw = Number(slackSequencesEnvRawValue("SLACK_SEQUENCES_HEDGE_SOURCE_AUTHOR_RESERVE"));
   return Number.isInteger(raw) && raw >= 0 ? raw : 1;
 }
 

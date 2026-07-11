@@ -1833,15 +1833,6 @@ body {
     transform: skewX(-16deg);
     opacity: 0;
   }
-  .rcp-ambient .rcp-ambient-exit {
-    position: absolute;
-    z-index: 8;
-    inset: -4px;
-    pointer-events: none;
-    background: #0b0f14;
-    opacity: 0;
-    transform-origin: 50% 0%;
-  }
 </style>
 </head>
   <body>
@@ -1877,7 +1868,6 @@ body {
       </div>
     </div>
     <div class="rcp-ambient-glint" data-layout-ignore></div>
-    <div class="rcp-ambient-exit" data-layout-ignore></div>
   </div></div>
 <!-- sequences-environment:start -->
 <div class="seq-env seq-env--desktop-stage" data-sequences-environment="desktop-stage" data-sequences-host="1" data-layout-ignore data-composition-credit="1" data-sequences-ambient="environment" data-env-scene="stage" data-env-basis="dark" data-env-safe-side="bottom-left" style="--seq-env-scrim-opacity:0.2">
@@ -1919,7 +1909,9 @@ body {
       window.__timelines = window.__timelines || {};
       var tl = gsap.timeline({ paused: true });
       tl.set("#stage", { opacity: 1 }, 0);
-      tl.set("#stage", { opacity: 0 }, 5.79);
+      // Same-timestamp handoff: insertion order clears the outgoing stage and
+      // reveals the slate without leaving an unowned 0.01s host gap.
+      tl.set("#stage", { opacity: 0 }, 5.8);
       tl.set("#slate", { opacity: 1 }, 5.8);
       tl.set("#slate", { opacity: 0 }, 7.4);
       // A slow key-light breath keeps the stage alive around the recipe.
@@ -1969,21 +1961,22 @@ var settle = 0 + 1.9;
     { opacity: 0.17, scale: 1.04, duration: 5.35, ease: "sine.inOut" }, 0);
 
   // A fast tonal handoff replaces the demo's abrupt product-to-proof cut.
-  // The focal recedes only after its reading hold, then the recipe resolves
-  // to the host stage register so the next scene can enter without a flash.
+  // The focal recedes only after its reading hold, while the textured stage
+  // remains visible for the host-owned cut. A recipe must not manufacture an
+  // opaque pre-cut plate: it strands a blank representative frame whenever
+  // the following scene begins slightly after the recipe's ambient window.
   tl.to('[data-part="stage-ambient-hero-opener-product-window"]',
     { y: -10, scale: 0.985, opacity: 0.45, duration: 0.38, ease: "power2.in" }, 0 + 5.35 - 0.46);
   tl.to('[data-part="stage-ambient-hero-opener-ambient-hero"] .rcp-ambient-copy',
     { y: -8, opacity: 0.2, duration: 0.34, ease: "power2.in" }, 0 + 5.35 - 0.4);
   tl.to('[data-part="stage-ambient-hero-opener-ambient-hero"]',
     { scale: 1.44, borderRadius: 0, duration: 0.48, ease: "power3.inOut" }, 0 + 5.35 - 0.42);
-  tl.fromTo('[data-part="stage-ambient-hero-opener-ambient-hero"] .rcp-ambient-exit', { opacity: 0, scaleY: 0.06 },
-    { opacity: 1, scaleY: 1, duration: 0.48, ease: "power3.inOut", immediateRender: false }, 0 + 5.35 - 0.42);
 })(tl, document.querySelector("[data-composition-id]"), 0, 5.8, "stage-ambient-hero-opener");
 /*</seq-recipe>*/
 window.__timelines["recipe-demo"] = tl;
       tl.seek(0);
     </script>
-  <script type="application/json" data-sequences-host="1" id="sequences-environment">{"version":1,"compositionId":"recipe-demo","frame":{"basis":"dark"},"wallpaper":{"id":"wallpaper-12","sourceFile":"vendor/wallpapers/wallpaper12.jpg","assetFile":"assets/wallpapers/wallpaper12.jpg","objectPosition":"52% 24%","textSafeSide":"bottom-left","overlay":{"mode":"gradient-scrim","opacity":0.2},"motion":{"mode":"slow-push","maxTravelPercent":1.5,"maxScale":1.04}},"scenes":[{"sceneId":"stage","startSec":0,"endSec":5.8,"shape":"desktop-stage","basis":"dark","directionScore":0.45,"phaseRad":6.001897,"periodSec":17,"furnitureMaxPx":2.9,"lightMaxPx":3.175,"settleWindows":[{"startSec":5.25,"endSec":5.8,"amplitudeScale":0.3}],"readingWindows":[]},{"sceneId":"slate","startSec":5.8,"endSec":7.4,"shape":"generated-field","basis":"dark","directionScore":0.45,"phaseRad":1.788983,"periodSec":19,"furnitureMaxPx":2.9,"lightMaxPx":3.175,"settleWindows":[{"startSec":6.85,"endSec":7.4,"amplitudeScale":0.3}],"readingWindows":[]}]}</script>
+
+<script type="application/json" data-sequences-host="1" id="sequences-environment">{"version":1,"compositionId":"recipe-demo","frame":{"basis":"dark"},"wallpaper":{"id":"wallpaper-12","sourceFile":"vendor/wallpapers/wallpaper12.jpg","assetFile":"assets/wallpapers/wallpaper12.jpg","objectPosition":"52% 24%","textSafeSide":"bottom-left","overlay":{"mode":"gradient-scrim","opacity":0.2},"motion":{"mode":"slow-push","maxTravelPercent":1.5,"maxScale":1.04}},"scenes":[{"sceneId":"stage","startSec":0,"endSec":5.8,"shape":"desktop-stage","basis":"dark","directionScore":0.45,"phaseRad":6.001897,"periodSec":17,"furnitureMaxPx":2.9,"lightMaxPx":3.175,"settleWindows":[{"startSec":5.25,"endSec":5.8,"amplitudeScale":0.3}],"readingWindows":[]},{"sceneId":"slate","startSec":5.8,"endSec":7.4,"shape":"generated-field","basis":"dark","directionScore":0.45,"phaseRad":1.788983,"periodSec":19,"furnitureMaxPx":2.9,"lightMaxPx":3.175,"settleWindows":[{"startSec":6.85,"endSec":7.4,"amplitudeScale":0.3}],"readingWindows":[]}]}</script>
 </body>
 </html>

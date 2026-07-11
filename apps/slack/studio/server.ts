@@ -12,7 +12,7 @@
  *    see recipes/README.md) joined against the exported RecipeV2 library,
  *    with gate/export buttons that run the SAME CLI machinery.
  *  - looks: DESIGN_DIALECTS rendered as palette/type/material/motion cards;
- *    unlicensed vendor wallpapers appear only as moodboard crop references;
+ *    production-cleared MIT wallpapers appear with their crop/motion metadata;
  *  - camera: typed SceneCameraIntentV1 patterns with a seekable station map;
  *  - plugins: PLUGIN_CATALOG kinds, params, purpose, and planning vocabulary.
  *
@@ -218,7 +218,7 @@ function backgroundsState(): { entries: Array<unknown> } {
   return {
     entries: BACKGROUND_CATALOG.map((entry) => ({
       ...entry,
-      previewUrl: `/moodboard/backgrounds/${encodeURIComponent(entry.id)}`,
+      previewUrl: `/backgrounds/${encodeURIComponent(entry.id)}`,
     })),
   };
 }
@@ -524,13 +524,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   }
   if (
     req.method === "GET" &&
-    segments.length === 3 &&
-    segments[0] === "moodboard" &&
-    segments[1] === "backgrounds" &&
-    segments[2]
+    segments.length === 2 &&
+    segments[0] === "backgrounds" &&
+    segments[1]
   ) {
-    const entry = backgroundById(decodeURIComponent(segments[2]));
-    if (!entry) return sendJson(res, 404, { error: "unknown moodboard background" });
+    const entry = backgroundById(decodeURIComponent(segments[1]));
+    if (!entry) return sendJson(res, 404, { error: "unknown production background" });
     return sendWithin(res, WALLPAPERS_DIR, path.basename(entry.file));
   }
   if (req.method === "GET" && segments[0] === "ui") {
@@ -545,7 +544,7 @@ server.listen(PORT, HOST, () => {
     `Sequences Studio → ${url}  (${COMPONENT_CATALOG.length} components · ` +
       `${ASSET_LIBRARY.length} assets · ${DESIGN_DIALECTS.length} looks · ` +
       `${CAMERA_PATTERNS.length} camera patterns · ${PLUGIN_CATALOG.length} plugins · ` +
-      `${BACKGROUND_CATALOG.length} moodboard backgrounds · recipes from recipes/*.recipe.html)\n`,
+      `${BACKGROUND_CATALOG.length} production backgrounds · recipes from recipes/*.recipe.html)\n`,
   );
   // Operator-local hygiene: reap any headless QA browsers a previous
   // interrupted gate/test stranded on this machine (orphans only).

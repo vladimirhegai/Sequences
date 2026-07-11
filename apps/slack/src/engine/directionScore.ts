@@ -18,6 +18,7 @@ import type {
   MomentImportance,
   StoryboardMomentV1,
 } from "./storyboardMoments.ts";
+import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 
 // Mirrors the moment contract's evidence neighborhood without importing its
 // runtime module (motionDensity imports the camera resolver, so a value import
@@ -32,7 +33,7 @@ const DIRECTION_EVIDENCE_AFTER_SEC = 0.75;
  * ownership-aware automatic FX stand down.
  */
 export function directionScoreConsumersEnabled(): boolean {
-  return process.env.SLACK_SEQUENCES_DIRECTION_SCORE !== "0";
+  return slackSequencesEnvRawValue("SLACK_SEQUENCES_DIRECTION_SCORE") !== "0";
 }
 
 export type DirectionSystem =

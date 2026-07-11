@@ -24,9 +24,12 @@ import { loadDirectComposition } from "./directComposition.ts";
 import { resolveCutPlan, type CutIntentV1 } from "./cutContract.ts";
 import { parseTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
 import {
+  analyzeRenderedDeadFrames,
   captureContinuousMotionEvidence,
   continuousMotionEvidenceEnabled,
   type ContinuousMotionEvidenceV1,
+  type RenderedChangeCurvePointV1,
+  type RenderedDeadFrameEvidenceV1,
 } from "./continuousMotion.ts";
 import {
   buildCameraBlockingEvidence,
@@ -34,6 +37,10 @@ import {
   type CameraBlockingEvidenceV1,
 } from "./cameraBlocking.ts";
 import { parseContinuityGraph } from "./continuityGraph.ts";
+import {
+  primaryBlockingTransitTimes,
+  temporalSceneSampleTimes,
+} from "./temporalSampling.ts";
 
 const FRAME_WIDTH = 320;
 const LABEL_HEIGHT = 26;
@@ -60,8 +67,9 @@ export interface TemporalReport {
   stripPath: string;
   jsonPath: string;
   cuts: TemporalCutEvidence[];
-  changeCurve: Array<{ time: number; delta: number }>;
+  changeCurve: RenderedChangeCurvePointV1[];
   quietWindows: Array<{ start: number; end: number }>;
+  renderedDeadFrames: RenderedDeadFrameEvidenceV1;
   continuousMotion?: ContinuousMotionEvidenceV1;
   blockingPath?: string;
   cameraBlocking?: CameraBlockingEvidenceV1;
@@ -69,16 +77,28 @@ export interface TemporalReport {
 
 /** DOM target whose visible state should change on the outgoing cut leg. */
 export function temporalOutgoingCutSelector(
-  cut: Pick<CutIntentV1, "style" | "fromScene">,
+  cut: Pick<CutIntentV1, "style" | "fromScene" | "toScene">,
 ): string {
+  const attributeValue = (value: string): string =>
+    value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const fromScene = attributeValue(cut.fromScene);
+  const toScene = attributeValue(cut.toScene);
   // Resolved plans speak canonical `match`/`morph`; retain the legacy aliases
   // for exact replays of older persisted plans. Both bridge styles animate the
-  // host runtime clone, not the outgoing scene wrapper itself.
+  // host runtime clone, not the outgoing scene wrapper itself. Scope both
+  // bridge and flash overlays to this exact boundary: a film may carry several
+  // of either, and observing the first global clone made later cuts look static.
   if (["match", "morph", "object-match", "shape-match"].includes(cut.style)) {
-    return '[data-sequences-runtime-cut="bridge"]';
+    return `[data-sequences-runtime-cut="bridge"]` +
+      `[data-sequences-cut-from="${fromScene}"]` +
+      `[data-sequences-cut-to="${toScene}"]`;
   }
-  if (cut.style === "flash-white") return '[data-sequences-runtime-cut="flash"]';
-  return `[data-scene="${cut.fromScene}"]`;
+  if (cut.style === "flash-white") {
+    return `[data-sequences-runtime-cut="flash"]` +
+      `[data-sequences-cut-from="${fromScene}"]` +
+      `[data-sequences-cut-to="${toScene}"]`;
+  }
+  return `[data-scene="${fromScene}"]`;
 }
 
 function serveDir(dir: string): Promise<{ url: string; close: () => void }> {
@@ -176,7 +196,7 @@ function stateMoved(a: WrapperState | undefined, b: WrapperState | undefined): b
 
 /** Group consecutive low-delta curve points into named quiet windows. */
 export function quietWindowsFromCurve(
-  curve: Array<{ time: number; delta: number }>,
+  curve: Array<{ fromTime?: number; time: number; delta: number }>,
   threshold = QUIET_DELTA,
   minimumSpanSec = 0.8,
 ): Array<{ start: number; end: number }> {
@@ -185,7 +205,7 @@ export function quietWindowsFromCurve(
   for (let index = 0; index < curve.length; index += 1) {
     const point = curve[index]!;
     if (point.delta < threshold) {
-      start ??= curve[index - 1]?.time ?? point.time;
+      start ??= point.fromTime ?? curve[index - 1]?.time ?? point.time;
       continue;
     }
     // This sample saw change again, so the frozen span ended at the previous
@@ -212,20 +232,19 @@ export async function reportTemporalEvidence(
   const current = loadDirectComposition(projectDir);
   const { manifest } = current;
   const cuts = resolveCutPlan(manifest.scenes).cuts;
+  const blockingPlan = parseCameraBlockingPlan(current.html);
   const outDir = path.join(projectDir, "build", "qa", "temporal");
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
 
-  const framesPerShot = Math.max(3, Math.min(7, options.framesPerShot ?? 5));
-  const interiorFractions = Array.from(
-    { length: framesPerShot },
-    (_, index) => 0.08 + (0.84 * index) / (framesPerShot - 1),
-  );
   const shotFrames = manifest.scenes.map((scene) => ({
     scene,
-    times: interiorFractions.map((fraction) =>
-      roundTime(scene.startSec + scene.durationSec * fraction)
-    ),
+    times: temporalSceneSampleTimes(
+      scene.startSec,
+      scene.durationSec,
+      primaryBlockingTransitTimes(blockingPlan, scene.id),
+      options.framesPerShot ?? 5,
+    ).map(roundTime),
   }));
   const cutFrames = cuts.map((cut) => ({
     cut,
@@ -242,6 +261,8 @@ export async function reportTemporalEvidence(
   for (let time = 0; time <= manifest.durationSec + 0.001; time += curveStep) {
     curveTimes.push(roundTime(Math.min(time, manifest.durationSec)));
   }
+  const durationTime = roundTime(manifest.durationSec);
+  if (curveTimes.at(-1) !== durationTime) curveTimes.push(durationTime);
   const allTimes = [...new Set([
     ...shotFrames.flatMap((entry) => entry.times),
     ...cutFrames.flatMap((entry) => entry.times),
@@ -333,7 +354,6 @@ export async function reportTemporalEvidence(
         { sampleHz: 8, maxSamples: 220, mapSeekTime: toOutputTime },
       );
     }
-    const blockingPlan = parseCameraBlockingPlan(current.html);
     const continuityGraph = parseContinuityGraph(current.html);
     const cameraBlocking = continuousMotion && blockingPlan && continuityGraph
       ? buildCameraBlockingEvidence(blockingPlan, continuityGraph, continuousMotion)
@@ -571,7 +591,7 @@ export async function reportTemporalEvidence(
       });
     }
 
-    const changeCurve: Array<{ time: number; delta: number }> = [];
+    const changeCurve: RenderedChangeCurvePointV1[] = [];
     for (let index = 1; index < curveTimes.length; index += 1) {
       const previous = curveTimes[index - 1]!;
       const time = curveTimes[index]!;
@@ -582,19 +602,33 @@ export async function reportTemporalEvidence(
         frames.get(previous)!,
         frames.get(time)!,
       );
-      changeCurve.push({ time, delta: Math.round(delta * 100000) / 100000 });
+      changeCurve.push({
+        fromTime: previous,
+        time,
+        delta: Math.round(delta * 100000) / 100000,
+      });
     }
     const quietWindows = quietWindowsFromCurve(changeCurve);
+    const renderedDeadFrames = analyzeRenderedDeadFrames(
+      changeCurve,
+      manifest.scenes,
+      manifest.durationSec,
+      { deltaThreshold: QUIET_DELTA },
+    );
+    if (continuousMotion) {
+      continuousMotion = { ...continuousMotion, renderedDeadFrames };
+    }
 
     const jsonPath = path.join(outDir, "temporal.json");
     fs.writeFileSync(jsonPath, JSON.stringify({
-      version: 3,
+      version: 4,
       compositionId: manifest.compositionId,
       revision: manifest.revision,
       durationSec: manifest.durationSec,
       cuts: cutEvidence.map(({ triptychPath: _path, ...cut }) => cut),
       changeCurve,
       quietWindows,
+      renderedDeadFrames,
       ...(continuousMotion ? { continuousMotion } : {}),
       ...(cameraBlocking ? { cameraBlocking } : {}),
     }, null, 2) + "\n");
@@ -624,6 +658,12 @@ export async function reportTemporalEvidence(
     const quietLines = quietWindows.length
       ? quietWindows.map((window) => `  ${window.start}s–${window.end}s`)
       : ["  none"];
+    const deadFrameLines = renderedDeadFrames.windows.length
+      ? renderedDeadFrames.windows.map((window) =>
+          `  ${window.code} · ${window.sceneId} · ` +
+          `${window.startSec}s–${window.endSec}s (${window.durationSec.toFixed(2)}s)`
+        )
+      : ["  none"];
     const summary = [
       `temporal evidence · revision ${manifest.revision} · ${allTimes.length} frames sampled`,
       `strip: ${stripPath}`,
@@ -631,6 +671,12 @@ export async function reportTemporalEvidence(
       ...cutLines,
       "quiet windows (verify each is an intentional hold):",
       ...quietLines,
+      "rendered dead frames (advisory; declared camera holds excluded):",
+      `  ${(renderedDeadFrames.summary.deadFrameRatio * 100).toFixed(1)}% of ` +
+        `${renderedDeadFrames.summary.eligibleDurationSec.toFixed(2)}s eligible runtime · ` +
+        `${renderedDeadFrames.summary.windowCount} window(s) >` +
+        `${renderedDeadFrames.minimumWindowSec.toFixed(2)}s`,
+      ...deadFrameLines,
       ...(continuousMotion
         ? [
             "continuous motion (advisory):",
@@ -667,6 +713,7 @@ export async function reportTemporalEvidence(
       cuts: cutEvidence,
       changeCurve,
       quietWindows,
+      renderedDeadFrames,
       ...(continuousMotion ? { continuousMotion } : {}),
       ...(blockingPath ? { blockingPath } : {}),
       ...(cameraBlocking ? { cameraBlocking } : {}),

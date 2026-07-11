@@ -123,7 +123,14 @@ describe("camera blocking landing audit — ensemble framing semantics", () => {
       await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
       await page.setContent(fixtureHtml(), { waitUntil: "load" });
       const draft = { html: fixtureHtml(), storyboard } as DirectCompositionDraft;
-      const issues = await auditCameraBlockingLandings(page, draft, async () => {});
+      const issues = await auditCameraBlockingLandings(page, draft, async (time) => {
+        // The target enters after camera arrival but before its declared dwell
+        // ends. QA must review the settled landing, not the first 80ms.
+        await page.evaluate((at) => {
+          const cta = document.querySelector<HTMLElement>('[data-part="recovery-cta"]');
+          if (cta) cta.style.opacity = at >= 1 ? "1" : "0";
+        }, time);
+      });
       const landings = issues.filter((issue) => issue.code === "camera_blocking_landing");
 
       // recovery-cta: 190×76 ≈ 0.70% of frame — below its 1.8% solo floor —

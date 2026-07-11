@@ -277,6 +277,51 @@ describe("camera blocking director", () => {
     expect(phrase.arrivalPose.anchor).toMatchObject({ x: 0.5, y: 0.5, name: "center" });
   });
 
+  it("keeps a primary plugin toast inside a compact status occupancy range", () => {
+    const storyboard: DirectScene[] = [{
+      id: "alert-open",
+      title: "Alert open",
+      purpose: "land one notification without turning it into a hero panel",
+      startSec: 0,
+      durationSec: 3,
+      components: [{
+        version: 1,
+        id: "notices-toast-1",
+        kind: "toast",
+        pluginUid: "alert-open-notices",
+      }],
+      beats: [{
+        version: 1,
+        id: "notice-open",
+        sceneId: "alert-open",
+        component: "notices-toast-1",
+        kind: "open",
+        atSec: 0.3,
+      }],
+      moments: [{
+        version: 1,
+        id: "notice-lands",
+        sceneId: "alert-open",
+        atSec: 0.3,
+        title: "Notice lands",
+        visualState: "One compact product toast is readable",
+        change: "The toast opens",
+        motionIntent: "reveal",
+        importance: "primary",
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "notices-toast-1",
+        composition: "compact notification",
+        relationships: [],
+      },
+    }];
+    const phrase = resolveCameraBlockingPlan(storyboard, resolveContinuityGraph(storyboard))
+      .scenes[0]!.phrases.find((candidate) => candidate.importance === "primary")!;
+
+    expect(phrase.occupancy).toEqual({ min: 0.0025, preferred: 0.012, max: 0.065 });
+  });
+
   it("uses a true minimum-jerk quintic with clean endpoint derivatives", () => {
     expect(minimumJerkProgress(0)).toBe(0);
     expect(minimumJerkProgress(1)).toBe(1);
@@ -389,6 +434,64 @@ describe("camera blocking director", () => {
     expect(moving.advisories.some((entry) =>
       entry.includes("above 0.018 normalized frame-diagonals/s")
     )).toBe(true);
+  });
+
+  it("records the settled in-dwell sample instead of an entrance frame", () => {
+    const storyboard = scenes();
+    const graph = resolveContinuityGraph(storyboard);
+    const plan = resolveCameraBlockingPlan(storyboard, graph);
+    const block = plan.scenes.flatMap((scene) => scene.phrases)
+      .find((phrase) => phrase.importance === "primary")!;
+    const sample = (time: number, found: boolean, speed: number) => ({
+      time,
+      sceneId: block.sceneId,
+      phraseId: block.phraseId,
+      attention: { kind: "part" as const, id: block.target.id },
+      focal: {
+        found,
+        visibleFraction: found ? 1 : 0,
+        occupancyFraction: found ? block.occupancy.preferred : 0,
+        centerX: block.arrivalPose.anchor.x * 1920,
+        centerY: block.arrivalPose.anchor.y * 1080,
+        width: found ? 600 : 0,
+        height: found ? 360 : 0,
+        speed,
+        acceleration: 0,
+        jerk: 0,
+      },
+      independentMotionCount: found ? 1 : 0,
+    });
+    const lateTime = Math.max(block.arrivalSec, block.dwell.endSec - 0.08);
+    const motion = {
+      version: 1,
+      advisory: true,
+      sampleHz: 8,
+      frame: { width: 1920, height: 1080 },
+      samples: [sample(block.arrivalSec, false, 0.08), sample(lateTime, true, 0)],
+      reversals: [],
+      jerkMarkers: [],
+      quietWindows: [],
+      settleWindows: [],
+      scenes: [],
+      summary: {
+        sampleCount: 2, focalFoundSamples: 1, minimumVisibleFraction: 0,
+        meanVisibleFraction: 0.5, minimumOccupancyFraction: 0,
+        meanOccupancyFraction: block.occupancy.preferred / 2, offframeSamples: 1,
+        tinyFocalSamples: 1, peakSpeed: 0.08, peakAcceleration: 0, peakJerk: 0,
+        reversalCount: 0, jerkMarkerCount: 0, maxIndependentMotionCount: 1,
+        meanIndependentMotionCount: 0.5, settleWindowCount: 0,
+        measuredSettleWindowCount: 0, settledByWindowEndCount: 0,
+        quietWindowCount: 0, maxQuietWindowSec: 0,
+      },
+      advisories: [],
+    } satisfies ContinuousMotionEvidenceV1;
+
+    const landing = buildCameraBlockingEvidence(plan, graph, motion).landings
+      .find((candidate) => candidate.blockId === block.id)!;
+    expect(landing.time).toBe(lateTime);
+    expect(landing.measured).toBe(true);
+    expect(landing.visibleFraction).toBe(1);
+    expect(landing.speed).toBe(0);
   });
 
   it("waives the subject's solo occupancy floor for ensemble phrases with a framingTarget", () => {

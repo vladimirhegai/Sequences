@@ -602,6 +602,48 @@
     return { panel: el, items: [] };
   }
 
+  function assembleEntranceOffset(scene, el) {
+    var sceneBox = layoutPosition(scene);
+    var box = layoutPosition(el);
+    var sceneCenterX = sceneBox.x + sceneBox.width / 2;
+    var sceneCenterY = sceneBox.y + sceneBox.height / 2;
+    var centerX = box.x + box.width / 2;
+    var centerY = box.y + box.height / 2;
+    var nx = Math.abs(centerX - sceneCenterX) / Math.max(1, sceneBox.width);
+    var ny = Math.abs(centerY - sceneCenterY) / Math.max(1, sceneBox.height);
+    if (nx >= ny) return { x: centerX < sceneCenterX ? -34 : 34, y: 0 };
+    return { x: 0, y: centerY < sceneCenterY ? -28 : 28 };
+  }
+
+  /** One scene grammar, explicit per-component windows from the host plan. */
+  function compileSceneEntrances(timeline, scene, scenePlan) {
+    var entrances = Array.isArray(scenePlan.entrances) ? scenePlan.entrances : [];
+    if (!entrances.length) return 0;
+    var family = scenePlan.entranceFamily;
+    if (family !== "rise" && family !== "assemble" && family !== "materialize") {
+      throw new Error('unsupported component entrance family "' + family + '"');
+    }
+    for (var i = 0; i < entrances.length; i += 1) {
+      var entrance = entrances[i];
+      var el = scene.querySelector('[data-part="' + CSS.escape(entrance.component) + '"]');
+      if (!el) fail("entrance:" + entrance.component, 'component is absent');
+      var duration = Math.max(0.1, entrance.endSec - entrance.startSec);
+      var from = { opacity: 0 };
+      var to = { opacity: 1, x: 0, y: 0, scale: 1, duration: duration, ease: entrance.ease };
+      if (family === "rise") {
+        from.y = 22;
+      } else if (family === "assemble") {
+        var offset = assembleEntranceOffset(scene, el);
+        from.x = offset.x;
+        from.y = offset.y;
+      } else {
+        from.scale = 0.985;
+      }
+      reveal(timeline, el, from, to, entrance.startSec);
+    }
+    return entrances.length;
+  }
+
   function compileOpen(timeline, el, beat) {
     // MD6 pop entrance for compact acknowledgment surfaces: scale-from-small
     // with the seqPop overshoot, replacing the smooth default panel open. The
@@ -648,13 +690,28 @@
   function compileClose(timeline, el, beat) {
     var target = openTargets(el);
     var duration = beat.endSec - beat.startSec;
-    move(timeline, target.panel, { opacity: 1, y: 0, scale: 1 }, {
+    var from = { opacity: 1, x: 0, y: 0, xPercent: 0, yPercent: 0, scale: 1 };
+    var to = {
       opacity: 0,
-      y: -8,
-      scale: 0.97,
+      x: 0,
+      y: 0,
+      xPercent: 0,
+      yPercent: 0,
+      scale: 0.98,
       duration: duration,
       ease: beat.ease,
-    }, beat.startSec);
+    };
+    var recede = clamp(
+      typeof beat.exitRecedePercent === "number" ? beat.exitRecedePercent : 0,
+      0,
+      40,
+    );
+    if (beat.exitAxis === "left") to.xPercent = -recede;
+    else if (beat.exitAxis === "right") to.xPercent = recede;
+    else if (beat.exitAxis === "up") to.yPercent = -recede;
+    else if (beat.exitAxis === "down") to.yPercent = recede;
+    else to.y = -6;
+    move(timeline, target.panel, from, to, beat.startSec);
     if (target.scrim) {
       move(timeline, target.scrim, { opacity: 1 }, {
         opacity: 0,
@@ -766,6 +823,7 @@
     // moment_static_frame from the temporal judge, never a block).
     if ((slot.textContent || "").trim() === incoming.trim()) return;
     var duration = beat.endSec - beat.startSec;
+    var authoredBox = layoutPosition(slot);
     slot.style.position = slot.style.position || "relative";
     var old = document.createElement("span");
     old.className = "cmp-swap-old";
@@ -773,13 +831,22 @@
     var next = document.createElement("span");
     next.className = "cmp-swap-new";
     next.textContent = incoming;
-    next.style.position = "absolute";
-    next.style.left = "0";
-    next.style.top = "0";
+    // The incoming copy owns normal flow from compile time, so its layout box
+    // is already the settled box on the first frame. The outgoing copy floats
+    // over that final box at its authored coordinates. Keeping this ownership
+    // constant avoids the old-width containing box (and nested cmp-split
+    // units) holding the incoming label at the wrong x until an end-of-beat
+    // position set snaps it into place.
+    old.style.position = "absolute";
     old.style.display = "inline-block";
+    old.style.width = authoredBox.width + "px";
     next.style.display = "inline-block";
+    next.style.opacity = "0";
     slot.appendChild(old);
     slot.appendChild(next);
+    var finalBox = layoutPosition(slot);
+    old.style.left = (authoredBox.x - finalBox.x) + "px";
+    old.style.top = (authoredBox.y - finalBox.y) + "px";
     move(timeline, old, { y: 0, opacity: 1 }, {
       y: "-0.6em",
       opacity: 0,
@@ -792,17 +859,10 @@
       duration: duration * 0.55,
       ease: beat.ease,
     }, beat.startSec + duration * 0.4);
-    // Settle (probe-audit-01 "faint ghost"): during the crossfade the slot is
-    // laid out by the OLD copy while the new copy floats absolute over it, so
-    // leaving that arrangement forever means the settled text never rejoins
-    // normal flow (it overlaps neighbors whenever lengths differ) and the
-    // zeroed-out old copy still owns the slot's box. At the beat's end the old
-    // span leaves the layout and the new span takes the slot in normal flow.
-    // Zero-duration sets are seek-safe: GSAP records the start values on first
-    // render, so seeking back before endSec restores inline-block + absolute
-    // (the addEchoTrail t=0-pin precedent).
+    // Settle by removing only the already-floating outgoing copy. The incoming
+    // copy never changes positioning mode, so forward/backward seeks cannot
+    // introduce a layout snap.
     timeline.set(old, { display: "none" }, beat.endSec);
-    timeline.set(next, { position: "static" }, beat.endSec);
   }
 
   // An overlay kind's root spans the whole scene (.cmp-modal is inset:0 with a
@@ -1009,11 +1069,59 @@
     return result;
   }
 
+  // WS-B2 follow-through lives on a host child, never the component root: the
+  // root's geometry/filter/transform remain available to camera, cuts, and
+  // authored layout while a soft material highlight eases fully to rest.
+  function compileSettleBlooms(timeline, scene, beats) {
+    var lastByComponent = Object.create(null);
+    var morphSources = Object.create(null);
+    for (var i = 0; i < beats.length; i += 1) {
+      var beat = beats[i];
+      if (beat.kind === "animate") continue;
+      if (beat.kind === "morph") morphSources[beat.component] = true;
+      var prior = lastByComponent[beat.component];
+      if (!prior || beat.endSec >= prior.endSec) lastByComponent[beat.component] = beat;
+    }
+    var sceneStart = parseFloat(scene.getAttribute("data-start") || "0") || 0;
+    var sceneEnd = sceneStart + (parseFloat(scene.getAttribute("data-duration") || "0") || 0);
+    var compiled = 0;
+    Object.keys(lastByComponent).forEach(function (component) {
+      var beat = lastByComponent[component];
+      if (!beat || beat.kind === "close" || morphSources[component]) return;
+      var el = scene.querySelector('[data-part="' + CSS.escape(component) + '"]');
+      if (!el || el.getAttribute("data-component") === "asset" ||
+          el.hasAttribute("data-asset-id") || el.closest("[data-asset-id]")) return;
+      var duration = Math.min(1, sceneEnd - beat.endSec - 0.02);
+      if (duration < 0.18) return;
+      var bloom = el.querySelector(":scope > .cmp-settle-bloom");
+      if (!bloom) {
+        bloom = document.createElement("span");
+        bloom.className = "cmp-settle-bloom";
+        bloom.setAttribute("data-layout-ignore", "");
+        bloom.setAttribute("data-sequences-settle-bloom", beat.id);
+        bloom.setAttribute("aria-hidden", "true");
+        bloom.style.cssText =
+          "position:absolute;inset:0;border-radius:inherit;pointer-events:none;" +
+          "opacity:0;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent,#6ea8ff) 28%,transparent)," +
+          "0 0 34px color-mix(in srgb,var(--accent,#6ea8ff) 18%,transparent);";
+        el.appendChild(bloom);
+      }
+      move(timeline, bloom, { opacity: 0.16 }, {
+        opacity: 0,
+        duration: duration,
+        ease: "power2.out",
+      }, beat.endSec);
+      compiled += 1;
+    });
+    return compiled;
+  }
+
   function compileScene(timeline, root, scenePlan) {
     var scene = root.querySelector('[data-scene="' + CSS.escape(scenePlan.sceneId) + '"]');
     if (!scene) {
       throw new Error('component plan references absent scene "' + scenePlan.sceneId + '"');
     }
+    var entrances = compileSceneEntrances(timeline, scene, scenePlan);
     var bound = 0;
     var beats = staggerBeats(scenePlan.beats);
     for (var i = 0; i < beats.length; i += 1) {
@@ -1037,7 +1145,13 @@
       }
       bound += 1;
     }
-    return { sceneId: scenePlan.sceneId, beats: bound };
+    var settleBlooms = compileSettleBlooms(timeline, scene, beats);
+    return {
+      sceneId: scenePlan.sceneId,
+      entrances: entrances,
+      beats: bound,
+      settleBlooms: settleBlooms,
+    };
   }
 
   function compile(timeline, root) {

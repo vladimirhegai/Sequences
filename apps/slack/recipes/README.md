@@ -119,6 +119,13 @@ usable value drops the declaration (degrade-never-veto).
   wave landing (the KPI proof shot models fake with instant numbers).
 - `checklist-cascade` — rows cascade in, checkmarks DRAW on in rhythm,
   completion bar sweeps (onboarding/launch-list accumulation payoff).
+- `ambient-hero-opener` — a frame-filling product hero settles while
+  wallpaper, depth decor, and key light keep a finite living canvas behind
+  stable copy.
+- `overlap-dashboard-entrance` — one dashboard assembles through a tightly
+  overlapped rise/follow chain, then develops into a chart payoff.
+- `outgoing-morph-seam` — a resolved product surface clears detail,
+  compresses into a pill, and carries momentum into a shape-match boundary.
 
 Authoring conventions proven by these four (follow them — they are why the
 gate reports zero warnings): tween targets are INLINE STRING LITERALS with

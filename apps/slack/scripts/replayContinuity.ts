@@ -19,6 +19,7 @@ import { correctEyeTracePingPong } from "../src/engine/eyeTraceRepair.ts";
 import { cohereInteractionFocusItems } from "../src/engine/interactionContract.ts";
 import { inspectDirectComposition, type DirectBrowserQaResult } from "../src/engine/layoutInspector.ts";
 import { reconcileAndLowerPlugins } from "../src/engine/pluginContract.ts";
+import { reconcileRecipeDeclarations } from "../src/engine/recipeContract.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const projectsDir = path.join(appDir, ".data", "projects");
@@ -67,10 +68,14 @@ if (!sourceArg) {
   const entrance = retimeLateLoadBearingEntrances(persistedScenes);
   const focus = cohereInteractionFocusItems(entrance.scenes);
   const plugins = reconcileAndLowerPlugins(focus.scenes);
+  // Replays can start from a pre-governor cached manifest. Run the same L2
+  // declaration governor used by fresh storyboards so a now-known duplicate
+  // primary surface is absorbed before source injection and validation.
+  const recipes = reconcileRecipeDeclarations(plugins.scenes);
   // Planning artifacts and older manifests may both carry only a partial map.
   // Complete after plugin lowering, matching parse-time ordering so generated
   // component regions participate too, while preserving every recovered cell.
-  const worldLayoutCompletion = completeStoryboardWorldLayouts(plugins.scenes);
+  const worldLayoutCompletion = completeStoryboardWorldLayouts(recipes.scenes);
   let draft = applyDeterministicSourceRepairs(
     { html: current.html, storyboard: worldLayoutCompletion.scenes },
     target,
@@ -160,6 +165,7 @@ if (!sourceArg) {
       ...entrance.normalized,
       ...focus.normalized,
       ...plugins.notes,
+      ...recipes.notes.map((note) => `recipe-reconcile: ${note}`),
     ],
     browserPenalty: reviewed.penalty,
     contrastRepairs: adoptedContrast,

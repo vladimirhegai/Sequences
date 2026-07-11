@@ -13,7 +13,7 @@ import { retrieveHyperframesSkillContext } from "../src/agent/skillContext.ts";
 const APP_DIR = path.resolve(fileURLToPath(import.meta.url), "../..");
 
 /**
- * SENTINEL_PLAN.md §3 Phase 4 item 2. Two ceilings, one purpose: growing the
+ * SENTINEL.md budget contract. Two ceilings, one purpose: growing the
  * prompt must require consciously raising a tested number a reviewer sees.
  *
  * 1. `planning-director.md` — the editable base prompt — stays within its

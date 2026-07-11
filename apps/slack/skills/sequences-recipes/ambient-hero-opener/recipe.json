@@ -1,6 +1,6 @@
 {
   "format": 2,
-  "revision": 5,
+  "revision": 6,
   "id": "ambient-hero-opener",
   "title": "Living-canvas hero opener with a stable product focal",
   "description": "A staged product hero rises into a living depth field while wallpaper, light, and decorative layers keep breathing behind stable readable copy.",
@@ -103,5 +103,5 @@
       "cinemaKit": 1
     }
   },
-  "fragmentHash": "316687fb894e2942077aab6a8e0569cc4d5391ee60f6d238460b5d58a4ffd81c"
+  "fragmentHash": "4dea03ffaaebf4169ce33ca89141ff5bf5e0d3f3d87964fe5af37b042f35ff90"
 }

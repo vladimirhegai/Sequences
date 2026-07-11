@@ -286,7 +286,7 @@
   .background-safe-zone { position: absolute; border: 2px dashed rgba(255,255,255,0.86); border-radius: 14px; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
   .background-safe-zone span { position: absolute; top: 8px; left: 10px; color: #fff; font: 10px Consolas, monospace; text-transform: uppercase; text-shadow: 0 1px 3px #000; }
   .moodboard-ribbon { position: absolute; right: 14px; bottom: 14px; padding: 5px 9px; border-radius: 999px; background: rgba(5,7,11,0.76); color: #ffd479; border: 1px solid rgba(255,212,121,0.45); font-size: 10px; letter-spacing: 0.08em; }
-  .license-warning { color: var(--lab-warn); border: 1px solid rgba(240,180,41,0.35); background: rgba(240,180,41,0.07); padding: 8px 10px; border-radius: 8px; font-size: 11px; }
+  .license-status { color: var(--lab-ok); border: 1px solid rgba(67,194,122,0.35); background: rgba(67,194,122,0.07); padding: 8px 10px; border-radius: 8px; font-size: 11px; }
   .probe-stage { display: flex; flex-direction: column; gap: 14px; padding: 14px; overflow-y: auto; min-height: 0; flex: 1; }
   .probe-stage video { width: 100%; max-height: 62vh; background: #000; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); }
   .probe-strip-block h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--lab-muted); margin: 0 0 6px; }
@@ -439,7 +439,7 @@
     <nav>
       <h2>Design dialects</h2>
       <div id="look-list"></div>
-      <h2>Moodboard backgrounds <span class="badge warn">reference only</span></h2>
+      <h2>Production wallpapers <span class="badge">MIT cleared</span></h2>
       <div id="background-list" class="background-list"></div>
     </nav>
     <div class="stage-wrap">
@@ -468,8 +468,8 @@
         <ul class="rule-list" id="look-rules"></ul>
       </div>
       <div class="panel" id="background-detail" style="display:none">
-        <h2>Background crop <span class="badge warn">moodboard-only</span></h2>
-        <div class="license-warning">No license manifest exists. Studio preview only; customer-project staging is blocked.</div>
+        <h2>Background crop <span class="badge">production-cleared</span></h2>
+        <div class="license-status">MIT license manifest verified. The selected wallpaper and notice may be staged into customer projects.</div>
         <div class="kv" id="background-kv"></div>
         <h2>Overlay</h2>
         <p class="desc" id="background-overlay"></p>
@@ -1068,13 +1068,13 @@ function selectBackground(background) {
   showLookDetail("background");
   el("look-stage").innerHTML = `
     <div class="catalog-board background-board">
-      <img src="${background.previewUrl}" alt="${esc(background.id)} moodboard crop" style="object-position:${esc(background.crop.objectPosition)}"/>
+      <img src="${background.previewUrl}" alt="${esc(background.id)} production crop" style="object-position:${esc(background.crop.objectPosition)}"/>
       <div class="background-preview-overlay" style="${backgroundOverlayStyle(background)}"></div>
       <div class="background-safe-zone" style="${backgroundSafeZoneStyle(background.textSafeSide)}"><span>${esc(background.textSafeSide)} text-safe</span></div>
-      <div class="moodboard-ribbon">MOODBOARD ONLY · NOT LICENSED</div>
+      <div class="moodboard-ribbon">PRODUCTION CLEARED · MIT</div>
     </div>`;
   el("look-note").textContent =
-    `${background.id}: ${background.crop.recommendation} Preview route is Studio-only and is not an authoring asset.`;
+    `${background.id}: ${background.crop.recommendation} Production staging uses one selected wallpaper per film.`;
   el("background-kv").innerHTML = [
     ["file", background.file],
     ["dimensions", `${background.dimensions.width} × ${background.dimensions.height}`],

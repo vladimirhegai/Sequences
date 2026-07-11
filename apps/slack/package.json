@@ -28,7 +28,9 @@
     "browsers:clean": "tsx scripts/cleanupBrowsers.ts",
     "capabilities:sync": "tsx scripts/syncCapabilityIndex.ts",
     "mcp:server": "tsx src/engine/mcpServer.ts",
-    "test": "vitest run --root ../.. apps/slack/test",
+    "test": "vitest run --config vitest.config.ts",
+    "test:unit": "vitest run --config vitest.config.ts --project unit",
+    "test:browser": "vitest run --config vitest.config.ts --project browser",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

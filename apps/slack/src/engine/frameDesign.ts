@@ -45,6 +45,7 @@ import {
   creativeModel,
   creativeThinkingMode,
 } from "./modelPolicy.ts";
+import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 import {
   TYPE_SYSTEMS,
   pickTypeSystems,
@@ -294,7 +295,7 @@ async function chooseFrame(
   if (!provider) return null;
   const model = creativeModel(
     provider,
-    process.env.SLACK_SEQUENCES_FRAME_MODEL,
+    slackSequencesEnvRawValue("SLACK_SEQUENCES_FRAME_MODEL"),
   );
   const thinkingMode = creativeThinkingMode(provider, model);
   const catalog = FRAME_PRESETS.map((preset) =>

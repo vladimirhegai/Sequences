@@ -1,6 +1,7 @@
 # SENTINEL_REPORT.md — implementer's report
 
-Companion to [SENTINEL_PLAN.md](SENTINEL_PLAN.md). Structured per plan §8 and
+Historical implementation evidence for the current
+[Sentinel contract](../../SENTINEL.md). Structured by the original phase plan and
 updated per phase. Every claim that needs evidence names its file/command; a
 probe that fell back is recorded here with its `FAILURE.md` path, never retried
 silently into a clean table.
@@ -456,7 +457,7 @@ Probe artifacts (immutable):
 
 ## Auditor review + fixes (2026-07-05, Claude Fable)
 
-Audit of the five Sentinel commits (`8e34aee`…`240c600`) against SENTINEL_PLAN.md,
+Audit of the five Sentinel commits (`8e34aee`…`240c600`) against the archived phase plan,
 the diff, and the persisted probe artifacts.
 
 **Verdict:** Phase 0 PASS · Phase 1 PASS (both incident replays verified in the

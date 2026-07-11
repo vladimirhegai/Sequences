@@ -48,18 +48,13 @@ Color and Typography below are fallbacks when frame.md is absent.
 
 ## Scene composition — layers and information beats
 
-An empty frame looks broken; one that dumps everything and freezes is a slide.
-Reveal three layers through time:
-
-- **Background field** — the dialect's solid, paper, glow, type, or grid field;
-  texture may be still and must not become a breathing loop.
-- **Midground content** — headlines, stats, cards, code, or screenshots, with
-  fewer elements arriving on distinct information beats.
-- **Foreground accents** — sparse dividers, labels, bars, or registration marks.
-
-Let hero text span 60–80% of frame width. Use edges or asymmetrical splits
-instead of equal-weight centering. Secondary detail may move, but only one
-element commands attention at a time.
+An empty frame looks broken; an everything-at-once frame is a slide. Reveal a
+dialect-owned field, the subject, then sparse foreground accents on distinct
+information beats. Stage product UI as a desktop, one framed screen over a
+wallpaper, or a near-full app with rich margins. The subject should occupy
+30–60% of the frame; under ~15% reads as a speck in a void. Let hero text span
+60–80% of frame width, prefer asymmetric weight, and give only one element the
+highest attention contrast at a time.
 
 ## Placement discipline — flow first, never guessed coordinates
 
@@ -95,6 +90,8 @@ Use only listed embedded fonts; unknown families fall back at render.
   clear reason.
 - Decorative opacity 12–25% for video. Under 10% is invisible after
   compression. Borders 2–4px (1px is invisible at 1080p). Padding 60–140px.
+- WCAG is only legibility; value hierarchy is direction. The focal owns the
+  frame's strongest light/dark separation while support sits in quieter bands.
 
 ## Motion doctrine
 
@@ -211,10 +208,6 @@ panel — on and above the scene wrappers. Division of ownership:
   Copy block→percentage, unrelated dashboard→headline, or whole app→badge is
   not a morph; use a match, swipe, chapter cut, or cut-on-action. Never morph
   two large unrelated DOM subtrees merely because their rectangles are similar.
-- The `sequences-cuts` island, runtime tag, and `SequencesCuts.compile` call
-  are host-injected. Never hand-write or alter them, or re-implement a
-  boundary the cut plan already owns.
-
 ## Continuous spatial world — the camera rig
 
 The video frame is a fixed camera viewport; a scene's `data-camera-world` can
@@ -237,13 +230,9 @@ it the way a camera operator would.
   grid cells; copy them verbatim instead of choosing your own coordinates.
   Free placement is how stations end up clipping each other or sitting half
   out of frame.
-- **The host owns the world transform.** When the locked storyboard gives a
-  scene a `camera` path, the host injects the `sequences-camera` JSON island,
-  the `sequences-camera.v1.js` runtime, and the `SequencesCamera.compile(tl,
-  root)` call, and drives the world plane's translate/scale deterministically.
-  Never author a tween on the `data-camera-world` element itself — put your
-  motion on elements inside regions. Never hand-write the island or compile
-  call.
+- **The host owns the world transform.** A typed `camera` path drives the world
+  plane deterministically. Never tween `data-camera-world`, copy its plan or
+  compile call; animate children inside regions.
 - **Region names must bind.** Every `toRegion`/`fromRegion` in the storyboard
   path must exist verbatim as exactly one `data-region` in that scene's world;
   every `toPart` (track-to-anchor) must exist as a scene-scoped `data-part`.
@@ -320,6 +309,10 @@ card, but a living interface whose state changes ARE the story beats.
   pre-hide and re-open a toast/panel the host already opens, or draw a second
   cursor/ripple. Duplicate ownership creates the visible double-pulse seen in
   bad product demos.
+- **Overlap from one grammar.** Declare `componentEntranceFamily` once per scene
+  (`rise`, `assemble`, or `materialize`). Chain reactions with `follows` plus
+  `lagMs` (60–120, default 90); the host resolves the stagger and directional
+  exits, so do not duplicate those root tweens.
 - **Morphs are twin transitions.** A `morph` beat travels one component into
   another declared in the same scene (search→command-palette, card→modal,
   table→list). Author both twins; the runtime pre-hides the target and owns
@@ -503,10 +496,9 @@ the guide deliberately. Do not turn every shot into the same grid.
   `data-layout-attach="#that-word"` and `data-layout-role="underline|highlight"`,
   and derive its inline size from the wrapper. Never position a marker line
   from guessed canvas coordinates.
-- Build topology/connector lines from real endpoint elements: place endpoints
-  in flow/grid, then attach the connector to those measured endpoints (or use a
-  host component/plugin that does). Never eyeball absolute SVG line coordinates
-  over a responsive card; a line that misses its node is worse than no line.
+- Endpoint-bound topology example: place `data-part="queue"` and
+  `data-part="worker"` as grid nodes, then let `flow-diagram` measure their
+  centers and bind the edge. Never eyeball an absolute SVG path over cards.
 - When validation reports a fit problem, repair in this order: reflow or widen
   the region; wrap; use `fitTextFontSize`; shrink the type only as a last resort.
   Optical centering offsets are valid when explicitly declared.
@@ -611,11 +603,15 @@ this contract and requests only `<index_html>`.
         { "version": 1, "move": "whip", "toRegion": "metric-wall", "startSec": 1.6, "durationSec": 0.45 }
       ]
     },
+    "displayType": { "version": 1, "kind": "ghost-word", "text": "SHIP IT",
+      "atSec": 0.8, "focalPart": "hero-claim" },
     "components": [
       { "version": 1, "id": "latency-stat", "kind": "stat-card", "region": "metric-wall", "role": "hero" }
     ],
+    "componentEntranceFamily": "rise",
     "beats": [
-      { "version": 1, "id": "latency-counts", "component": "latency-stat", "kind": "count", "atSec": 2.2 }
+      { "version": 1, "id": "latency-counts", "component": "latency-stat", "kind": "count", "atSec": 2.2 },
+      { "version": 1, "id": "latency-highlights", "component": "latency-stat", "kind": "highlight", "atSec": 2.3, "follows": "latency-counts", "lagMs": 90 }
     ]
   }
 ]
@@ -623,6 +619,9 @@ this contract and requests only `<index_html>`.
 
 The optional `camera` path drives the host camera rig over that scene's
 `data-camera-world`; omit it (or use an empty path) for a single-framing shot.
+`displayType` is optional and host-rendered. Use at most one `ghost-word` in the
+entire film, 1-4 words, subordinate to the named focal part; never hand-author
+extra oversized background copy.
 <index_html>
 <!doctype html>
 ...the complete composition...

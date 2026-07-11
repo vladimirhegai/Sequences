@@ -191,12 +191,24 @@
     return hasDirectText(element) || hasVisualPaint(element);
   }
 
+  // Host-generated surfaces can declare when they become load-bearing. Camera
+  // blocking is solved at each phrase's arrival, so a later CTA/lockup must not
+  // enlarge an earlier station silhouette while it is still intentionally
+  // absent. The element itself or any owning wrapper may carry the fence.
+  function isFramingContentAt(element, atSec) {
+    if (!isFinite(atSec)) return true;
+    var owner = element.closest && element.closest("[data-layout-important-from]");
+    if (!owner) return true;
+    var from = Number(owner.getAttribute("data-layout-important-from"));
+    return !isFinite(from) || from <= atSec + 0.001;
+  }
+
   // A station is a placement boundary, not necessarily the shot's visual
   // silhouette. Authors commonly put one 600px product panel in a viewport-
   // sized station; fitting the station makes that panel a tiny subject adrift
   // in empty space. Frame the union of actual painted/text/media descendants,
   // while preserving an explicit escape for deliberate establishing shots.
-  function regionContentRect(world, region) {
+  function regionContentRect(world, region, atSec) {
     var fallback = layoutRect(world, region);
     if (region.getAttribute("data-camera-frame") === "region") return fallback;
     var left = Infinity;
@@ -211,9 +223,16 @@
       "[data-layout-important],[data-component],[data-part]"
     );
     var nodes = region.querySelectorAll("*");
-    var prefersSemantic = semanticNodes.length > 0;
+    var prefersSemantic = false;
+    for (var semanticIndex = 0; semanticIndex < semanticNodes.length; semanticIndex += 1) {
+      if (isFramingContentAt(semanticNodes[semanticIndex], atSec)) {
+        prefersSemantic = true;
+        break;
+      }
+    }
     for (var i = 0; i < nodes.length; i += 1) {
       var element = nodes[i];
+      if (!isFramingContentAt(element, atSec)) continue;
       // A semantic component somewhere in the station must not erase ordinary
       // load-bearing copy from the camera silhouette. Probe footage exposed
       // this with a plain "Confirmed bookings" heading and with text spans
@@ -260,8 +279,8 @@
     return { x: left, y: top, width: right - left, height: bottom - top };
   }
 
-  function framingRect(world, element, kind) {
-    if (kind === "region") return regionContentRect(world, element);
+  function framingRect(world, element, kind, atSec) {
+    if (kind === "region") return regionContentRect(world, element, atSec);
     // Modal roots span the scene; their dialog is the surface the camera and
     // the audience perceive as the subject.
     var visual = element.querySelector && element.querySelector(".cmp-dialog");
@@ -272,8 +291,8 @@
   // not every load-bearing companion in its station. Normal part framing may
   // retain companions; a primary metric/CTA/headline must be measured alone
   // or a large neighboring panel makes the subject look falsely occupied.
-  function focalRect(world, element, kind) {
-    if (kind === "region") return regionContentRect(world, element);
+  function focalRect(world, element, kind, atSec) {
+    if (kind === "region") return regionContentRect(world, element, atSec);
     var visual = element.querySelector && element.querySelector(".cmp-dialog");
     return layoutRect(world, visual || element);
   }
@@ -397,8 +416,8 @@
     return frameRectState(
       viewport,
       blocking && kind === "part"
-        ? focalRect(world, element, kind)
-        : framingRect(world, element, kind),
+        ? focalRect(world, element, kind, blocking.arrivalSec)
+        : framingRect(world, element, kind, blocking && blocking.arrivalSec),
       kind,
       zoomMul,
       blocking,
@@ -414,8 +433,11 @@
         viewport, world, target.element, target.kind, zoomMul, blocking,
       );
     }
-    var subjectRect = focalRect(world, target.element, target.kind);
-    var contextRect = framingRect(world, target.framingElement, target.framingKind);
+    var arrivalSec = blocking && Number(blocking.arrivalSec);
+    var subjectRect = focalRect(world, target.element, target.kind, arrivalSec);
+    var contextRect = framingRect(
+      world, target.framingElement, target.framingKind, arrivalSec,
+    );
     var contextCollapsesToSubject =
       Math.abs(contextRect.x - subjectRect.x) <= 2 &&
       Math.abs(contextRect.y - subjectRect.y) <= 2 &&
@@ -439,28 +461,14 @@
     var contextState = frameRectState(
       viewport, contextRect, target.framingKind, zoomMul, blocking,
     );
-    var occupancy = blocking && blocking.occupancy;
-    var floor = occupancy && isFinite(occupancy.min)
-      ? Math.max(0.01, Number(occupancy.min))
-      : 0.025;
-    // Clear the lower-bound audit by construction while leaving most of the
-    // contextual station available whenever geometry permits.
-    var floorBlocking = Object.assign({}, blocking, {
-      framingOccupancy: null,
-      occupancy: {
-        min: floor,
-        preferred: Math.min(Number(occupancy && occupancy.max) || 0.82, floor * 1.08),
-        max: Number(occupancy && occupancy.max) || 0.82,
-      },
-    });
-    var subjectFloorState = frameRectState(
-      viewport, subjectRect, target.kind, zoomMul, floorBlocking,
-    );
-    var z = clamp(Math.max(contextState.z, subjectFloorState.z), ZOOM_MIN, ZOOM_MAX);
-    // A declared framing target means the phrase is an ensemble shot. Grow the
-    // addressed subject as far as the surrounding card/row/lockup can remain
-    // delivery-safe; local highlight/count/press motion supplies the close-up
-    // emphasis without sacrificing scene coherence.
+    // A declared framing target makes the ENSEMBLE occupancy contract own the
+    // lens. Forcing the addressed child up to its solo minimum can exceed the
+    // station's declared maximum by 2-4x (LumaFlow's future CTA lockup framed
+    // at 48% against a 28% max). The landing audit deliberately accepts a
+    // visible compact child when the measured ensemble is in range. Standalone
+    // close-ups omit/collapse the framing target and take the subject path
+    // above; local highlight/count/press motion supplies emphasis here.
+    var z = clamp(contextState.z, ZOOM_MIN, ZOOM_MAX);
     var preservesContext = true;
     if (preservesContext) {
       // A CTA inside a card/lockup is read with its promise, not as an isolated
@@ -751,6 +759,12 @@
   function compileScene(timeline, root, viewport, scenePlan) {
     var scene = root.querySelector('[data-scene="' + CSS.escape(scenePlan.sceneId) + '"]');
     if (!scene) fail(scenePlan.sceneId, "scene element is absent");
+    // With the default-on living canvas, ambient life belongs to wallpaper,
+    // furniture, and light. The lens rests on readable product copy; the
+    // explicit environment rollback also restores the legacy operated hold.
+    var environmentOwnsAmbient = Boolean(
+      scene.querySelector(":scope > [data-sequences-environment]"),
+    );
     var world = scene.querySelector("[data-camera-world]");
     if (!world) fail(scenePlan.sceneId, "data-camera-world plane is absent");
     if (getComputedStyle(world).position === "static") {
@@ -834,6 +848,14 @@
         Math.abs(Number(aAnchor && aAnchor.x) - Number(bAnchor && bAnchor.x)) > 0.025 ||
         Math.abs(Number(aAnchor && aAnchor.y) - Number(bAnchor && bAnchor.y)) > 0.025
       ) return false;
+      var aLens = a.arrivalPose && a.arrivalPose.lens;
+      var bLens = b.arrivalPose && b.arrivalPose.lens;
+      if (aLens && bLens && aLens !== bLens) return false;
+      var aZoom = Number(a.arrivalPose && a.arrivalPose.zoom) || 1;
+      var bZoom = Number(b.arrivalPose && b.arrivalPose.zoom) || 1;
+      if (Math.max(aZoom, bZoom) / Math.max(0.001, Math.min(aZoom, bZoom)) > 1.08) {
+        return false;
+      }
       var aOccupancy = a.occupancy || {};
       var bOccupancy = b.occupancy || {};
       var preferredRatio = Math.max(
@@ -922,7 +944,15 @@
     var entryMatchesFirst = Boolean(
       entryBlock && firstDirected && samePoseIntent(entryBlock, firstDirected)
     );
-    if (firstDirected && entryMatchesFirst) {
+    if (
+      firstDirected && entryMatchesFirst &&
+      // A PRIMARY opening is already a promised readable landing. Replacing
+      // it with a dense handoff union can violate its own occupancy/anchor
+      // contract before the audience has seen it (LumaFlow: the approval card
+      // opened over-framed because the later Approve button was preblocked).
+      // Supporting connective entries may still establish the next union.
+      firstDirected.importance !== "primary"
+    ) {
       var initialNextTarget = blockingTargetElement(scene, directedBlocks[1]);
       if (initialNextTarget && shouldPreblockUnion(
         firstDirected, directedBlocks[1], entry, initialNextTarget,
@@ -1097,6 +1127,7 @@
     }
 
     function scheduleOperatedHold(block) {
+      if (environmentOwnsAmbient) return;
       if (!block || !block.dwell) return;
       var holdStart = Number(block.dwell.startSec);
       var holdEnd = Number(block.dwell.endSec);
@@ -1346,7 +1377,7 @@
         );
       }
       var routeSceneEnd = segments[segments.length - 1].endSec;
-      if (routeSceneEnd - routeCursor > 0.3) {
+      if (!environmentOwnsAmbient && routeSceneEnd - routeCursor > 0.3) {
         // Free tail after the last readable landing. The old fixed 0.8% zoom
         // was imperceptible over a multi-second tail (and below the temporal
         // liveness contract). Scale the operated drift by duration, with a

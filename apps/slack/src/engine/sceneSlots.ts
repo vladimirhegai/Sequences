@@ -1,5 +1,5 @@
 /**
- * Sentinel Phase 2 (SENTINEL_PLAN.md §3.2): scene-addressable authoring. The
+ * Sentinel L1/L5 contract (SENTINEL.md): scene-addressable authoring. The
  * author returns one shared `<film_style>` plus a `<scene_html id>` interior and
  * a `<scene_script id>` statement block per scene; the host assembles the
  * canonical document deterministically — the same chassis every whole-doc

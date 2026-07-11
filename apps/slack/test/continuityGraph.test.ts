@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import { applyDeterministicSourceRepairs } from "../src/engine/compositionRunner.ts";
 import {
+  continuityGraphEnabled,
   normalizeStoryboardContinuity,
   parseContinuityGraph,
   reconcileContinuityBindings,
@@ -47,6 +48,14 @@ function scene(
 }
 
 describe("continuity graph", () => {
+  it("is enabled by default and keeps an explicit zero rollback", () => {
+    expect(continuityGraphEnabled()).toBe(true);
+    vi.stubEnv("SLACK_SEQUENCES_CONTINUITY_GRAPH", "0");
+    expect(continuityGraphEnabled()).toBe(false);
+    vi.stubEnv("SLACK_SEQUENCES_CONTINUITY_GRAPH", "1");
+    expect(continuityGraphEnabled()).toBe(true);
+  });
+
   it("keeps one semantic product shell through three renamed representations", () => {
     const scenes = [
       scene("overview", 0, "shell-overview", { cut: { version: 1, style: "swipe", axis: "left" } }),

@@ -161,6 +161,15 @@ function occupancyFor(
       ? { min: 0.018, preferred: 0.055, max: 0.14 }
       : { min: 0.008, preferred: 0.025, max: 0.08 };
   }
+  // Toasts are compact status evidence even when a primary moment names one.
+  // Falling through to the generic primary range (12-48%) made the continuity
+  // solver enlarge a lowered notification-stack child like a hero surface and
+  // then charged the author for the host-owned contradiction (Meridian).
+  if (component?.kind === "toast") {
+    return importance === "primary"
+      ? { min: 0.0025, preferred: 0.012, max: 0.065 }
+      : { min: 0.0015, preferred: 0.008, max: 0.05 };
+  }
   // The component's visual form wins over continuity identity. A headline
   // participating in a CTA handoff is still long-form type and must be
   // framed as type, not as a compact button.
@@ -449,8 +458,14 @@ export function buildCameraBlockingEvidence(
     const samples = motion.samples.filter((sample) => sample.sceneId === block.sceneId);
     const matching = samples.filter((sample) => sample.phraseId === block.phraseId);
     const candidates = matching.length ? matching : samples;
+    // Blocking evidence describes the settled readable landing. The camera
+    // may arrive before a host-owned component entrance completes, so prefer
+    // the sample nearest the end of the declared dwell rather than the first
+    // frame of arrival. The dwell is bounded; a target that never resolves is
+    // still recorded as missing/unreadable.
+    const reviewAt = Math.max(block.arrivalSec, block.dwell.endSec - 0.08);
     const sample = [...candidates].sort((a, b) =>
-      Math.abs(a.time - block.arrivalSec) - Math.abs(b.time - block.arrivalSec)
+      Math.abs(a.time - reviewAt) - Math.abs(b.time - reviewAt)
     )[0];
     const measured = Boolean(sample?.focal.found);
     const occupancy = sample?.focal.occupancyFraction ?? 0;
@@ -465,7 +480,7 @@ export function buildCameraBlockingEvidence(
       blockId: block.id,
       sceneId: block.sceneId,
       phraseId: block.phraseId,
-      time: block.arrivalSec,
+      time: sample?.time ?? reviewAt,
       importance: block.importance,
       target: block.target,
       measured,

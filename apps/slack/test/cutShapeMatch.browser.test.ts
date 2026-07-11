@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DirectScene } from "../src/engine/directComposition.ts";
+import { commitDirectComposition } from "../src/engine/directComposition.ts";
 import { inspectDirectComposition } from "../src/engine/layoutInspector.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
+import { reportTemporalEvidence } from "../src/engine/temporalInspector.ts";
 import {
   CUT_RUNTIME_FILE,
   resolveCutPlan,
@@ -46,8 +48,21 @@ function shapeMatchFilm(): { storyboard: DirectScene[]; html: string } {
     {
       id: "two",
       title: "Status",
-      purpose: "The banner tries to become a card (and must degrade)",
+      purpose: "A compact status shell becomes a metric shell",
       startSec: 3,
+      durationSec: 3,
+      cut: {
+        version: 1,
+        style: "shape-match",
+        focalPartOut: "status-toast",
+        focalPartIn: "metric-card",
+      },
+    },
+    {
+      id: "three",
+      title: "Metric",
+      purpose: "The banner tries to become a card (and must degrade)",
+      startSec: 6,
       durationSec: 3,
       cut: {
         version: 1,
@@ -56,7 +71,7 @@ function shapeMatchFilm(): { storyboard: DirectScene[]; html: string } {
         focalPartIn: "tall-card",
       },
     },
-    { id: "three", title: "Resolve", purpose: "Landing", startSec: 6, durationSec: 3 },
+    { id: "four", title: "Resolve", purpose: "Landing", startSec: 9, durationSec: 3 },
   ];
   const island = JSON.stringify(resolveCutPlan(storyboard));
   const html = `<!doctype html>
@@ -72,18 +87,26 @@ body{color:#eef2f8;font-family:Arial,sans-serif}
 .bar{width:560px;height:112px;border-radius:16px;background:#38bdf8;color:#082032;display:grid;place-items:center;font-size:32px}
 .banner{width:1200px;height:120px;border-radius:12px;background:#f472b6;display:grid;place-items:center;font-size:30px}
 .card{width:320px;height:640px;border-radius:24px;background:#a78bfa;display:grid;place-items:center;font-size:30px}
+.toast-shell{width:900px;height:120px;border-radius:18px;background:#152b35;border:1px solid #5eead4;display:grid;place-items:center;font-size:30px;opacity:0}
+.metric-shell{width:420px;height:176px;border-radius:18px;background:#17304a;border:1px solid #38bdf8;display:grid;place-items:center;font-size:42px;opacity:0}
 </style></head><body>
-<main id="root" data-composition-id="shape-smoke" data-width="1920" data-height="1080" data-duration="9">
+<main id="root" data-composition-id="shape-smoke" data-width="1920" data-height="1080" data-duration="12">
 <section id="one" class="scene clip" data-scene="one" data-start="0" data-duration="3" data-track-index="1">
 <div class="pill" data-part="query-pill" data-layout-important>deploy checkout</div>
 </section>
 <section id="two" class="scene clip" data-scene="two" data-start="3" data-duration="3" data-track-index="1">
 <div style="display:grid;gap:48px;justify-items:center">
 <div class="bar" data-part="status-bar" data-layout-important>deploy checkout · queued</div>
-<div class="banner" data-part="wide-banner">release banner</div>
+<div class="toast-shell" data-component="toast" data-part="status-toast">Incident resolved</div>
 </div>
 </section>
 <section id="three" class="scene clip" data-scene="three" data-start="6" data-duration="3" data-track-index="1">
+<div style="display:grid;gap:48px;justify-items:center">
+<div class="metric-shell" data-component="stat-card" data-part="metric-card">99.98%</div>
+<div class="banner" data-part="wide-banner">release banner</div>
+</div>
+</section>
+<section id="four" class="scene clip" data-scene="four" data-start="9" data-duration="3" data-track-index="1">
 <div class="card" data-part="tall-card" data-layout-important>release card</div>
 </section>
 </main>
@@ -92,10 +115,13 @@ body{color:#eef2f8;font-family:Arial,sans-serif}
 window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
 tl.set("#one",{opacity:1},0).set("#one",{opacity:0},2.999);
 tl.set("#two",{opacity:1},3).set("#two",{opacity:0},5.999);
-tl.set("#three",{opacity:1},6).set("#three",{opacity:0},9);
+tl.set("#three",{opacity:1},6).set("#three",{opacity:0},8.999);
+tl.set("#four",{opacity:1},9).set("#four",{opacity:0},12);
 tl.fromTo("#one [data-part=query-pill]",{y:40,opacity:0},{y:0,opacity:1,duration:.6,ease:"power3.out"},0.2);
-tl.fromTo("#two [data-part=wide-banner]",{y:30,opacity:0},{y:0,opacity:1,duration:.5,ease:"power3.out"},3.6);
-tl.fromTo("#three [data-part=tall-card] ",{scale:.96},{scale:1,duration:.6,ease:"power3.out"},6.6);
+tl.fromTo("#two [data-part=status-toast]",{y:20,opacity:0},{y:0,opacity:1,duration:.5,ease:"power3.out"},4.2);
+tl.fromTo("#three [data-part=metric-card]",{y:20,opacity:0},{y:0,opacity:1,duration:.5,ease:"power3.out"},6.2);
+tl.fromTo("#three [data-part=wide-banner]",{y:30,opacity:0},{y:0,opacity:1,duration:.5,ease:"power3.out"},6.6);
+tl.fromTo("#four [data-part=tall-card] ",{scale:.96},{scale:1,duration:.6,ease:"power3.out"},9.6);
 SequencesCuts.compile(tl,document.getElementById("root"));
 window.__timelines["shape-smoke"]=tl;tl.seek(0);
 </script></body></html>`;
@@ -108,6 +134,11 @@ describe("shape-match cut runtime browser contract", () => {
     roots.push(dir);
     initializeProject(dir, { name: "Smoke", brandName: "Smoke", seedScreenshot: false });
     const draft = shapeMatchFilm();
+    const resolved = resolveCutPlan(draft.storyboard);
+    // D1: a normal bridged boundary receives a readable outgoing phrase,
+    // while resolveCutPlan remains the duration-clamping authority.
+    expect(resolved.cuts[0]!.exitSec).toBeCloseTo(0.4);
+    expect(resolved.cuts[1]!.exitSec).toBeCloseTo(0.4);
     // The static gate accepts both declared boundaries (existence is proven
     // scene-scoped; silhouette geometry is the runtime's decision). The
     // legacy shape-match declarations canonicalize to morph in the island.
@@ -118,7 +149,7 @@ describe("shape-match cut runtime browser contract", () => {
     expect(qa.errors).toEqual([]);
     const degraded = qa.warnings.filter((warning) => warning.startsWith("cut_degraded:"));
     expect(degraded).toHaveLength(1);
-    expect(degraded[0]).toContain("two->three");
+    expect(degraded[0]).toContain("three->four");
     // MD1: the degrade target is a swipe whose axis is measured from the two
     // focal centers, never a zoom — the shipped film speaks the 3-transition
     // language even on its degrade paths.
@@ -131,7 +162,7 @@ describe("shape-match cut runtime browser contract", () => {
     const findings = qa.issues.filter((issue) => issue.code === "cut_degraded");
     expect(findings).toHaveLength(1);
     expect(findings[0]!.severity).toBe("warning");
-    expect(findings[0]!.message).toContain("morph cut two->three");
+    expect(findings[0]!.message).toContain("morph cut three->four");
     expect(findings[0]!.message).toMatch(/degraded it to swipe-(left|right|up|down)/);
     // Measured numbers, not vibes: both endpoints' px boxes appear.
     expect(findings[0]!.message).toMatch(/"wide-banner" \d+x\d+px/);
@@ -140,7 +171,30 @@ describe("shape-match cut runtime browser contract", () => {
     expect(qa.strictOk).toBe(false);
     // The healthy one->two bridge earns no finding.
     expect(findings[0]!.message).not.toContain("one->two");
-  }, 30_000);
+    expect(findings[0]!.message).not.toContain("two->three");
+    const outgoing = qa.transitionOutgoing ?? [];
+    expect(outgoing.find((entry) => entry.fromScene === "one")?.verdict).toBe("changed");
+    expect(outgoing.find((entry) => entry.fromScene === "two")?.verdict).toBe("changed");
+    expect(qa.issues.some((issue) => issue.code === "transition_static_outgoing")).toBe(false);
+
+    // Temporal inspection addresses each runtime bridge by its exact
+    // fromScene/toScene identity. Two valid morphs in one film prove the
+    // second observation cannot accidentally read the first boundary's clone;
+    // both shells visibly begin moving before their cut.
+    await commitDirectComposition(dir, "Scoped morph bridges", draft);
+    const temporal = await reportTemporalEvidence(dir, {
+      framesPerShot: 3,
+      curveStepSec: 2,
+    });
+    const first = temporal.cuts.find((cut) =>
+      cut.fromScene === "one" && cut.toScene === "two"
+    );
+    const second = temporal.cuts.find((cut) =>
+      cut.fromScene === "two" && cut.toScene === "three"
+    );
+    expect(first?.outgoingMoved).toBe(true);
+    expect(second?.outgoingMoved).toBe(true);
+  }, 90_000);
 
   it("degrades a row list → windowed table morph on semantic-family mismatch (probe-audit-03 T8)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-structure-smoke-"));

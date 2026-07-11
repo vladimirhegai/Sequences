@@ -43,8 +43,8 @@ coding agent writes recipes/<id>.recipe.html (meta + doc + fragment, one file)
 
 | engine seam | recipe/studio consumer | when you change it |
 |---|---|---|
-| `*_RUNTIME_VERSION` / `*_KIT_VERSION` constants (cut/camera/continuity/component/interaction/time/fx/cinema) | `recipeContract.currentEngineFences()`; every exported `recipe.json` `engine.kitVersions` | bumping an exported fence makes every exported recipe **stale** (skipped at retrieval + instantiation, "re-prove" badge in the studio). Continuity v1 is default-off and not yet a RecipeV2 fence; if rollout makes it recipe-visible, add `CONTINUITY_RUNTIME_VERSION` to `currentEngineFences()` in the same change. Re-prove: `npm run studio:golden` per recipe (or gate+export in the UI). |
-| runtime template **content** at the same island version (`templates/sequences-*.v1.js`/`.css`) | exported recipe fragments replay against the CURRENT runtimes | a behavior-changing edit that keeps the island contract (including the default-off continuity-owned route inside `sequences-camera.v1.js`) does NOT fence-stale recipes — re-run `npm run studio:golden` to re-prove the golden recipe against the new behavior; a CONTRACT change (island shape) must bump the VERSION instead. |
+| `*_RUNTIME_VERSION` / `*_KIT_VERSION` constants (cut/camera/continuity/component/interaction/time/fx/cinema) | `recipeContract.currentEngineFences()`; every exported `recipe.json` `engine.kitVersions` | bumping an exported fence makes every exported recipe **stale** (skipped at retrieval + instantiation, "re-prove" badge in the studio). Continuity v1 is default-on and fenced as `continuityRuntime`; a recipe must be re-proved whenever its camera/continuity execution seam changes. Re-prove: `npm run studio:golden` per recipe (or gate+export in the UI). |
+| runtime template **content** at the same island version (`templates/sequences-*.v1.js`/`.css`) | exported recipe fragments replay against the CURRENT runtimes | a behavior-changing edit that keeps the island contract (including the default-on continuity-owned route and its `=0` rollback inside `sequences-camera.v1.js`) does NOT fence-stale recipes — re-run `npm run studio:golden` to re-prove the golden recipe against the new behavior; an incompatible contract change must bump the VERSION. Backward-compatible optional fields may remain on v1 only when documented here and old/new round trips are both tested. |
 | storyboard schema (`storyboardResponseFormat`, `parseStoryboard`, cache `contract:` in `compositionRunner.ts`) | the `recipes` scene field; `recipesVersion`/`recipeIds` in the storyboard cache key | keep the `recipes` property + required entry in the JSON schema; bump `contract:` on shape changes; parse must keep calling `normalizeStoryboardRecipeDeclarations` + `reconcileRecipeDeclarations`. |
 | `applyDeterministicSourceRepairs` injection order (islands → … → fx → assets → **recipes** → kits → time-wrap LAST) | `injectRecipeContract` call site | recipe injection must stay BEFORE the time-wrap rewrite and be strip-and-reinject idempotent. `test/recipeContract.test.ts` proves tamper-reversion. |
 | `validateDirectComposition` | `validateRecipeContract` (recipe_unknown / recipe_island_missing / recipe_motion_missing / recipe_slot_unfilled) | these are host-plumbing self-checks (fx disposition); keep them in the error aggregation. |
@@ -89,6 +89,17 @@ runtime behavior without changing an island shape/version. The golden recipe
 was re-gated and exported against those current runtimes as
 `last-word-roulette` revision 10 (`npm run studio:golden`).
 
+### 2026-07-10 additive component choreography
+
+The v1 `sequences-components` island now optionally carries scene
+`entranceFamily`/`entrances` plus resolved beat `follows`/lag/depth and
+directional-exit metadata. This is deliberately additive: old v1 islands and
+recipe fragments remain valid and byte-identical, while
+`test/componentContract.test.ts` proves new-field byte round trips and
+`test/componentRuntime.browser.test.ts` proves all three entrance families,
+follow timing, and directional close execution in the current v1 runtime. No
+recipe fence bump or export churn is required.
+
 ## Plugin pipeline seams (2026-07-08 — `src/engine/pluginContract.ts`, the seventh contract)
 
 Plugins are the recipe seam's sibling: parameterized host GENERATORS (not
@@ -96,10 +107,12 @@ frozen fragments) that LOWER into typed components/beats at parse and inject
 one verbatim markup unit per declaration. Anything that changes a recipe seam
 above probably changes the matching plugin seam too.
 
-v1 catalog (all in `PLUGIN_CATALOG`): `dashboard-grid`, `notification-stack`,
-`lockup`, `activity-feed` (list/table seeded rows), `terminal-log` (typed
-command + streamed result lines), `team-strip` (seeded avatar stack). A new
-kind is a **catalog entry only** — no seam below changes; the planning
+v1 catalog (nine built-ins in `PLUGIN_CATALOG`): `dashboard-grid`,
+`notification-stack`, `lockup`, `activity-feed` (list/table seeded rows),
+`terminal-log` (typed command + streamed result lines), `team-strip` (seeded
+avatar stack), `flow-diagram` (node parts plus endpoint-bound typed connector
+paths), `comparison-table`, and `pricing-reveal`. A new kind is a **catalog
+entry only** — no seam below changes; the planning
 vocabulary + schema enum derive from the catalog, and the module-load probe at
 the foot of `pluginContract.ts` proves every kind lowers to real component
 kinds. `seedContent.ts` domains: `devtools`/`analytics`/`comms`/`commerce`/

@@ -1,9 +1,9 @@
 /**
- * Studio-only background moodboard catalog.
+ * Production-cleared wallpaper catalog.
  *
- * These files have no license manifest. They are visual references for crop,
- * color, energy, and motion direction only: they MUST NOT be copied into a
- * customer project or offered to the authoring pipeline as usable assets.
+ * The 18 vendored JPEGs are MIT-licensed for production use. Their license
+ * manifest lives beside the files at `vendor/wallpapers/LICENSE`; staging
+ * code must copy that notice with the ONE wallpaper selected for a film.
  */
 
 export type BackgroundEnergy = "quiet" | "moderate" | "bold" | "kinetic";
@@ -24,9 +24,9 @@ export type BackgroundMotionMode =
   | "slow-pan-right"
   | "slow-pan-up";
 
-export interface BackgroundMoodboardEntry {
+export interface BackgroundCatalogEntry {
   id: string;
-  /** Repository-relative provenance path; never a customer-project path. */
+  /** Repository-relative source path. Projects receive a selected local copy. */
   file: `vendor/wallpapers/${string}.jpg`;
   dimensions: { width: number; height: number };
   aspect: { ratio: number; label: string };
@@ -50,21 +50,26 @@ export interface BackgroundMoodboardEntry {
     description: string;
   };
   provenance: {
-    status: "moodboard-only";
-    licenseManifestPresent: false;
-    customerProjectUse: "blocked";
+    status: "production-cleared";
+    licenseManifestPresent: true;
+    customerProjectUse: "allowed";
+    license: "MIT";
     note: string;
   };
 }
 
-const MOODBOARD_ONLY = {
-  status: "moodboard-only",
-  licenseManifestPresent: false,
-  customerProjectUse: "blocked",
-  note: "Reference in Studio only; do not stage or ship without a verified license manifest.",
+/** Compatibility alias for callers compiled against the catalog's old name. */
+export type BackgroundMoodboardEntry = BackgroundCatalogEntry;
+
+const PRODUCTION_CLEARED = {
+  status: "production-cleared",
+  licenseManifestPresent: true,
+  customerProjectUse: "allowed",
+  license: "MIT",
+  note: "MIT license manifest verified; stage one selected wallpaper plus the license notice per film.",
 } as const;
 
-export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
+export const BACKGROUND_CATALOG: readonly BackgroundCatalogEntry[] = [
   {
     id: "wallpaper-01",
     file: "vendor/wallpapers/wallpaper1.jpg",
@@ -76,7 +81,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "62% 54%", recommendation: "For 16:9, preserve the upper red field and the right ridge; trim mostly from the bottom." },
     overlay: { mode: "gradient-scrim", opacity: 0.22, recommendation: "Use a light left-side burgundy scrim only when white copy needs more separation." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 2.5, maxScale: 1.035, description: "A restrained rightward crop drift follows the ridge; never animate the bands independently." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-02",
@@ -89,7 +94,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "52% 24%", recommendation: "For 16:9, keep the ray origin just inside the top edge and favor the darker blue lower-left lane." },
     overlay: { mode: "gradient-scrim", opacity: 0.28, recommendation: "Darken the lower-left blue lane for white copy; leave the warm ray core unobscured." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.045, description: "A very slow push toward the ray origin creates lift without making the fan pulse." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-03",
@@ -102,7 +107,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "50% 50%", recommendation: "Native 16:9 composition; keep the white ribbon and coral crest centered." },
     overlay: { mode: "localized-scrim", opacity: 0.34, recommendation: "Use a compact navy scrim behind top-right copy; avoid flattening the whole color field." },
     motion: { mode: "micro-drift", maxTravelPercent: 1.8, maxScale: 1.025, description: "Only a sub-2% diagonal crop drift; the image already carries substantial directional energy." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-04",
@@ -115,7 +120,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "48% 42%", recommendation: "For 16:9, retain the calm navy upper band and one complete cyan crest." },
     overlay: { mode: "none", opacity: 0, recommendation: "The navy top field already supports light copy; add no full-frame wash." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 2, maxScale: 1.03, description: "Follow the cyan crest gently toward the right while the text rail stays fixed." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-05",
@@ -128,7 +133,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "50% 43%", recommendation: "For 16:9, crop through the lower blue floor but preserve the coral-to-white-to-blue layering." },
     overlay: { mode: "localized-scrim", opacity: 0.18, recommendation: "Use a small cool-blue scrim behind right-aligned white copy if required." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 2, maxScale: 1.03, description: "A quiet lateral drift lets the coral crest pass beneath fixed copy." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-06",
@@ -141,7 +146,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "50% 48%", recommendation: "For 16:9, preserve the pale central sky and enough dark lower ridge to ground the frame." },
     overlay: { mode: "localized-scrim", opacity: 0.12, recommendation: "Use a faint translucent white or charcoal text plate, chosen for copy polarity; do not grade the full frame." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.04, description: "Push slowly into the valley opening; stop before the pale reading lane leaves frame." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-07",
@@ -154,7 +159,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "52% 43%", recommendation: "For 16:9, keep the orange field spacious and the small pale crest near the lower-right third." },
     overlay: { mode: "localized-scrim", opacity: 0.2, recommendation: "A compact warm-dark scrim can stabilize top-right white copy without muting the orange field." },
     motion: { mode: "slow-pan-left", maxTravelPercent: 2, maxScale: 1.025, description: "Let the purple crest drift left under a stationary headline." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-08",
@@ -167,7 +172,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "50% 47%", recommendation: "For 16:9, center the pale canyon opening and keep saturated magenta as a lower frame." },
     overlay: { mode: "localized-scrim", opacity: 0.1, recommendation: "The pale center can hold dark copy with only a subtle translucent plate." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.04, description: "Push into the pale opening with no lateral wobble." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-09",
@@ -180,7 +185,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "53% 48%", recommendation: "For 16:9, retain one clean blue upper corner and the lime folds; expect aggressive square-to-wide cropping." },
     overlay: { mode: "gradient-scrim", opacity: 0.36, recommendation: "Use a cool navy gradient under top-right copy; this field is too active for unbacked body text." },
     motion: { mode: "static", maxTravelPercent: 0, maxScale: 1, description: "Keep static. The crossing diagonals and folds already create more than enough motion energy." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-10",
@@ -193,7 +198,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "50% 47%", recommendation: "For 16:9, preserve the pale upper opening and use the deep violet lower-left as a grounding edge." },
     overlay: { mode: "localized-scrim", opacity: 0.12, recommendation: "Use dark copy in the pale lane with a faint frosted plate only when needed." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.04, description: "A centered push makes the valley feel dimensional without shifting the safe lane." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-11",
@@ -206,7 +211,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "52% 24%", recommendation: "Near-native wide crop; keep the sunburst centered and reserve the deep-blue lower-left lane for copy." },
     overlay: { mode: "gradient-scrim", opacity: 0.25, recommendation: "Deepen the lower-left blue slightly for white copy; avoid covering the bright origin." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.04, description: "Push toward the sunburst by no more than 4%." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-12",
@@ -219,7 +224,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "52% 24%", recommendation: "Near-native wide crop; preserve the mint center ray and dark violet lower-left." },
     overlay: { mode: "gradient-scrim", opacity: 0.2, recommendation: "Use a subtle violet scrim under lower-left white copy." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.04, description: "A slow push toward the ray origin is sufficient; do not rotate or pulse." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-13",
@@ -232,7 +237,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "56% 48%", recommendation: "For 16:9, keep the primary peak on the right third and preserve open sky on the left." },
     overlay: { mode: "gradient-scrim", opacity: 0.18, recommendation: "A very light teal-black gradient can protect upper-left white copy while retaining stars." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 1.8, maxScale: 1.025, description: "A nearly imperceptible pan toward the primary peak; keep the horizon level." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-14",
@@ -245,7 +250,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "53% 50%", recommendation: "For 16:9, keep the pale S-curve through center; trim evenly from top and bottom." },
     overlay: { mode: "localized-scrim", opacity: 0.26, recommendation: "Use a compact translucent plate in the pale center; surrounding contours are too active for long copy." },
     motion: { mode: "micro-drift", maxTravelPercent: 1.5, maxScale: 1.02, description: "A tiny drift along the central S-curve; avoid zooming into either saturated basin." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-15",
@@ -258,7 +263,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "48% 48%", recommendation: "For 16:9, preserve blue atmosphere above the cloud bank and trim the warm lower haze." },
     overlay: { mode: "localized-scrim", opacity: 0.14, recommendation: "Use a small cool translucent plate for white or navy copy; do not sharpen the intentionally soft field." },
     motion: { mode: "slow-pan-left", maxTravelPercent: 2, maxScale: 1.02, description: "A gentle lateral cloud drift; no scale breathing." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-16",
@@ -271,7 +276,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "54% 50%", recommendation: "For 16:9, retain both the pale left field and a generous dark right field; keep the arc near center." },
     overlay: { mode: "gradient-scrim", opacity: 0.14, recommendation: "The dark right field already supports white display copy; use only a minimal edge scrim for body text." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 2, maxScale: 1.025, description: "Track the painted arc slowly into the dark field; never spin the canvas." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-17",
@@ -284,7 +289,7 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "54% 50%", recommendation: "For 16:9, preserve the diagonal ridge and the warm upper-left reading field." },
     overlay: { mode: "localized-scrim", opacity: 0.18, recommendation: "Use a warm translucent plate behind dark upper-left copy; keep the painted texture visible." },
     motion: { mode: "slow-pan-right", maxTravelPercent: 2, maxScale: 1.025, description: "Follow the diagonal ridge rightward at low velocity." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
   {
     id: "wallpaper-18",
@@ -297,10 +302,10 @@ export const BACKGROUND_CATALOG: readonly BackgroundMoodboardEntry[] = [
     crop: { fit: "cover", objectPosition: "52% 47%", recommendation: "For 16:9, retain the open sky band and the winding river; trim mostly from the warm foreground." },
     overlay: { mode: "gradient-scrim", opacity: 0.16, recommendation: "A light sky-toned scrim can support dark top-center copy without obscuring the mountain layers." },
     motion: { mode: "slow-push", maxTravelPercent: 1.5, maxScale: 1.035, description: "Push slowly along the river toward the distant hills; stop before the sky reading band disappears." },
-    provenance: MOODBOARD_ONLY,
+    provenance: PRODUCTION_CLEARED,
   },
 ] as const;
 
-export function backgroundById(id: string): BackgroundMoodboardEntry | undefined {
+export function backgroundById(id: string): BackgroundCatalogEntry | undefined {
   return BACKGROUND_CATALOG.find((entry) => entry.id === id);
 }
