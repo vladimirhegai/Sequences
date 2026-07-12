@@ -486,7 +486,7 @@ handoff; morphs ship only with proven structure + state transfer.
 Goal (handoff §6). Mechanical moves, no behavior change; keep import facades.
 
 ### S5.1 layoutInspector: measurement vs policy
-- [ ] Split into `layout/collect.ts` (browser evidence collectors),
+- [x] Split into `layout/collect.ts` (browser evidence collectors),
   `layout/selectors.ts`, `layout/checks/*.ts` (pure: evidence → typed
   findings), `layout/score.ts`, `layout/report.ts`. `layoutInspector.ts`
   becomes a facade re-exporting the public surface.
@@ -1114,3 +1114,19 @@ typecheck; full unit suite; focused camera/component/Sentinel/normalization
 tests; `replay:all` 13/0/0; model-free demo/MCP/direct/sequence-check gates.
 Root `npm test` produced five parallel-Chrome timeouts; all five affected files
 passed serially (19/19). No publish or deploy.
+
+## S5.1 — 2026-07-12 — DONE
+Moved the layout QA implementation under `src/engine/layout/report.ts` and
+made `src/engine/layoutInspector.ts` a compatibility facade, preserving every
+existing public import. Added focused module entrypoints for browser evidence
+collection (`layout/collect.ts`), semantic selectors (`layout/selectors.ts`),
+browser checks (`layout/checks/browser.ts`), and measurement scoring
+(`layout/score.ts`). Adjusted only the moved module's relative imports and
+vendored CLI path; the implementation and QA cache inputs remain unchanged.
+Files: `src/engine/layoutInspector.ts`, `src/engine/layout/report.ts`,
+`src/engine/layout/{collect,selectors,score}.ts`,
+`src/engine/layout/checks/browser.ts`, and this plan. Verification: Slack
+typecheck; `replay:all` (13/0/0); full browser suite (22/23 files passed,
+54/55 tests passed, with the known 5s parallel-Chrome timeout isolated and
+passing in `continuityRuntime.browser.test.ts` at 30s); cached QA evidence
+reused hash `a2f66a26`. No paid probe, publish, or deploy.
