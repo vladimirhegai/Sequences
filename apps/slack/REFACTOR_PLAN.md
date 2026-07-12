@@ -185,7 +185,7 @@ and leave it for a HEAVY agent — that is cheaper than a wrong guess.
   first so every later step's probes are cheap to read.
 
 ### S0.2 Freeze behavior fixtures
-- [ ] Ensure exact rejected artifacts for LaunchRelay, PulseForge, GatePilot,
+- [x] Ensure exact rejected artifacts for LaunchRelay, PulseForge, GatePilot,
   RelayGuard, SignalDock (+ this session's probes) replay green via
   `npm run storyboard:replay` / the strict source replay path, and wire them
   into a single `npm run replay:all` script that exits nonzero on any drift.
@@ -666,3 +666,15 @@ plan. Verification: triage for `architecture-stress-5-20260711` reproduced
 10 logical / 14 physical calls and 8 QA warnings; triage for
 `refactor-review-normal-1-20260711` reproduced 10 / 14 and 8; Slack
 typecheck passed. No paid probe was run.
+
+## S0.2 â€” 2026-07-11 â€” DONE
+Added `replay:all` plus the strict model-free `source:replay` path. The replay
+manifest references (without copying) the available LaunchRelay, PulseForge,
+GatePilot, RelayGuard, SignalDock, and Briefly artifacts under
+`.data/projects`; it freezes artifact and deterministic replay hashes, treats
+the RelayGuard truncated response as an expected rejection, and skips missing
+local fixtures with a warning. Files: `apps/slack/scripts/replayAll.ts`,
+`apps/slack/scripts/sourceReplay.ts`, `apps/slack/package.json`, this plan.
+Verification: `npm run replay:all --workspace @sequences/slack` passed 13
+replays with 0 skips and 0 failures; Slack typecheck passed. No paid probe was
+run.
