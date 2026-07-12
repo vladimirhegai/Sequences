@@ -26,7 +26,7 @@ const FIXTURES: Fixture[] = [
     jobId: "architecture-audit-live-1-20260711",
     expectedRaw: {
       "storyboard-1-rejected.raw.txt": { artifactSha256: "407697f1d40217126d1ecd26bcb48187a19db19fec9dafddb684235b21f4db26", replaySha256: "84ab29fa3b87527b3dd2c7ffa499f95e113beb91b733eb8c9848d385acd804e7", outcome: "parsed" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "eeb67ad53cf6937380641d507f9273c3f332bb6eed935581f145c55616c14a10", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "6df2a452162d6e9bd1861d665a988738eff2749f45fa3e67213d5263e693d113", outcome: "parsed" },
     },
     expectedSource: {
       "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "f2cba805ec7b6a9285856e948f9d71361ab6f61de648afd31e550e92246c8d4c" },
@@ -54,7 +54,7 @@ const FIXTURES: Fixture[] = [
     jobId: "architecture-stress-4-20260711",
     expectedRaw: {
       "storyboard-1-truncated.raw.txt": { artifactSha256: "c114787284cd9e941069cfdd1c5060e25cd3721ff07959509adb4a1d79e5e018", replaySha256: "3dbc3fefa9378943d31c5491cc0fbd1032be30fda24fbf2de11d22441f9418e2", outcome: "rejected" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "087c4cbcea154fe5badfb5081981bb1d1f8b21f8d143d459e87a8b036c86a465", replaySha256: "9612d8a6781540acdcbac0e8ab11ada8bfb1a7f24b02167c75c6e17e8c865ff4", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "087c4cbcea154fe5badfb5081981bb1d1f8b21f8d143d459e87a8b036c86a465", replaySha256: "b16e3241d7b8c3b0509fbf49efc1faf0a37c680eb048c3bfe5f43b23d2374f33", outcome: "parsed" },
     },
     expectedSource: {},
   },
@@ -82,7 +82,7 @@ const FIXTURES: Fixture[] = [
     id: "CurrentProof D",
     jobId: "lp3-state-capsule-20260712-d",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "7a6bd2d3534a9c73b636a3c20b1a0a7ef17bacd12edd8ab7170d6719b6b341ff", replaySha256: "14fe444d78682450f95a33087def9fec9107411445d20ee1b79d64e17f6f1a41", outcome: "parsed" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "7a6bd2d3534a9c73b636a3c20b1a0a7ef17bacd12edd8ab7170d6719b6b341ff", replaySha256: "de4d8f087289955a1042ebbd9f2013f01ae684340d6b3c0606b9ad0606adf9e5", outcome: "parsed" },
       "storyboard-2-rejected.raw.txt": { artifactSha256: "7c9540286b775ef84b6cd75b137e8c3681b4ecbf439676ecf121cbd14e53df3f", replaySha256: "10ed0dfb016a99dd9960b5f3a94cec414ffe3bd9c71b4ee5840aef7a02875f9f", outcome: "parsed" },
     },
     expectedSource: {
@@ -102,8 +102,8 @@ const FIXTURES: Fixture[] = [
     id: "ProofArc F",
     jobId: "lp3-state-capsule-20260712-f",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "76edbc2aa75434637f3a190a22abe72aa39db14a9dacee19081c1f8a4778f604", replaySha256: "be88891b799550d80c632abf7c488187da016f47b2042826742c0d8b760c5a3e", outcome: "parsed" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "e35654ae5cc203e7cd2383a0817156759d8f67e763b6fa733d80e5a10b05508f", replaySha256: "103d707101f26ebcc3f8d92cd9ab48e903e2039e97a66e764626227eaca4f31c", outcome: "parsed" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "76edbc2aa75434637f3a190a22abe72aa39db14a9dacee19081c1f8a4778f604", replaySha256: "bece7ad90aa6523480f07a5b84623531dec3f4c75877eba22cc4879978f2e3f9", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "e35654ae5cc203e7cd2383a0817156759d8f67e763b6fa733d80e5a10b05508f", replaySha256: "5c165f353d158073ee0799a8b9d438494d9e045aac2950453ac890e695e4f890", outcome: "parsed" },
     },
     expectedSource: {},
   },
@@ -117,6 +117,14 @@ const FIXTURES: Fixture[] = [
       "author-1-static-rejected.html": { artifactSha256: "6eb800644e5277b98cece51c8e115dcc5b428448e34c7fe3c10a2bf646b39e9c", replaySha256: "81979ac18a9cc18fbeea12db920c7435294af25e91b2cf7f03e404b5c276064c", outcome: "accepted" },
       "author-2-static-rejected.html": { artifactSha256: "d86866125252e68e0d16b07fefca2a487fa806ee1e40b0d12e23e9e4b138c782", replaySha256: "81979ac18a9cc18fbeea12db920c7435294af25e91b2cf7f03e404b5c276064c", outcome: "accepted" },
     },
+  },
+  {
+    id: "ProofRail H",
+    jobId: "lp3-state-capsule-20260712-h",
+    expectedRaw: {
+      "storyboard.json": { artifactSha256: "9d9911f737c4eeeecb0a12514f74da61ec96632d2a5d5092c81c3bc17ec5aeeb", replaySha256: "fd9413f7eaa00c9eff875c080fd9560fb9c2c803e474ce71878e6877ef28974c", outcome: "parsed" },
+    },
+    expectedSource: {},
   },
 ];
 
@@ -139,13 +147,21 @@ function stableReplay(raw: string): string {
   })));
 }
 
-function rawFiles(projectDir: string): string[] {
+function rawFiles(
+  projectDir: string,
+  expected: Fixture["expectedRaw"],
+): string[] {
   const attemptsDir = path.join(projectDir, "planning", "attempts");
-  if (!fs.existsSync(attemptsDir)) return [];
-  return fs.readdirSync(attemptsDir)
-    .filter((name) => name.startsWith("storyboard-") && name.endsWith(".raw.txt"))
-    .sort()
-    .map((name) => path.join(attemptsDir, name));
+  const attempts = fs.existsSync(attemptsDir)
+    ? fs.readdirSync(attemptsDir)
+      .filter((name) => name.startsWith("storyboard-") && name.endsWith(".raw.txt"))
+      .sort()
+      .map((name) => path.join(attemptsDir, name))
+    : [];
+  const accepted = path.join(projectDir, "planning", "storyboard.json");
+  return Object.hasOwn(expected, "storyboard.json") && fs.existsSync(accepted)
+    ? [...attempts, accepted]
+    : attempts;
 }
 
 function sourceFiles(projectDir: string): string[] {
@@ -173,7 +189,7 @@ async function main(): Promise<number> {
       continue;
     }
     console.log(`[replay:all] ${fixture.id} (${fixture.jobId})`);
-    for (const file of rawFiles(projectDir)) {
+    for (const file of rawFiles(projectDir, fixture.expectedRaw)) {
       const name = path.basename(file);
       const expected = expectedFor(fixture.expectedRaw, file);
       if (!expected) {
@@ -251,7 +267,7 @@ async function printExpectations(): Promise<void> {
     const projectDir = path.join(projectsDir, fixture.jobId);
     if (!fs.existsSync(projectDir)) continue;
     console.log(`${fixture.id} ${fixture.jobId}`);
-    for (const file of rawFiles(projectDir)) {
+    for (const file of rawFiles(projectDir, fixture.expectedRaw)) {
       const raw = fs.readFileSync(file);
       try {
         console.log(`  raw ${path.basename(file)} ${JSON.stringify({ artifactSha256: sha256(raw), replaySha256: sha256(stableReplay(raw.toString("utf8"))), outcome: "parsed" })}`);

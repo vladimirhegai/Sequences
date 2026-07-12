@@ -1057,6 +1057,39 @@ describe("Sentinel — reserveFinalCameraLanding", () => {
     expect(reserveFinalCameraLanding(result.storyboard).normalized).toEqual([]);
   });
 
+  it("reasserts the dwell after a later retime moves a reserved route back onto the cut", () => {
+    const note =
+      'reserved 0.42s of destination dwell after the push-in landing on "readiness-ring"';
+    const storyboard = [scene({
+      id: "threshold",
+      startSec: 7.2,
+      durationSec: 3.6,
+      sentinelNormalizations: [note],
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          toPart: "readiness-ring",
+          startSec: 8.1,
+          durationSec: 2.68,
+        }],
+      },
+    })];
+    const result = reserveFinalCameraLanding(storyboard);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.storyboard[0]!.camera!.path[0]).toMatchObject({
+      startSec: 8.1,
+      durationSec: 2.28,
+    });
+    expect(
+      result.storyboard[0]!.camera!.path[0]!.startSec +
+      result.storyboard[0]!.camera!.path[0]!.durationSec,
+    ).toBeCloseTo(10.38, 5);
+    expect(result.storyboard[0]!.sentinelNormalizations?.filter((entry) => entry === note))
+      .toHaveLength(1);
+  });
+
   it("preserves explicit holds, short impact moves, and dive envelopes", () => {
     const explicitHold = scene({
       id: "held",

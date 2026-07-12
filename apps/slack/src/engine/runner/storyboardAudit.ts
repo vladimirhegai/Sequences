@@ -209,6 +209,55 @@ const WORLD_LAYOUT_CELL_CANDIDATES: ReadonlyArray<readonly [number, number]> = [
 ];
 
 /**
+ * A focal progress ring and its subordinate progress rail are one metric
+ * station. Planners reliably describe that relationship but sometimes omit
+ * both `region` fields, which makes the host scaffold emit the roots loose on
+ * the camera plane and leaves their relative placement entirely to source
+ * authoring. ProofRail H put the rail below the viewport as a result.
+ *
+ * Fill only missing region paperwork for this exact two-role relationship;
+ * never merge conflicting declared regions or unrelated component kinds.
+ */
+function coLocateHeroMetricStation(scene: DirectScene): DirectScene {
+  if (!scene.camera?.path.length || !scene.components?.length) return scene;
+  const focal = scene.components.find((component) =>
+    component.id === scene.spatialIntent?.focalPart &&
+    component.role === "hero" &&
+    component.kind === "progress-ring"
+  );
+  if (!focal) return scene;
+  const supports = scene.components.filter((component) =>
+    component.id !== focal.id &&
+    component.role === "support" &&
+    component.kind === "progress"
+  );
+  if (!supports.length) return scene;
+  const declaredRegions = new Set(
+    [focal, ...supports].flatMap((component) => component.region ? [component.region] : []),
+  );
+  if (declaredRegions.size > 1) return scene;
+  const suffix = "-station";
+  const region = [...declaredRegions][0] ??
+    `${focal.id.slice(0, Math.max(1, 64 - suffix.length))}${suffix}`;
+  const metricIds = new Set([focal.id, ...supports.map((component) => component.id)]);
+  if (metricIds.size !== scene.components.length) return scene;
+  const components = scene.components.map((component) =>
+    metricIds.has(component.id) && !component.region
+      ? { ...component, region }
+      : component
+  );
+  if (components.every((component, index) => component === scene.components![index])) return scene;
+  const note =
+    `world-layout-derive: co-located hero metric and ${supports.length} support rail(s) ` +
+    `inside region ${region}`;
+  return {
+    ...scene,
+    components,
+    sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+  };
+}
+
+/**
  * Complete every camera scene's station map without moving an authored cell.
  *
  * This is deliberately pure and idempotent so parsed plans, paid-plan cache
@@ -220,7 +269,8 @@ export function completeStoryboardWorldLayouts(
   scenes: DirectScene[],
 ): CompletedStoryboardWorldLayouts {
   const completions: WorldLayoutCompletion[] = [];
-  const completedScenes = scenes.map((scene) => {
+  const completedScenes = scenes.map((sourceScene) => {
+    const scene = coLocateHeroMetricStation(sourceScene);
     if (!scene.camera?.path?.length) return scene;
     const ordered: string[] = [];
     const addRegion = (region: string | undefined): void => {
@@ -2220,12 +2270,18 @@ export function parseStoryboardResponse(
   const earlySwap = delayEarlySwapBeats(moveSpacing.storyboard);
   const pacingStretch = stretchMarginalPacingMisses(earlySwap.storyboard);
   const connectiveSchedule = normalizeConnectiveCameraSchedule(pacingStretch.storyboard);
+  // Every timing normalizer above can move the final full route after the
+  // first landing-reserve pass. ProofRail H delayed a 7.7s push to 8.1s while
+  // preserving its duration, moving its arrival from 10.38s to 10.78s and
+  // sampling the focal inside the outgoing cut. Reassert the reserve against
+  // the FINAL schedule before camera blocking compiles its landing evidence.
+  const finalLandingReserve = reserveFinalCameraLanding(connectiveSchedule.storyboard);
   // Camera schedule normalizers can legitimately drop the only full move in a
   // scene. Reassert the host-owned transform chassis after that final drop so
   // continuity blocking never receives a scene it cannot frame.
   const finalBlockingChassis = continuityGraphEnabled()
-    ? ensureCameraBlockingChassis(connectiveSchedule.storyboard)
-    : { storyboard: connectiveSchedule.storyboard, normalized: [] };
+    ? ensureCameraBlockingChassis(finalLandingReserve.storyboard)
+    : { storyboard: finalLandingReserve.storyboard, normalized: [] };
   committedBlockingChassisNormalizations += finalBlockingChassis.normalized.length;
   const normalizationLines = [
     ...morphFix.changed,
@@ -2246,6 +2302,7 @@ export function parseStoryboardResponse(
     ...earlySwap.normalized,
     ...pacingStretch.normalized,
     ...connectiveSchedule.normalized,
+    ...finalLandingReserve.normalized,
     ...finalBlockingChassis.normalized,
   ];
   if (normalizationLines.length) storyboard = finalBlockingChassis.storyboard;
@@ -2392,8 +2449,14 @@ export function parseStoryboardResponse(
     if (committedRackFocusTopUps) {
       recordSentinelNormalization("rack-focus-topup", committedRackFocusTopUps);
     }
-    if (atomicNormalizationCommitted && landingReserve.normalized.length) {
-      recordSentinelNormalization("camera-landing-reserve", landingReserve.normalized.length);
+    if (
+      atomicNormalizationCommitted &&
+      landingReserve.normalized.length + finalLandingReserve.normalized.length
+    ) {
+      recordSentinelNormalization(
+        "camera-landing-reserve",
+        landingReserve.normalized.length + finalLandingReserve.normalized.length,
+      );
     }
     if (atomicNormalizationCommitted && moveDelay.normalized.length) {
       recordSentinelNormalization("camera-move-delay", moveDelay.normalized.length);

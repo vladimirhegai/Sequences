@@ -309,12 +309,17 @@ describe("framing coverage browser audit (camera_framed_sparse)", () => {
     expect(landing?.framing?.sceneId).toBe("sparse-cam");
     expect(landing!.framing!.fraction).toBeGreaterThan(0);
 
-    // The pure correction bumps ONLY the bumpable landing (the drift-only and
-    // camera-less sparse scenes have no full move to zoom).
+    // The pure correction bumps the existing landing and promotes the targeted
+    // connective drift into one measured push-in. Camera-less sparse scenes
+    // remain deliberately untouched.
     const fix = correctSparseFraming(draft.storyboard, qa);
-    expect(fix.corrected).toEqual(["sparse-cam"]);
+    expect(fix.corrected).toEqual(["sparse-cam", "drift-sparse"]);
     const bumped = fix.storyboard[0]!.camera!.path[0]!.zoom!;
     expect(bumped).toBeGreaterThan(1.05);
+    const promoted = fix.storyboard[2]!.camera!.path[0]!;
+    expect(promoted.move).toBe("push-in");
+    expect(promoted.zoom).toBeGreaterThan(1.05);
+    expect(promoted.startSec + promoted.durationSec).toBeLessThanOrEqual(10.58);
 
     // Re-inject the camera island from the mutated storyboard (the seam
     // applyDeterministicSourceRepairs / cut-discovery use) and re-measure.

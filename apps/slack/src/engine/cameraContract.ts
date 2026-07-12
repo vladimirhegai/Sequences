@@ -1488,7 +1488,7 @@ export function reserveFinalCameraLanding(
     return {
       ...scene,
       camera: { ...scene.camera, path },
-      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+      sentinelNormalizations: [...new Set([...(scene.sentinelNormalizations ?? []), note])],
     };
   });
   return { storyboard: scenes, normalized };

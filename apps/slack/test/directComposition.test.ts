@@ -2613,6 +2613,18 @@ describe("WS-I critic adoption transaction", () => {
 });
 
 describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
+  const proofRailHDir = path.resolve(
+    import.meta.dirname,
+    "../.data/projects/lp3-state-capsule-20260712-h",
+  );
+  const proofRailHQa = path.join(
+    proofRailHDir,
+    "qa-cache",
+    "1f30d3b331f33c58baef3bd9c92da4b2.json",
+  );
+  const proofRailHAvailable =
+    fs.existsSync(path.join(proofRailHDir, "planning", "storyboard.json")) &&
+    fs.existsSync(proofRailHQa);
   const cameraScene = (
     id: string,
     region: string,
@@ -2746,6 +2758,62 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
     expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeLessThanOrEqual(1.08);
   });
 
+  it("promotes a targeted drift to one bounded push for a sparse held framing", () => {
+    const drift = cameraScene("drifter", "metric", "drift");
+    drift.durationSec = 4;
+    drift.camera!.path[0] = {
+      ...drift.camera!.path[0]!,
+      startSec: 0.5,
+      durationSec: 3.5,
+    };
+    const result = correctSparseFraming(
+      [drift],
+      qa([sparseIssue("drifter", 0.08)]),
+    );
+    expect(result.corrected).toEqual(["drifter"]);
+    expect(result.storyboard[0]!.camera!.path[0]).toMatchObject({
+      move: "push-in",
+      toRegion: "metric",
+      startSec: 0.5,
+      durationSec: 3.08,
+      framingCorrection: "camera-sparse-zoom",
+    });
+    expect(result.storyboard[0]!.camera!.path[0]!.zoom).toBeGreaterThan(1.5);
+    expect(drift.camera!.path[0]!.move).toBe("drift");
+  });
+
+  it.runIf(proofRailHAvailable)(
+    "replays the exact ProofRail H accepted plan and measured sparse result",
+    () => {
+      const storyboard = parseStoryboardResponse(fs.readFileSync(
+        path.join(proofRailHDir, "planning", "storyboard.json"),
+        "utf8",
+      ));
+      const browserQa = (JSON.parse(fs.readFileSync(
+        proofRailHQa,
+        "utf8",
+      )) as { result: DirectBrowserQaResult }).result;
+      const result = correctSparseFraming(storyboard, browserQa);
+
+      expect(result.corrected).toEqual(["ring-open-51"]);
+      expect(result.storyboard[0]!.components).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: "readiness-ring", region: "readiness-ring-station" }),
+        expect.objectContaining({ id: "readiness-rail", region: "readiness-ring-station" }),
+      ]));
+      expect(result.storyboard[0]!.camera!.path[1]).toMatchObject({
+        move: "push-in",
+        durationSec: 2.58,
+        zoom: 1.558,
+        framingCorrection: "camera-sparse-zoom",
+      });
+      expect(result.storyboard[2]!.camera!.path[1]).toMatchObject({
+        move: "push-in",
+        startSec: 8.1,
+        durationSec: 2.28,
+      });
+    },
+  );
+
   it("does not invent a sparse framing target without declared spatial intent", () => {
     const result = correctSparseFraming(
       [{ id: "unknown", title: "Unknown", purpose: "No focal", startSec: 0, durationSec: 4 }],
@@ -2772,8 +2840,9 @@ describe("correctSparseFraming (camera-sparse auto-framing, L2-at-L4)", () => {
     expect(result.storyboard[0]!.camera!.path[1]!.zoom).toBeGreaterThan(1.05);
   });
 
-  it("leaves drift/hold-only and camera-less scenes to the model (no bumpable move)", () => {
+  it("leaves untargeted drift/hold-only and camera-less scenes without a focal unchanged", () => {
     const drift = cameraScene("drifter", "adrift", "drift");
+    delete drift.camera!.path[0]!.toRegion;
     const staticScene: DirectScene = {
       id: "static",
       title: "static",
@@ -5447,6 +5516,51 @@ describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", ()
     const repeated = completeStoryboardWorldLayouts(completed.scenes);
     expect(repeated.completions).toEqual([]);
     expect(repeated.scenes).toEqual(completed.scenes);
+  });
+
+  it("co-locates an unregioned hero ring and support rail before scaffolding", () => {
+    const scene: DirectScene = {
+      id: "metric-open",
+      title: "Metric opens",
+      purpose: "Show one metric station",
+      startSec: 0,
+      durationSec: 3.5,
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric-ring",
+        composition: "layout-center-stack",
+        relationships: ["Support rail develops beneath the hero ring"],
+      },
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "hold", toPart: "metric-ring", startSec: 0, durationSec: 0.5 },
+          { version: 1, move: "drift", toPart: "metric-ring", startSec: 0.5, durationSec: 3 },
+        ],
+      },
+      components: [
+        { version: 1, id: "metric-ring", kind: "progress-ring", role: "hero" },
+        { version: 1, id: "metric-rail", kind: "progress", role: "support" },
+      ],
+    };
+    const completed = completeStoryboardWorldLayouts([scene]);
+    expect(completed.completions).toEqual([{
+      sceneId: "metric-open",
+      addedRegions: ["metric-ring-station"],
+      declaredCellCount: 0,
+    }]);
+    expect(completed.scenes[0]!.components).toEqual([
+      expect.objectContaining({ id: "metric-ring", region: "metric-ring-station" }),
+      expect.objectContaining({ id: "metric-rail", region: "metric-ring-station" }),
+    ]);
+    expect(completed.scenes[0]!.worldLayout).toEqual([
+      { region: "metric-ring-station", cell: [0, 0] },
+    ]);
+    expect(completeStoryboardWorldLayouts(completed.scenes)).toEqual({
+      scenes: completed.scenes,
+      completions: [],
+    });
+    expect(scene.components?.every((component) => component.region === undefined)).toBe(true);
   });
 
   it("uses a connective station stride so a two-station camera route has no blank midpoint", () => {

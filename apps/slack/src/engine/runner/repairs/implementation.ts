@@ -17,6 +17,7 @@ import {
 import { resolveCutPlan, type CutAxis } from "../../cutContract.ts";
 import {
   CAMERA_FULL_MOVES,
+  CAMERA_LANDING_RESERVE_SEC,
   resolveCameraPlan,
   type CameraMoveIntentV1,
 } from "../../cameraContract.ts";
@@ -2335,9 +2336,8 @@ const SPARSE_FRAMING_KEY_SEPARATOR = "\u0000";
  * Choose the camera move a sparse finding should zoom in on. A finding that
  * names a station gets the LAST full move that lands on exactly that station; a
  * scene-level (`[data-scene]`) finding with no station gets the scene's last
- * targeted full move. `-1` = nothing bumpable (drift/hold-only or camera-less):
- * a storyboard zoom cannot invent content there, so the model / least-bad pick
- * keeps ownership.
+ * targeted full move. `-1` means there is no full move; a separately targeted
+ * drift may still be promoted by `pickSparseDriftIndex` below.
  */
 function pickSparseMoveIndex(
   path: CameraMoveIntentV1[],
@@ -2351,6 +2351,26 @@ function pickSparseMoveIndex(
     } else if (finding.region) {
       if (move.toRegion === finding.region) return index;
     } else if (move.toRegion || move.toPart) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+/** Last targeted connective drift that can become the scene's one measured
+ * close-up when a scene-level sparse finding has no full move to adjust. */
+function pickSparseDriftIndex(
+  path: CameraMoveIntentV1[],
+  finding: { part?: string; region?: string },
+): number {
+  for (let index = path.length - 1; index >= 0; index -= 1) {
+    const move = path[index]!;
+    if (move.move !== "drift") continue;
+    if (finding.part) {
+      if (move.toPart === finding.part) return index;
+    } else if (finding.region) {
+      if (move.toRegion === finding.region) return index;
+    } else if (move.toPart || move.toRegion) {
       return index;
     }
   }
@@ -2468,14 +2488,38 @@ export function correctSparseFraming(
     const nextPath = path.map((move) => ({ ...move }));
     let changed = false;
     for (const finding of findings) {
-      const index = pickSparseMoveIndex(nextPath, finding);
-      if (index < 0) continue;
-      const move = nextPath[index]!;
+      let index = pickSparseMoveIndex(nextPath, finding);
       const factor = Math.min(
         Math.max(Math.sqrt(SPARSE_FRAMING_TARGET_COVERAGE / finding.fraction), 1),
         SPARSE_FRAMING_ZOOM_MAX,
       );
       if (factor <= 1.0001) continue;
+      if (index < 0) {
+        index = pickSparseDriftIndex(nextPath, finding);
+        if (index < 0) continue;
+        const drift = nextPath[index]!;
+        const sceneEnd = scene.startSec + scene.durationSec;
+        const durationSec = Math.min(
+          drift.durationSec,
+          sceneEnd - CAMERA_LANDING_RESERVE_SEC - drift.startSec,
+        );
+        if (durationSec < 0.35) continue;
+        nextPath[index] = {
+          ...drift,
+          move: "push-in",
+          durationSec: Math.round(durationSec * 1000) / 1000,
+          zoom: Math.round(
+            Math.min(
+              Math.max((drift.zoom ?? 1) * factor, SPARSE_FRAMING_ZOOM_FLOOR),
+              SPARSE_FRAMING_ZOOM_MAX,
+            ) * 1000,
+          ) / 1000,
+          framingCorrection: "camera-sparse-zoom",
+        };
+        changed = true;
+        continue;
+      }
+      const move = nextPath[index]!;
       const base = move.zoom ?? 1;
       const nextZoom = Math.round(
         Math.min(
