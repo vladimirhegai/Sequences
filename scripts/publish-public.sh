@@ -3,9 +3,8 @@
 # Publish the leanest public subset of this monorepo to the public
 # Slack_Sequences repo: apps/slack + packages/core + packages/platform.
 #
-# apps/sequences and apps/forge are NEVER published (private dev source we copy
-# glue out of). Secrets (.env) are stripped and gitignored. The mirror lives in
-# a gitignored .publish/ checkout so this monorepo's own git stays untouched.
+# Secrets (.env) are stripped and gitignored. The mirror lives in a gitignored
+# .publish/ checkout so this monorepo's own git stays untouched.
 #
 # Usage:  bash scripts/publish-public.sh ["commit message"]
 set -euo pipefail
@@ -53,8 +52,6 @@ git -C "$ROOT" archive HEAD \
   packages/core \
   packages/platform \
   apps/slack \
-  evals \
-  examples/forge/extensions \
   tsconfig.base.json \
   .gitignore \
   Dockerfile \
@@ -190,8 +187,8 @@ This repo is the **published subset** of a larger workspace:
   (scene graph, tokens, registry, solver, compiler, linter). Pure, zero-IO.
 - `packages/platform/` — `@sequences/platform`: shared host services
   (agent providers, asset metadata, media, HyperFrames vendor resolution).
-- `evals/` and `examples/forge/extensions/` — small, data-only fixtures required
-  by the shared engine tests; the Forge application itself is not published.
+- `packages/core/test/fixtures/` — small, data-only fixtures required by the
+  shared engine tests.
 
 Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md),
 [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md), and
@@ -258,10 +255,9 @@ Slack bot and the shared engine it depends on:
 - `packages/core/`, `packages/platform/` — the shared Sequences engine. Ours to
   modify/harden for the hackathon.
 
-`apps/sequences` and `apps/forge` are **not** in this repo — they live in the
-private dev monorepo. When the bot needs host glue (render, project IO, plan
-runner), we **copy it into `apps/slack/src/engine/`** and adapt it. The bot must
-never depend on code outside this repo.
+When the bot needs host glue (render, project IO, plan runner), we **copy it
+into `apps/slack/src/engine/`** and adapt it. The bot must never depend on code
+outside this repo.
 
 Current architecture handoff: [apps/slack/REFACTOR_HANDOFF.md](apps/slack/REFACTOR_HANDOFF.md).
 Operations: [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).

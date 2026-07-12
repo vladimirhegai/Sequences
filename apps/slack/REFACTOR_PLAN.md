@@ -274,7 +274,7 @@ plus root `npm test` and root `npm run typecheck` for the kept packages).
 - Verify: root `npm test` green.
 
 ### SP.5 Publish/deploy surfaces unaffected
-- [ ] Re-read `scripts/publish-public.sh` and the root `Dockerfile`: they
+- [x] Re-read `scripts/publish-public.sh` and the root `Dockerfile`: they
   must reference only `apps/slack`, `packages/core`, `packages/platform`.
   Remove any copy/step referencing deleted trees. Then run the model-free
   gate: `npm run mcp:demo --workspace @sequences/slack` and
@@ -726,3 +726,15 @@ Moved the consumed `phase1-briefs.json` fixture to
 `agent-evals.test.ts`, and deleted the unused `evals/relay-launch-film.json`.
 Verification: the core agent-evals test passed and root typecheck passed. No
 paid probe was run.
+
+## SP.5 â€” 2026-07-11 â€” DONE
+Rechecked the public mirror and container surfaces. `scripts/publish-public.sh`
+now archives only `apps/slack`, `packages/core`, and `packages/platform` plus
+the required root configuration; its generated docs no longer mention removed
+trees. The root Dockerfile copies only those three workspace manifests before
+the source layer. Verification: `npm run mcp:demo --workspace
+@sequences/slack` and `npm run sequence:check --workspace @sequences/slack --
+--demo --no-mcp --format both` passed. The worktree still contains the
+pre-existing S-init edits (`CLAUDE.md`, Slack docs/PROBE_LOG) and ignored
+`.tmp/`; they were not staged or altered. No publish/deploy or paid probe was
+run.
