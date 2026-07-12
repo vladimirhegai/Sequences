@@ -42,7 +42,11 @@ import { resolveTimeRampPlan } from "../../timeRamp.ts";
 import { resolveFxPlan } from "../../fxContract.ts";
 import { resolveAssetPlan } from "../../assetRuntime.ts";
 import { stripDeadGsapTweens } from "../../deadTweenRepair.ts";
-import { resolveComponentPlan, type ComponentKind } from "../../componentContract.ts";
+import {
+  resolveComponentPlan,
+  topUpHeldInteractionResultDevelopment,
+  type ComponentKind,
+} from "../../componentContract.ts";
 import { analyzeMotionDensity } from "../../motionDensity.ts";
 import { readFrameMeta } from "../../frameDesign.ts";
 import { recordSentinelScaffoldRestoration } from "../../sentinelTelemetry.ts";
@@ -5317,12 +5321,25 @@ export function applyDeterministicSourceRepairs(
   projectDir: string,
   lockedStoryboard?: DirectScene[],
 ): DirectCompositionDraft {
-  const html = runSourceNormalizerRegistry(draft.html, {
-    draft,
+  // Storyboard parsing normally performs this additive normalization before
+  // source authoring. Re-run the narrow idempotent seam here so exact replays
+  // and resumed jobs whose persisted plan predates the normalizer receive the
+  // same executable held-result beat before host islands are injected.
+  const heldResultDevelopment = topUpHeldInteractionResultDevelopment(draft.storyboard);
+  const repairedDraft = heldResultDevelopment.normalized.length
+    ? { ...draft, storyboard: heldResultDevelopment.scenes }
+    : draft;
+  const repairedLockedStoryboard = lockedStoryboard
+    ? lockedStoryboard === draft.storyboard
+      ? repairedDraft.storyboard
+      : topUpHeldInteractionResultDevelopment(lockedStoryboard).scenes
+    : undefined;
+  const html = runSourceNormalizerRegistry(repairedDraft.html, {
+    draft: repairedDraft,
     projectDir,
-    lockedStoryboard,
+    lockedStoryboard: repairedLockedStoryboard,
   }).state;
-  return html === draft.html ? draft : { ...draft, html };
+  return html === repairedDraft.html ? repairedDraft : { ...repairedDraft, html };
 }
 interface CompositionPatch {
   search: string;

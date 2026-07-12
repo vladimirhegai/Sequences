@@ -240,6 +240,136 @@ describe("camera blocking director", () => {
     expect(contextual.framingTarget).toEqual({ kind: "region", id: "metric-hero" });
   });
 
+  it("counts a hero ring and its same-station support hairline as one lens idea", () => {
+    const oneStation: DirectScene = {
+      id: "metric-open",
+      title: "Readiness opens",
+      purpose: "Establish one metric and its subordinate rail",
+      startSec: 0,
+      durationSec: 3.5,
+      components: [
+        {
+          version: 1,
+          id: "metric-ring",
+          kind: "progress-ring",
+          region: "metric-rail",
+          role: "hero",
+        },
+        {
+          version: 1,
+          id: "metric-hairline",
+          kind: "progress",
+          region: "metric-rail",
+          role: "support",
+        },
+      ],
+      beats: [
+        {
+          version: 1,
+          id: "ring-reveal",
+          sceneId: "metric-open",
+          component: "metric-ring",
+          kind: "progress",
+          atSec: 0.5,
+          durationSec: 0.8,
+          value: 0.48,
+        },
+        {
+          version: 1,
+          id: "hairline-draw",
+          sceneId: "metric-open",
+          component: "metric-hairline",
+          kind: "progress",
+          atSec: 2,
+          durationSec: 0.6,
+          value: 0.12,
+        },
+      ],
+      moments: [
+        {
+          version: 1,
+          id: "ring-moment",
+          sceneId: "metric-open",
+          atSec: 0.5,
+          title: "Ring reveals",
+          visualState: "The 48% ring is visible",
+          change: "The metric arrives",
+          motionIntent: "reveal",
+          importance: "primary",
+        },
+        {
+          version: 1,
+          id: "hairline-moment",
+          sceneId: "metric-open",
+          atSec: 2,
+          title: "Hairline draws",
+          visualState: "The subordinate rail fills beneath the ring",
+          change: "Local support evidence develops",
+          motionIntent: "draw-on",
+          importance: "supporting",
+        },
+      ],
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric-ring",
+        composition: "layout-center-stack",
+        relationships: ["the hairline stays subordinate inside the metric station"],
+      },
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "drift", startSec: 0, durationSec: 1 },
+          {
+            version: 1,
+            move: "push-in",
+            startSec: 1,
+            durationSec: 2.08,
+            toRegion: "metric-rail",
+            zoom: 1.08,
+          },
+        ],
+      },
+      worldLayout: [{ region: "metric-rail", cell: [0, 0] }],
+    };
+    const plan = resolveCameraBlockingPlan([oneStation], resolveContinuityGraph([oneStation]));
+    expect(plan.scenes[0]!.phrases.map((phrase) => phrase.target.id)).toEqual([
+      "metric-ring",
+      "metric-hairline",
+    ]);
+    expect(plan.scenes[0]!.phrases[1]!.framingTarget).toEqual({
+      kind: "region",
+      id: "metric-rail",
+    });
+    expect(auditCameraIdeaBudget([oneStation])).toEqual([]);
+
+    const splitStation: DirectScene = {
+      ...oneStation,
+      components: oneStation.components!.map((component) =>
+        component.id === "metric-hairline"
+          ? { ...component, region: "support-rail" }
+          : component
+      ),
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          startSec: 1,
+          durationSec: 2.08,
+          toPart: "metric-hairline",
+          zoom: 1.08,
+        }],
+      },
+      worldLayout: [
+        { region: "metric-rail", cell: [0, 0] },
+        { region: "support-rail", cell: [1, 0] },
+      ],
+    };
+    expect(auditCameraIdeaBudget([splitStation]).some((finding) =>
+      finding.startsWith("camera/idea-budget:")
+    )).toBe(true);
+  });
+
   it("frames a metric and confirmation inside one hero modal as one lens idea", () => {
     const storyboard: DirectScene[] = [{
       id: "approval-surface",

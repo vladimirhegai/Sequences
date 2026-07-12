@@ -437,6 +437,30 @@ export function resolveCameraBlockingPlan(
   });
 }
 
+/** A hero progress ring and its same-station support hairline are one semantic
+ * close-up even though the ring is framed directly (to keep it legible) while
+ * the rail's phrase carries the shared region as contextual framing. */
+function sameHeroMetricStationIdea(
+  scene: DirectScene,
+  left: CameraPhraseV1,
+  right: CameraPhraseV1,
+): boolean {
+  const leftComponent = scene.components?.find((component) => component.id === left.target.id);
+  const rightComponent = scene.components?.find((component) => component.id === right.target.id);
+  if (!leftComponent || !rightComponent) return false;
+  const matches = (
+    hero: typeof leftComponent,
+    support: typeof rightComponent,
+  ): boolean =>
+    hero.id === scene.spatialIntent?.focalPart &&
+    hero.role === "hero" &&
+    hero.kind === "progress-ring" &&
+    support.role === "support" &&
+    support.kind === "progress" &&
+    Boolean(hero.region && hero.region === support.region);
+  return matches(leftComponent, rightComponent) || matches(rightComponent, leftComponent);
+}
+
 export function auditCameraIdeaBudgetPlan(
   scenes: DirectScene[],
   plan: CameraPhrasePlanV1,
@@ -444,6 +468,8 @@ export function auditCameraIdeaBudgetPlan(
   const sceneById = new Map(scenes.map((scene) => [scene.id, scene]));
   const findings: string[] = [];
   for (const plannedScene of plan.scenes) {
+    const scene = sceneById.get(plannedScene.sceneId);
+    if (!scene) continue;
     const candidateRoutes = plannedScene.phrases.filter((phrase) =>
       phrase.target.id !== "composition-root" || plannedScene.phrases.length === 1
     );
@@ -466,15 +492,13 @@ export function auditCameraIdeaBudgetPlan(
           phrase.target.entityId && phrase.target.entityId === seen.target.entityId
         ) || (
           subject.kind === seenSubject.kind && subject.id === seenSubject.id
-        );
+        ) || sameHeroMetricStationIdea(scene, phrase, seen);
       });
       if (alreadySeen) return false;
       seenIdeas.push(phrase);
       return true;
     });
     if (routes.length <= 1) continue;
-    const scene = sceneById.get(plannedScene.sceneId);
-    if (!scene) continue;
     const focalPart = scene.spatialIntent?.focalPart;
     const keep = routes.find((phrase) =>
       phrase.target.id === focalPart || phrase.framingTarget?.id === focalPart

@@ -49,6 +49,20 @@ const CURRENT_PROOF_D_INPUT = path.resolve(
 );
 const CURRENT_PROOF_D_AVAILABLE =
   fs.existsSync(CURRENT_PROOF_D_DIR) && fs.existsSync(CURRENT_PROOF_D_INPUT);
+const PROOF_SPAN_G_DIR = path.join(
+  APP_DIR,
+  ".data",
+  "projects",
+  "lp3-state-capsule-20260712-g",
+);
+const PROOF_SPAN_G_INPUT = path.resolve(
+  APP_DIR,
+  "../..",
+  ".tmp",
+  "lp3-state-capsule-20260712-g.json",
+);
+const PROOF_SPAN_G_AVAILABLE =
+  fs.existsSync(PROOF_SPAN_G_DIR) && fs.existsSync(PROOF_SPAN_G_INPUT);
 
 function assembledFixturePrompt(): { prompt: string; directorChars: number; skillsChars: number } {
   const brief = [
@@ -365,6 +379,57 @@ describe("Prompt budget — assembled author prompt", () => {
       expect(prompt).toContain("Mandatory scene skeleton");
       expect(prompt).toContain("Frame design capsule");
       expect(prompt.match(/progress beat "rule-draw-41"/g)).toHaveLength(1);
+    },
+  );
+
+  it.runIf(PROOF_SPAN_G_AVAILABLE)(
+    "recomposes the exact ProofSpan G final full re-author below the hard cap",
+    () => {
+      const input = JSON.parse(fs.readFileSync(
+        PROOF_SPAN_G_INPUT,
+        "utf8",
+      )) as Parameters<typeof assembleBrief>[0];
+      const brief = assembleBrief(input);
+      const storyboard = (JSON.parse(fs.readFileSync(
+        path.join(PROOF_SPAN_G_DIR, "planning", "storyboard.json"),
+        "utf8",
+      )) as { storyboard: ReturnType<typeof buildFallbackComposition>["storyboard"] }).storyboard;
+      const firstFinding = (JSON.parse(fs.readFileSync(
+        path.join(
+          PROOF_SPAN_G_DIR,
+          "planning",
+          "attempts",
+          "author-1-static-rejected.json",
+        ),
+        "utf8",
+      )) as { findings: string[] }).findings[0]!;
+      const validationFeedback = [
+        firstFinding,
+        "The proposed patch was rejected atomically because it made the last valid scratch fail static validation:",
+        firstFinding,
+      ];
+      const prompt = creationPrompt({
+        brief,
+        projectDir: PROOF_SPAN_G_DIR,
+        skills: retrieveHyperframesSkillContext("create", brief),
+        frameMd: fs.readFileSync(path.join(PROOF_SPAN_G_DIR, "frame.md"), "utf8"),
+        lockedStoryboard: storyboard,
+        validationFeedback,
+        compact: true,
+        structuredPatches: true,
+      });
+
+      expect(prompt.length).toBeLessThanOrEqual(
+        AUTHOR_PROMPT_TARGET_CHARS - AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS,
+      );
+      expect(prompt).toContain("approval-press");
+      expect(prompt).toContain("Ready state held with ambient UI breathing");
+      expect(prompt).toContain("Mandatory scene skeleton");
+      expect(prompt).toContain("Frame design capsule");
+      expect(prompt).toContain("Motion-native components — locked recovery");
+      expect(prompt).toContain("Cinematography — locked recovery");
+      expect(prompt).toContain(firstFinding);
+      assertAuthorPromptBudget(prompt, "author source");
     },
   );
 

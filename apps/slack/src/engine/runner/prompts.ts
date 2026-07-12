@@ -742,7 +742,37 @@ function compactHostOwnedDirectorChapters(text: string): string {
  * do not resend the host's full contract encyclopedia on every repair.
  */
 export function compactLockedDirectorPrompt(prompt: string, misses?: string[]): string {
-  const compact = slotDirectorPrompt(prompt, misses).trim();
+  const compact = slotDirectorPrompt(prompt, misses)
+    // Whole-document recovery already receives canonical component markup in
+    // its mandatory skeleton plus the exact kind-scoped authoring reference.
+    // Likewise, the host re-injects the selected cinematography kit. The base
+    // chapters are useful during planning, but resending their full runtime
+    // encyclopedias made ProofSpan G's final recovery prompt 46,522 chars even
+    // after every optional skill byte and planner-only field were removed.
+    // Retain the author-owned decisions and ownership boundary in compact form.
+    .replace(
+      /## Motion-native components[^\n]*[\s\S]*?(?=## Sequences easing)/,
+      [
+        "## Motion-native components — locked recovery",
+        "The mandatory skeleton already contains each canonical component root and",
+        "internal fill element. Fill its visible copy/content and style its placement;",
+        "never delete, rename, duplicate, or re-animate a data-component/data-part root.",
+        "The host compiles every locked component beat and interaction. Author only",
+        "secondary interior polish that does not repeat those state changes.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## Cinematography[^\n]*[\s\S]*?(?=## Color)/,
+      [
+        "## Cinematography — locked recovery",
+        "Use the supplied material/keylight/grade classes to reinforce the focal",
+        "hierarchy; never redeclare the host light kit. Camera motion, depth, focus,",
+        "grain, bloom, and vignette remain host-owned and seek-safe.",
+        "",
+      ].join("\n"),
+    )
+    .trim();
   return [
     compact,
     "",

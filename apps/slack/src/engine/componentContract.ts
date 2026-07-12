@@ -33,7 +33,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DirectScene } from "./directComposition.ts";
-import { SEQUENCES_EASES } from "./cameraContract.ts";
+import { CAMERA_FULL_MOVES, SEQUENCES_EASES } from "./cameraContract.ts";
 import { canonicalCutStyle, type CutAxis } from "./cutContract.ts";
 import {
   resolveContinuityGraph,
@@ -1267,6 +1267,7 @@ const HELD_RESULT_STATES = new Set([
   "done",
   "ready",
   "resolved",
+  "succeed",
   "succeeded",
   "success",
   "verified",
@@ -1275,6 +1276,41 @@ const HELD_RESULT_FRONT_FRACTION = 0.35;
 const HELD_RESULT_HIGHLIGHT_DURATION_SEC = 0.8;
 const HELD_RESULT_HIGHLIGHT_TAIL_SEC = 1.6;
 const HELD_RESULT_MIN_BREATH_SEC = 0.8;
+const HELD_RESULT_MOMENT_EVIDENCE_BEFORE_SEC = 0.45;
+const HELD_RESULT_MOMENT_EVIDENCE_AFTER_SEC = 0.75;
+const HELD_RESULT_MOMENT_RE =
+  /\b(?:approve(?:d)?|complete(?:d)?|done|held|holds?|proof|ready|resolve(?:d|s)?|settle(?:d)?|succeed(?:ed)?|success|verified)\b/i;
+
+function beatOverlapsMoment(
+  beat: ComponentBeatIntentV1,
+  moment: NonNullable<DirectScene["moments"]>[number],
+): boolean {
+  const windowStart = moment.atSec - HELD_RESULT_MOMENT_EVIDENCE_BEFORE_SEC;
+  const windowEnd = moment.atSec + HELD_RESULT_MOMENT_EVIDENCE_AFTER_SEC;
+  return beat.atSec + beatDuration(beat) >= windowStart && beat.atSec <= windowEnd;
+}
+
+function interactionOverlapsMoment(
+  interaction: NonNullable<DirectScene["interactions"]>[number],
+  moment: NonNullable<DirectScene["moments"]>[number],
+): boolean {
+  const windowStart = moment.atSec - HELD_RESULT_MOMENT_EVIDENCE_BEFORE_SEC;
+  const windowEnd = moment.atSec + HELD_RESULT_MOMENT_EVIDENCE_AFTER_SEC;
+  const interactionEnd = interaction.releaseSec ?? interaction.pressSec ?? interaction.arriveSec;
+  return interactionEnd >= windowStart && interaction.arriveSec <= windowEnd;
+}
+
+function heldResultMomentText(
+  moment: NonNullable<DirectScene["moments"]>[number],
+): string {
+  return [
+    moment.id,
+    moment.title,
+    moment.visualState,
+    moment.change,
+    moment.motionIntent,
+  ].join(" ");
+}
 
 /**
  * Give a deliberately held interaction result one late, host-owned proof
@@ -1282,8 +1318,9 @@ const HELD_RESULT_MIN_BREATH_SEC = 0.8;
  *
  * This is intentionally narrower than a general liveness generator. It only
  * applies when a 4s+ scene:
- * - declares two or more moments, all in the front 35%;
- * - keeps the camera locked (no full move to provide later development);
+ * - either front-loads every moment or promises an unsupported late held
+ *   success/ready/resolve moment;
+ * - finishes every full camera move before the interaction result;
  * - lands an explicit successful set-state on the interaction target; and
  * - leaves enough tail for a separated 800ms highlight and a final settle.
  *
@@ -1304,8 +1341,6 @@ export function topUpHeldInteractionResultDevelopment(
       return scene;
     }
     const frontEdge = scene.startSec + scene.durationSec * HELD_RESULT_FRONT_FRACTION;
-    if (moments.some((moment) => moment.atSec > frontEdge)) return scene;
-    if ((scene.camera?.path ?? []).some((move) => move.move !== "hold")) return scene;
 
     const interactionTargets = new Set(interactions.map((interaction) => interaction.targetPart));
     const result = beats
@@ -1317,12 +1352,39 @@ export function topUpHeldInteractionResultDevelopment(
       .sort((a, b) => a.atSec - b.atSec)
       .at(-1);
     if (!result) return scene;
+    if ((scene.camera?.path ?? []).some((move) =>
+      CAMERA_FULL_MOVES.has(move.move) && move.startSec + move.durationSec > result.atSec + 0.01
+    )) return scene;
+
+    const entranceClustered = moments.every((moment) => moment.atSec <= frontEdge);
+    const unsupportedHeldMoment = moments
+      .filter((moment) =>
+        moment.atSec > frontEdge &&
+        moment.atSec >= result.atSec + HELD_RESULT_MIN_BREATH_SEC &&
+        HELD_RESULT_MOMENT_RE.test(heldResultMomentText(moment)) &&
+        !beats.some((beat) => beatOverlapsMoment(beat, moment)) &&
+        !interactions.some((interaction) => interactionOverlapsMoment(interaction, moment)) &&
+        !(scene.camera?.path ?? []).some((move) =>
+          CAMERA_FULL_MOVES.has(move.move) &&
+          move.startSec + move.durationSec >=
+            moment.atSec - HELD_RESULT_MOMENT_EVIDENCE_BEFORE_SEC &&
+          move.startSec <= moment.atSec + HELD_RESULT_MOMENT_EVIDENCE_AFTER_SEC
+        ) &&
+        !(scene.gradeShift &&
+          scene.gradeShift.atSec >= moment.atSec - HELD_RESULT_MOMENT_EVIDENCE_BEFORE_SEC &&
+          scene.gradeShift.atSec <= moment.atSec + HELD_RESULT_MOMENT_EVIDENCE_AFTER_SEC)
+      )
+      .sort((a, b) => b.atSec - a.atSec)[0];
+    if (!entranceClustered && !unsupportedHeldMoment) return scene;
     if (beats.some((beat) =>
       beat.id !== result.id &&
       beat.atSec > Math.max(frontEdge, result.atSec + HELD_RESULT_MIN_BREATH_SEC)
     )) return scene;
 
-    const atSec = round(scene.startSec + scene.durationSec - HELD_RESULT_HIGHLIGHT_TAIL_SEC);
+    const defaultAtSec = scene.startSec + scene.durationSec - HELD_RESULT_HIGHLIGHT_TAIL_SEC;
+    const atSec = round(unsupportedHeldMoment
+      ? Math.min(defaultAtSec, unsupportedHeldMoment.atSec - 0.3)
+      : defaultAtSec);
     const resultEnd = result.atSec + beatDuration(result);
     if (atSec < resultEnd + HELD_RESULT_MIN_BREATH_SEC) return scene;
     if (atSec + HELD_RESULT_HIGHLIGHT_DURATION_SEC > scene.startSec + scene.durationSec - 0.3) {

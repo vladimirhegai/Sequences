@@ -1052,6 +1052,52 @@ describe("topUpHeldInteractionResultDevelopment", () => {
     });
   });
 
+  it("binds an unsupported late held-result moment after an early push and drift", () => {
+    const candidate = heldApproval();
+    candidate.camera = {
+      version: 1,
+      path: [
+        {
+          version: 1,
+          move: "push-in",
+          startSec: 10,
+          durationSec: 1,
+          toRegion: "approval",
+        },
+        {
+          version: 1,
+          move: "drift",
+          startSec: 11,
+          durationSec: 5,
+        },
+      ],
+    };
+    candidate.beats![0] = { ...candidate.beats![0]!, toState: "succeed" };
+    candidate.moments!.push({
+      version: 1,
+      id: "ready-holds",
+      sceneId: "approval",
+      atSec: 15.5,
+      title: "Ready state holds",
+      visualState: "Confirmation remains ready under the held frame",
+      change: "The successful result settles without a new surface",
+      motionIntent: "resolve",
+      importance: "supporting",
+    });
+
+    const result = topUpHeldInteractionResultDevelopment([candidate]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.scenes[0]!.beats).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "approval-held-result-highlight",
+        component: "confirm",
+        kind: "highlight",
+        atSec: 14.4,
+        durationSec: 0.8,
+      }),
+    ]));
+  });
+
   it("does not manufacture a late accent for travel, a non-final state, or a cramped tail", () => {
     const moving = heldApproval();
     moving.camera = {

@@ -107,6 +107,17 @@ const FIXTURES: Fixture[] = [
     },
     expectedSource: {},
   },
+  {
+    id: "ProofSpan G",
+    jobId: "lp3-state-capsule-20260712-g",
+    expectedRaw: {
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "352bbbd90a797b46670fb2d15966aa4fa3ee91157493b2c10794d951617287d4", replaySha256: "ddf4b39a4e1d2fc978a2757f1203fb71b03150cc6aeac36dea71136e1254a184", outcome: "parsed" },
+    },
+    expectedSource: {
+      "author-1-static-rejected.html": { artifactSha256: "6eb800644e5277b98cece51c8e115dcc5b428448e34c7fe3c10a2bf646b39e9c", replaySha256: "81979ac18a9cc18fbeea12db920c7435294af25e91b2cf7f03e404b5c276064c", outcome: "accepted" },
+      "author-2-static-rejected.html": { artifactSha256: "d86866125252e68e0d16b07fefca2a487fa806ee1e40b0d12e23e9e4b138c782", replaySha256: "81979ac18a9cc18fbeea12db920c7435294af25e91b2cf7f03e404b5c276064c", outcome: "accepted" },
+    },
+  },
 ];
 
 const appDir = path.resolve(import.meta.dirname, "..");

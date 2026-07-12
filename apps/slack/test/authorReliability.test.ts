@@ -217,6 +217,93 @@ function scene(id: string, startSec: number, overrides: Partial<DirectScene> = {
   };
 }
 
+describe("held-result source repair parity", () => {
+  it("upgrades a persisted pre-normalizer plan before injecting host contracts", () => {
+    const storyboard: DirectScene[] = [scene("approval", 10, {
+      durationSec: 6,
+      camera: {
+        version: 1,
+        path: [
+          { version: 1, move: "push-in", startSec: 10, durationSec: 1, toRegion: "approval" },
+          { version: 1, move: "drift", startSec: 11, durationSec: 5 },
+        ],
+      },
+      components: [{ version: 1, id: "confirm", kind: "button", region: "approval" }],
+      beats: [{
+        version: 1,
+        id: "confirm-ready",
+        sceneId: "approval",
+        component: "confirm",
+        kind: "set-state",
+        atSec: 12,
+        toState: "succeed",
+      }],
+      interactions: [{
+        version: 1,
+        id: "confirm-click",
+        sceneId: "approval",
+        cursorId: "cursor-1",
+        targetPart: "confirm",
+        action: "click",
+        startSec: 11,
+        arriveSec: 11.5,
+        pressSec: 11.7,
+        releaseSec: 11.9,
+        from: "frame:bottom-right",
+        path: "arc",
+        aimX: 0.5,
+        aimY: 0.5,
+        feedback: "press-ripple",
+      }],
+      moments: [
+        {
+          version: 1,
+          id: "result-ready",
+          sceneId: "approval",
+          atSec: 12,
+          title: "Result ready",
+          visualState: "Confirmation succeeds",
+          change: "The button reaches its ready state",
+          motionIntent: "resolve",
+          importance: "primary",
+        },
+        {
+          version: 1,
+          id: "ready-holds",
+          sceneId: "approval",
+          atSec: 15.5,
+          title: "Ready holds",
+          visualState: "Confirmation remains ready",
+          change: "The successful result settles",
+          motionIntent: "resolve",
+          importance: "supporting",
+        },
+      ],
+    })];
+    const html = `<!doctype html><html><body><main data-composition-id="held" ` +
+      `data-width="1920" data-height="1080" data-duration="16">` +
+      `<section id="approval" data-scene="approval" data-start="10" data-duration="6">` +
+      `<div data-camera-world><div data-region="approval">` +
+      `<button data-part="confirm" data-component="button">Approve</button>` +
+      `</div></div></section></main><script>` +
+      `const tl=gsap.timeline({paused:true});window.__timelines.held=tl;</script></body></html>`;
+
+    const repaired = applyDeterministicSourceRepairs(
+      { html, storyboard },
+      tempDir(),
+      storyboard,
+    );
+    expect(repaired.storyboard[0]?.beats).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "approval-held-result-highlight",
+        component: "confirm",
+        kind: "highlight",
+        atSec: 14.4,
+      }),
+    ]));
+  });
+});
+
 /** The 2026-07-04 live-fallback shape: shape-match + camera stations. */
 function incidentStoryboard(): DirectScene[] {
   return [
