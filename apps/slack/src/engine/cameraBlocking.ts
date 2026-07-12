@@ -299,7 +299,9 @@ export function resolveCameraBlockingPlan(
       const targetPlugin = target.kind === "part"
         ? scene.plugins?.find((entry) => entry.id === target.id)
         : undefined;
-      const soleAppWindow = (scene.components ?? []).filter((entry) => entry.kind === "app-window");
+      const soleProductSurface = (scene.components ?? []).filter((entry) =>
+        entry.kind === "app-window" || (entry.kind === "modal" && entry.role === "hero")
+      );
       const entityHeadline = component?.kind === "button" && component.entityId
         ? scene.components?.find((entry) =>
             entry.kind === "headline" && entry.entityId === component.entityId
@@ -307,9 +309,9 @@ export function resolveCameraBlockingPlan(
         : undefined;
       const framingTarget = target.kind === "part" && component?.region && contextualKind
         ? { kind: "region" as const, id: component.region }
-        : target.kind === "part" && contextualKind && soleAppWindow.length === 1 &&
-            soleAppWindow[0]!.id !== target.id
-          ? { kind: "part" as const, id: soleAppWindow[0]!.id }
+        : target.kind === "part" && contextualKind && soleProductSurface.length === 1 &&
+            soleProductSurface[0]!.id !== target.id
+          ? { kind: "part" as const, id: soleProductSurface[0]!.id }
           : entityHeadline
             ? { kind: "part" as const, id: entityHeadline.id }
         : pluginGroup

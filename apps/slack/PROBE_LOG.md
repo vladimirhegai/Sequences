@@ -259,3 +259,19 @@ plan's actual remaining budget (with 512 chars of headroom) instead of relying
 on a fixed allowance. Recomposition is 43,036 chars for run A and 44,488 for
 run B while both retain the full plan, frame capsule, and host scaffold. LP-2
 and LP-3 still require a fresh runtime-reaching probe.
+
+### CurrentProof — `lp3-state-capsule-20260712-c` (stopped fix-first in planning)
+
+The third cache-distinct run was stopped after two persisted storyboard
+rejections repeated `camera/idea-budget` in `approval-surface`: the lens audit
+called `metric-value-card` and `confirm-btn` competing ideas even though both
+were local evidence inside the scene's one hero modal. Attempt 2 also carried
+an independent genuine 3.1s moment gap. No source authoring or runtime began.
+
+Exact replay located the mechanical owner in S3 camera blocking. Contextual
+framing already groups metric/button evidence inside one sole app window, but
+did not recognize the typed hero `modal` used for an approval surface. S3.5
+extends only that bounded surface predicate: one hero modal groups its local
+metric/CTA phrases; multiple or non-hero modals remain separate. Attempt 1 now
+passes strict replay. Attempt 2 no longer reports the camera class and honestly
+retains only its moment gap. LP-2/LP-3 remain open pending a fresh probe.

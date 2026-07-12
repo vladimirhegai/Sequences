@@ -427,6 +427,15 @@ collapse zero-distance/same-target phrases; budget visual ideas.
   is starting immediately, you may defer to a combined LP-1+LP-2 probe after
   S4.2 — journal the deferral.
 
+### S3.5 Hero-modal camera framing integration
+- [x] LP-3 exposed an approval scene whose one hero modal contained a carried
+  metric and local confirm button. Camera blocking recognized only a sole
+  `app-window` as contextual product framing, so the two children became a
+  false `camera/idea-budget` pair. Treat a sole hero modal as the same bounded
+  framing surface; do not group non-hero or competing modals.
+- Verify: exact rejected artifact passes strict replay; minimized modal
+  regression, camera suites, browser suite, and `replay:all` green.
+
 ---
 
 # Phase 4 — State continuity (kills the 0% reset class)
@@ -1268,3 +1277,17 @@ chars of feedback headroom. The two persisted plans recompose at 43,036 and
 typecheck; prompt-budget tests (10/10); both exact-plan prompt measurements;
 full unit suite and exact `replay:all` (13/0/0), all green. No publish or
 deploy. LP-2/LP-3 remain open because no author/runtime/render stage ran.
+
+## S3.5 — 2026-07-12 — DONE
+The third CurrentProof checkpoint repeated `camera/idea-budget` for a metric
+and confirm button inside one hero approval modal. Exact replay showed the
+camera resolver's contextual framing recognized a sole app window but not the
+equivalent typed modal surface, so local component evidence became competing
+lens subjects. Extended only the sole-surface predicate to a hero modal;
+non-hero and multiple modals remain separate. Added a minimized metric + CTA
+modal regression. The first rejected artifact now passes strict replay; the
+second loses the false camera class and retains its genuine moment gap. Files:
+`cameraBlocking.ts`, `cameraBlocking.test.ts`, PROBE_LOG, and this plan.
+Verification: Slack typecheck; focused camera phrase/blocking tests (23/23);
+exact attempt-1 strict replay; full Slack unit and browser suites; exact
+`replay:all` (13/0/0), all green. No source call, runtime, publish, or deploy.

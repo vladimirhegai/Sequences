@@ -150,6 +150,105 @@ describe("camera blocking director", () => {
     expect(auditCameraIdeaBudget(storyboard)).toEqual([]);
   });
 
+  it("frames a metric and confirmation inside one hero modal as one lens idea", () => {
+    const storyboard: DirectScene[] = [{
+      id: "approval-surface",
+      title: "Owner confirms",
+      purpose: "Carry the resolved metric into one approval surface",
+      startSec: 0,
+      durationSec: 4,
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "hold",
+          startSec: 0,
+          durationSec: 4,
+          toPart: "metric-value-card",
+        }],
+      },
+      components: [
+        { version: 1, id: "approval-modal", kind: "modal", role: "hero", entityId: "product-shell" },
+        { version: 1, id: "metric-value-card", kind: "stat-card", role: "hero", entityId: "release-metric" },
+        { version: 1, id: "confirm-btn", kind: "button", role: "support", entityId: "cta" },
+      ],
+      beats: [
+        {
+          version: 1,
+          id: "set-91-modal",
+          sceneId: "approval-surface",
+          component: "metric-value-card",
+          kind: "count",
+          atSec: 0.2,
+          value: 91,
+        },
+        {
+          version: 1,
+          id: "btn-press",
+          sceneId: "approval-surface",
+          component: "confirm-btn",
+          kind: "set-state",
+          atSec: 2.4,
+          toState: "pressed",
+        },
+      ],
+      interactions: [{
+        version: 1,
+        id: "confirm-click",
+        sceneId: "approval-surface",
+        cursorId: "main-cursor",
+        targetPart: "confirm-btn",
+        action: "click",
+        startSec: 1.8,
+        arriveSec: 2.4,
+        pressSec: 2.52,
+        releaseSec: 2.66,
+        from: "frame:bottom-right",
+        path: "direct",
+        aimX: 0.5,
+        aimY: 0.5,
+        feedback: "press-ripple",
+        targetScale: 1,
+      }],
+      moments: [
+        {
+          version: 1,
+          id: "modal-init",
+          sceneId: "approval-surface",
+          atSec: 0.2,
+          title: "91% preserved",
+          visualState: "Approval modal shows the incoming 91%",
+          change: "Metric state enters the product surface",
+          motionIntent: "ui-state",
+          importance: "primary",
+        },
+        {
+          version: 1,
+          id: "confirm-press",
+          sceneId: "approval-surface",
+          atSec: 2.4,
+          title: "Owner confirms",
+          visualState: "Button confirms inside the same modal",
+          change: "Approval state resolves",
+          motionIntent: "ui-state",
+          importance: "primary",
+        },
+      ],
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric-value-card",
+        composition: "metric and confirmation inside one approval modal",
+        relationships: ["confirm-btn develops inside approval-modal"],
+      },
+    }];
+    const plan = resolveCameraBlockingPlan(storyboard, resolveContinuityGraph(storyboard));
+    expect(plan.scenes[0]!.phrases.map((phrase) => phrase.framingTarget?.id)).toEqual([
+      "approval-modal",
+      "approval-modal",
+    ]);
+    expect(auditCameraIdeaBudget(storyboard)).toEqual([]);
+  });
+
   it("gives every phrase a target, occupancy, arrival, corridor, dwell, and next handoff", () => {
     const storyboard = scenes();
     const graph = resolveContinuityGraph(storyboard);
