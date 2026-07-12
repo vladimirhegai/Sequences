@@ -12,6 +12,7 @@ import {
   assertAuthorPromptBudget,
   compactLockedDirectorPrompt,
   compactRepairSource,
+  isAuthorPromptBudgetError,
 } from "../src/engine/runner/prompts.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 import { retrieveHyperframesSkillContext } from "../src/agent/skillContext.ts";
@@ -184,6 +185,61 @@ describe("Prompt budget — assembled author prompt", () => {
     }
   });
 
+  it("fits optional author skills around a production-shaped locked plan", () => {
+    const draft = buildFallbackComposition({
+      product: "CurrentProof",
+      whatShipped: "one metric develops across five scenes into one approval surface",
+      audience: "release engineers",
+      lengthSec: 20,
+    });
+    const seed = draft.storyboard[0]!;
+    const storyboard = Array.from({ length: 5 }, (_, index) => ({
+      ...seed,
+      id: `metric-state-${index + 1}`,
+      title: `Release readiness develops to ${41 + index * 12}%`,
+      purpose: "Preserve one typed continuity metric without resetting at a cut",
+      foreground: "A glass release-readiness metric inside one measured product station",
+      background: "A restrained structural rail behind the primary product surface",
+      cameraIntent: "Hold on the one focal station while local component state develops",
+      continuityAnchor: "release-readiness-metric",
+      startSec: index * 4,
+      durationSec: 4,
+      components: [{
+        version: 1 as const,
+        id: "release-readiness",
+        kind: "stat-card" as const,
+        role: "hero" as const,
+        entityId: "release-readiness-metric",
+      }],
+      beats: [{
+        version: 1 as const,
+        id: `metric-count-${index + 1}`,
+        sceneId: `metric-state-${index + 1}`,
+        component: "release-readiness",
+        kind: "count" as const,
+        atSec: index * 4 + 0.5,
+        value: 41 + index * 12,
+      }],
+    }));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "sentinel-prompt-fit-"));
+    try {
+      const baseSkills = retrieveHyperframesSkillContext("create", "glass metric approval");
+      const prompt = creationPrompt({
+        brief: "CurrentProof carries one release-readiness metric through five scenes.",
+        projectDir,
+        skills: { ...baseSkills, text: `${baseSkills.text}\n\n${"Optional author reference. ".repeat(1_200)}` },
+        frameMd: "# Frame\nDark structural basis with one bright metric focal.\n".repeat(80),
+        lockedStoryboard: storyboard,
+        slots: true,
+      });
+      expect(prompt.length).toBeLessThanOrEqual(AUTHOR_PROMPT_TARGET_CHARS);
+      expect(prompt).toContain("metric-state-5");
+      expect(prompt).toContain("Frame design capsule");
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps repair excerpts exact and includes the reported late source", () => {
     const source = `${"x".repeat(70_000)}<div data-part="repair-target">${"y".repeat(40_000)}</div>`;
     const compact = compactRepairSource(source, ['data-part="repair-target"']);
@@ -203,8 +259,15 @@ describe("Prompt budget — assembled author prompt", () => {
   });
 
   it("rejects an oversized author request before a provider call", () => {
-    expect(() => assertAuthorPromptBudget("x".repeat(AUTHOR_PROMPT_TARGET_CHARS + 1), "author patch"))
-      .toThrow(/hard author prompt budget/);
+    let error: unknown;
+    try {
+      assertAuthorPromptBudget("x".repeat(AUTHOR_PROMPT_TARGET_CHARS + 1), "author patch");
+    } catch (caught) {
+      error = caught;
+    }
+    expect(isAuthorPromptBudgetError(error)).toBe(true);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/hard author prompt budget/);
     expect(() => assertAuthorPromptBudget("x".repeat(AUTHOR_PROMPT_TARGET_CHARS + 1), "storyboard"))
       .not.toThrow();
   });

@@ -109,6 +109,7 @@ import {
   CRITIC_RESPONSE_FORMAT,
   availableAssets,
   creationPrompt,
+  isAuthorPromptBudgetError,
   parseCritique,
   slotContinuationPrompt,
 } from "./prompts.ts";
@@ -3851,6 +3852,13 @@ async function authorCompositionLoop(
         outcome: "exception",
         findingSignatures: [findingSignature(message)],
       });
+      // Prompt-budget failures happen before a provider call and cannot change
+      // across content retries. Do not count the same deterministic preflight
+      // defect three times or escalate it to an independent-model rescue.
+      if (isAuthorPromptBudgetError(error)) {
+        lastError = error;
+        break;
+      }
       if (isReasoningMandatoryError(error)) {
         // Endpoint rejects reasoning:none outright — retry the same work with
         // a minimal floor instead of burning attempts on identical 400s.
@@ -3931,7 +3939,7 @@ async function authorCompositionLoop(
   // fallback. Spend ONE full-context attempt on an independent model with the
   // accumulated findings before the fallback is allowed.
   const rescueTier = sourceRescueModel(provider, productionTier);
-  if (rescueTier) {
+  if (rescueTier && !isAuthorPromptBudgetError(lastError)) {
     process.stderr.write(
       `[author] primary model exhausted its attempts; rescue attempt on ${rescueTier}\n`,
     );

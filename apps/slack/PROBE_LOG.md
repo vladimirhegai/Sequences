@@ -216,3 +216,46 @@ follow-up sequence. Verification after the fixes: Slack typecheck; focused
 camera/component/Sentinel/normalization tests; full Slack unit suite; exact
 replays 13/0/0. Root `npm test` had five parallel-Chrome timeouts; all five
 files passed serially (19/19), matching the documented contention class.
+
+## 2026-07-12 Phase 6 LP-3 checkpoint (CurrentProof)
+
+### CurrentProof — `lp3-state-capsule-20260712-a` (fail-loud preflight)
+
+The explicitly authorized cache-distinct probe combined the open LP-2 state
+shape with LP-3's prompt/capsule check: one metric develops 41% -> 68% -> 91%
+across five scenes, then enters one approval surface. Fallback was disabled,
+continuity enabled, composition audit on, with MCP/render/temporal requested.
+
+Frame design completed. The first storyboard response was accepted after one
+bounded scene repair; the host auto-declared the evidence-backed
+`asset-glass-metric` on `release-readiness-68`, proving the S6.3 capsule's typed
+conversion path. Before the first source provider call, the assembled slot
+prompt exceeded S6.1's 45,000-char ceiling (46,602 chars). The ladder then
+repeated that deterministic preflight failure for attempts 2/3 (47,539 chars)
+and rescue (61,201 chars). No source call, browser runtime, MP4, fallback, or
+temporal evidence was produced, so LP-2 and LP-3 remain open.
+
+Lowest-owner fix (S6.4): retain the locked storyboard and host templates, trim
+only the optional author-stage skill capsule from 5,000 to 2,000 chars, and
+make `AuthorPromptBudgetError` terminal for the author ladder so a future
+oversize cannot consume content retries or rescue. Recomposition of the exact
+persisted plan is 43,016 chars. The failed job and all exception/storyboard
+artifacts remain under `.data/projects/lp3-state-capsule-20260712-a`.
+
+### CurrentProof — `lp3-state-capsule-20260712-b` (fail-loud preflight follow-up)
+
+The cache-distinct follow-up exposed why a fixed skill allowance was still not
+a complete S6.1 implementation. Frame design hit one provider truncation and
+used its deterministic direction fallback. Storyboard attempt 1 had one
+genuine `components/complexity` finding (four approval surfaces in 4.6s), which
+the bounded scene repair reduced to three; `asset-glass-metric` again
+auto-declared. The resulting valid five-scene plan assembled to 46,310 chars
+even with the 2,000-char skill cap. The new typed budget error behaved
+correctly: one preflight exception, no source provider call, no repeated author
+attempt, and no rescue. No browser/runtime/render evidence was produced.
+
+The completed S6.4 fix now fits the optional skill excerpt to each locked
+plan's actual remaining budget (with 512 chars of headroom) instead of relying
+on a fixed allowance. Recomposition is 43,036 chars for run A and 44,488 for
+run B while both retain the full plan, frame capsule, and host scaffold. LP-2
+and LP-3 still require a fresh runtime-reaching probe.

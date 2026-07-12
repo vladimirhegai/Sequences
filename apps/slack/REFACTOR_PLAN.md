@@ -552,6 +552,15 @@ eliminating contradictory contracts).
 - Verify: unit tests for the capsule; the LP-3 checkpoint probe shows the
   declared unit actually appearing in the plan.
 
+### S6.4 LP-3 prompt-budget integration fix
+- [x] A production-shaped five-scene LP-3 plan assembled a 46,602-char slot
+  prompt and the deterministic preflight error was retried three times plus a
+  rescue. Preserve the locked plan/templates, compact the author-stage skill
+  capsule enough to leave feedback headroom, and classify budget failures as
+  non-retryable before any provider call.
+- Verify: the exact persisted LP-3 plan composes below 45,000 chars; prompt
+  budget regression, typecheck, and `replay:all` green.
+
 ---
 
 # Phase 7 — Retire old systems and shrink the flag surface
@@ -1242,3 +1251,20 @@ browser coverage; full Slack unit suite; exact `replay:all` (13/0/0); MCP demo;
 direct demo; and `sequence:check --demo --no-mcp --format both`. No Live Probe,
 publish, or deploy. LP-3 remains pending owner authorization. S7.1–S7.3 were
 intentionally left untouched per task scope.
+
+## S6.4 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+The authorized CurrentProof probe reached an accepted five-scene storyboard
+and auto-declared `asset-glass-metric`, then failed loud before the first source
+provider call because its slot prompt was 46,602 chars. The author ladder
+incorrectly repeated the identical deterministic budget exception through all
+three attempts and rescue. A cache-distinct follow-up proved the typed error is
+terminal (one exception, no rescue), but its different valid plan still
+assembled at 46,310 chars under a fixed 2,000-char skill allowance. Kept the
+locked plan, frame, and scaffold intact; the author projection now fits only
+the optional skill excerpt to the actual remaining prompt budget with 512
+chars of feedback headroom. The two persisted plans recompose at 43,036 and
+44,488 chars. Files: `runner/prompts.ts`, `runner/ladder.ts`,
+`test/promptBudget.test.ts`, PROBE_LOG, and this plan. Verification: Slack
+typecheck; prompt-budget tests (10/10); both exact-plan prompt measurements;
+full unit suite and exact `replay:all` (13/0/0), all green. No publish or
+deploy. LP-2/LP-3 remain open because no author/runtime/render stage ran.

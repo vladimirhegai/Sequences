@@ -43,7 +43,29 @@ export const AUTHOR_PROMPT_BUDGET_CHARS = 45_000;
 const REPAIR_SOURCE_CONTEXT_CHARS = 30_000;
 const BOUNDED_INITIAL_SKILL_BUDGET_CHARS = 24_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
-const SLOT_SKILL_BUDGET_CHARS = 5_000;
+// LP-3 `lp3-state-capsule-20260712-a` produced a valid five-scene typed plan
+// whose slot prompt was 46,602 chars. The scene templates and locked plan are
+// load-bearing; the shared skill capsule is optional reference material and is
+// already present upstream at planning time. Keep only its compact lead here
+// so production-shaped typed plans retain headroom for deterministic feedback.
+const SLOT_SKILL_BUDGET_CHARS = 2_000;
+
+export class AuthorPromptBudgetError extends Error {
+  readonly code = "AUTHOR_PROMPT_BUDGET";
+
+  constructor(stage: string, promptChars: number) {
+    super(
+      `${stage} prompt is ${promptChars} chars; the hard author prompt budget is ` +
+        `${AUTHOR_PROMPT_BUDGET_CHARS} chars. Compact the composed context before calling the provider.`,
+    );
+    this.name = "AuthorPromptBudgetError";
+  }
+}
+
+export function isAuthorPromptBudgetError(error: unknown): error is AuthorPromptBudgetError {
+  return error instanceof AuthorPromptBudgetError ||
+    (error instanceof Error && (error as Error & { code?: string }).code === "AUTHOR_PROMPT_BUDGET");
+}
 function compactSkillText(text: string, budgetChars = COMPACT_SKILL_BUDGET_CHARS): string {
   const compacted = text
     .replace(/<(blueprint|motion-rule)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
@@ -80,10 +102,7 @@ export function availableAssets(projectDir: string): string {
 export function assertAuthorPromptBudget(prompt: string, stage: string): void {
   if (!/^(author source|author patch|critique patch)$/i.test(stage)) return;
   if (prompt.length <= AUTHOR_PROMPT_BUDGET_CHARS) return;
-  throw new Error(
-    `${stage} prompt is ${prompt.length} chars; the hard author prompt budget is ` +
-      `${AUTHOR_PROMPT_BUDGET_CHARS} chars. Compact the composed context before calling the provider.`,
-  );
+  throw new AuthorPromptBudgetError(stage, prompt.length);
 }
 
 function repairPromptNeedles(findings: readonly string[]): string[] {
@@ -871,17 +890,18 @@ export function creationPrompt(args: {
     : args.lockedStoryboard || args.compact
       ? compactLockedDirectorPrompt(DIRECTOR_PROMPT)
       : DIRECTOR_PROMPT;
-  return [
+  const selectedSkillText = args.slots
+    ? compactSkillText(args.skills.text, SLOT_SKILL_BUDGET_CHARS)
+    : args.compact
+    ? compactSkillText(args.skills.text)
+    : args.lockedStoryboard
+    ? boundedInitialSkillText(args.skills.text)
+    : args.skills.text;
+  const compose = (authorSkillText: string): string => [
     "SYSTEM:",
     directorPrompt,
     "",
-    args.slots
-      ? compactSkillText(args.skills.text, SLOT_SKILL_BUDGET_CHARS)
-      : args.compact
-      ? compactSkillText(args.skills.text)
-      : args.lockedStoryboard
-      ? boundedInitialSkillText(args.skills.text)
-      : args.skills.text,
+    authorSkillText,
     "",
     componentReference,
     "## Job brief and trusted evidence",
@@ -916,6 +936,18 @@ export function creationPrompt(args: {
     feedback,
     lockedResponse,
   ].filter(Boolean).join("\n\n");
+  let prompt = compose(selectedSkillText);
+  if (args.lockedStoryboard && prompt.length > AUTHOR_PROMPT_BUDGET_CHARS && selectedSkillText) {
+    // Typed plans and host scaffolds vary substantially by scene. A fixed
+    // skill allowance passed the synthetic S6.1 fixture but failed two real
+    // LP-3 plans. Fit the optional author reference to the remaining budget;
+    // the full skill context already informed planning, while the locked plan,
+    // frame capsule, and scaffold are the source-authoring contract.
+    const overflow = prompt.length - AUTHOR_PROMPT_BUDGET_CHARS;
+    const fittedBudget = Math.max(0, selectedSkillText.length - overflow - 512);
+    prompt = compose(compactSkillText(selectedSkillText, fittedBudget));
+  }
+  return prompt;
 }
 /**
  * A compact continuation prompt for a truncated or contract-violating slot
