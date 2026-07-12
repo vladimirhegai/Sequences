@@ -8,6 +8,10 @@ export interface DeadTweenRepairResult {
   selectors: string[];
 }
 
+export interface DeadGsapDataflowAuditResult {
+  readonly findings: readonly string[];
+}
+
 type DomDocument = {
   querySelector(selector: string): unknown;
 };
@@ -161,6 +165,97 @@ function selectorMissing(document: DomDocument, selector: string): boolean {
     // Invalid CSS selectors are GSAP no-ops with a console warning too.
     return true;
   }
+}
+
+const IDENTIFIER = "[A-Za-z_$][\\w$]*";
+const PSEUDO_ELEMENT = /(^|[^\\]):{1,2}(?:before|after|first-line|first-letter|selection|backdrop|marker|placeholder|file-selector-button|part|slotted)\b/i;
+
+function escapedRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function variableQueryAssignments(source: string): Array<{
+  variable: string;
+  selector: string;
+  start: number;
+  end: number;
+}> {
+  const assignments: Array<{
+    variable: string;
+    selector: string;
+    start: number;
+    end: number;
+  }> = [];
+  const assignment = new RegExp(
+    `(?:\\b(?:const|let|var)\\s+)?(${IDENTIFIER})\\s*=\\s*${IDENTIFIER}\\s*\\.\\s*querySelector(?:All)?\\s*\\(\\s*((?:"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\x60(?:\\\\.|[^\\x60\\\\])*\\x60))\\s*\\)`,
+    "g",
+  );
+  for (const match of source.matchAll(assignment)) {
+    const start = match.index ?? 0;
+    if (!codePosition(source, start)) continue;
+    const selector = literalSelector(match[2]);
+    if (selector === undefined) continue;
+    assignments.push({
+      variable: match[1]!,
+      selector,
+      start,
+      end: start + match[0].length,
+    });
+  }
+  return assignments;
+}
+
+function gsapUsesVariable(source: string, variable: string, from: number): boolean {
+  const use = new RegExp(
+    `(?:${IDENTIFIER})\\s*\\.\\s*(?:to|from|fromTo|set)\\s*\\(\\s*${escapedRegExp(variable)}\\s*(?=,|\\))`,
+    "g",
+  );
+  for (const match of source.matchAll(use)) {
+    const start = match.index ?? 0;
+    if (start >= from && codePosition(source, start)) return true;
+  }
+  return false;
+}
+
+function auditScriptDeadGsapDataflow(source: string, document: DomDocument): string[] {
+  const findings: string[] = [];
+  for (const assignment of variableQueryAssignments(source)) {
+    if (!gsapUsesVariable(source, assignment.variable, assignment.end)) continue;
+    const reason = PSEUDO_ELEMENT.test(assignment.selector)
+      ? "querySelector cannot produce a DOM element for a pseudo-element selector"
+      : selectorMissing(document, assignment.selector)
+        ? "the literal selector matches no element in the parsed document"
+        : undefined;
+    if (!reason) continue;
+    findings.push(
+      `dead_gsap_target: variable "${assignment.variable}" receives ` +
+      `querySelector(${JSON.stringify(assignment.selector)}) and is passed to GSAP; ${reason}`,
+    );
+  }
+  return findings;
+}
+
+/**
+ * L3 static audit for the shallow query-result -> GSAP-target dataflow.
+ * This intentionally understands only one direct variable assignment: it is
+ * an AST-lite backstop, not a general JavaScript parser or rewriter.
+ */
+export function auditDeadGsapDataflow(html: string): DeadGsapDataflowAuditResult {
+  let document: DomDocument;
+  try {
+    document = parseHTML(html).document as unknown as DomDocument;
+  } catch {
+    return { findings: [] };
+  }
+  const findings: string[] = [];
+  html.replace(
+    /<script\b(?![^>]*\bsrc\s*=)(?![^>]*\bdata-sequences-host\b)[^>]*>([\s\S]*?)<\/script>/gi,
+    (_block, source: string) => {
+      findings.push(...auditScriptDeadGsapDataflow(source, document));
+      return _block;
+    },
+  );
+  return { findings: [...new Set(findings)] };
 }
 
 function repairScript(source: string, document: DomDocument): {

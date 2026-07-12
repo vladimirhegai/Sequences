@@ -10,7 +10,11 @@ interface Fixture {
   id: string;
   jobId: string;
   expectedRaw: Record<string, { artifactSha256: string; replaySha256?: string; outcome: "parsed" | "rejected" }>;
-  expectedSource: Record<string, { artifactSha256: string; replaySha256: string }>;
+  expectedSource: Record<string, {
+    artifactSha256: string;
+    replaySha256: string;
+    outcome?: "accepted" | "rejected";
+  }>;
 }
 
 // These hashes are deliberately of the persisted local artifacts, not copies
@@ -61,8 +65,8 @@ const FIXTURES: Fixture[] = [
       "storyboard-1-rejected.raw.txt": { artifactSha256: "7dfa968896f689e8a485f5daef62b40607c7d3fc4123b496980d5017ac4fa364", replaySha256: "bccef7656d570436edb3c28520f4685a03920a55bf940bc7ae60d01b9c6ff290", outcome: "rejected" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "8adcbe78f77ad6d45a6a08e85e64fea737e53dade29c4967d46e4900cfdb8a90" },
-      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "102fa22bb8bb3b2fa2ec1a2d5952587ab241fb0a4a4f8bf8062788bf90674718" },
+      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "0f8e95fe9a3769b60a8c155d8c3bed4477986ec06f3a943baeba6734032cdddc", outcome: "rejected" },
+      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "aefc470ecbdf096e1cceda17640a29cdb71fd16b6719b2bda830e7ad15781c6a", outcome: "rejected" },
     },
   },
   {
@@ -70,8 +74,8 @@ const FIXTURES: Fixture[] = [
     jobId: "refactor-review-normal-1-20260711",
     expectedRaw: {},
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "615a5d6217a9a9a952502aa33dcbeee7220c0b30ca8a19f8c1c22369bc76aace", replaySha256: "14f76a290a5185325ac07829c082516c610e4e4a3d5b30ebb26730a99018f565" },
-      "author-2-browser-rejected.html": { artifactSha256: "67c3fc17b64348c49a38da5aee1798306f4d1aa63377139843c2e2809b48e64d", replaySha256: "1f1b009cdc93f493234450f73d5b1356af649be3a42435367dd636cae7db4575" },
+      "author-1-browser-rejected.html": { artifactSha256: "615a5d6217a9a9a952502aa33dcbeee7220c0b30ca8a19f8c1c22369bc76aace", replaySha256: "549677430cedd0d02fe9013b23ace8da932c0cd428b3d2fd23f39dcd8be3b54c", outcome: "rejected" },
+      "author-2-browser-rejected.html": { artifactSha256: "67c3fc17b64348c49a38da5aee1798306f4d1aa63377139843c2e2809b48e64d", replaySha256: "ef699e6fcfbc679ab0547b3097da99535a6867970a0bec629ea589ead9d9f360", outcome: "rejected" },
     },
   },
 ];
@@ -179,7 +183,7 @@ async function main(): Promise<number> {
       try {
         const result = await replaySourceArtifact(projectDir, file);
         const replayHash = sha256(result.repairedHtml + JSON.stringify(result.storyboard));
-        if (replayHash !== expected.replaySha256) {
+        if (expected.outcome === "rejected" || replayHash !== expected.replaySha256) {
           console.error(`  FAIL ${name}: strict source replay drifted`);
           failures += 1;
         } else {
@@ -187,8 +191,14 @@ async function main(): Promise<number> {
           replayed += 1;
         }
       } catch (error) {
-        console.error(`  FAIL ${name}: ${error instanceof Error ? error.message : String(error)}`);
-        failures += 1;
+        const replayHash = sha256(String(error));
+        if (expected.outcome === "rejected" && replayHash === expected.replaySha256) {
+          console.log(`  PASS ${name} (expected strict-source rejection)`);
+          replayed += 1;
+        } else {
+          console.error(`  FAIL ${name}: ${error instanceof Error ? error.message : String(error)}`);
+          failures += 1;
+        }
       }
     }
   }
@@ -210,8 +220,12 @@ async function printExpectations(): Promise<void> {
       }
     }
     for (const file of sourceFiles(projectDir)) {
-      const result = await replaySourceArtifact(projectDir, file);
-      console.log(`  source ${path.basename(file)} ${JSON.stringify({ artifactSha256: sha256(fs.readFileSync(file)), replaySha256: sha256(result.repairedHtml + JSON.stringify(result.storyboard)) })}`);
+      try {
+        const result = await replaySourceArtifact(projectDir, file);
+        console.log(`  source ${path.basename(file)} ${JSON.stringify({ artifactSha256: sha256(fs.readFileSync(file)), replaySha256: sha256(result.repairedHtml + JSON.stringify(result.storyboard)), outcome: "accepted" })}`);
+      } catch (error) {
+        console.log(`  source ${path.basename(file)} ${JSON.stringify({ artifactSha256: sha256(fs.readFileSync(file)), replaySha256: sha256(String(error)), outcome: "rejected" })}`);
+      }
     }
   }
 }

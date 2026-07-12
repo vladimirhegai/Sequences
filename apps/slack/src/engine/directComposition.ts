@@ -73,6 +73,7 @@ import {
 } from "./pluginContract.ts";
 import { validateCompositionAgainstFrame } from "./frameValidation.ts";
 import { auditKitMarkupCompleteness } from "./kitMarkupAudit.ts";
+import { auditDeadGsapDataflow } from "./deadTweenRepair.ts";
 import {
   validateMotionDensity,
   type MotionDensityReport,
@@ -685,6 +686,9 @@ export async function validateDirectComposition(
   // surface as named findings the repair loop can act on.
   const kitMarkupAudit = auditKitMarkupCompleteness(html, normalized.scenes);
   errors.push(...kitMarkupAudit.errors);
+  // L3 catches the shallow query-result -> GSAP-target dataflow before a
+  // browser ever evaluates a null target or an invalid pseudo-element target.
+  errors.push(...auditDeadGsapDataflow(html).findings);
   const motionValidation = validateMotionDensity(
     html,
     normalized.scenes,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { stripDeadGsapTweens } from "../src/engine/deadTweenRepair.ts";
+import {
+  auditDeadGsapDataflow,
+  stripDeadGsapTweens,
+} from "../src/engine/deadTweenRepair.ts";
 
 function html(script: string): string {
   return `<!doctype html><html><body>
@@ -59,5 +62,32 @@ tl.to("#present", { opacity: 1 }, 1);`;
     expect(result.repairs).toBe(0);
     expect(result.html).toContain("#missing-comment");
     expect(result.html).toContain("#missing-string");
+  });
+
+  it("flags one-hop pseudo-element and absent-selector dataflow at the static gate", () => {
+    const result = auditDeadGsapDataflow(html(`
+const pseudo = document.querySelector(".cmp-value::after");
+tl.to(pseudo, { opacity: 1 }, 0);
+const absent = document.querySelector(".not-in-the-dom");
+tl.to(absent, { x: 10 }, 1);
+const live = document.querySelector("#present");
+tl.to(live, { x: 10 }, 2);`));
+
+    expect(result.findings).toHaveLength(2);
+    expect(result.findings[0]).toContain("dead_gsap_target:");
+    expect(result.findings[0]).toContain(".cmp-value::after");
+    expect(result.findings[1]).toContain(".not-in-the-dom");
+    expect(result.findings.join("\n")).not.toContain("#present");
+  });
+
+  it("does not guess through a second assignment or dynamic selector", () => {
+    const result = auditDeadGsapDataflow(html(`
+const query = document.querySelector(".not-in-the-dom");
+const target = query;
+tl.to(target, { x: 10 }, 0);
+const dynamic = document.querySelector(selector);
+tl.to(dynamic, { x: 10 }, 1);`));
+
+    expect(result.findings).toEqual([]);
   });
 });

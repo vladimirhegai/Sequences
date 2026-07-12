@@ -3041,6 +3041,21 @@ describe("direct HyperFrames composition", () => {
     expect(validation.errors).toEqual([]);
   });
 
+  it("rejects one-hop dead GSAP query dataflow in L3 before browser QA", async () => {
+    const dir = projectDir();
+    const value = draft();
+    value.html = value.html.replace(
+      "    window.__timelines[\"relay-launch\"] = tl;",
+      "    const ghost = document.querySelector('.cmp-value::after');\n" +
+        "    tl.to(ghost, { opacity: 1 }, 2);\n" +
+        "    window.__timelines[\"relay-launch\"] = tl;",
+    );
+    const validation = await validateDirectComposition(dir, value);
+    expect(validation.ok).toBe(false);
+    expect(validation.errors.some((error) => error.startsWith("dead_gsap_target:"))).toBe(true);
+    expect(validation.errors.join("\n")).toContain(".cmp-value::after");
+  });
+
   it("normalizes model-authored display/visibility tweens before static validation", async () => {
     const dir = projectDir();
     const value = draft();

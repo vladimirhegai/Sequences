@@ -509,7 +509,7 @@ Goal (handoff §6). Mechanical moves, no behavior change; keep import facades.
 - Verify: registry test green; replay:all.
 
 ### S5.4 Shallow dead-dataflow check for GSAP targets
-- [ ] Extend `deadTweenRepair.ts`/static gate: flag `querySelector` results
+- [x] Extend `deadTweenRepair.ts`/static gate: flag `querySelector` results
   containing pseudo-elements and provably-absent literal selectors *through
   one variable assignment* (the SignalDock `.cmp-value::after` → null → GSAP
   class). No general JS rewriter; AST-lite only.
@@ -1168,3 +1168,25 @@ tests (20/20); full Slack unit suite; root `npm test` including browser tests;
 invocation hit the command wrapper's 124s limit without a test failure; the
 same suite completed green with a 300s allowance. No paid probe, publish, or
 deploy.
+
+## S5.4 — 2026-07-12 — DONE
+Added an AST-lite L3 dead-dataflow audit beside `deadTweenRepair.ts`. It tracks
+one direct variable assignment from a literal `querySelector`/`querySelectorAll`
+and flags pseudo-element selectors plus selectors absent from the parsed final
+DOM when that variable is passed to a GSAP tween. Dynamic selectors, comments,
+live targets, and second-hop assignments remain outside the bounded check.
+Wired the audit into `validateDirectComposition` as the registered blocking
+`dead_gsap_target` finding, with minimized unit and direct-composition
+regressions proving the failure is static rather than browser QA. Extended
+`replay:all` expectations to preserve four persisted SignalDock/Briefly source
+artifacts as intentional strict-source rejections with the new finding.
+Files: `src/engine/deadTweenRepair.ts`, `src/engine/directComposition.ts`,
+`src/engine/sentinel.ts`, `scripts/replayAll.ts`,
+`test/deadTweenRepair.test.ts`, `test/directComposition.test.ts`, and this
+plan. Verification: root typecheck; Slack typecheck; focused dead-tween,
+direct-composition, and Sentinel tests (199/199); full root `npm test`
+(including Slack browser coverage); exact `replay:all` (13/0/0); model-free
+demo, MCP demo, direct demo, and `sequence:check --demo --no-mcp --format both`.
+No paid probe, publish, or deploy. The four strict-source replay outcomes
+changed deliberately from browser-rejected artifacts to expected L3 static
+rejections; artifact bytes remain frozen.

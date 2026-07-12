@@ -1094,6 +1094,21 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "still catch any load-bearing missing animation. Telemetry tag dead-tween-strip.",
   },
 
+  {
+    id: "runtime.dead-gsap-target",
+    group: "runtime",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["dead_gsap_target"],
+    promptCostChars: 350,
+    test: "test/deadTweenRepair.test.ts",
+    addedBecause:
+      "S5.4: the existing dead-tween normalizer only sees direct GSAP " +
+      "arguments. The L3 audit covers one authored variable assignment so " +
+      "pseudo-element query results and literal selectors absent from the final " +
+      "DOM cannot burn a browser attempt as a null or empty GSAP target.",
+  },
+
   // ── L3 static — linkedom / regex / plan-stage audits; cheap findings-retry ──
   {
     id: "recipes.contract",
@@ -1706,6 +1721,7 @@ export const FINDING_SOURCE_FILES: readonly string[] = [
   "runner/repairs.ts",
   "runner/repairs/implementation.ts",
   "runner/scaffold.ts",
+  "deadTweenRepair.ts",
   "runner/storyboardAudit.ts",
   "sceneSlots.ts",
   // timeRamp's findings are prose-form today (no codes), but its errors flow
