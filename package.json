@@ -4,9 +4,6 @@
   "version": "0.0.1",
   "description": "Sequences — agent-first motion graphics editor for SaaS product video, built on HyperFrames.",
   "type": "module",
-  "bin": {
-    "sequences": "./apps/sequences/src/cli.ts"
-  },
   "engines": {
     "node": ">=22.18"
   },
@@ -18,16 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:perf": "node scripts/perf-budget.mjs",
-    "test:forge-ui": "node scripts/forge-ui-smoke.mjs",
-    "test:golden": "node scripts/golden-renders.mjs fixtures/sequences/starter",
-    "test:ci": "npm run typecheck && npm test && npm run test:perf",
-    "sequences": "node apps/sequences/src/cli.ts app examples/sequences/demo-promo",
-    "sequences:exe": "node apps/sequences/src/cli.ts exe examples/sequences/demo-promo",
-    "sequences:web": "node apps/sequences/src/cli.ts studio examples/sequences/demo-promo",
-    "forge": "node apps/forge/src/cli.ts serve",
-    "compile:example": "node apps/sequences/src/cli.ts compile examples/sequences/demo-promo",
-    "render:example": "node apps/sequences/src/cli.ts render examples/sequences/demo-promo"
+    "test:ci": "npm run typecheck && npm test"
   },
   "devDependencies": {
     "@types/node": "^25.9.2",

@@ -20,8 +20,3 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:perf
-      - name: Golden render determinism
-        run: npm run test:golden
-      - name: Primitive probe thumbnails
-        run: node apps/sequences/src/cli.ts thumbs fixtures/sequences/starter --primitives

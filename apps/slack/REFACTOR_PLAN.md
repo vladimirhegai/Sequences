@@ -232,7 +232,7 @@ step: delete, then prove the Slack surface still works
 plus root `npm test` and root `npm run typecheck` for the kept packages).
 
 ### SP.1 Delete the retired apps
-- [ ] `git rm -r apps/forge apps/sequences examples/forge examples/sequences
+- [x] `git rm -r apps/forge apps/sequences examples/forge examples/sequences
   fixtures/sequences`. Root `package.json`: remove the `bin` entry
   (`apps/sequences/src/cli.ts`), the `sequences*`, `forge`,
   `compile:example`, `render:example`, `test:perf`, `test:forge-ui`,
@@ -693,3 +693,15 @@ Deleted the confirmed-unreferenced `apps/slack/src/engine/planRunner.ts`;
 the active demo path already uses `@sequences/core` directly. No orphaned
 tests or importers were present. Verification: Slack typecheck, Slack unit
 tests, and the model-free Slack demo passed.
+
+## SP.1 â€” 2026-07-11 â€” DONE
+Deleted the retired `apps/forge`, `apps/sequences`, `examples/forge`,
+`examples/sequences`, and `fixtures/sequences` trees plus the listed Forge,
+golden-render, performance, and UI-smoke scripts. Removed the retired root
+package scripts/bin and updated `test:ci`, CI, the package lock, and the
+platform boundary test. The three extension fixtures consumed by the core
+test suite moved to `packages/core/test/fixtures/extensions`; the Slack Studio
+source test now resolves from its own workspace. Verification: root
+typecheck and full root `npm test` passed; the purge-sensitive core/Studio
+tests passed 12/12; Slack typecheck, unit suite (75 files / 1,275 tests), and
+model-free demo passed. No paid probe was run.

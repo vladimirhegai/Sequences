@@ -31,7 +31,10 @@ describe("Studio catalog end-to-end discovery", () => {
   });
 
   it("keeps Studio UI state derived from the same catalogs", () => {
-    const server = fs.readFileSync(path.resolve("studio/server.ts"), "utf8");
+    const server = fs.readFileSync(
+      path.resolve(import.meta.dirname, "..", "studio", "server.ts"),
+      "utf8",
+    );
     for (const symbol of [
       "COMPONENT_CATALOG",
       "ASSET_LIBRARY",
