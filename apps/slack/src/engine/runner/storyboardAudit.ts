@@ -258,6 +258,77 @@ function coLocateHeroMetricStation(scene: DirectScene): DirectScene {
 }
 
 /**
+ * A typed metric opener that reveals one hero ring and then draws its one
+ * subordinate rail needs a monotonic camera route. A full-scene connective
+ * drift leaves the component pop/draw as the dominant centroid signal; two
+ * small authored settles then read as a direction reversal and the hairline
+ * can remain below the temporal-change floor. Promote only the first scene's
+ * exact ring+rail, one-target-drift pattern to one restrained push-in. Later
+ * schedule normalizers still own protected holds and final landing reserve.
+ */
+function promoteHeroMetricOpenerDrift(scene: DirectScene, sceneIndex: number): DirectScene {
+  if (
+    sceneIndex !== 0 ||
+    scene.startSec > 0.05 ||
+    scene.durationSec < 2.5 ||
+    scene.camera?.path.length !== 1 ||
+    !scene.components?.length
+  ) {
+    return scene;
+  }
+  const focal = scene.components.find((component) =>
+    component.id === scene.spatialIntent?.focalPart &&
+    component.role === "hero" &&
+    component.kind === "progress-ring"
+  );
+  if (!focal) return scene;
+  const supports = scene.components.filter((component) =>
+    component.id !== focal.id &&
+    component.role === "support" &&
+    component.kind === "progress"
+  );
+  if (supports.length !== 1 || scene.components.length !== 2) return scene;
+  const [move] = scene.camera.path;
+  if (
+    !move ||
+    move.move !== "drift" ||
+    move.toPart !== focal.id ||
+    move.fromPart && move.fromPart !== focal.id
+  ) {
+    return scene;
+  }
+  const focalReveal = scene.beats?.some((beat) =>
+    beat.component === focal.id && beat.kind === "open" &&
+    beat.atSec <= scene.startSec + 1.25
+  );
+  const supportReveal = scene.beats?.some((beat) =>
+    beat.component === supports[0]!.id &&
+    (beat.kind === "open" || beat.kind === "progress")
+  );
+  if (!focalReveal || !supportReveal) return scene;
+  const startSec = Math.max(move.startSec, scene.startSec + 0.5);
+  const durationSec = Math.max(0.35, scene.startSec + scene.durationSec - startSec);
+  const note =
+    `camera-opener-converge: promoted the targeted metric drift to a restrained push-in ` +
+    `so the ring/rail reveal has one monotonic route`;
+  return {
+    ...scene,
+    camera: {
+      ...scene.camera,
+      path: [{
+        ...move,
+        move: "push-in",
+        startSec,
+        durationSec: Math.round(durationSec * 1000) / 1000,
+        zoom: Math.max(move.zoom ?? 1, 1.12),
+        ease: "seqGlide",
+      }],
+    },
+    sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+  };
+}
+
+/**
  * Complete every camera scene's station map without moving an authored cell.
  *
  * This is deliberately pure and idempotent so parsed plans, paid-plan cache
@@ -269,8 +340,11 @@ export function completeStoryboardWorldLayouts(
   scenes: DirectScene[],
 ): CompletedStoryboardWorldLayouts {
   const completions: WorldLayoutCompletion[] = [];
-  const completedScenes = scenes.map((sourceScene) => {
-    const scene = coLocateHeroMetricStation(sourceScene);
+  const completedScenes = scenes.map((sourceScene, sceneIndex) => {
+    const scene = promoteHeroMetricOpenerDrift(
+      coLocateHeroMetricStation(sourceScene),
+      sceneIndex,
+    );
     if (!scene.camera?.path?.length) return scene;
     const ordered: string[] = [];
     const addRegion = (region: string | undefined): void => {

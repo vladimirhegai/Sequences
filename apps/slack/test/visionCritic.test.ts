@@ -109,7 +109,7 @@ describe("WS-I vision critic evidence", () => {
   });
 
   it("degrades to the strip and respects the independent kill switch", () => {
-    expect(cleanCriticSkipAllowed()).toBe(false);
+    expect(cleanCriticSkipAllowed()).toBe(true);
     expect(visionCriticImages(qa(false))).toHaveLength(1);
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "0");
     expect(visionCriticEnabled()).toBe(false);

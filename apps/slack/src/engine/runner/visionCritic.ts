@@ -9,11 +9,16 @@ export function visionCriticEnabled(): boolean {
   return slackSequencesEnvRawValue("SLACK_SEQUENCES_VISION_CRITIC") !== "0";
 }
 
-/** A clean deterministic report cannot waive the separate visual-taste pass. */
+/**
+ * A rendered draft that is strict-clean with zero measured quality penalty can
+ * waive the separate taste-tail call. The ladder still runs the vision critic
+ * for every non-pristine draft, and `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0`
+ * remains the explicit always-run override at the call site.
+ */
 export function cleanCriticSkipAllowed(
-  visionEnabled = visionCriticEnabled(),
+  _visionEnabled = visionCriticEnabled(),
 ): boolean {
-  return !visionEnabled;
+  return true;
 }
 
 /**

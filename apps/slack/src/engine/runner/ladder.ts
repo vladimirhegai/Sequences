@@ -97,6 +97,7 @@ import {
   lockedSceneGraphError,
   quarantineStaticInteractionErrors,
   recoverByQuarantiningInteractions,
+  repairCompositionWashoutIssues,
   repairContrastAaIssues,
   repairStrategyAfterStaticRejection,
   volunteeredCutBoundaries,
@@ -3523,6 +3524,80 @@ async function authorCompositionLoop(
         validation = candidateValidation;
         browserQa = candidateQa;
         staticRepairWarnings = afterStaticWarnings;
+      }
+      // Rendered washout is taste evidence, not a paid-retry obligation. When
+      // the browser proves that an exact declared focal collapses into a pale
+      // high-key field, try one host-owned, selector-scoped contrast plate
+      // inside this same source attempt. Adoption remains evidence gated: all
+      // targeted findings clear, no diagnostics regress, and global penalty
+      // strictly decreases. Otherwise the authored draft remains untouched.
+      if (
+        browserQa.ok &&
+        browserQa.issues?.some((issue) => issue.code === "composition_washed_out")
+      ) {
+        const washoutRepair = repairCompositionWashoutIssues(draft, browserQa);
+        if (washoutRepair.repaired.length) {
+          const candidateValidation = await validateDirectComposition(
+            args.projectDir,
+            washoutRepair.draft,
+          );
+          if (candidateValidation.ok) {
+            const candidateQa = await inspectDirectComposition(
+              args.projectDir,
+              washoutRepair.draft,
+              { captureGuide: false },
+            );
+            const afterStaticWarnings = [
+              ...candidateValidation.frameWarnings,
+              ...candidateValidation.motionWarnings,
+            ];
+            const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
+            const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
+            const repairedSelectors = new Set(washoutRepair.repaired);
+            const targetCleared = !(candidateQa.issues ?? []).some((issue) =>
+              issue.code === "composition_washed_out" &&
+              issue.sceneId && issue.part &&
+              repairedSelectors.has(
+                `[data-scene="${issue.sceneId}"] [data-part="${issue.part}"]`,
+              )
+            );
+            const staticWarningsOk = hasNoNewDiagnostics(
+              staticRepairWarnings,
+              afterStaticWarnings,
+            );
+            const runtimeErrorsOk = hasNoNewDiagnostics(
+              browserQa.errors ?? [],
+              candidateQa.errors ?? [],
+            );
+            if (
+              !candidateQa.infraError &&
+              candidateQa.ok &&
+              targetCleared &&
+              afterPenalty < beforePenalty &&
+              staticWarningsOk &&
+              runtimeErrorsOk
+            ) {
+              process.stderr.write(
+                `[author] deterministically deepened ${washoutRepair.repaired.join(", ")}: ` +
+                  `penalty ${beforePenalty} -> ${afterPenalty}\n`,
+              );
+              recordSentinelNormalization("composition-washout", washoutRepair.repaired.length);
+              summary.strategyChanges.push(
+                `composition-washout:${washoutRepair.repaired.join(",")}`,
+              );
+              draft = washoutRepair.draft;
+              validation = candidateValidation;
+              browserQa = candidateQa;
+              staticRepairWarnings = afterStaticWarnings;
+            } else {
+              process.stderr.write(
+                `[author] deterministic washout repair did not clear cleanly ` +
+                  `(targetCleared=${targetCleared}, penalty ${beforePenalty}->${afterPenalty}); ` +
+                  `keeping the previous draft\n`,
+              );
+            }
+          }
+        }
       }
       // Browser-measured within-scene gaze whiplash has a small deterministic
       // schedule repair when (and only when) moment/interaction bindings survive:

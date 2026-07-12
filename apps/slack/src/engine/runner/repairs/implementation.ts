@@ -2316,6 +2316,75 @@ export function repairContrastAaIssues(
     : { draft: { ...draft, html }, repaired: [...bySelector.keys()] };
 }
 
+const WASHOUT_PLATE_BACKGROUND = "rgb(24,32,47)";
+const WASHOUT_PLATE_FOREGROUND = "rgb(248,250,252)";
+
+function safeScenePartId(value: string | undefined): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+/**
+ * Give one measured, declared focal a denser value plate when rendered-pixel
+ * evidence proves that a high-key field and the focal have collapsed into the
+ * same pale band. This is intentionally narrower than a generic taste rewrite:
+ * the issue must name an exact scene + part, and that part must be either a
+ * typed hero component or the scene's declared spatial focal.
+ *
+ * The caller re-runs static + browser QA and adopts only when every targeted
+ * washout clears, runtime/static diagnostics do not regress, and the global
+ * quality penalty strictly decreases. The CSS itself never touches the whole
+ * frame, hue basis, layout geometry, or unrelated surfaces.
+ */
+export function repairCompositionWashoutIssues(
+  draft: DirectCompositionDraft,
+  browserQa: DirectBrowserQaResult,
+): { draft: DirectCompositionDraft; repaired: string[] } {
+  const selectors = new Set<string>();
+  for (const issue of browserQa.issues ?? []) {
+    if (
+      issue.code !== "composition_washed_out" ||
+      !safeScenePartId(issue.sceneId) ||
+      !safeScenePartId(issue.part)
+    ) {
+      continue;
+    }
+    const scene = draft.storyboard.find((entry) => entry.id === issue.sceneId);
+    if (!scene) continue;
+    const component = scene.components?.find((entry) => entry.id === issue.part);
+    const declaredFocal = component?.role === "hero" || scene.spatialIntent?.focalPart === issue.part;
+    if (!declaredFocal) continue;
+    selectors.add(`[data-scene="${issue.sceneId}"] [data-part="${issue.part}"]`);
+  }
+  if (!selectors.size) return { draft, repaired: [] };
+
+  const washoutStylePattern =
+    /<style\b[^>]*\bdata-sequences-washout-repair\b[^>]*>([\s\S]*?)<\/style>/gi;
+  const existingBodies = [...draft.html.matchAll(washoutStylePattern)]
+    .map((match) => match[1]?.trim() ?? "")
+    .filter(Boolean);
+  const existingBody = existingBodies.join("\n");
+  const repaired = [...selectors].filter((selector) => !existingBody.includes(`${selector}{`));
+  if (!repaired.length) return { draft, repaired: [] };
+  const rules = repaired.map((selector) => [
+    `${selector}{background:${WASHOUT_PLATE_BACKGROUND} !important;` +
+      `color:${WASHOUT_PLATE_FOREGROUND} !important;` +
+      "border-color:rgba(255,255,255,.18) !important;" +
+      "box-shadow:0 18px 48px rgba(10,15,26,.22) !important;}",
+    `${selector} .cmp-label,${selector} .cmp-value,${selector} .cmp-text{` +
+      `color:${WASHOUT_PLATE_FOREGROUND} !important;}`,
+  ].join("\n"));
+  const styleBody = [...existingBodies, ...rules].filter(Boolean).join("\n");
+  const style = `<style data-sequences-washout-repair>\n${styleBody}\n</style>`;
+  let html = draft.html.replace(
+    /\n?\s*<style\b[^>]*\bdata-sequences-washout-repair\b[^>]*>[\s\S]*?<\/style>/gi,
+    "",
+  );
+  html = /<\/head>/i.test(html)
+    ? html.replace(/<\/head>/i, () => `${style}</head>`)
+    : `${style}\n${html}`;
+  return { draft: { ...draft, html }, repaired };
+}
+
 /** Coverage floor the sparse framing audit enforces (layoutInspector SPARSE_COVERAGE_MIN). */
 // Aim above the 18% audit floor. Fitting includes optical breathing room and
 // browser geometry is pixel-quantized, so targeting the threshold exactly can

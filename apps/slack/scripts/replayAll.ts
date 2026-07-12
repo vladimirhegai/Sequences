@@ -126,6 +126,14 @@ const FIXTURES: Fixture[] = [
     },
     expectedSource: {},
   },
+  {
+    id: "ProofGrid I",
+    jobId: "lp3-state-capsule-20260712-i",
+    expectedRaw: {
+      "storyboard.json": { artifactSha256: "5bc2f5e9b830f32b0123e14a35b62521088342b6b82b5a7975a37e16dcf46f2d", replaySha256: "c2dc46c920fee443fc33985b1670d2b2bacc833395b381b467b75a87040b73d3", outcome: "parsed" },
+    },
+    expectedSource: {},
+  },
 ];
 
 const appDir = path.resolve(import.meta.dirname, "..");

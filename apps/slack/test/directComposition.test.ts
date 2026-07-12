@@ -40,6 +40,7 @@ import {
   auditDisplayTypeBudget,
   injectDisplayTypeMoments,
 } from "../src/engine/compositionRunner.ts";
+import { repairCompositionWashoutIssues } from "../src/engine/runner/repairs.ts";
 import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
 import {
   commitDirectComposition,
@@ -1947,6 +1948,64 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     expect(repaired.draft.html).not.toContain("span.cmp-label{color:");
   });
 
+  it("deepens only an exact declared focal from measured washout evidence", () => {
+    const before = draft();
+    before.storyboard[0] = {
+      ...before.storyboard[0]!,
+      spatialIntent: {
+        version: 1,
+        focalPart: "hero-title",
+        composition: "one centered high-key hero",
+        relationships: ["the headline is the sole focal"],
+      },
+      components: [{
+        version: 1,
+        id: "hero-title",
+        kind: "headline",
+        role: "hero",
+      }],
+    };
+    before.html = before.html.replace(
+      '<h1 id="hook-title">',
+      '<h1 id="hook-title" class="cmp-headline" data-part="hero-title"><span class="cmp-text">',
+    ).replace(
+      "Trace the impossible.</h1>",
+      "Trace the impossible.</span></h1>",
+    );
+    const repaired = repairCompositionWashoutIssues(before, {
+      ...base,
+      issues: [{
+        code: "composition_washed_out",
+        severity: "warning",
+        time: 2,
+        sceneId: "hook",
+        part: "hero-title",
+        selector: '[data-part="hero-title"]',
+        message: "The field and focal collapse into one pale band.",
+        source: "sequences",
+      }, {
+        code: "composition_washed_out",
+        severity: "warning",
+        time: 6,
+        sceneId: "payoff",
+        part: "unowned",
+        selector: '[data-part="unowned"]',
+        message: "Not a declared focal.",
+        source: "sequences",
+      }],
+      warnings: [],
+    });
+
+    expect(repaired.repaired).toEqual([
+      '[data-scene="hook"] [data-part="hero-title"]',
+    ]);
+    expect(repaired.draft.html).toContain("data-sequences-washout-repair");
+    expect(repaired.draft.html).toContain(
+      '[data-scene="hook"] [data-part="hero-title"]{background:rgb(24,32,47) !important;',
+    );
+    expect(repaired.draft.html).not.toContain('[data-part="unowned"]{');
+  });
+
   it("uses a unique scene-scoped repair selector for a compact contrast audit label", () => {
     const repaired = repairContrastAaIssues(draft(), {
       ...base,
@@ -2147,9 +2206,39 @@ describe("WS-I critic adoption transaction", () => {
     warnings: [],
   });
 
+  it("skips the enabled visual critic when rendered QA is pristine", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    const value = longDraft();
+    const complete = vi.fn();
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "clean visual critic",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+    const before = {
+      draft: value,
+      raw: response(value),
+      attempts: 1,
+      browserQa: cleanQa(),
+    };
+    const result = await applyContinuityCritique(provider, {
+      brief: "Launch Relay",
+      projectDir: projectDir(),
+      skills: skills(),
+      lockedStoryboard: value.storyboard,
+    }, before);
+
+    expect(result).toBe(before);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it("never sends critic images to the configured text-only OpenRouter source model", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     // This recreates the dangerous inheritance path: `primary` omits a
     // storyboard override, so OpenRouter would otherwise fall through to the
     // configured source model while retaining the PNG attachments.
@@ -2211,6 +2300,7 @@ describe("WS-I critic adoption transaction", () => {
   it("fails safe before dispatch when an API provider has no audited image model", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     const value = longDraft();
     const dir = projectDir();
     const visualQa = {
@@ -2257,6 +2347,7 @@ describe("WS-I critic adoption transaction", () => {
   it("uses the fresh visual baseline and publishes only the accepted candidate generation", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "0");
     const value = longDraft();
     const dir = projectDir();
@@ -2357,6 +2448,7 @@ describe("WS-I critic adoption transaction", () => {
   it("rejects the repaired film when final evidence publication fails", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "0");
     const value = longDraft();
     const dir = projectDir();
@@ -2423,6 +2515,7 @@ describe("WS-I critic adoption transaction", () => {
   it("applies the same unpublished-evidence transaction to a scene-scoped repair", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     vi.stubEnv("SLACK_SEQUENCES_CRITIC_SLOT_REPAIR", "1");
     const dir = projectDir();
     const storyboard = longDraft().storyboard;
@@ -2526,6 +2619,7 @@ describe("WS-I critic adoption transaction", () => {
   it("keeps the pre-critique draft when the enabled vision transport is unavailable", async () => {
     vi.stubEnv("SLACK_SEQUENCES_CREATIVE_CRITIC", "1");
     vi.stubEnv("SLACK_SEQUENCES_VISION_CRITIC", "1");
+    vi.stubEnv("SLACK_SEQUENCES_CRITIC_SKIP_CLEAN", "0");
     const value = longDraft();
     const dir = projectDir();
     const visualQa = {
@@ -5561,6 +5655,74 @@ describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", ()
       completions: [],
     });
     expect(scene.components?.every((component) => component.region === undefined)).toBe(true);
+  });
+
+  it("promotes one typed metric-opener drift into a monotonic push-in", () => {
+    const scene: DirectScene = {
+      id: "metric-open",
+      title: "Metric opens",
+      purpose: "Reveal one ring and its subordinate rail",
+      startSec: 0,
+      durationSec: 3.5,
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric-ring",
+        composition: "one centered metric station",
+        relationships: ["the support rail develops beneath the hero ring"],
+      },
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "drift",
+          toPart: "metric-ring",
+          startSec: 0,
+          durationSec: 3.5,
+          zoom: 1.03,
+          ease: "seqDrift",
+        }],
+      },
+      components: [
+        { version: 1, id: "metric-ring", kind: "progress-ring", role: "hero" },
+        { version: 1, id: "metric-rail", kind: "progress", role: "support" },
+      ],
+      beats: [{
+        version: 1,
+        id: "ring-open",
+        sceneId: "metric-open",
+        component: "metric-ring",
+        kind: "open",
+        atSec: 0.5,
+        durationSec: 0.6,
+      }, {
+        version: 1,
+        id: "rail-open",
+        sceneId: "metric-open",
+        component: "metric-rail",
+        kind: "open",
+        atSec: 2,
+        durationSec: 0.8,
+      }],
+    };
+    const completed = completeStoryboardWorldLayouts([scene]);
+    expect(completed.scenes[0]!.camera!.path).toEqual([
+      expect.objectContaining({
+        move: "push-in",
+        toPart: "metric-ring",
+        startSec: 0.5,
+        durationSec: 3,
+        zoom: 1.12,
+        ease: "seqGlide",
+      }),
+    ]);
+    expect(completed.scenes[0]!.sentinelNormalizations).toContainEqual(
+      expect.stringContaining("camera-opener-converge"),
+    );
+    expect(completeStoryboardWorldLayouts(completed.scenes)).toEqual({
+      scenes: completed.scenes,
+      completions: [],
+    });
+    expect(scene.camera!.path[0]!.move).toBe("drift");
   });
 
   it("uses a connective station stride so a two-station camera route has no blank midpoint", () => {

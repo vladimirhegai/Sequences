@@ -10,8 +10,22 @@ import {
   sourceRetryFeedbackForBrowserQa,
 } from "../src/engine/runner/browserQuality.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
+import { repairCompositionWashoutIssues } from "../src/engine/runner/repairs.ts";
 
 const roots: string[] = [];
+const proofGridIDir = path.resolve(
+  import.meta.dirname,
+  "../.data/projects/lp3-state-capsule-20260712-i",
+);
+const proofGridIQa = path.join(
+  proofGridIDir,
+  "qa-cache",
+  "f1b6415949d3724f2f00395de053b839.json",
+);
+const proofGridIAvailable =
+  fs.existsSync(path.join(proofGridIDir, "planning", "storyboard.json")) &&
+  fs.existsSync(path.join(proofGridIDir, "composition", "index.html")) &&
+  fs.existsSync(proofGridIQa);
 
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -63,6 +77,70 @@ async function inspect(id: string, focalColor: string) {
 }
 
 describe("washout strict-polish browser policy", () => {
+  it.runIf(proofGridIAvailable)(
+    "clears both exact ProofGrid I focal washouts without changing the scene graph",
+    async () => {
+      const storyboardPayload = JSON.parse(fs.readFileSync(
+        path.join(proofGridIDir, "planning", "storyboard.json"),
+        "utf8",
+      )) as { storyboard: DirectScene[] };
+      const qaPayload = JSON.parse(fs.readFileSync(proofGridIQa, "utf8")) as {
+        result: Awaited<ReturnType<typeof inspectDirectComposition>>;
+      };
+      const draft = {
+        storyboard: storyboardPayload.storyboard,
+        html: fs.readFileSync(path.join(proofGridIDir, "composition", "index.html"), "utf8"),
+      };
+      const repair = repairCompositionWashoutIssues(draft, qaPayload.result);
+      expect(repair.repaired).toEqual([
+        '[data-scene="shot-4-approval"] [data-part="approval-stat-card"]',
+        '[data-scene="shot-5-ready"] [data-part="lockup-headline"]',
+      ]);
+      const after = await inspectDirectComposition(proofGridIDir, repair.draft, {
+        captureGuide: false,
+      });
+      expect(after.infraError).toBeUndefined();
+      expect(after.ok).toBe(true);
+      expect(after.issues.filter((issue) => issue.code === "composition_washed_out"))
+        .toEqual([]);
+      expect(browserQualityPenalty(after)).toBeLessThan(
+        browserQualityPenalty(qaPayload.result),
+      );
+    },
+    75_000,
+  );
+
+  it("clears a measured focal washout with one guarded contrast plate", async () => {
+    const priorContinuous = process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION;
+    const priorComposition = process.env.SLACK_SEQUENCES_COMPOSITION;
+    process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION = "0";
+    process.env.SLACK_SEQUENCES_COMPOSITION = "0";
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-washout-repair-"));
+    roots.push(dir);
+    initializeProject(dir, { name: "washout-repair", brandName: "washout-repair", seedScreenshot: false });
+    try {
+      const draft = highKeyFilm("washout-repair", "#dcdcdc");
+      const before = await inspectDirectComposition(dir, draft, { captureGuide: false });
+      expect(before.issues.some((issue) => issue.code === "composition_washed_out")).toBe(true);
+
+      const repair = repairCompositionWashoutIssues(draft, before);
+      expect(repair.repaired).toEqual([
+        '[data-scene="hero"] [data-part="hero-surface"]',
+      ]);
+      const after = await inspectDirectComposition(dir, repair.draft, { captureGuide: false });
+      expect(after.infraError).toBeUndefined();
+      expect(after.ok).toBe(true);
+      expect(after.issues.filter((issue) => issue.code === "composition_washed_out"))
+        .toEqual([]);
+      expect(browserQualityPenalty(after)).toBeLessThan(browserQualityPenalty(before));
+    } finally {
+      if (priorContinuous === undefined) delete process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION;
+      else process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION = priorContinuous;
+      if (priorComposition === undefined) delete process.env.SLACK_SEQUENCES_COMPOSITION;
+      else process.env.SLACK_SEQUENCES_COMPOSITION = priorComposition;
+    }
+  }, 75_000);
+
   it("keeps washout out of paid source retries while ranking the contrasted draft", async () => {
     const priorContinuous = process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION;
     const priorComposition = process.env.SLACK_SEQUENCES_COMPOSITION;
