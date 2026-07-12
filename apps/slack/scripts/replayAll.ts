@@ -90,6 +90,14 @@ const FIXTURES: Fixture[] = [
       "author-2-static-rejected.html": { artifactSha256: "e617d4ac161742073bf29796a369951677e2c643aa788523cfb53a28dfdfa794", replaySha256: "7114b406e85034515dcc96f0f0f851ecdcdbb6e8bc6f148825a00926e32d1b79", outcome: "accepted" },
     },
   },
+  {
+    id: "ProofLine E",
+    jobId: "lp3-state-capsule-20260712-e",
+    expectedRaw: {},
+    expectedSource: {
+      "author-1-browser-rejected.html": { artifactSha256: "38d5aaa59a78bab243e8094e27d7fd6967f16dc40f15a12d3840474bfbb9b74b", replaySha256: "32d994673371213e06d40e37112f74046235ed55b0de9647e6328dd0bf0b6107", outcome: "accepted" },
+    },
+  },
 ];
 
 const appDir = path.resolve(import.meta.dirname, "..");

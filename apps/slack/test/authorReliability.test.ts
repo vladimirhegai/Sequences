@@ -15,6 +15,7 @@ import {
   HOST_PLAN_ISLAND_IDS,
   injectMissingLivenessBeats,
   mergeEmbeddedDevelopmentScenes,
+  normalizeInteractionActors,
   reconcileCameraWorldPlanes,
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
@@ -23,6 +24,7 @@ import {
   repairMalformedFromToCalls,
   quoteBareCssVarsInInlineScripts,
   stripInvalidSvgPathPlaceholders,
+  scopeRingValueGeometryStyles,
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
   stripAllHostPlanIslands,
@@ -2055,5 +2057,71 @@ describe("hasPausedTimeline — Sentinel Phase 1 false-reject fix", () => {
 
   it("rejects a timeline that is not paused (even with a nested config)", () => {
     expect(hasPausedTimeline('gsap.timeline({ defaults: { ease: "none" } });')).toBe(false);
+  });
+});
+
+describe("typed component and interaction source ownership", () => {
+  it("scopes centered ring value geometry away from stat-card values", () => {
+    const source = `<!doctype html><html><head><style>
+.cmp-value {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cmp-value { font-variant-numeric: tabular-nums; }
+.cmp-ring .cmp-value { color: cyan; }
+</style></head><body>
+<div data-component="progress-ring"><div class="cmp-value">43%</div></div>
+<div data-component="stat-card"><div class="cmp-value">94%</div></div>
+</body></html>`;
+    const result = scopeRingValueGeometryStyles(source);
+    expect(result.repairs).toBe(1);
+    expect(result.html).toContain(
+      '[data-component="progress-ring"] .cmp-value {\n  position: absolute;',
+    );
+    expect(result.html).toContain(".cmp-value { font-variant-numeric: tabular-nums; }");
+    expect(result.html).toContain(".cmp-ring .cmp-value { color: cyan; }");
+  });
+
+  it("does not guess when the geometry is not a centered ring signature", () => {
+    const source = `<style>.cmp-value{position:absolute;inset:0}</style>` +
+      `<div data-component="progress-ring"><div class="cmp-value"></div></div>` +
+      `<div data-component="stat-card"><div class="cmp-value"></div></div>`;
+    expect(scopeRingValueGeometryStyles(source)).toEqual({ html: source, repairs: 0 });
+  });
+
+  it("retires a class-only pointer actor but preserves a typing caret", () => {
+    const source = `<!doctype html><html><body>` +
+      `<main data-composition-id="proof">` +
+      `<section data-scene="approval" data-start="0" data-duration="3">` +
+      `<div class="cursor-indicator"></div><i class="typing-cursor"></i>` +
+      `<button data-part="confirm">Confirm</button></section></main></body></html>`;
+    const result = normalizeInteractionActors(source, [{
+      version: 1,
+      id: "confirm-click",
+      sceneId: "approval",
+      cursorId: "owner-cursor",
+      targetPart: "confirm",
+      action: "click",
+      startSec: 1,
+      arriveSec: 1.4,
+      pressSec: 1.5,
+      releaseSec: 1.65,
+      from: "frame:bottom-right",
+      path: "arc",
+      aimX: 0.5,
+      aimY: 0.5,
+      feedback: "press",
+    }]);
+    expect(result.html).toContain(
+      'class="cursor-indicator" data-sequences-retired-cursor="owner-cursor"',
+    );
+    expect(result.html).toContain('<i class="typing-cursor"></i>');
+    expect(result.html).not.toContain(
+      'class="typing-cursor" data-sequences-retired-cursor',
+    );
+    expect(result.html).toContain("data-sequences-runtime-cursor");
   });
 });

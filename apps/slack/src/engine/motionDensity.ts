@@ -632,20 +632,32 @@ export function analyzeMotionDensity(
           `give each beat an explicit composition time`,
       );
     }
-    const starts = authored.activities
+    const authoredBeats = authored.activities
       .filter((activity) => activity.kind !== "small")
-      .map((activity) => activity.startSec)
-      .sort((a, b) => a - b);
-    for (const [index, start] of starts.entries()) {
-      const count = starts.filter((time) => time >= start && time < start + DENSE_WINDOW_SEC).length;
+      .sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec);
+    for (const beat of authoredBeats) {
+      const window = authoredBeats.filter((activity) =>
+        activity.startSec >= beat.startSec &&
+        activity.startSec < beat.startSec + DENSE_WINDOW_SEC
+      );
+      // A click/confirm macro often has several mechanical legs on the same
+      // cursor, button, or value (down, release, settle). Those are one visual
+      // beat per target, not several competing ideas. Keep the density ceiling
+      // aimed at distinct moving subjects; nine independently targeted nodes
+      // still warn, while repeated legs on five subjects do not (ProofLine E).
+      const distinctTargets = new Set(window.map((activity) =>
+        activity.target?.trim()
+          ? `${activity.sceneId ?? ""}\u0000${activity.target.trim()}`
+          : `${activity.sceneId ?? ""}\u0000${activity.source}\u0000${activity.startSec}`
+      ));
+      const count = distinctTargets.size;
       if (count > MAX_BEATS_PER_WINDOW) {
         warnings.push(
           `motion/density: ${count} authored beats start within ${DENSE_WINDOW_SEC.toFixed(1)}s ` +
-            `near ${start.toFixed(1)}s; stagger or remove supporting motion so the edit has hierarchy`,
+            `near ${beat.startSec.toFixed(1)}s; stagger or remove supporting motion so the edit has hierarchy`,
         );
         break;
       }
-      if (index > starts.length) break;
     }
   }
   const sceneReports = scenes.map((scene) => {

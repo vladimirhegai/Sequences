@@ -638,6 +638,21 @@ eliminating contradictory contracts).
   declarations emit asset conversion evidence; exact CurrentProof D shape,
   focused asset/plugin/capsule tests, typecheck, and `replay:all` green.
 
+### S6.8 One-attempt typed source ownership
+- [x] ProofLine E reached author attempt 1, but an unscoped ring-only
+  `.cmp-value` rule escaped into a stat-card, a class-only authored cursor lived
+  beside the host cursor, repeated mechanical legs were counted as ten visual
+  ideas, and a 32px cursor alone could not prove a primary arrival in rendered
+  pixels. Scope only the exact centered-ring geometry signature; retire only
+  unmistakable pointer actors inside typed interaction scenes; count density
+  by distinct moving target; give the measured target one bounded arrival
+  focus lift; and let sampled contrast converge through at most three strictly
+  improving deterministic passes inside the same source attempt.
+- Verify: exact ProofLine E source passes static replay and Chromium
+  `strictOk: true`; the arrival changes 6.57% rather than 0.069% of pixels;
+  the second contrast pass reaches zero browser warnings; positive/negative
+  ownership controls, typecheck, and `replay:all` green.
+
 ---
 
 # Phase 7 — Retire old systems and shrink the flag surface
@@ -1480,3 +1495,34 @@ typecheck; exact CurrentProof D source with continuity enabled reaches
 `camera_framed_sparse`/`camera_blocking_landing`; exact `replay:all` (17/0/0).
 The two remaining contrast rows are advisory and already owned by the bounded
 contrast repair. No paid probe, publish, deploy, or S7 work.
+
+## S6.8 — 2026-07-12 — DONE (fresh one-attempt probe pending)
+ProofLine E was the first post-fix paid run to accept its storyboard on logical
+attempt 1, but source attempt 1 exposed three lower-owner collisions in the
+approval station. The author's ring-centering `.cmp-value` rule also positioned
+the stat-card value absolutely, placing `READINESS SCORE` behind `94%`; a
+class-only `.cursor-indicator` remained visible beside the canonical actor; and
+the density audit counted ten down/release/settle tween legs as ten independent
+beats. The primary cursor-arrival moment changed only 0.069% of rendered pixels.
+The run was stopped before source attempt 2.
+
+L2 now scopes only the full centered-ring geometry signature away from other
+typed value surfaces and retires unmistakable class-only pointer actors only
+inside scenes with a typed interaction. Motion density counts distinct authored
+targets, so repeated legs on five subjects form one interaction macro while
+nine independent subjects still warn. The interaction runtime gives the
+measured target a restrained 1.08 brightness focus on arrival and restores its
+exact authored filter before press/result ownership. Sampled contrast may run
+up to three atomic passes, each requiring a strict global penalty reduction.
+
+Files: `src/engine/runner/repairs/implementation.ts`,
+`src/engine/templates/sequences-interactions.v1.js`,
+`src/engine/motionDensity.ts`, `src/engine/runner/ladder.ts`,
+`src/engine/compositionRunner.ts`, `test/authorReliability.test.ts`,
+`test/motionDensity.test.ts`, `test/interactionContract.test.ts`,
+`test/normalizerRegistry.test.ts`, `scripts/replayAll.ts`, `SENTINEL.md`, and
+this plan. Verification so far: focused ownership/interaction/density registry
+tests (139/139), contrast tests (4/4), Slack typecheck, and exact `replay:all`
+(18/0/0). Exact browser replay is runtime `ok: true`, `strictOk: true`, no
+overlap/static-moment findings, and 6.574% arrival change; a second bounded
+contrast pass reaches zero warnings. No publish, deploy, or S7 work.

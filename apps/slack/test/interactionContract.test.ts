@@ -3,6 +3,7 @@ import fc from "fast-check";
 import type { AgentProvider, CompleteOptions } from "@sequences/platform/providers";
 import {
   cohereInteractionFocusItems,
+  interactionRuntimeSource,
   normalizeStoryboardInteractionIntents,
   parseInteractionPlan,
   parseInteractionIntents,
@@ -80,6 +81,14 @@ function html(intent = interaction): string {
 }
 
 describe("interaction contract", () => {
+  it("gives cursor arrivals a bounded target focus lift and restores authored filters", () => {
+    const runtime = interactionRuntimeSource();
+    expect(runtime).toContain("function bindArrivalFocus");
+    expect(runtime).toContain('"brightness(1.08)"');
+    expect(runtime).toContain("filter: baseFilter");
+    expect(runtime).toContain("bindArrivalFocus(timeline, intent, target)");
+  });
+
   it("derives a stable ripple part when structured output omits ripplePart", () => {
     const { ripplePart: _omitted, ...withoutRipplePart } = interaction;
     const result = parseInteractionPlan(html(withoutRipplePart));

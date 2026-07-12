@@ -564,7 +564,7 @@ export function reconcileContractBindings(
  * ripples, duplicate visibility tweens, and inherited camera transforms from
  * leaking into an otherwise deterministic interaction.
  */
-function normalizeInteractionActors(
+export function normalizeInteractionActors(
   source: string,
   interactions: NonNullable<DirectScene["interactions"]>,
 ): { html: string; repairs: number } {
@@ -617,6 +617,43 @@ function normalizeInteractionActors(
       repairs += 1;
       return ensureTagAttr(tag, "data-sequences-retired-cursor", cursorId);
     });
+  }
+
+  // Some slot authors draw the pointer as a generic class-only decoration
+  // (`.cursor-indicator`) instead of binding it to the declared cursor id.
+  // The interaction contract still owns the only visible pointer. Retire only
+  // unmistakable pointer-actor class tokens, and only inside a scene that has
+  // a typed interaction; typing carets and ordinary `cursor:pointer` styling
+  // remain author-owned.
+  const interactionScenes = new Map<string, string>();
+  for (const interaction of interactions) {
+    if (!interactionScenes.has(interaction.sceneId)) {
+      interactionScenes.set(interaction.sceneId, interaction.cursorId);
+    }
+  }
+  const pointerActorClass =
+    /^(?:cursor|cursor-indicator|cursor-dot|custom-cursor|interaction-cursor|mouse-cursor|mouse-pointer|pointer-indicator)$/i;
+  const scopes = sceneScopeLocations(html).filter((scope) => interactionScenes.has(scope.id));
+  for (const scope of scopes.slice().sort((a, b) => b.openStart - a.openStart)) {
+    const cursorId = interactionScenes.get(scope.id)!;
+    const interior = html.slice(scope.openEnd, scope.closeStart);
+    const repaired = interior.replace(/<[a-z][\w:-]*\b[^>]*>/gi, (tag) => {
+      if (
+        tag.includes("data-sequences-runtime-cursor") ||
+        tag.includes("data-sequences-retired-cursor")
+      ) {
+        return tag;
+      }
+      const className = htmlAttr(tag, "class");
+      if (!className?.split(/\s+/).some((token) => pointerActorClass.test(token))) {
+        return tag;
+      }
+      repairs += 1;
+      return ensureTagAttr(tag, "data-sequences-retired-cursor", cursorId);
+    });
+    if (repaired !== interior) {
+      html = html.slice(0, scope.openEnd) + repaired + html.slice(scope.closeStart);
+    }
   }
   const missingCursorIds = cursorIds.filter((cursorId) =>
     !new RegExp(
@@ -732,6 +769,55 @@ function normalizeInteractionActors(
         `{display:none!important}</style></head>`,
     );
   }
+  return { html, repairs };
+}
+
+/**
+ * A ring's centered value is commonly authored with absolute inset geometry.
+ * The shared component vocabulary also uses `.cmp-value` inside stat cards,
+ * pricing cards, and other flow components. An unscoped ring rule therefore
+ * pulls those values out of flow (ProofLine: `READINESS SCORE` rendered behind
+ * `94%`). Scope only the unmistakable centered-ring geometry signature, and
+ * only when the document actually contains both a ring and another typed value
+ * surface. Typography-only/global value rules remain untouched.
+ */
+export function scopeRingValueGeometryStyles(
+  source: string,
+): { html: string; repairs: number } {
+  const hasRing = /\bdata-component\s*=\s*(["'])progress-ring\1/i.test(source);
+  const hasOtherValueSurface = /\bdata-component\s*=\s*(["'])(?:stat-card|pricing-card|metric-card)\1/i
+    .test(source);
+  if (!hasRing || !hasOtherValueSurface) return { html: source, repairs: 0 };
+
+  let repairs = 0;
+  const html = source.replace(
+    /<style\b(?![^>]*\bdata-sequences-host\b)(?![^>]*\bid\s*=\s*["']sequences-)[^>]*>([\s\S]*?)<\/style>/gi,
+    (block, css: string) => {
+      const scoped = css.replace(
+        /(^|})(\s*)([^@{}][^{}]*)\{([^{}]*)\}/g,
+        (rule, boundary: string, spacing: string, selectorSource: string, declarations: string) => {
+          const ringGeometry =
+            /\bposition\s*:\s*absolute\b/i.test(declarations) &&
+            /\binset\s*:\s*0(?:px)?(?:\s+0(?:px)?){0,3}\s*;?/i.test(declarations) &&
+            /\balign-items\s*:\s*center\b/i.test(declarations) &&
+            /\bjustify-content\s*:\s*center\b/i.test(declarations);
+          if (!ringGeometry) return rule;
+          let changed = false;
+          const selectors = selectorSource.split(",").map((selector) => {
+            if (selector.trim() !== ".cmp-value") return selector;
+            changed = true;
+            const leading = selector.match(/^\s*/)?.[0] ?? "";
+            const trailing = selector.match(/\s*$/)?.[0] ?? "";
+            return `${leading}[data-component="progress-ring"] .cmp-value${trailing}`;
+          });
+          if (!changed) return rule;
+          repairs += 1;
+          return `${boundary}${spacing}${selectors.join(",")}{${declarations}}`;
+        },
+      );
+      return scoped === css ? block : block.replace(css, scoped);
+    },
+  );
   return { html, repairs };
 }
 function inferVisibilityOpacity(value: string | undefined): number | undefined {
@@ -3695,6 +3781,7 @@ export const SOURCE_NORMALIZER_ORDER = [
   "normalize.host-plan-islands.display-type",
   "normalize.plugin-lower.source-inject",
   "normalize.source-bindings.component-pre-continuity",
+  "normalize.source-bindings.component-style-scope",
   "normalize.source-bindings.component-region-home",
   "normalize.source-bindings.component-alias",
   "normalize.source-bindings.rows-markup",
@@ -4343,6 +4430,23 @@ export const NORMALIZERS = declareLinearNormalizerRegistry<string, SourceNormali
           : undefined,
         diagnostics: result.repairs
           ? [`[author] reconciled ${result.repairs} component binding(s)\n`]
+          : [],
+      };
+    },
+  },
+  {
+    id: "normalize.source-bindings.component-style-scope",
+    telemetryTag: "component-style-scope",
+    run: (html: string) => {
+      const result = scopeRingValueGeometryStyles(html);
+      return {
+        state: result.html,
+        repairCount: result.repairs,
+        diagnostics: result.repairs
+          ? [
+              `[author] scoped ${result.repairs} ring-only value geometry rule(s) ` +
+              `away from other typed components\n`,
+            ]
           : [],
       };
     },

@@ -3486,37 +3486,43 @@ async function authorCompositionLoop(
         ...validation.frameWarnings,
         ...validation.motionWarnings,
       ];
-      if (browserQa.ok && browserQa.issues?.some((issue) => issue.code === "contrast_aa")) {
-        const contrastRepair = repairContrastAaIssues(draft, browserQa);
-        if (contrastRepair.repaired.length) {
-          const candidateValidation = await validateDirectComposition(
-            args.projectDir,
-            contrastRepair.draft,
-          );
-          if (candidateValidation.ok) {
-            const candidateQa = await inspectDirectComposition(args.projectDir, contrastRepair.draft, {
-              captureGuide: false,
-            });
-            const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
-            const afterStaticWarnings = [
-              ...candidateValidation.frameWarnings,
-              ...candidateValidation.motionWarnings,
-            ];
-            const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
-            if (!candidateQa.infraError && candidateQa.ok && afterPenalty < beforePenalty) {
-              process.stderr.write(
-                `[author] deterministically repaired contrast for ` +
-                  `${contrastRepair.repaired.join(", ")}: penalty ${beforePenalty} -> ${afterPenalty}\n`,
-              );
-              recordSentinelNormalization("contrast-aa", contrastRepair.repaired.length);
-              summary.strategyChanges.push(`contrast-aa:${contrastRepair.repaired.join(",")}`);
-              draft = contrastRepair.draft;
-              validation = candidateValidation;
-              browserQa = candidateQa;
-              staticRepairWarnings = afterStaticWarnings;
-            }
-          }
+      // Contrast is sampled across stateful moments. Repairing the first
+      // measured state can expose the same label against a later background,
+      // so converge through a tiny bounded loop inside THIS source attempt.
+      // Each pass must strictly lower the global quality penalty; otherwise it
+      // stops atomically. ProofLine E needed two passes (entry + Ready state),
+      // and previously carried the second advisory into publication.
+      for (let contrastPass = 0; contrastPass < 3; contrastPass += 1) {
+        if (!browserQa.ok || !browserQa.issues?.some((issue) => issue.code === "contrast_aa")) {
+          break;
         }
+        const contrastRepair = repairContrastAaIssues(draft, browserQa);
+        if (!contrastRepair.repaired.length) break;
+        const candidateValidation = await validateDirectComposition(
+          args.projectDir,
+          contrastRepair.draft,
+        );
+        if (!candidateValidation.ok) break;
+        const candidateQa = await inspectDirectComposition(args.projectDir, contrastRepair.draft, {
+          captureGuide: false,
+        });
+        const beforePenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
+        const afterStaticWarnings = [
+          ...candidateValidation.frameWarnings,
+          ...candidateValidation.motionWarnings,
+        ];
+        const afterPenalty = browserQualityPenalty(candidateQa, afterStaticWarnings);
+        if (candidateQa.infraError || !candidateQa.ok || afterPenalty >= beforePenalty) break;
+        process.stderr.write(
+          `[author] deterministically repaired contrast pass ${contrastPass + 1} for ` +
+            `${contrastRepair.repaired.join(", ")}: penalty ${beforePenalty} -> ${afterPenalty}\n`,
+        );
+        recordSentinelNormalization("contrast-aa", contrastRepair.repaired.length);
+        summary.strategyChanges.push(`contrast-aa:${contrastRepair.repaired.join(",")}`);
+        draft = contrastRepair.draft;
+        validation = candidateValidation;
+        browserQa = candidateQa;
+        staticRepairWarnings = afterStaticWarnings;
       }
       // Browser-measured within-scene gaze whiplash has a small deterministic
       // schedule repair when (and only when) moment/interaction bindings survive:

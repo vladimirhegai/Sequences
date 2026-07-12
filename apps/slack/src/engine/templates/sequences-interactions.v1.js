@@ -285,6 +285,36 @@
     }
   }
 
+  function bindArrivalFocus(timeline, intent, target) {
+    var travelSec = intent.arriveSec - intent.startSec;
+    if (!(travelSec >= 0.12)) return;
+    var computed = global.getComputedStyle(target);
+    var baseFilter = computed.filter && computed.filter !== "" ? computed.filter : "none";
+    var focusFilter = baseFilter === "none"
+      ? "brightness(1.08)"
+      : baseFilter + " brightness(1.08)";
+    var focusStart = Math.max(
+      intent.startSec,
+      intent.arriveSec - Math.min(0.18, travelSec * 0.4)
+    );
+    timeline.fromTo(target, { filter: baseFilter }, {
+      filter: focusFilter,
+      duration: Math.max(0.08, intent.arriveSec - focusStart),
+      ease: "power2.out",
+      immediateRender: false,
+    }, focusStart);
+    var restoreAt = intent.pressSec != null
+      ? intent.pressSec
+      : (intent.holdUntilSec || intent.releaseSec || intent.arriveSec + 0.18);
+    if (restoreAt > intent.arriveSec) {
+      timeline.to(target, {
+        filter: baseFilter,
+        duration: Math.min(0.12, Math.max(0.06, restoreAt - intent.arriveSec)),
+        ease: "power2.out",
+      }, restoreAt);
+    }
+  }
+
   function followTarget(timeline, root, scene, intent, cursorElement, hotspot, start, end, targetName) {
     if (!(end > start)) return;
     var tracker = { p: 0 };
@@ -367,6 +397,12 @@
           place(root, cursorElement, pathPoint(root, start, end, intent, progress), hotspot);
         },
       }, intent.startSec);
+      // A 32px cursor moving across a 1920px frame is valid mechanical
+      // evidence but too small to read as a primary arrival moment. Give the
+      // measured target one restrained hover/focus lift on arrival, restore its
+      // exact authored filter at press/hold, then let press feedback own the
+      // result. This makes the intent visible without minting another actor.
+      bindArrivalFocus(timeline, intent, target);
       bindPress(timeline, intent, cursorElement, target);
       var visibleUntil = intent.holdUntilSec || intent.releaseSec || intent.arriveSec;
       var sceneEnd = (parseFloat(scene.dataset.start || "0") || 0) +

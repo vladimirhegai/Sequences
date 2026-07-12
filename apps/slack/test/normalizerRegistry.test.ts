@@ -45,6 +45,7 @@ const FULL_ORDER = [
   "normalize.host-plan-islands.display-type",
   "normalize.plugin-lower.source-inject",
   "normalize.source-bindings.component-pre-continuity",
+  "normalize.source-bindings.component-style-scope",
   "normalize.source-bindings.component-region-home",
   "normalize.source-bindings.component-alias",
   "normalize.source-bindings.rows-markup",

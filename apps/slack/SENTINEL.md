@@ -104,6 +104,14 @@ asset counts only after plugin reconciliation stamps a UID and the augmented
 storyboard passes its full plan gate; an unlowered declaration or a declined
 duplicate must never seed the evidence-backed capsule.
 
+Typed source ownership extends to shared internal class names and interaction
+actors. Ring-only absolute geometry must be scoped to the ring root before it
+can affect another `.cmp-value`; a typed interaction owns the only visible
+cursor and its measured arrival feedback. Density counts distinct moving
+targets, not every mechanical down/release/settle tween on one target. Browser-
+sampled contrast may converge through bounded passes only while each complete
+candidate strictly improves the global penalty.
+
 ## Adding or changing a rule
 
 Before implementation:
