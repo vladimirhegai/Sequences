@@ -1,40 +1,43 @@
 /**
- * Sentinel run telemetry — the before/after instrument for the
- * correctness-by-construction system (SENTINEL.md telemetry contract).
+ * Sentinel run telemetry — context plumbing over the attempt ledger.
  *
- * One `planning/sentinel-run.json` per job records the numbers the mission
- * table is measured against: per-stage wall-clock + attempts, model-call count,
- * prompt/completion characters, which Sentinel layer caught each finding, and
- * the run's final disposition. `scripts/sentinelReport.ts` aggregates these
- * (plus the existing `author-run.json`) into the metric table.
+ * Since S1.1 every count lives in ONE place: the append-only
+ * `AttemptLedger` (`runner/attemptLedger.ts`). This module only owns the
+ * `AsyncLocalStorage` context (so the deep model-call and repair seams inside
+ * the runner never grow a `projectDir` parameter) and the thin `recordSentinel*`
+ * emitters the call sites already use — each one appends a typed event and
+ * keeps nothing. `finalizeSentinelRun` folds the events into the unchanged
+ * `planning/sentinel-run.json` view and persists the raw events to
+ * `planning/attempt-ledger.json`.
  *
- * Collection uses `AsyncLocalStorage` so the deep model-call and repair seams
- * inside `compositionRunner.ts` never grow a `projectDir` parameter: the
- * orchestrator enters a run context once per create and every downstream record
- * lands in the right bucket. This is diagnostic-only — a missing context (any
- * path that never entered a run, e.g. the demo/preset path) makes every record
- * a silent no-op, and a disk fault never disturbs a build.
+ * This is diagnostic-only — a missing context (any path that never entered a
+ * run, e.g. the demo/preset path) makes every record a silent no-op, and a
+ * disk fault never disturbs a build.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import path from "node:path";
 import { slackSequencesEnvRawValue } from "./featureFlags.ts";
+import {
+  AttemptLedger,
+  countHedgeLaunches,
+  deriveSentinelRunView,
+  type AttemptLedgerEvent,
+  type AttemptLedgerEventBody,
+  type SentinelDisposition,
+  type SentinelLayer,
+  type SentinelScaffoldRestorationSource,
+  type SentinelSlotCallKind,
+  type SentinelStageTiming,
+} from "./runner/attemptLedger.ts";
 
-/** The four honest end-states of a create (SENTINEL.md). */
-export type SentinelDisposition =
-  | "published"
-  | "published-degraded"
-  | "fallback"
-  | "fail-loud";
-
-/** The Sentinel layer model (SENTINEL.md) — where a finding was caught. */
-export type SentinelLayer =
-  | "schema" // L0 — invalid output can't parse
-  | "scaffold" // L1 — host chassis + bindings present in the shipped document
-  | "normalize" // L2 — deterministic repair, zero paid attempts
-  | "static" // L3 — linkedom/regex/kitMarkupAudit findings
-  | "browser" // L4 — measured browser truth
-  | "model-retry"; // L5 — a paid re-author
+export type {
+  SentinelDisposition,
+  SentinelLayer,
+  SentinelScaffoldRestorationSource,
+  SentinelSlotCallKind,
+  SentinelStageTiming,
+};
 
 interface ModelCallRecord {
   /** The call label (frame-design, storyboard, author, concept, critic, …). */
@@ -43,64 +46,15 @@ interface ModelCallRecord {
   completionChars: number;
 }
 
-export interface SentinelStageTiming {
-  stage: string;
-  status: "succeeded" | "failed";
-  durationMs: number;
-  attempts?: number;
-}
-
-interface SentinelRunState {
+interface SentinelRunContext {
   projectDir: string;
-  startedAt: number;
-  modelCalls: ModelCallRecord[];
-  /** Failed logical calls by stage — the paid/spent attempts `modelCalls` (successes only) omits. */
-  failedModelCalls: Record<string, number>;
-  /** Hedge duplicates launched by stage — extra PHYSICAL requests (cost), not logical calls. */
-  hedgedModelCalls: Record<string, number>;
-  /** Scene-slot subcalls that are hidden inside one outer source-author attempt. */
-  slotCalls: Record<SentinelSlotCallKind, { calls: number; scenes: number }>;
-  /**
-   * Honesty ledger: every degradation the run shipped with (moment demotion,
-   * least-bad pick, quarantined interactions, degraded cuts, browser-QA infra
-   * bypass). Any entry downgrades a `published` finalize to `published-degraded`.
-   */
-  degradations: string[];
-  layerFindings: Record<SentinelLayer, number>;
-  normalizations: Record<string, number>;
-  scaffoldCoverage?: { planned: number; present: number };
-  scaffoldRestorationEvents: Record<SentinelScaffoldRestorationSource, number>;
-  stages: SentinelStageTiming[];
-  tier1Ms?: number;
-  tier2Ms?: number;
-  disposition?: SentinelDisposition;
-  skeletonEnabled?: boolean;
-  slotsEnabled?: boolean;
+  ledger: AttemptLedger;
 }
 
-export type SentinelSlotCallKind =
-  | "truncation-continuation"
-  | "scaffold-repair"
-  | "validation-repair"
-  | "storyboard-scene-repair"
-  | "critic-scene-repair";
-export type SentinelScaffoldRestorationSource = "scene-repair" | "l2-normalize";
+const storage = new AsyncLocalStorage<SentinelRunContext>();
 
-const storage = new AsyncLocalStorage<SentinelRunState>();
-
-function active(): SentinelRunState | undefined {
+function active(): SentinelRunContext | undefined {
   return storage.getStore();
-}
-
-function emptyLayers(): Record<SentinelLayer, number> {
-  return {
-    schema: 0,
-    scaffold: 0,
-    normalize: 0,
-    static: 0,
-    browser: 0,
-    "model-retry": 0,
-  };
 }
 
 /**
@@ -114,53 +68,46 @@ export function beginSentinelRun(
   projectDir: string,
   flags?: { skeleton?: boolean; slots?: boolean },
 ): void {
-  storage.enterWith({
+  const ledger = new AttemptLedger();
+  ledger.append({
+    kind: "run-start",
     projectDir,
-    startedAt: Date.now(),
-    modelCalls: [],
-    failedModelCalls: {},
-    hedgedModelCalls: {},
-    slotCalls: {
-      "truncation-continuation": { calls: 0, scenes: 0 },
-      "scaffold-repair": { calls: 0, scenes: 0 },
-      "validation-repair": { calls: 0, scenes: 0 },
-      "storyboard-scene-repair": { calls: 0, scenes: 0 },
-      "critic-scene-repair": { calls: 0, scenes: 0 },
-    },
-    degradations: [],
-    layerFindings: emptyLayers(),
-    normalizations: {},
-    scaffoldRestorationEvents: {
-      "scene-repair": 0,
-      "l2-normalize": 0,
-    },
-    stages: [],
-    skeletonEnabled: flags?.skeleton,
-    slotsEnabled: flags?.slots,
+    ...(flags?.skeleton === undefined ? {} : { skeletonEnabled: flags.skeleton }),
+    ...(flags?.slots === undefined ? {} : { slotsEnabled: flags.slots }),
   });
+  storage.enterWith({ projectDir, ledger });
+}
+
+/**
+ * Append one raw ledger event from the runner (attempt start/end, hedge win,
+ * stream timeout, …). No-op outside a run context, like every emitter here.
+ */
+export function appendSentinelLedgerEvent(body: AttemptLedgerEventBody): void {
+  active()?.ledger.append(body);
+}
+
+/** The active run's events, for derived predicates. Undefined outside a run. */
+export function activeSentinelLedgerEvents(): readonly AttemptLedgerEvent[] | undefined {
+  return active()?.ledger.events;
 }
 
 /** Record one logical model call (already de-hedged by the retry wrappers). */
 export function recordSentinelModelCall(rec: ModelCallRecord): void {
-  active()?.modelCalls.push(rec);
+  appendSentinelLedgerEvent({ kind: "model-call", ...rec });
 }
 
 /**
  * Record a FAILED logical model call (transport fault, truncation, stall).
- * `modelCalls` counts only successes, so without this the cost ledger hid the
- * most expensive runs — the ones that spent calls and got nothing back.
+ * Successful calls alone would hide the most expensive runs — the ones that
+ * spent calls and got nothing back.
  */
 export function recordSentinelModelCallFailure(stage: string): void {
-  const state = active();
-  if (!state) return;
-  state.failedModelCalls[stage] = (state.failedModelCalls[stage] ?? 0) + 1;
+  appendSentinelLedgerEvent({ kind: "model-call-failure", stage });
 }
 
 /** Record one hedge duplicate launched (an extra physical request = cost). */
 export function recordSentinelHedge(stage: string): void {
-  const state = active();
-  if (!state) return;
-  state.hedgedModelCalls[stage] = (state.hedgedModelCalls[stage] ?? 0) + 1;
+  appendSentinelLedgerEvent({ kind: "hedge-launch", stage });
 }
 
 function hedgeReserveForSourceAuthor(): number {
@@ -179,17 +126,14 @@ function isSourceAuthorHedgeStage(stage: string): boolean {
  * context (unit helpers/non-create flows) retain the historical behavior.
  */
 export function claimSentinelHedge(stage: string, maxPerRun: number): boolean {
-  const state = active();
-  if (!state) return true;
-  const used = Object.values(state.hedgedModelCalls).reduce((sum, count) => sum + count, 0);
-  if (used >= maxPerRun) return false;
+  const context = active();
+  if (!context) return true;
+  const launches = countHedgeLaunches(context.ledger.events, isSourceAuthorHedgeStage);
+  if (launches.total >= maxPerRun) return false;
   const authorReserve = Math.min(hedgeReserveForSourceAuthor(), maxPerRun);
   if (authorReserve > 0 && !isSourceAuthorHedgeStage(stage)) {
-    const authorUsed = Object.entries(state.hedgedModelCalls)
-      .filter(([hedgedStage]) => isSourceAuthorHedgeStage(hedgedStage))
-      .reduce((sum, [, count]) => sum + count, 0);
-    const missingAuthorReserve = Math.max(0, authorReserve - authorUsed);
-    if (maxPerRun - used <= missingAuthorReserve) return false;
+    const missingAuthorReserve = Math.max(0, authorReserve - launches.author);
+    if (maxPerRun - launches.total <= missingAuthorReserve) return false;
   }
   recordSentinelHedge(stage);
   return true;
@@ -197,10 +141,8 @@ export function claimSentinelHedge(stage: string, maxPerRun: number): boolean {
 
 /** Record one scene-slot subcall and how many scenes it re-authored. */
 export function recordSentinelSlotCall(kind: SentinelSlotCallKind, scenes: number): void {
-  const state = active();
-  if (!state || !Number.isFinite(scenes) || scenes <= 0) return;
-  state.slotCalls[kind].calls += 1;
-  state.slotCalls[kind].scenes += Math.floor(scenes);
+  if (!Number.isFinite(scenes) || scenes <= 0) return;
+  appendSentinelLedgerEvent({ kind: "slot-call", callKind: kind, scenes });
 }
 
 /**
@@ -208,19 +150,18 @@ export function recordSentinelSlotCall(kind: SentinelSlotCallKind, scenes: numbe
  * least-bad pick with open polish findings, a quarantined interaction, a
  * degraded declared cut, a browser-QA infrastructure bypass). Any entry turns
  * a `published` finalize into `published-degraded` so the disposition ledger
- * never reports a salvaged film as clean.
+ * never reports a salvaged film as clean. Repeat emissions are kept in the
+ * ledger; the derived view dedupes.
  */
 export function recordSentinelDegradation(reason: string): void {
-  const state = active();
-  if (!state || !reason || state.degradations.includes(reason)) return;
-  state.degradations.push(reason);
+  if (!reason) return;
+  appendSentinelLedgerEvent({ kind: "degradation", reason });
 }
 
 /** Count a finding caught (or a state made unrepresentable) at a given layer. */
 export function recordSentinelLayerFinding(layer: SentinelLayer, count = 1): void {
-  const state = active();
-  if (!state || count <= 0) return;
-  state.layerFindings[layer] += count;
+  if (count <= 0) return;
+  appendSentinelLedgerEvent({ kind: "layer-finding", layer, count });
 }
 
 /**
@@ -229,10 +170,8 @@ export function recordSentinelLayerFinding(layer: SentinelLayer, count = 1): voi
  * the paperwork classes once skeletons emit planes/roots/islands.
  */
 export function recordSentinelNormalization(tag: string, count = 1): void {
-  const state = active();
-  if (!state || count <= 0) return;
-  state.normalizations[tag] = (state.normalizations[tag] ?? 0) + count;
-  state.layerFindings.normalize += count;
+  if (count <= 0) return;
+  appendSentinelLedgerEvent({ kind: "normalization", tag, count });
 }
 
 /**
@@ -242,13 +181,12 @@ export function recordSentinelNormalization(tag: string, count = 1): void {
  * scene-repaired bindings are never mislabeled as surviving L1 unchanged.
  */
 export function recordSentinelScaffold(guaranteedBindings: number, plannedBindings?: number): void {
-  const state = active();
-  if (!state || guaranteedBindings <= 0) return;
-  state.layerFindings.scaffold = Math.max(state.layerFindings.scaffold, guaranteedBindings);
-  state.scaffoldCoverage = {
+  if (guaranteedBindings <= 0) return;
+  appendSentinelLedgerEvent({
+    kind: "scaffold-coverage",
     present: guaranteedBindings,
-    planned: Math.max(guaranteedBindings, plannedBindings ?? guaranteedBindings),
-  };
+    planned: plannedBindings ?? guaranteedBindings,
+  });
 }
 
 /** Attribute scaffold-contract restorations without pretending they survived L1 unchanged. */
@@ -256,23 +194,19 @@ export function recordSentinelScaffoldRestoration(
   source: SentinelScaffoldRestorationSource,
   count = 1,
 ): void {
-  const state = active();
-  if (!state || !Number.isFinite(count) || count <= 0) return;
-  state.scaffoldRestorationEvents[source] += Math.floor(count);
+  if (!Number.isFinite(count) || count <= 0) return;
+  appendSentinelLedgerEvent({ kind: "scaffold-restoration", source, count });
 }
 
 /** Attach the orchestrator's per-stage timings/attempts to the run. */
 export function recordSentinelStages(stages: SentinelStageTiming[]): void {
-  const state = active();
-  if (state) state.stages = stages;
+  appendSentinelLedgerEvent({ kind: "stage-timings", stages });
 }
 
 /** Wall-clock to a delivery tier (tier 1 = thumbnails, tier 2 = MP4). */
 export function recordSentinelTier(tier: "tier1" | "tier2", ms: number): void {
-  const state = active();
-  if (!state || !Number.isFinite(ms) || ms < 0) return;
-  if (tier === "tier1") state.tier1Ms = ms;
-  else state.tier2Ms = ms;
+  if (!Number.isFinite(ms) || ms < 0) return;
+  appendSentinelLedgerEvent({ kind: "tier", tier, ms });
 }
 
 /**
@@ -283,78 +217,41 @@ export function recordSentinelTier(tier: "tier1" | "tier2", ms: number): void {
  * thumbnails" quietly excluded the thumbnails.
  */
 export function recordSentinelTierFromRunStart(tier: "tier1" | "tier2"): void {
-  const state = active();
-  if (!state) return;
-  recordSentinelTier(tier, Date.now() - state.startedAt);
+  const context = active();
+  if (!context) return;
+  const runStart = context.ledger.events.find((event) => event.kind === "run-start");
+  if (!runStart) return;
+  recordSentinelTier(tier, Date.now() - runStart.at);
 }
 
 /**
- * Summarize the current run to `planning/sentinel-run.json`. Best-effort; a
- * missing context (never began a run) or a disk error is swallowed.
+ * Finalize the run: fold the ledger into the unchanged
+ * `planning/sentinel-run.json` view and persist the raw events beside it as
+ * `planning/attempt-ledger.json`. Best-effort; a missing context (never began
+ * a run) or a disk error is swallowed.
  */
 export function finalizeSentinelRun(disposition: SentinelDisposition): void {
-  const state = active();
-  if (!state) return;
-  // The honesty downgrade: a "published" run that shipped with recorded
-  // degradations is published-degraded. Callers keep the simple two-outcome
-  // call site; the ledger decides which publish it really was.
-  if (disposition === "published" && state.degradations.length) {
-    disposition = "published-degraded";
+  const context = active();
+  if (!context) return;
+  if (disposition === "fallback") {
+    // The orchestrator only reports the disposition today; a reason-carrying
+    // fallback event is emitted here so the raw ledger names the class. S1.2
+    // enriches this from the fallback path itself.
+    context.ledger.append({ kind: "fallback", reason: "deterministic-fallback-published" });
   }
-  state.disposition = disposition;
+  context.ledger.append({ kind: "finalize", disposition });
   try {
-    const dir = path.join(state.projectDir, "planning");
+    const dir = path.join(context.projectDir, "planning");
     fs.mkdirSync(dir, { recursive: true });
-    const byStage: Record<string, number> = {};
-    let totalPromptChars = 0;
-    let totalCompletionChars = 0;
-    let maxAuthorPromptChars = 0;
-    for (const call of state.modelCalls) {
-      byStage[call.stage] = (byStage[call.stage] ?? 0) + 1;
-      totalPromptChars += call.promptChars;
-      totalCompletionChars += call.completionChars;
-      if (/author/i.test(call.stage)) {
-        maxAuthorPromptChars = Math.max(maxAuthorPromptChars, call.promptChars);
-      }
-    }
-    const payload = {
-      disposition,
-      startedAt: new Date(state.startedAt).toISOString(),
-      durationMs: Date.now() - state.startedAt,
-      skeletonEnabled: state.skeletonEnabled ?? null,
-      slotsEnabled: state.slotsEnabled ?? null,
-      wallClock: { tier1Ms: state.tier1Ms ?? null, tier2Ms: state.tier2Ms ?? null },
-      stages: state.stages,
-      modelCalls: {
-        // `total` remains as the backwards-compatible successful-logical count.
-        total: state.modelCalls.length,
-        successfulLogicalTotal: state.modelCalls.length,
-        byStage,
-        failed: state.failedModelCalls,
-        failedTotal: Object.values(state.failedModelCalls).reduce((sum, n) => sum + n, 0),
-        hedged: state.hedgedModelCalls,
-        hedgedTotal: Object.values(state.hedgedModelCalls).reduce((sum, n) => sum + n, 0),
-        physicalRequestTotal:
-          state.modelCalls.length +
-          Object.values(state.failedModelCalls).reduce((sum, n) => sum + n, 0) +
-          Object.values(state.hedgedModelCalls).reduce((sum, n) => sum + n, 0),
-      },
-      slotCalls: state.slotCalls,
-      degradations: state.degradations,
-      promptChars: {
-        maxAuthor: maxAuthorPromptChars,
-        totalPrompt: totalPromptChars,
-        totalCompletion: totalCompletionChars,
-      },
-      layers: state.layerFindings,
-      scaffoldCoverage: state.scaffoldCoverage ?? null,
-      scaffoldRestorationEvents: state.scaffoldRestorationEvents,
-      normalizations: state.normalizations,
-      at: new Date().toISOString(),
-    };
+    const view = deriveSentinelRunView(context.ledger.events);
     fs.writeFileSync(
       path.join(dir, "sentinel-run.json"),
-      JSON.stringify(payload, null, 2),
+      JSON.stringify(view, null, 2),
+      "utf8",
+    );
+    fs.writeFileSync(
+      path.join(dir, "attempt-ledger.json"),
+      JSON.stringify({ version: 1, events: context.ledger.events }, null, 2),
       "utf8",
     );
   } catch {

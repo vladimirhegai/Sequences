@@ -30,6 +30,8 @@ import { resolveMomentContract } from "../storyboardMoments.ts";
 import { analyzeMotionDensity } from "../motionDensity.ts";
 import { frameCapsule } from "../frameDesign.ts";
 import {
+  activeSentinelLedgerEvents,
+  appendSentinelLedgerEvent,
   claimSentinelHedge,
   recordSentinelDegradation,
   recordSentinelLayerFinding,
@@ -452,6 +454,7 @@ export async function hedgedCompletion(
           settle(() => {
             controllers[other].abort();
             if (kind === "backup") {
+              appendSentinelLedgerEvent({ kind: "hedge-win", stage: label });
               process.stderr.write(`[${label}] hedged duplicate finished first; using it\n`);
             }
             resolve(value);
@@ -536,6 +539,7 @@ async function streamOnceWithWatchdog(
     );
   } catch (error) {
     if (idleAborted) {
+      appendSentinelLedgerEvent({ kind: "stream-timeout", stage: label });
       throw new Error(
         `[${label}] stream produced no tokens for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s ` +
           `— aborted as a stalled route idle timeout`,
@@ -2189,6 +2193,19 @@ export async function requestStoryboardPlan(
     attempts: for (let attempt = 1; attempt <= rung.maxAttempts; attempt += 1) {
       totalAttempts += 1;
       if (args.attempts) args.attempts.count = totalAttempts;
+      appendSentinelLedgerEvent({
+        kind: "attempt-start",
+        stage: "storyboard-plan",
+        number: totalAttempts,
+        mode: rung.label,
+      });
+      const endAttempt = (outcome: string): void =>
+        appendSentinelLedgerEvent({
+          kind: "attempt-end",
+          stage: "storyboard-plan",
+          number: totalAttempts,
+          outcome,
+        });
       const prompt = [
         basePrompt,
         ...(lastValidationError
@@ -2274,6 +2291,7 @@ export async function requestStoryboardPlan(
       } catch (error) {
         if (attempt < rung.maxAttempts && isOutputTruncation(error)) {
           recoveringFromTruncation = true;
+          endAttempt("truncated");
           process.stderr.write(
             `[storyboard] ${rung.label} attempt ${attempt} exhausted its completion budget; ` +
               `retrying the bounded artifact with lower reasoning effort\n`,
@@ -2282,6 +2300,7 @@ export async function requestStoryboardPlan(
         }
         if (attempt < rung.maxAttempts && isReasoningMandatoryError(error)) {
           reasoningFloor = "minimal";
+          endAttempt("reasoning-mandatory-retry");
           process.stderr.write(
             `[storyboard] ${rung.label} attempt ${attempt}: this endpoint mandates reasoning; ` +
               `retrying with a minimal reasoning floor\n`,
@@ -2292,6 +2311,7 @@ export async function requestStoryboardPlan(
         // truncation): move to the next rung — a different model usually
         // lands on a different upstream route and a different failure mode.
         lastError = error;
+        endAttempt("provider-error");
         process.stderr.write(
           `[storyboard] ${rung.label} model unavailable: ` +
             `${error instanceof Error ? error.message.slice(0, 300) : String(error)}\n`,
@@ -2324,6 +2344,7 @@ export async function requestStoryboardPlan(
             raw,
             cacheKey,
           });
+          endAttempt("truncated");
           if (attempt < rung.maxAttempts) {
             recoveringFromTruncation = true;
             process.stderr.write(
@@ -2350,6 +2371,7 @@ export async function requestStoryboardPlan(
               raw,
               cacheKey,
             });
+            endAttempt("artifact-missing");
             process.stderr.write(
               `[storyboard] ${rung.label} attempt ${attempt} returned no storyboard artifact; ` +
                 `replaying the attempt once (formatting fault, not a plan rejection)\n`,
@@ -2376,6 +2398,7 @@ export async function requestStoryboardPlan(
             findings: rejectionFindings,
             cacheKey,
           });
+          endAttempt("rejected");
           // Scene-scoped repair rung (once per run): if EVERY blocking finding
           // maps to a named shot, re-plan ONLY those shots against the locked
           // remainder in one bounded low-reasoning call instead of gambling the
@@ -2425,6 +2448,7 @@ export async function requestStoryboardPlan(
           continue;
         }
         lastError = error;
+        endAttempt("error");
         break attempts;
       }
       const degradations = acceptedStoryboardDegradations.get(storyboard) ?? [];
@@ -2434,6 +2458,7 @@ export async function requestStoryboardPlan(
       }
       writePlanningArtifact(cacheFile, { version: 1, key: cacheKey, storyboard, degradations });
       writePlanningArtifact(sharedFile, { version: 1, key: cacheKey, storyboard, degradations });
+      endAttempt("accepted");
       return storyboard;
     }
   }
@@ -2519,6 +2544,21 @@ interface AuthorRunSummary {
   attempts: AuthorRunAttempt[];
   strategyChanges: string[];
   failureReason?: string;
+}
+
+/**
+ * Record one rejected author attempt: the ledger gets the typed attempt-end
+ * (S1.1 — the ledger is the only counter) and author-run.json keeps its
+ * diagnostic detail (mode + finding signatures) unchanged.
+ */
+function recordAuthorAttempt(summary: AuthorRunSummary, entry: AuthorRunAttempt): void {
+  appendSentinelLedgerEvent({
+    kind: "attempt-end",
+    stage: "source-author",
+    number: entry.number,
+    outcome: entry.outcome,
+  });
+  summary.attempts.push(entry);
 }
 
 /**
@@ -2824,6 +2864,20 @@ export async function authorComposition(
   try {
     const result = await authorCompositionLoop(provider, args, summary);
     summary.outcome = "published";
+    // The shipped draft ends the LAST started logical attempt (an early-ship
+    // may publish a draft banked by an earlier one — the attempt-end records
+    // when the stage stopped spending, not which draft won).
+    const lastStarted = (activeSentinelLedgerEvents() ?? []).reduce(
+      (last, event) =>
+        event.kind === "attempt-start" && event.stage === "source-author" ? event.number : last,
+      1,
+    );
+    appendSentinelLedgerEvent({
+      kind: "attempt-end",
+      stage: "source-author",
+      number: lastStarted,
+      outcome: "published",
+    });
     return result;
   } catch (error) {
     summary.outcome = "failed";
@@ -2928,6 +2982,12 @@ async function authorCompositionLoop(
       compact = true;
     }
     const patchMode = Boolean(scratch);
+    appendSentinelLedgerEvent({
+      kind: "attempt-start",
+      stage: "source-author",
+      number: attempt,
+      mode: patchMode ? "patch" : "full",
+    });
     // Sentinel Phase 2: the initial full authoring pass is scene-addressable
     // (film_style + per-scene slots the host assembles). Recovery passes stay
     // whole-doc (patch / compact re-author) — the slot path owns first-pass
@@ -3168,7 +3228,7 @@ async function authorCompositionLoop(
         const signatures: ReadonlySet<string> = new Set(
           validation.errors.map(findingSignature),
         );
-        summary.attempts.push({
+        recordAuthorAttempt(summary, {
           number: attempt,
           mode: patchMode ? "patch" : "full",
           outcome: "static-rejected",
@@ -3663,7 +3723,7 @@ async function authorCompositionLoop(
         findings: validationFeedback,
         html: draft.html,
       });
-      summary.attempts.push({
+      recordAuthorAttempt(summary, {
         number: attempt,
         mode: patchMode ? "patch" : "full",
         outcome: "browser-rejected",
@@ -3720,7 +3780,7 @@ async function authorCompositionLoop(
         findings: [message],
         raw: attemptRaw,
       });
-      summary.attempts.push({
+      recordAuthorAttempt(summary, {
         number: attempt,
         mode: patchMode ? "patch" : "full",
         outcome: "exception",
@@ -3812,6 +3872,12 @@ async function authorCompositionLoop(
     );
     summary.strategyChanges.push(`source-rescue:${rescueTier}`);
     if (args.attempts) args.attempts.count = 4;
+    appendSentinelLedgerEvent({
+      kind: "attempt-start",
+      stage: "source-author",
+      number: 4,
+      mode: "rescue",
+    });
     try {
       const prompt = creationPrompt({
         ...args,
@@ -3847,7 +3913,7 @@ async function authorCompositionLoop(
           findings: validation.errors,
           html: draft.html,
         });
-        summary.attempts.push({
+        recordAuthorAttempt(summary, {
           number: 4,
           mode: "rescue",
           outcome: "static-rejected",
@@ -3870,7 +3936,7 @@ async function authorCompositionLoop(
           findings: [...browserQa.errors, ...browserQa.warnings].slice(0, 20),
           html: draft.html,
         });
-        summary.attempts.push({
+        recordAuthorAttempt(summary, {
           number: 4,
           mode: "rescue",
           outcome: "browser-rejected",
@@ -3886,7 +3952,7 @@ async function authorCompositionLoop(
         mode: "rescue",
         findings: [message],
       });
-      summary.attempts.push({
+      recordAuthorAttempt(summary, {
         number: 4,
         mode: "rescue",
         outcome: "exception",

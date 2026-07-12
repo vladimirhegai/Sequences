@@ -291,7 +291,7 @@ Goal (handoff §7): one immutable ledger; derive CLI/Slack/JSON status from it;
 stop calling quality-degraded drafts "browser-valid".
 
 ### S1.1 Extract `AttemptLedger`
-- [ ] New `src/engine/runner/attemptLedger.ts`: append-only typed events
+- [x] New `src/engine/runner/attemptLedger.ts`: append-only typed events
   (logical attempt start/end per stage, physical request, hedge launch/win,
   timeout, scene-repair call, critic call, degradation, fallback) with one
   writer. Ladder emits events; nothing else keeps counts. Keep the existing
@@ -738,3 +738,29 @@ the source layer. Verification: `npm run mcp:demo --workspace
 pre-existing S-init edits (`CLAUDE.md`, Slack docs/PROBE_LOG) and ignored
 `.tmp/`; they were not staged or altered. No publish/deploy or paid probe was
 run.
+
+## S1.1 — 2026-07-11 — DONE
+Added the append-only `src/engine/runner/attemptLedger.ts` (typed events, one
+writer, pure fold) and rewrote `sentinelTelemetry.ts` as a thin context facade
+over it: every `recordSentinel*` emitter now appends an event, no counter
+state exists anywhere else, and `finalizeSentinelRun` derives the UNCHANGED
+`planning/sentinel-run.json` shape via `deriveSentinelRunView` while also
+persisting the raw events to `planning/attempt-ledger.json` (for S1.2/S1.3).
+The ladder now emits `attempt-start`/`attempt-end` for both logical loops
+(storyboard rungs incl. truncation/artifact-grace/rejection outcomes;
+source-author full/patch/rescue via a `recordAuthorAttempt` helper at every
+former `summary.attempts.push` site, plus a `published` end on ship),
+`hedge-win` in `hedgedCompletion`, and `stream-timeout` in the idle watchdog.
+The hedge budget (`claimSentinelHedge`) reads launches from the ledger.
+Files: `attemptLedger.ts` (new), `sentinelTelemetry.ts`, `ladder.ts`,
+`test/attemptLedger.test.ts` (new) + fixtures
+`test/fixtures/sentinel-run-{briefly,signaldock}-20260711.json` (byte copies
+of the two recorded probes). Verification: the new test reconstructs each
+recorded run's events and reproduces the persisted counters EXACTLY (deep
+equal minus the write-time `at`; both fold to 10 logical / 14 physical);
+existing `sentinelTelemetry.test.ts` passes untouched; Slack typecheck, 1,284
+unit tests, `replay:all` (13/0/0), and the model-free demo all green. Notes:
+degradation dedupe moved record→view (ledger keeps every emission); the
+finalize event stores the caller's disposition and the fold applies the
+published→published-degraded honesty downgrade; `fallback` events currently
+carry a generic reason until S1.2 enriches them. No paid probe was run.
