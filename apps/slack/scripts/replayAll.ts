@@ -21,12 +21,12 @@ const FIXTURES: Fixture[] = [
     id: "LaunchRelay",
     jobId: "architecture-audit-live-1-20260711",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "407697f1d40217126d1ecd26bcb48187a19db19fec9dafddb684235b21f4db26", replaySha256: "518adf3d01eccd1bcd8760b819929e74eba93cfd1ccb56bdaa7da07c44f7a690", outcome: "rejected" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "518adf3d01eccd1bcd8760b819929e74eba93cfd1ccb56bdaa7da07c44f7a690", outcome: "rejected" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "407697f1d40217126d1ecd26bcb48187a19db19fec9dafddb684235b21f4db26", replaySha256: "84ab29fa3b87527b3dd2c7ffa499f95e113beb91b733eb8c9848d385acd804e7", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "eeb67ad53cf6937380641d507f9273c3f332bb6eed935581f145c55616c14a10", outcome: "parsed" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "b32f59a56ef40870348b842cea73e98d7cc29bbc01117bb3370d0b478287c0eb" },
-      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "9a0166f2357a714e567b938d39b06cfcca8601e8bf0b46709f8f067e4ab7af0a" },
+      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "15667412ee754cc1ebac39c46550b18f942bc38b8bfd97599de1cca1dae6d95f" },
+      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "b5f3ec130e860daa70b6cc3eab9606c3ed094120fd1198caa16afdc71a5c2cf9" },
     },
   },
   {

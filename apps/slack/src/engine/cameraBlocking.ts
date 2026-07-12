@@ -286,7 +286,9 @@ export function resolveCameraBlockingPlan(
           (phrase.role === "payoff" || phrase.role === "resolve" ? "primary" : "supporting");
       const anchor = anchorFor(scene, target);
       const occupancy = occupancyFor(target, scene, importance);
-      const contextualKind = target.entityKind === "trace" || target.entityKind === "cta" ||
+      const contextualKind = Boolean(
+        component?.region && target.id === scene.spatialIntent?.focalPart
+      ) || target.entityKind === "trace" || target.entityKind === "cta" ||
         target.entityKind === "metric" ||
         component?.kind === "search" || component?.kind === "progress" ||
         component?.kind === "progress-ring";

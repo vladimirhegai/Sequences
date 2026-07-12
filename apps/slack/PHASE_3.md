@@ -285,3 +285,33 @@ S3.x commit is completed.
   successfully without editing its bytes. Focused plugin/camera tests passed
   73/73; typecheck passed; the complete unit project passed 78 files / 1,305
   tests; and frozen replay remained green.
+
+### LP-1 attempt D — failed loudly; authored-station ownership defect found
+
+- A new seven-scene, plugin-constrained retry
+  `phase3-lp1-camera-20260711-d` cleared the framing floor and plugin issue but
+  every storyboard attempt converged on one remaining finding: focal
+  `owner-stack` versus supporting `dependency-list in owner-station`. Triage
+  recorded 8 logical / 9 physical calls, one hedge, no request failures, no
+  fallback/degradation, and no browser QA because planning remained fail-loud.
+- The model explicitly authored one push-in to `owner-station`, named
+  `owner-stack` as the sole focal/hero, and marked the dependency moment
+  supporting. The compiler did not give a generic focal component its declared
+  region as contextual framing, so the region-authored segment was claimed by
+  the supporting trace phrase instead. Collapse then preserved it as an
+  independently authored route—the opposite of the written plan.
+- Fix: any spatial focal with a declared region now receives that region as
+  its contextual framing target. The authored station move therefore belongs
+  to the focal phrase; supporting targets in the same region share its
+  destination and collapse locally. A minimized owner/dependency regression
+  asserts one executed focal phrase and zero idea findings.
+- Exact attempt-D replay now accepts the unchanged seven-scene artifact. The
+  same contextual-framing correction intentionally changes four LaunchRelay
+  replay expectations: two storyboards no longer carry an idea-budget false
+  positive (their remaining pacing-only residue is advisory on final-attempt
+  replay), and two strict source islands gain the corrected focal context.
+  Artifact bytes are unchanged; only deterministic replay hashes/outcomes are
+  refrozen.
+- Focused phrase/blocking tests passed 20/20. Typecheck passed; the complete
+  unit project passed 78 files / 1,306 tests; exact replay passed 13 with zero
+  skips/failures after the intentional LaunchRelay refreeze.

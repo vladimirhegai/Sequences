@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import type { ContinuousMotionEvidenceV1 } from "../src/engine/continuousMotion.ts";
 import {
+  auditCameraIdeaBudget,
   buildCameraBlockingEvidence,
   minimumJerkProgress,
   parseCameraBlockingPlan,
@@ -56,6 +57,99 @@ function scenes(): DirectScene[] {
 }
 
 describe("camera blocking director", () => {
+  it("keeps supporting evidence local when an authored move addresses the focal station", () => {
+    const storyboard: DirectScene[] = [{
+      id: "owner-verify",
+      title: "One owner verifies",
+      purpose: "Resolve ownership",
+      startSec: 0,
+      durationSec: 3.5,
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          startSec: 0.7,
+          durationSec: 2.2,
+          toRegion: "owner-station",
+          zoom: 1.25,
+        }],
+      },
+      components: [
+        {
+          version: 1,
+          id: "owner-stack",
+          kind: "avatar-stack",
+          region: "owner-station",
+          role: "hero",
+        },
+        {
+          version: 1,
+          id: "dependency-list",
+          kind: "list",
+          region: "owner-station",
+          role: "support",
+          entityId: "trace",
+        },
+      ],
+      beats: [
+        {
+          version: 1,
+          id: "owner-pop",
+          sceneId: "owner-verify",
+          component: "owner-stack",
+          kind: "rows",
+          atSec: 0.8,
+        },
+        {
+          version: 1,
+          id: "dependency-highlight",
+          sceneId: "owner-verify",
+          component: "dependency-list",
+          kind: "highlight",
+          atSec: 2.3,
+        },
+      ],
+      moments: [
+        {
+          version: 1,
+          id: "owner-resolve",
+          sceneId: "owner-verify",
+          atSec: 0.8,
+          title: "Owner lands",
+          visualState: "Owner is primary",
+          change: "Owner appears",
+          motionIntent: "reveal",
+          importance: "primary",
+        },
+        {
+          version: 1,
+          id: "dependency-verified",
+          sceneId: "owner-verify",
+          atSec: 2.3,
+          title: "Dependency verifies",
+          visualState: "Support row highlights",
+          change: "Support develops locally",
+          motionIntent: "ui-state",
+          importance: "supporting",
+        },
+      ],
+      spatialIntent: {
+        version: 1,
+        focalPart: "owner-stack",
+        composition: "owner stack and local dependency list",
+        relationships: ["dependency list develops inside the owner framing"],
+      },
+    }];
+    const plan = resolveCameraBlockingPlan(storyboard, resolveContinuityGraph(storyboard));
+    expect(plan.scenes[0]!.phrases).toHaveLength(1);
+    expect(plan.scenes[0]!.phrases[0]).toMatchObject({
+      target: { id: "owner-stack" },
+      framingTarget: { kind: "region", id: "owner-station" },
+    });
+    expect(auditCameraIdeaBudget(storyboard)).toEqual([]);
+  });
+
   it("gives every phrase a target, occupancy, arrival, corridor, dwell, and next handoff", () => {
     const storyboard = scenes();
     const graph = resolveContinuityGraph(storyboard);
