@@ -178,16 +178,11 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     promptCostChars: 0,
     test: "test/pacingAudit.test.ts",
     addedBecause:
-      "Phase 3.1: normalizeCameraBudget clamps camera-move counts to auditPacing's " +
-      "own ceilings (drop the lowest-energy extra full move; keep the earliest " +
-      "MAX_WHIPS_PER_FILM whips) so the arithmetic never burns a paid storyboard " +
-      "retry — it PREVENTS pacing/camera-budget. It NEVER drops the one camera " +
-      "activity a declared moment would actually bind (closest eligible start); " +
-      "redundant moves that merely overlap the same evidence window stay droppable, and " +
-      "commits ATOMICALLY: parseStoryboardResponse keeps the normalized plan only " +
-      "if it re-validates clean, else logs 'sentinel-normalization reverted', " +
-      "restores the model's own artifact, and retries THAT (so a clamp cannot mint " +
-      "a fresh blocking finding — minCameraMoves, framing-density floor). " +
+      "normalizeCameraBudget now owns only the mechanical film-wide whip cap: " +
+      "keep the earliest MAX_WHIPS_PER_FILM unless a declared moment makes a later " +
+      "whip load-bearing. Phase 3.4 removed the former per-scene raw move deletion; " +
+      "camera.idea-budget owns the creative choice of which competing route to cut. " +
+      "The remaining whip clamp commits atomically through parseStoryboardResponse. " +
       "Telemetry tag: camera-budget-clamp. Visible in STORYBOARD.md.",
   },
   {
@@ -1141,6 +1136,22 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "2026-07-03 energy grading: auditCameraEnergy blocks a 12s+ storyboard with " +
       "no high-energy peak (whip / zoom>=1.3 push / energetic cut) or a repeated " +
       "HIGH-energy verb (whip/orbit only, WS6). A film with no peak reads flat.",
+  },
+  {
+    id: "camera.idea-budget",
+    group: "camera",
+    layer: "static",
+    blocking: "blocking",
+    findingPrefixes: ["camera/idea-budget"],
+    promptCostChars: 450,
+    test: "test/cameraPhrase.test.ts",
+    addedBecause:
+      "Phase 3.4 replaces raw move-count budgeting with one primary lens route " +
+      "per scene. The compiled CameraPhrase plan identifies actual routes after " +
+      "supporting evidence and degenerate poses collapse; the finding names the " +
+      "scene focal to keep and the competing idea(s) to cut or split into their " +
+      "own scene. Choosing the idea is creative, so this is a findings-retry, not " +
+      "an L2 move-deletion normalizer.",
   },
   {
     id: "components.complexity",

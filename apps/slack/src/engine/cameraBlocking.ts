@@ -12,7 +12,11 @@ import type { DirectScene } from "./directComposition.ts";
 import { resolveCutPlan } from "./cutContract.ts";
 import { resolveCameraPlan } from "./cameraContract.ts";
 import { resolveFilmDirectionScore, type DirectionPhraseV1 } from "./directionScore.ts";
-import type { ContinuityEntityKind, ContinuityGraphV1 } from "./continuityGraph.ts";
+import {
+  resolveContinuityGraph,
+  type ContinuityEntityKind,
+  type ContinuityGraphV1,
+} from "./continuityGraph.ts";
 import type { ContinuousMotionEvidenceV1 } from "./continuousMotion.ts";
 import {
   compileCameraPhrasePlan,
@@ -403,6 +407,50 @@ export function resolveCameraBlockingPlan(
     },
     scenes: planScenes,
   });
+}
+
+export function auditCameraIdeaBudgetPlan(
+  scenes: DirectScene[],
+  plan: CameraPhrasePlanV1,
+): string[] {
+  const sceneById = new Map(scenes.map((scene) => [scene.id, scene]));
+  const findings: string[] = [];
+  for (const plannedScene of plan.scenes) {
+    const routes = plannedScene.phrases.filter((phrase) =>
+      phrase.target.id !== "composition-root" || plannedScene.phrases.length === 1
+    );
+    if (routes.length <= 1) continue;
+    const scene = sceneById.get(plannedScene.sceneId);
+    if (!scene) continue;
+    const focalPart = scene.spatialIntent?.focalPart;
+    const keep = routes.find((phrase) =>
+      phrase.target.id === focalPart || phrase.framingTarget?.id === focalPart
+    ) ?? routes.find((phrase) => phrase.importance === "primary") ?? routes[0]!;
+    const cut = routes.filter((phrase) => phrase !== keep);
+    const idea = (phrase: CameraPhraseV1): string =>
+      phrase.framingTarget && phrase.framingTarget.id !== phrase.target.id
+        ? `${phrase.target.id} in ${phrase.framingTarget.id}`
+        : phrase.target.id;
+    findings.push(
+      `camera/idea-budget: scene "${scene.id}" asks the lens to tell competing ideas ` +
+        `${routes.map((phrase) => `"${idea(phrase)}"`).join(", ")}. ` +
+        `Keep "${idea(keep)}" as the scene's one primary camera route; cut the lens ` +
+        `route${cut.length === 1 ? "" : "s"} to ` +
+        `${cut.map((phrase) => `"${idea(phrase)}"`).join(", ")} and develop ` +
+        `${cut.length === 1 ? "that evidence" : "those evidence beats"} with local ` +
+        `component motion inside the kept framing (or move each competing idea to its own scene).`,
+    );
+  }
+  return findings;
+}
+
+/** One scene tells one lens-directed idea; support develops inside that route. */
+export function auditCameraIdeaBudget(scenes: DirectScene[]): string[] {
+  if (scenes.length && scenes.every((scene) => scene.id.startsWith("fallback-"))) return [];
+  return auditCameraIdeaBudgetPlan(
+    scenes,
+    resolveCameraBlockingPlan(scenes, resolveContinuityGraph(scenes)),
+  );
 }
 
 /** Quintic minimum-jerk interpolation: position, velocity, acceleration are continuous at endpoints. */

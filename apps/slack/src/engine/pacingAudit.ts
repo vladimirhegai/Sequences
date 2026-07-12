@@ -19,8 +19,8 @@
  *    immediate framing change (hold = 0), not a free pass.
  * 3. Hold on outcomes longer than actions — the result of a press matters
  *    more than the press.
- * 4. Camera density has a ceiling as well as a floor: today only
- *    under-movement blocks, so the system structurally rewards churn.
+ * 4. Camera density is budgeted by ideas, not raw moves: each scene gets one
+ *    primary lens route while supporting evidence develops inside that frame.
  *
  * Every finding asks for a fix (extend, move, or drop) rather than vetoing a
  * creative addition, and every fix hint carries the "hold ≠ freeze" language
@@ -39,6 +39,7 @@ import {
   diveWindows,
   type CameraMoveIntentV1,
 } from "./cameraContract.ts";
+import { auditCameraIdeaBudget } from "./cameraBlocking.ts";
 import { resolveComponentPlan, type ResolvedComponentBeatV1 } from "./componentContract.ts";
 import {
   EVIDENCE_AFTER_SEC,
@@ -79,7 +80,7 @@ export const READING_MAX_SEC = 4;
 export const OUTCOME_HOLD_SEC = 0.8;
 /** An `assemble` headline is a resolve gesture — its lock holds at least this. */
 export const ASSEMBLE_HOLD_SEC = 1.2;
-/** Full camera moves allowed per scene: 1 + floor(duration / this). */
+/** Cadence used by the film-wide distinct-framing floor. */
 export const CAMERA_BUDGET_WINDOW_SEC = 3.5;
 /** Whips allowed per film. */
 export const MAX_WHIPS_PER_FILM = 2;
@@ -342,7 +343,7 @@ export function sceneIntroductionTimes(scene: DirectScene): number[] {
  * findings-retry can fix them precisely.
  */
 export function auditPacing(storyboard: DirectScene[]): string[] {
-  const findings: string[] = [];
+  const findings: string[] = [...auditCameraIdeaBudget(storyboard)];
   // Content seconds → viewer seconds (identity when no timeRamp is declared).
   const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
   const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
@@ -359,19 +360,6 @@ export function auditPacing(storyboard: DirectScene[]): string[] {
     const path = scene.camera?.path ?? [];
     const fullMoves = path.filter((move) => CAMERA_FULL_MOVES.has(move.move));
     whipCount += path.filter((move) => move.move === "whip").length;
-
-    // 4. Camera-segment budget: the counterweight to the density floor. The
-    // parsed path is already compound-merged, so a pan+push pair the resolver
-    // fuses counts as one move here too.
-    const moveCap = 1 + Math.floor(scene.durationSec / CAMERA_BUDGET_WINDOW_SEC);
-    if (fullMoves.length > moveCap) {
-      findings.push(
-        `pacing/camera-budget: scene "${scene.id}" (${scene.durationSec.toFixed(1)}s) declares ` +
-          `${fullMoves.length} full camera moves — a window that length supports at most ` +
-          `${moveCap} reframes before the film reads as churn. Cut the least motivated ` +
-          `move(s); a drift or hold develops the current framing without spending a new one`,
-      );
-    }
 
     // 1. Introduction → development ratio. The contract is per scene, not
     // only multi-surface scenes: ONE dense window opened at 90% of the scene
@@ -673,62 +661,15 @@ export function withNormalizationNotes(scene: DirectScene, notes: string[]): Dir
 }
 
 /**
- * Sentinel Phase 3 normalize-before-retry: mechanically clamp camera-move
- * counts to `auditPacing`'s own ceilings instead of sending an over-dense
- * storyboard back to the model for a findings-retry. This deletes/degrades
- * only — it never invents a move, a target, or a timing the model didn't
- * already declare, so it is a normalization (L2), not a creative rewrite.
- *
- * 1. Per-scene full-move budget: drop the lowest-energy extra move(s) down to
- *    `1 + floor(durationSec / CAMERA_BUDGET_WINDOW_SEC)` (auditPacing's own
- *    cap). A dropped move leaves a gap the downstream camera resolver already
- *    auto-fills with a drift/creep segment (see cameraContract.ts) — exactly
- *    the finding's own suggested fix ("a drift or hold develops the current
- *    framing without spending a new one").
- * 2. Film-wide whip budget: keep the earliest `MAX_WHIPS_PER_FILM` whips
- *    chronologically, drop the rest — "drop the 3rd+ whip" per the plan.
- *
- * A scene's `camera` is dropped entirely (never left with an empty `path`)
- * if a clamp would otherwise empty it — camera is an enhancement, never a
- * veto, matching the rest of this contract's degrade philosophy.
+ * Compatibility seam for the mechanical film-wide whip clamp. Phase 3.4
+ * removed raw per-scene move deletion: selecting which visual idea to cut is
+ * creative and now returns an actionable `camera/idea-budget` findings-retry.
  */
 export function normalizeCameraBudget(
   storyboard: DirectScene[],
 ): { storyboard: DirectScene[]; normalized: string[] } {
   const normalized: string[] = [];
   let scenes = storyboard.map((scene) => ({ ...scene }));
-
-  scenes = scenes.map((scene) => {
-    const path = scene.camera?.path;
-    if (!path || !path.length) return scene;
-    const moveCap = 1 + Math.floor(scene.durationSec / CAMERA_BUDGET_WINDOW_SEC);
-    const fullMoveEntries = path
-      .map((move, index) => ({ move, index }))
-      .filter((entry) => CAMERA_FULL_MOVES.has(entry.move.move));
-    if (fullMoveEntries.length <= moveCap) return scene;
-    const toDrop = fullMoveEntries.length - moveCap;
-    // Moves a declared moment may bind to as evidence are never dropped; if
-    // the budget cannot be met from the rest, leave the blocking finding for
-    // the model — silently orphaning moment evidence is worse than a retry.
-    const droppable = fullMoveEntries.filter((entry) => !isLoadBearingMove(scene, entry.move));
-    if (droppable.length < toDrop) return scene;
-    const dropIndexes = new Set(
-      [...droppable]
-        .sort((a, b) => cameraMoveEnergyRank(a.move) - cameraMoveEnergyRank(b.move) || a.index - b.index)
-        .slice(0, toDrop)
-        .map((entry) => entry.index),
-    );
-    const newPath = path.filter((_, index) => !dropIndexes.has(index));
-    const note =
-      `dropped ${toDrop} lowest-energy camera move(s) to fit the ` +
-      `${moveCap}-move budget for a ${scene.durationSec.toFixed(1)}s window`;
-    normalized.push(`scene "${scene.id}": ${note}`);
-    if (!newPath.length) {
-      const { camera: _camera, ...rest } = scene;
-      return withNormalizationNotes(rest, [note]);
-    }
-    return withNormalizationNotes({ ...scene, camera: { ...scene.camera!, path: newPath } }, [note]);
-  });
 
   // move.startSec is already absolute (per CameraMoveIntentV1) — no
   // scene.startSec offset to add.

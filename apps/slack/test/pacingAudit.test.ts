@@ -67,7 +67,7 @@ function moment(sceneId: string, id: string, atSec: number): StoryboardMomentV1 
 }
 
 describe("auditPacing camera budget", () => {
-  it("caps full camera moves per scene at 1 + floor(duration/3.5)", () => {
+  it("does not confuse raw move count with the scene's compiled idea count", () => {
     const churn = [scene({
       id: "busy",
       startSec: 0,
@@ -82,10 +82,8 @@ describe("auditPacing camera budget", () => {
       },
     })];
     const findings = auditPacing(churn);
-    expect(findings.some((finding) =>
-      finding.startsWith("pacing/camera-budget:") && finding.includes('"busy"')
-    )).toBe(true);
-    // Two full moves in the same window are inside the budget.
+    expect(findings.some((finding) => finding.startsWith("pacing/camera-budget:"))).toBe(false);
+    // A second raw shape with fewer moves is equally free of numeric budgeting.
     const calm = [scene({
       id: "busy",
       startSec: 0,
@@ -737,8 +735,8 @@ describe("auditPacing on the deterministic proof films", () => {
   });
 });
 
-describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", () => {
-  it("drops the lowest-energy extra move to fit the per-scene budget, keeping the peak", () => {
+describe("Sentinel Phase 3 — normalizeCameraBudget (whip-only compatibility)", () => {
+  it("preserves per-scene moves because choosing an idea requires a findings-retry", () => {
     // 3s scene → moveCap = 1 + floor(3/3.5) = 1. A quiet pan/track-to-anchor
     // pair plus one whip: the whip (high energy) must survive; both quiet
     // moves are cut.
@@ -756,13 +754,10 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
       },
     });
     const result = normalizeCameraBudget([churn]);
-    expect(result.normalized).toHaveLength(1);
-    expect(result.normalized[0]).toContain('"busy"');
+    expect(result.normalized).toEqual([]);
     const survivingMoves = result.storyboard[0]!.camera!.path;
-    expect(survivingMoves).toHaveLength(1);
-    expect(survivingMoves[0]!.move).toBe("whip");
-    // The clamped storyboard no longer trips the camera-budget finding.
-    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/camera-budget:"))).toBe(false);
+    expect(survivingMoves).toHaveLength(3);
+    expect(survivingMoves.map((entry) => entry.move)).toEqual(["pan", "track-to-anchor", "whip"]);
   });
 
   it("is a no-op when a scene is already inside its budget", () => {
@@ -811,7 +806,7 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
     expect(droppedScene.camera).toBeUndefined();
   });
 
-  it("never drops a load-bearing move (a declared moment binds inside its window)", () => {
+  it("never deletes either load-bearing or supporting moves per scene", () => {
     // 3s scene → cap 1, two quiet moves. The pan carries a declared moment at
     // its arrival, so the clamp must drop the OTHER move even though both are
     // equally low-energy — orphaning moment evidence is never a normalization.
@@ -829,15 +824,13 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
       moments: [moment("guarded", "m-arrival", 1.0)],
     });
     const result = normalizeCameraBudget([guarded]);
-    expect(result.normalized).toHaveLength(1);
+    expect(result.normalized).toEqual([]);
     const surviving = result.storyboard[0]!.camera!.path;
-    expect(surviving).toHaveLength(1);
-    expect(surviving[0]!.move).toBe("pan");
-    // The note is carried on the scene for STORYBOARD.md visibility.
-    expect(result.storyboard[0]!.sentinelNormalizations?.length).toBe(1);
+    expect(surviving).toHaveLength(2);
+    expect(result.storyboard[0]!.sentinelNormalizations).toBeUndefined();
   });
 
-  it("protects only the closest camera move when two moves overlap one camera moment", () => {
+  it("leaves overlapping move evidence intact for the idea gate", () => {
     const overlap = scene({
       id: "overlap",
       startSec: 3.4,
@@ -853,15 +846,12 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
       moments: [moment("overlap", "whip-arrival", 6)],
     });
     const result = normalizeCameraBudget([overlap]);
-    expect(result.normalized).toHaveLength(1);
-    expect(result.storyboard[0]!.camera!.path).toHaveLength(2);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard[0]!.camera!.path).toHaveLength(3);
     expect(result.storyboard[0]!.camera!.path.some((entry) => entry.move === "whip")).toBe(true);
-    expect(auditPacing(result.storyboard).some((finding) =>
-      finding.startsWith("pacing/camera-budget:")
-    )).toBe(false);
   });
 
-  it("refuses to clamp when the budget cannot be met without load-bearing moves", () => {
+  it("never emits the retired raw per-scene camera budget", () => {
     // Both moves carry moment evidence: the clamp leaves the scene alone so
     // the blocking finding goes back to the model (and the parse-side
     // convergence check keeps everything atomic).
@@ -881,7 +871,7 @@ describe("Sentinel Phase 3 — normalizeCameraBudget (normalize-before-retry)", 
     const result = normalizeCameraBudget([pinned]);
     expect(result.normalized).toEqual([]);
     expect(result.storyboard[0]!.camera!.path).toHaveLength(2);
-    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/camera-budget:"))).toBe(true);
+    expect(auditPacing(result.storyboard).some((f) => f.startsWith("pacing/camera-budget:"))).toBe(false);
   });
 
   it("never drops a load-bearing 3rd whip — the film-budget finding stays for the model", () => {

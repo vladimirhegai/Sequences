@@ -135,3 +135,31 @@ S3.x commit is completed.
   canonical tolerance block/runtime bytes; storyboard and artifact hashes did
   not change.
 - No new finding class, paid call, publish, or deploy.
+
+### S3.4 — budget visual ideas, not move counts
+
+- Removed the `1 + floor(duration/3.5)` per-scene move cap and its L2
+  low-energy move deletion. Duration is not a proxy for story coherence, and
+  selecting which idea to discard is creative rather than a safe normalizer.
+- Added the blocking static finding `camera/idea-budget` to Sentinel. It runs
+  over the post-collapse phrase plan, keeps the route matching
+  `spatialIntent.focalPart`, and explicitly names the other target(s) to cut or
+  split into their own scenes. Supporting evidence is directed to local
+  component motion inside the kept framing.
+- Preserved `normalizeCameraBudget` as a compatibility seam only for the
+  mechanical film-wide third-whip clamp. Updated the old tests to prove it no
+  longer deletes per-scene camera evidence.
+- SignalDock exact validation now returns exactly three findings and no other
+  class: keep `confidence-numeral-52`, cut `incident-workspace`; keep
+  `approve-button`, cut `confidence-numeral-71`; keep
+  `confidence-numeral-94`, cut `restore-cta`.
+- The minimized SignalDock-shaped test retains the 14-input → 7-route collapse
+  and proves the three actionable idea findings contain target names rather
+  than a numeric limit.
+- Replay consequence: four previously parsed rejected-storyboard artifacts
+  now correctly replay as expected idea-budget rejections (LaunchRelay x2,
+  PulseForge, SignalDock). Only their expected outcome/error hashes changed;
+  all raw artifacts and all source replay hashes remain frozen.
+- Verification: Slack typecheck; 175 focused pacing/camera/Sentinel tests;
+  exact replay 13 passed, 0 skipped, 0 failed.
+- No paid call, publish, or deploy.

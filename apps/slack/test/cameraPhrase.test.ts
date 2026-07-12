@@ -6,6 +6,8 @@ import {
   type CameraPhraseV1,
 } from "../src/engine/cameraPhrase.ts";
 import type { CameraPlanV1 } from "../src/engine/cameraContract.ts";
+import { auditCameraIdeaBudgetPlan } from "../src/engine/cameraBlocking.ts";
+import type { DirectScene } from "../src/engine/directComposition.ts";
 
 const anchor = { x: 0.5, y: 0.5, name: "center" as const };
 
@@ -130,7 +132,7 @@ describe("CameraPhrase compiler", () => {
       dwell: { startSec: 0.5, endSec: 1.5, readableSec: 1 },
       departure: { startSec: 1.5, endSec: 2 },
     });
-    const scenes = [
+    const phraseScenes = [
       [
         phrase("scattered", "01", "primary", "continuity", "metric-38", "metric-anchor"),
         phrase("scattered", "02", "supporting", "host-derived", "trace"),
@@ -154,9 +156,57 @@ describe("CameraPhrase compiler", () => {
         phrase("resolve", "03", "supporting", "continuity", "restore", "cta"),
       ],
     ];
-    const results = scenes.map((scene) => collapseCameraPhrases(scene));
+    const results = phraseScenes.map((scene) => collapseCameraPhrases(scene));
     expect(results.reduce((count, result) => count + result.phrases.length, 0)).toBe(7);
     expect(results.reduce((count, result) => count + result.collapsed, 0)).toBe(7);
     expect(results[2]!.phrases[1]!.collapsedPhraseIds).toEqual(["approval:05"]);
+
+    const storyboard: DirectScene[] = [
+      { id: "scattered", title: "Scattered", purpose: "one metric", startSec: 0, durationSec: 4,
+        spatialIntent: { version: 1, focalPart: "metric-38", composition: "center", relationships: [] } },
+      { id: "gather", title: "Gather", purpose: "one metric", startSec: 4, durationSec: 5.5,
+        spatialIntent: { version: 1, focalPart: "metric-52", composition: "center", relationships: [] } },
+      { id: "approval", title: "Approval", purpose: "one action", startSec: 9.5, durationSec: 6.5,
+        spatialIntent: { version: 1, focalPart: "approve", composition: "center", relationships: [] } },
+      { id: "resolve", title: "Resolve", purpose: "one metric", startSec: 16, durationSec: 7,
+        spatialIntent: { version: 1, focalPart: "metric-94", composition: "center", relationships: [] } },
+    ];
+    const findings = auditCameraIdeaBudgetPlan(storyboard, {
+      version: 1,
+      enabled: true,
+      solver,
+      tolerances: {
+        opacityMin: 0.35,
+        visibleFractionMin: 0.85,
+        occupancyMinFactor: 0.9,
+        occupancyMaxFactor: 1.1,
+        anchorErrorMax: 0.14,
+        restSpeedMax: 0.018,
+        readableDwellMinSec: 0.35,
+        landingSampleInsetSec: 0.08,
+        segmentMatchSec: 0.02,
+      },
+      scenes: storyboard.map((scene, index) => ({
+        sceneId: scene.id,
+        phrases: results[index]!.phrases,
+      })),
+      summary: {
+        phraseCount: 7,
+        explicitTargetCount: 7,
+        primaryPhraseCount: 7,
+        primaryWithReadableLandingCount: 7,
+        inputPhraseCount: 14,
+        collapsedPhraseCount: 7,
+        authoredRouteCount: 1,
+        continuityRouteCount: 5,
+        hostDerivedRouteCount: 1,
+      },
+    });
+    expect(findings).toHaveLength(3);
+    expect(findings[0]).toContain('Keep "metric-52 in metric"');
+    expect(findings[0]).toContain('cut the lens route to "workspace"');
+    expect(findings[1]).toContain('Keep "approve in table"');
+    expect(findings[2]).toContain('Keep "metric-94 in confidence"');
+    expect(findings.join("\n")).not.toContain("at most");
   });
 });

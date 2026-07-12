@@ -392,7 +392,7 @@ collapse zero-distance/same-target phrases; budget visual ideas.
 - Verify: targeted browser tests + one exact-artifact replay per seed fixture.
 
 ### S3.4 Idea budget, not phrase budget
-- [ ] Replace raw per-scene move-count budgeting with: ≤1 primary route per
+- [x] Replace raw per-scene move-count budgeting with: ≤1 primary route per
   scene + supporting development that cannot create a new lens route
   (handoff: "supporting evidence may develop the frame"). Plan-time gate
   message must say which idea to cut, not which number was exceeded.
@@ -925,3 +925,21 @@ over-zoom from applying QA slack to runtime targeting; the fixture now enters
 through canonical collapse and runtime again targets nominal occupancy while
 QA alone applies the shared measurement band. No paid probe, publish, or
 deploy.
+
+## S3.4 — 2026-07-11 — DONE
+Replaced the duration-based raw full-move cap with a static one-idea contract
+over compiled camera routes. Each multi-route scene now gets a blocking
+`camera/idea-budget` findings-retry that keeps the route matching the scene's
+declared focal and names every competing lens idea to cut or split into its own
+scene; local component motion remains the prescribed supporting development.
+The L2 `normalizeCameraBudget` seam no longer deletes per-scene moves (a
+creative choice); it retains only the mechanical film-wide whip cap. Added the
+finding to Sentinel. The exact SignalDock accepted storyboard yields only the
+three intended idea findings, naming `incident-workspace`,
+`confidence-numeral-71`, and `restore-cta` as the routes to cut. Files:
+`cameraBlocking.ts`, `pacingAudit.ts`, `sentinel.ts`, focused tests, replay
+expectations, `PHASE_3.md`, and this plan. Verification: Slack typecheck;
+pacing/camera/Sentinel tests (175/175); exact `replay:all` (13/0/0). Four old
+storyboard artifacts (two LaunchRelay, PulseForge, SignalDock) intentionally
+changed from parsed to expected findings-retry rejection; artifact/source
+bytes remained frozen. No paid probe, publish, or deploy.

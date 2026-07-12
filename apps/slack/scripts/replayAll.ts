@@ -21,8 +21,8 @@ const FIXTURES: Fixture[] = [
     id: "LaunchRelay",
     jobId: "architecture-audit-live-1-20260711",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "407697f1d40217126d1ecd26bcb48187a19db19fec9dafddb684235b21f4db26", replaySha256: "84ab29fa3b87527b3dd2c7ffa499f95e113beb91b733eb8c9848d385acd804e7", outcome: "parsed" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "eeb67ad53cf6937380641d507f9273c3f332bb6eed935581f145c55616c14a10", outcome: "parsed" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "407697f1d40217126d1ecd26bcb48187a19db19fec9dafddb684235b21f4db26", replaySha256: "518adf3d01eccd1bcd8760b819929e74eba93cfd1ccb56bdaa7da07c44f7a690", outcome: "rejected" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "518adf3d01eccd1bcd8760b819929e74eba93cfd1ccb56bdaa7da07c44f7a690", outcome: "rejected" },
     },
     expectedSource: {
       "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "b32f59a56ef40870348b842cea73e98d7cc29bbc01117bb3370d0b478287c0eb" },
@@ -33,7 +33,7 @@ const FIXTURES: Fixture[] = [
     id: "PulseForge",
     jobId: "architecture-stress-2-20260711",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "7f7633ca5c786dc18088681428f50cefbef46f6f2aa68e72ca314a181c3b0e26", replaySha256: "f812742de382b074c2cdd5bc4b8e73d6e826c76c60dddf54fa52539862b6c9c6", outcome: "parsed" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "7f7633ca5c786dc18088681428f50cefbef46f6f2aa68e72ca314a181c3b0e26", replaySha256: "c8f5cc34e6a50b3d84c1bce17789abd27c2c464d15d5bb55c0d71a3db100c8c7", outcome: "rejected" },
     },
     expectedSource: {},
   },
@@ -58,7 +58,7 @@ const FIXTURES: Fixture[] = [
     id: "SignalDock",
     jobId: "architecture-stress-5-20260711",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "7dfa968896f689e8a485f5daef62b40607c7d3fc4123b496980d5017ac4fa364", replaySha256: "d453153ebb603b3d723721623b761c1f61c224a8dbd382d6abbadedcfce86fc5", outcome: "parsed" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "7dfa968896f689e8a485f5daef62b40607c7d3fc4123b496980d5017ac4fa364", replaySha256: "bccef7656d570436edb3c28520f4685a03920a55bf940bc7ae60d01b9c6ff290", outcome: "rejected" },
     },
     expectedSource: {
       "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "76f18be38461637fba72da7e8bccd16e1c74ba173bb782651954a39635a1ab59" },
