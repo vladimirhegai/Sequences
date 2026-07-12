@@ -259,6 +259,84 @@ describe("auditPacing introduction development", () => {
     expect(sceneIntroductionTimes(subject)).toEqual([2, 4, 5]);
   });
 
+  it("counts static metric and CTA evidence inside one product chassis as one surface", () => {
+    const approval = scene({
+      id: "approval",
+      startSec: 11.1,
+      durationSec: 4,
+      components: [
+        {
+          version: 1,
+          id: "approval-shell",
+          kind: "app-window",
+          region: "approval-station",
+          role: "support",
+        },
+        {
+          version: 1,
+          id: "approval-metric",
+          kind: "stat-card",
+          region: "approval-station",
+          role: "hero",
+        },
+        {
+          version: 1,
+          id: "confirm-btn",
+          kind: "button",
+          region: "approval-station",
+          role: "support",
+        },
+      ],
+      beats: [beat("approval", {
+        id: "swap-ready",
+        component: "approval-metric",
+        kind: "swap",
+        atSec: 14.6,
+        text: "Ready",
+      })],
+    });
+    expect(sceneIntroductionTimes(approval)).toEqual([11.1, 14.6]);
+    const next = scene({ id: "lockup", startSec: 15.1, durationSec: 3.4 });
+    const repaired = stretchMarginalPacingMisses([approval, next]);
+    expect(repaired.normalized).toHaveLength(1);
+    expect(repaired.storyboard[0]!.durationSec).toBeCloseTo(5.3, 2);
+    expect(repaired.storyboard[1]!.startSec).toBeCloseTo(16.4, 2);
+    expect(auditPacing(repaired.storyboard).filter((finding) =>
+      finding.startsWith("pacing/holds:") || finding.startsWith("pacing/reading:")
+    )).toEqual([]);
+  });
+
+  it("keeps explicit child entrances and ambiguous chassis layouts independent", () => {
+    const explicitChild = scene({
+      id: "explicit-child",
+      startSec: 0,
+      durationSec: 5,
+      components: [
+        { version: 1, id: "shell", kind: "app-window", region: "station" },
+        { version: 1, id: "cta", kind: "button", region: "station" },
+      ],
+      beats: [beat("explicit-child", {
+        id: "cta-open",
+        component: "cta",
+        kind: "open",
+        atSec: 2,
+      })],
+    });
+    expect(sceneIntroductionTimes(explicitChild)).toEqual([0, 2]);
+
+    const ambiguous = scene({
+      id: "ambiguous",
+      startSec: 0,
+      durationSec: 5,
+      components: [
+        { version: 1, id: "shell-a", kind: "app-window", region: "station-a" },
+        { version: 1, id: "shell-b", kind: "app-window", region: "station-b" },
+        { version: 1, id: "metric", kind: "stat-card", region: "station-a" },
+      ],
+    });
+    expect(sceneIntroductionTimes(ambiguous)).toEqual([0, 0, 0]);
+  });
+
   it("flags a scene that keeps introducing surfaces until its cut", () => {
     const findings = auditPacing([scene({
       id: "cram",

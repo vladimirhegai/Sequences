@@ -40,7 +40,11 @@ import {
   type CameraMoveIntentV1,
 } from "./cameraContract.ts";
 import { auditCameraIdeaBudget } from "./cameraBlocking.ts";
-import { resolveComponentPlan, type ResolvedComponentBeatV1 } from "./componentContract.ts";
+import {
+  resolveComponentPlan,
+  type ComponentKind,
+  type ResolvedComponentBeatV1,
+} from "./componentContract.ts";
 import {
   EVIDENCE_AFTER_SEC,
   EVIDENCE_BEFORE_SEC,
@@ -239,6 +243,17 @@ function advanceClearOfWindows(
  * viewer sees it. A `swap` is deliberately absent: the runtime swaps content
  * on an already-painted slot, so it is development, not that slot's entrance. */
 const ENTRANCE_BEAT_KINDS = new Set(["type", "stream", "open", "rows", "animate"]);
+/** Lightweight evidence that reads inside one product chassis, not as another
+ * independent dense surface. Explicit entrance beats still introduce it later. */
+const LOCAL_PRODUCT_EVIDENCE_KINDS: ReadonlySet<ComponentKind> = new Set([
+  "button",
+  "stat-card",
+  "progress",
+  "progress-ring",
+  "headline",
+  "toggle",
+  "avatar-stack",
+]);
 /**
  * Component kinds compact enough to land late in a short final resolve (a
  * logo / CTA / metric end card is read in one glance). Dense surfaces —
@@ -310,14 +325,43 @@ export function sceneIntroductionTimes(scene: DirectScene): number[] {
   const beats = scene.beats ?? [];
   const events: number[] = [];
   const usedBeatIds = new Set<string>();
+  const entranceByComponent = new Map(components.map((component) => [
+    component.id,
+    beats
+      .filter((beat) => beat.component === component.id && ENTRANCE_BEAT_KINDS.has(beat.kind))
+      .sort((a, b) => a.atSec - b.atSec)[0],
+  ]));
+  // One app window (or one hero modal) plus static metric/CTA evidence in the
+  // same typed station is one readable product surface. CurrentProof D's one
+  // approval panel was charged as app-window + stat + button, inflating the
+  // hold requirement beyond the bounded stretch normalizer and burning a paid
+  // retry. Keep the grouping narrow: require one unambiguous chassis and one
+  // shared non-empty region; dense tables/charts, overlays, plugins, and any
+  // child with its own explicit entrance remain independent introductions.
+  const productSurfaces = components.filter((component) =>
+    !component.pluginUid &&
+    (component.kind === "app-window" || (component.kind === "modal" && component.role === "hero"))
+  );
+  const productSurface = productSurfaces.length === 1 && productSurfaces[0]!.region
+    ? productSurfaces[0]
+    : undefined;
+  const groupedProductEvidence = new Set(
+    productSurface
+      ? components.filter((component) =>
+          !component.pluginUid &&
+          component.region === productSurface.region &&
+          (component.id === productSurface.id ||
+            (LOCAL_PRODUCT_EVIDENCE_KINDS.has(component.kind) &&
+              !entranceByComponent.get(component.id)))
+        ).map((component) => component.id)
+      : [],
+  );
   // A plugin unit's children arrive as ONE host-choreographed gesture (the
   // cascade), so the unit contributes one introduction at its earliest
   // entrance — N seeded tiles are one surface to the eye, not N.
   const pluginIntro = new Map<string, number>();
   for (const component of components) {
-    const entrance = beats
-      .filter((beat) => beat.component === component.id && ENTRANCE_BEAT_KINDS.has(beat.kind))
-      .sort((a, b) => a.atSec - b.atSec)[0];
+    const entrance = entranceByComponent.get(component.id);
     if (entrance) usedBeatIds.add(entrance.id);
     const at = entrance ? entrance.atSec : scene.startSec;
     if (component.pluginUid) {
@@ -326,9 +370,16 @@ export function sceneIntroductionTimes(scene: DirectScene): number[] {
         component.pluginUid,
         earliest === undefined ? at : Math.min(earliest, at),
       );
+    } else if (groupedProductEvidence.has(component.id)) {
+      // The chassis owns one event below; static local evidence is already
+      // visible inside it. A child with an entrance was excluded from the set.
+      continue;
     } else {
       events.push(at);
     }
+  }
+  if (productSurface && groupedProductEvidence.has(productSurface.id)) {
+    events.push(entranceByComponent.get(productSurface.id)?.atSec ?? scene.startSec);
   }
   events.push(...pluginIntro.values());
   for (const beat of beats) {

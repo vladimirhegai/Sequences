@@ -201,6 +201,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "those pacing findings. architecture-stress-2 (2026-07-11): detection is " +
       "viewer-time aware in ramped scenes too; the ramp contract is net-zero at " +
       "scene boundaries, so a bounded cut extension buys the missing viewer hold. " +
+      "CurrentProof D (2026-07-12): a sole app-window/hero-modal chassis plus " +
+      "static metric/CTA evidence in its one typed region is one introduction; " +
+      "that honest count keeps a 0.70s reading miss inside this bounded owner. " +
       "Detection runs in each scene's unshifted frame; same atomic commit-or-revert as the clamp. " +
       "Telemetry tag: pacing-stretch. Visible in STORYBOARD.md.",
   },
@@ -1270,6 +1273,9 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "attempts 1-2 of the primary rung and demotes to advisory from its final " +
       "attempt (degrade-never-veto, the improve-ws32-1 lesson). Marginal misses " +
       "are first absorbed deterministically by normalize.pacing-stretch above. " +
+      "CurrentProof D (2026-07-12) stops counting a sole product chassis and its " +
+      "static local metric/CTA evidence as separate surfaces; explicit child " +
+      "entrances, dense children, plugins, and ambiguous chassis layouts remain separate. " +
       "2026-07-08 adds pacing/interaction-hold: no full move in flight during a " +
       "cursor interaction's arrive→result window (dive exempt) — repaired first " +
       "by normalize.interaction-hold-retime, so the finding is residue-only.",

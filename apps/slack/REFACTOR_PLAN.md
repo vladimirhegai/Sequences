@@ -386,6 +386,17 @@ Goal (handoff §3): branded `SourceTime` / `ViewerTime` / `Duration` /
   time service only (grep-clean: no raw ramp math outside `time.ts`).
 - Verify: full unit suite; replay:all.
 
+### S2.4 Product-chassis pacing integration
+- [x] CurrentProof D's single approval app-window, static metric, and static
+  button shared one typed station but were charged as three independent surface
+  introductions. Count a sole app-window or hero modal plus lightweight static
+  local evidence as one introduction. Explicit child entrances, dense content,
+  plugins, and multiple/ambiguous chassis remain independent.
+- Verify: the exact storyboard attempts 1–2 pass strict replay; attempt 1's
+  genuine read miss closes through the existing bounded cascade stretch;
+  minimized grouping/explicit-entrance/ambiguity controls, typecheck, Sentinel,
+  and `replay:all` green.
+
 ---
 
 # Phase 3 — One camera semantic model
@@ -1359,3 +1370,20 @@ frame capsule, and visible moment contract. Files: `runner/prompts.ts`,
 `test/promptBudget.test.ts`, and this plan. Verification: prompt-budget tests
 (12/12) and Slack typecheck, green. No paid probe, publish, deploy, or S7 work;
 LP-2/LP-3 still require a fresh runtime-reaching probe.
+
+## S2.4 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+The approval scene's three typed roots were one product panel to the viewer:
+one app-window chassis with a metric and confirmation button in the same
+`approval-station`. `sceneIntroductionTimes` now groups only lightweight static
+evidence under one unambiguous app-window/hero-modal region; a child's explicit
+entrance, dense/overlay content, plugin unit, missing region, or multiple
+chassis keeps its independent pacing cost. This reduces the false four-surface
+charge to the honest chassis + swapped-in Ready state. The exact first response
+then needs only the existing 0.70s atomic cut-boundary stretch and passes; the
+exact second response passes without repair.
+
+Files: `src/engine/pacingAudit.ts`, `src/engine/sentinel.ts`,
+`test/pacingAudit.test.ts`, `scripts/replayAll.ts`, and this plan. Verification:
+both exact `storyboard:replay --strict` artifacts pass; focused pacing/Sentinel
+tests (96/96); Slack typecheck; exact `replay:all` (17/0/0), all green. No paid
+probe, publish, deploy, or S7 work.
