@@ -14,7 +14,11 @@ import { ASSET_LIBRARY } from "./assets/index.ts";
 import type { AssetDefinitionV1 } from "./assetContract.ts";
 import { DESIGN_DIALECTS } from "./designDialects.ts";
 import { CAMERA_PATTERNS } from "./cameraPatterns.ts";
-import { PLUGIN_CATALOG, type PluginDeclarationV1 } from "./pluginContract.ts";
+import {
+  PLUGIN_CATALOG,
+  reconcileAndLowerPlugins,
+  type PluginDeclarationV1,
+} from "./pluginContract.ts";
 import { recordSentinelCatalogConversion } from "./sentinelTelemetry.ts";
 
 export const STUDIO_LIBRARY_CATALOGS = [
@@ -216,13 +220,45 @@ function assetScore(asset: AssetDefinitionV1, query: string): number {
 export interface AssetAutoDeclareResult {
   scenes: DirectScene[];
   declared: Array<{ assetId: string; sceneId: string; score: number }>;
+  declined: Array<{
+    assetId: string;
+    sceneId: string;
+    reason:
+      | "semantic-params-ungrounded"
+      | "typed-hero-already-owns-idea"
+      | "plugin-reconciliation-declined";
+  }>;
+  reconciliationNotes: string[];
+}
+
+function sceneAssetText(scene: DirectScene): string {
+  return [scene.title, scene.purpose, scene.foreground, scene.background]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function preferredAssetRegion(scene: DirectScene): string | undefined {
+  const focal = scene.components?.find((component) =>
+    component.id === scene.spatialIntent?.focalPart
+  );
+  if (focal?.region) return focal.region;
+  const heroRegions = [...new Set(
+    (scene.components ?? [])
+      .filter((component) => component.role === "hero" && component.region)
+      .map((component) => component.region!),
+  )];
+  if (heroRegions.length === 1) return heroRegions[0];
+  const regions = [...new Set(
+    (scene.components ?? []).flatMap((component) => component.region ? [component.region] : []),
+  )];
+  return regions.length === 1 ? regions[0] : undefined;
 }
 
 /** Host-owned asset adoption; no model opt-in is needed for a clear match. */
 export function autoDeclareHighConfidenceAssets(
   scenes: DirectScene[],
   query: string,
-  minimumScore = 3,
+  minimumScore = 6,
 ): AssetAutoDeclareResult {
   const existingKinds = new Set(
     scenes.flatMap((scene) => (scene.plugins ?? []).map((plugin) => plugin.kind)),
@@ -232,11 +268,14 @@ export function autoDeclareHighConfidenceAssets(
     .filter(({ asset, score }) =>
       score >= minimumScore &&
       !existingKinds.has(`asset-${asset.id}`) &&
+      Boolean(asset.autoDeclare) &&
       asset.params.every((param) => param.default !== undefined),
     )
     .sort((a, b) => b.score - a.score || a.asset.id.localeCompare(b.asset.id));
   const selected = candidates[0];
-  if (!selected) return { scenes, declared: [] };
+  if (!selected) {
+    return { scenes, declared: [], declined: [], reconciliationNotes: [] };
+  }
   const target = scenes
     .map((scene, index) => ({
       scene,
@@ -246,12 +285,53 @@ export function autoDeclareHighConfidenceAssets(
     }))
     .filter(({ scene, score }) => scene.durationSec >= 3 && score >= minimumScore)
     .sort((a, b) => b.score - a.score || a.scene.startSec - b.scene.startSec || a.index - b.index)[0];
-  if (!target) return { scenes, declared: [] };
+  if (!target) {
+    return { scenes, declared: [], declined: [], reconciliationNotes: [] };
+  }
+  const groundedParams = selected.asset.autoDeclare!.bindParams({
+    query,
+    sceneText: sceneAssetText(target.scene),
+  });
+  if (!groundedParams) {
+    return {
+      scenes,
+      declared: [],
+      declined: [{
+        assetId: selected.asset.id,
+        sceneId: target.scene.id,
+        reason: "semantic-params-ungrounded",
+      }],
+      reconciliationNotes: [],
+    };
+  }
+  const equivalentKinds = new Set(
+    selected.asset.autoDeclare?.equivalentComponentKinds ?? [],
+  );
+  const existingHero = (target.scene.components ?? []).find((component) =>
+    component.role === "hero" && equivalentKinds.has(component.kind)
+  );
+  if (existingHero) {
+    return {
+      scenes,
+      declared: [],
+      declined: [{
+        assetId: selected.asset.id,
+        sceneId: target.scene.id,
+        reason: "typed-hero-already-owns-idea",
+      }],
+      reconciliationNotes: [],
+    };
+  }
+  const region = preferredAssetRegion(target.scene);
   const declaration: PluginDeclarationV1 = {
     version: 1,
     kind: `asset-${selected.asset.id}`,
     id: selected.asset.id,
-    params: Object.fromEntries(selected.asset.params.map((param) => [param.name, param.default!])),
+    ...(region ? { region } : {}),
+    params: {
+      ...Object.fromEntries(selected.asset.params.map((param) => [param.name, param.default!])),
+      ...groundedParams,
+    },
   };
   const note = `asset-auto-declare: matched "${selected.asset.id}" to scene "${target.scene.id}"`;
   const next = scenes.map((scene, index) => index === target.index
@@ -261,9 +341,21 @@ export function autoDeclareHighConfidenceAssets(
         sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
       }
     : scene);
+  const reconciled = reconcileAndLowerPlugins(next);
+  const survived = reconciled.scenes[target.index]?.plugins?.some((plugin) =>
+    plugin.kind === declaration.kind && Boolean(plugin.uid)
+  ) ?? false;
   return {
-    scenes: next,
-    declared: [{ assetId: selected.asset.id, sceneId: target.scene.id, score: selected.score }],
+    scenes: reconciled.scenes,
+    declared: survived
+      ? [{ assetId: selected.asset.id, sceneId: target.scene.id, score: selected.score }]
+      : [],
+    declined: survived ? [] : [{
+      assetId: selected.asset.id,
+      sceneId: target.scene.id,
+      reason: "plugin-reconciliation-declined",
+    }],
+    reconciliationNotes: reconciled.notes,
   };
 }
 
@@ -283,11 +375,10 @@ export function recordStudioCatalogConversions(storyboard: DirectScene[]): void 
     for (const plugin of scene.plugins ?? []) {
       if (plugin.kind.startsWith("asset-")) {
         const assetId = plugin.kind.slice("asset-".length);
-        // Host auto-declarations are typed before the later source-stage
-        // reconciliation stamps a uid, so a known library kind is enough to
-        // prove this conversion path. Model-authored plugin declarations still
-        // arrive here with a host uid after normal lowering.
-        if (assetIds.has(assetId) && (plugin.uid || plugin.id === assetId)) {
+        // A declaration is evidence only after plugin reconciliation has
+        // stamped its uid. A catalog name without a uid is paperwork, not an
+        // injectable typed conversion.
+        if (assetIds.has(assetId) && plugin.uid) {
           recordSentinelCatalogConversion("assets", assetId);
         }
       } else if (pluginKinds.has(plugin.kind) && plugin.uid) {

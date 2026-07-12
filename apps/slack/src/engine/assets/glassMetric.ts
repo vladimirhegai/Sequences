@@ -15,7 +15,29 @@
  * - `@property` registers animatable numeric custom properties so ring fill
  *   interpolates (Chromium — both the film renderer and the Asset Lab).
  */
-import { defineAsset } from "../assetContract.ts";
+import {
+  defineAsset,
+  type AssetAutoDeclareContext,
+} from "../assetContract.ts";
+
+function bindAutoDeclaredGlassMetric(
+  context: AssetAutoDeclareContext,
+): Record<string, string | number> | undefined {
+  const percentMatch = context.sceneText.match(/(?:^|[^\d])(\d{1,3}(?:\.\d+)?)\s*%/);
+  const labelMatch = context.sceneText.match(
+    /\blabel(?:ed|led)?\s*["'“‘]([^"'”’]{1,18})["'”’]/i,
+  );
+  if (!percentMatch || !labelMatch) return undefined;
+  const ring = Number(percentMatch[1]);
+  if (!Number.isFinite(ring) || ring < 0 || ring > 100) return undefined;
+  const label = labelMatch[1]!.trim();
+  if (!label) return undefined;
+  return {
+    ring,
+    value: `${percentMatch[1]}%`,
+    label,
+  };
+}
 
 export const glassMetric = defineAsset({
   version: 1,
@@ -23,6 +45,10 @@ export const glassMetric = defineAsset({
   title: "Glass metric medallion",
   purpose: "One hero stat in a lit glass medallion with an accent progress ring",
   family: "circle",
+  autoDeclare: {
+    bindParams: bindAutoDeclaredGlassMetric,
+    equivalentComponentKinds: ["progress-ring", "stat-card"],
+  },
   params: [
     {
       name: "accent",

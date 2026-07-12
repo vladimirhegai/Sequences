@@ -99,6 +99,11 @@ For a job directory, inspect:
 Use the strip for representative states, not to infer motion. Read the camera,
 component, interaction, and authored GSAP code for movement between states.
 
+Studio conversion telemetry is executable evidence, not catalog paperwork. An
+asset counts only after plugin reconciliation stamps a UID and the augmented
+storyboard passes its full plan gate; an unlowered declaration or a declined
+duplicate must never seed the evidence-backed capsule.
+
 ## Adding or changing a rule
 
 Before implementation:

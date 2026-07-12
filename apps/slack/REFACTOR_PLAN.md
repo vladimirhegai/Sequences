@@ -602,6 +602,19 @@ eliminating contradictory contracts).
 - Verify: the exact persisted initial and full-re-author prompts compose at or
   below 44,488 chars; prompt-budget suite and Slack typecheck green.
 
+### S6.7 Executable, truthful asset adoption
+- [x] S6.3 appended host asset declarations after plugin lowering, counted a
+  catalog-id-only declaration as conversion evidence, and therefore claimed
+  adoption without a UID, lowered component, or injectable runtime unit.
+  Reconcile host-adopted assets before caching/counting them; require an
+  asset-owned binder for semantic params instead of catalog demo copy; let an
+  equivalent typed hero win rather than duplicate the visual; and revalidate
+  the augmented plan before accepting the enhancement.
+- Verify: a grounded glass metric lowers and injects with its scene values;
+  ungrounded copy and an existing typed metric both decline; only UID-stamped
+  declarations emit asset conversion evidence; exact CurrentProof D shape,
+  focused asset/plugin/capsule tests, typecheck, and `replay:all` green.
+
 ---
 
 # Phase 7 — Retire old systems and shrink the flag surface
@@ -1387,3 +1400,23 @@ Files: `src/engine/pacingAudit.ts`, `src/engine/sentinel.ts`,
 both exact `storyboard:replay --strict` artifacts pass; focused pacing/Sentinel
 tests (96/96); Slack typecheck; exact `replay:all` (17/0/0), all green. No paid
 probe, publish, deploy, or S7 work.
+
+## S6.7 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+The S6.3 audit found that host asset adoption ran after storyboard plugin
+lowering. The saved `asset-glass-metric` therefore had no UID or lowered asset
+component, could not inject at source/runtime, yet still emitted conversion
+telemetry; its catalog defaults also contradicted CurrentProof's 41%
+release-readiness fact and duplicated the existing typed progress-ring. Host
+auto-adoption now exists only for assets with a deterministic semantic-param
+binder, reconciles immediately to an injectable UID/component/beats unit,
+declines an equivalent typed hero, counts only UID-stamped conversions, and
+is rolled back if the augmented storyboard fails its full plan gate. The
+storyboard cache contract advanced to v25.
+
+Files: `src/engine/assetContract.ts`, `src/engine/assets/glassMetric.ts`,
+`src/engine/studioLibrary.ts`, `src/engine/runner/ladder.ts`,
+`test/studioCatalogIntegration.test.ts`, `SENTINEL.md`, and this plan.
+Verification: exact CurrentProof D-shaped adoption declines in favor of
+`continuity-metric`; focused asset/plugin/capsule tests (92/92); Slack
+typecheck; exact `replay:all` (17/0/0), all green. No paid probe, publish,
+deploy, or S7 work.

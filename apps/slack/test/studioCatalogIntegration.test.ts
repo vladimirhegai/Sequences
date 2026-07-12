@@ -6,18 +6,27 @@ import { ASSET_LIBRARY } from "../src/engine/assets/index.ts";
 import { CAMERA_PATTERNS } from "../src/engine/cameraPatterns.ts";
 import { COMPONENT_CATALOG } from "../src/engine/componentContract.ts";
 import { DESIGN_DIALECTS } from "../src/engine/designDialects.ts";
-import { PLUGIN_CATALOG } from "../src/engine/pluginContract.ts";
+import {
+  injectPluginContract,
+  PLUGIN_CATALOG,
+} from "../src/engine/pluginContract.ts";
 import {
   AttemptLedger,
   deriveSentinelRunView,
 } from "../src/engine/runner/attemptLedger.ts";
 import {
   autoDeclareHighConfidenceAssets,
+  recordStudioCatalogConversions,
   studioLibraryConversionCounts,
   studioLibraryVocabulary,
   type StudioConversionCounts,
 } from "../src/engine/studioLibrary.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
+import {
+  activeSentinelLedgerEvents,
+  beginSentinelRun,
+  finalizeSentinelRun,
+} from "../src/engine/sentinelTelemetry.ts";
 
 describe("Studio catalog end-to-end discovery", () => {
   it("offers only catalog entries with typed conversion evidence", () => {
@@ -82,7 +91,7 @@ describe("Studio catalog end-to-end discovery", () => {
       id: "hero",
       title: "Glass metric hero",
       purpose: "Reveal the glass metric that anchors the launch",
-      foreground: "A glass metric medallion",
+      foreground: "A glass metric medallion at 41% with label 'RELEASE READINESS'",
       background: "Quiet product workspace",
       startSec: 0,
       durationSec: 5,
@@ -94,7 +103,126 @@ describe("Studio catalog end-to-end discovery", () => {
     expect(result.scenes[0]!.plugins?.[0]).toMatchObject({
       kind: "asset-glass-metric",
       id: "glass-metric",
+      uid: "hero-glass-metric",
+      params: {
+        ring: 41,
+        value: "41%",
+        label: "RELEASE READINESS",
+      },
     });
+    expect(result.scenes[0]!.components).toContainEqual(expect.objectContaining({
+      id: "glass-metric-core",
+      kind: "asset",
+      pluginUid: "hero-glass-metric",
+    }));
+    const injected = injectPluginContract(
+      `<html><head></head><body><section id="hero"></section></body></html>`,
+      result.scenes,
+    );
+    expect(injected.injected).toEqual(["hero-glass-metric"]);
+    expect(injected.html).toContain('data-sequences-plugin="asset-glass-metric"');
+    expect(injected.html).toContain('class="gm-value" data-part="glass-metric-core-value">41%</div>');
+    expect(injected.html).toContain('<div class="gm-label">RELEASE READINESS</div>');
+  });
+
+  it("declines catalog demo copy when semantic asset params are ungrounded", () => {
+    const scene: DirectScene = {
+      id: "hero",
+      title: "Glass metric hero",
+      purpose: "Reveal the glass metric that anchors the launch",
+      foreground: "A glass metric medallion",
+      background: "Quiet product workspace",
+      startSec: 0,
+      durationSec: 5,
+    };
+    const result = autoDeclareHighConfidenceAssets([scene], "Show the glass metric hero");
+    expect(result.declared).toEqual([]);
+    expect(result.declined).toEqual([{
+      assetId: "glass-metric",
+      sceneId: "hero",
+      reason: "semantic-params-ungrounded",
+    }]);
+    expect(result.scenes).toEqual([scene]);
+  });
+
+  it("keeps one typed metric hero instead of auto-declaring a duplicate asset", () => {
+    const scene: DirectScene = {
+      id: "hero-metric-41",
+      title: "Glass metric hero at 41%",
+      purpose: "Establish the one release-readiness metric",
+      foreground: "One glass medallion at 41% with label 'RELEASE READINESS'",
+      background: "Near-black field",
+      startSec: 0,
+      durationSec: 3.6,
+      components: [{
+        version: 1,
+        id: "continuity-metric",
+        kind: "progress-ring",
+        region: "metric-hero",
+        role: "hero",
+        entityId: "metric",
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "continuity-metric",
+        composition: "layout-center-stack",
+        relationships: [],
+      },
+    };
+    const result = autoDeclareHighConfidenceAssets(
+      [scene],
+      "Show the glass-metric release-readiness story at 41%",
+    );
+    expect(result.declared).toEqual([]);
+    expect(result.declined).toEqual([{
+      assetId: "glass-metric",
+      sceneId: "hero-metric-41",
+      reason: "typed-hero-already-owns-idea",
+    }]);
+    expect(result.scenes[0]!.plugins).toBeUndefined();
+    expect(result.scenes[0]!.components).toEqual(scene.components);
+  });
+
+  it("counts only reconciled asset declarations as conversion evidence", () => {
+    const root = fs.mkdtempSync(path.join(process.env.TEMP ?? process.cwd(), "studio-proof-"));
+    try {
+      beginSentinelRun(root);
+      recordStudioCatalogConversions([{
+        id: "paperwork",
+        title: "Paperwork only",
+        purpose: "No injectable unit",
+        startSec: 0,
+        durationSec: 4,
+        plugins: [{
+          version: 1,
+          kind: "asset-glass-metric",
+          id: "glass-metric",
+          params: {},
+        }],
+      }]);
+      recordStudioCatalogConversions([{
+        id: "typed",
+        title: "Typed unit",
+        purpose: "Injectable unit",
+        startSec: 0,
+        durationSec: 4,
+        plugins: [{
+          version: 1,
+          kind: "asset-glass-metric",
+          id: "glass-metric",
+          params: {},
+          uid: "typed-glass-metric",
+        }],
+      }]);
+      const conversions = (activeSentinelLedgerEvents() ?? []).filter((event) =>
+        event.kind === "catalog-conversion" && event.catalog === "assets"
+      );
+      expect(conversions).toHaveLength(1);
+      expect(conversions[0]).toMatchObject({ entry: "glass-metric", count: 1 });
+      finalizeSentinelRun("published");
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("records per-entry conversion totals in the append-only ledger fold", () => {

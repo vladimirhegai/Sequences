@@ -1606,13 +1606,41 @@ export async function requestStoryboardPlan(
       }
     }
     if (assetsEnabled()) {
+      const beforeAssets = resultScenes;
       const assets = autoDeclareHighConfidenceAssets(resultScenes, args.brief);
-      resultScenes = assets.scenes;
-      if (assets.declared.length) {
+      const assetPlanFindings = assets.declared.length
+        ? validateStoryboardPlan(assets.scenes, requirements)
+        : [];
+      if (assetPlanFindings.length) {
+        resultScenes = beforeAssets;
+        recordSentinelNormalization("asset-auto-declare-invalid", assets.declared.length);
+        process.stderr.write(
+          `[storyboard] host declined auto-declared asset(s) after full plan validation: ` +
+            `${assetPlanFindings.slice(0, 3).join("; ")}\n`,
+        );
+      } else {
+        resultScenes = assets.scenes;
+      }
+      if (!assetPlanFindings.length && assets.reconciliationNotes.length) {
+        recordSentinelNormalization("plugin-reconcile", assets.reconciliationNotes.length);
+        for (const note of assets.reconciliationNotes) {
+          process.stderr.write(`[storyboard] plugin-reconcile: ${note}\n`);
+        }
+      }
+      if (!assetPlanFindings.length && assets.declared.length) {
         recordSentinelNormalization("asset-auto-declare", assets.declared.length);
         process.stderr.write(
           `[storyboard] host auto-declared matching asset(s): ` +
             `${assets.declared.map((entry) => `${entry.assetId}@${entry.sceneId}:${entry.score}`).join(", ")}\n`,
+        );
+      }
+      if (assets.declined.length) {
+        recordSentinelNormalization("asset-auto-declare-declined", assets.declined.length);
+        process.stderr.write(
+          `[storyboard] host declined unsafe/redundant asset adoption: ` +
+            `${assets.declined.map((entry) =>
+              `${entry.assetId}@${entry.sceneId}:${entry.reason}`
+            ).join(", ")}\n`,
         );
       }
     }
@@ -1695,8 +1723,12 @@ export async function requestStoryboardPlan(
     // station other than a plugin unit's own anchors the unit at the default
     // entrance (a target-less drift is not an away-frame); v24 adds typed
     // follows/lag choreography, scene entrance families, one display-type
-    // moment, and high-confidence safe-default recipe auto-declaration.
-    contract: 24,
+    // moment, and high-confidence safe-default recipe auto-declaration; v25
+    // makes host asset adoption executable rather than declarative paperwork:
+    // semantic params bind from target-scene facts, a typed hero wins a
+    // duplicate, plugin lowering stamps the uid before conversion telemetry,
+    // and the augmented plan revalidates before it can enter the cache.
+    contract: 25,
     provider: provider.id,
     model: model ?? null,
     brief: args.brief,
