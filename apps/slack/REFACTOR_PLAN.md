@@ -267,7 +267,7 @@ plus root `npm test` and root `npm run typecheck` for the kept packages).
 - Verify: root `npm test` + slack fast loop; `npm run demo`.
 
 ### SP.4 Trim `evals/` (keep what packages tests consume)
-- [ ] `packages/core/test/agent-evals.test.ts` reads `evals/`. Keep the
+- [x] `packages/core/test/agent-evals.test.ts` reads `evals/`. Keep the
   consumed files; delete the rest, or relocate under
   `packages/core/test/fixtures/` and update the test import if you prefer a
   clean root. Do not delete blindly.
@@ -719,3 +719,10 @@ Confirmed there were no root `references/` consumers in packages, Slack source,
 scripts, Docker, or Railway configuration outside documentation/skill links;
 deleted the vendored `references/` snapshots and README. Verification: the
 consumer scan is empty. No runtime code changed and no paid probe was run.
+
+## SP.4 â€” 2026-07-11 â€” DONE
+Moved the consumed `phase1-briefs.json` fixture to
+`packages/core/test/fixtures/phase1-briefs.json`, updated
+`agent-evals.test.ts`, and deleted the unused `evals/relay-launch-film.json`.
+Verification: the core agent-evals test passed and root typecheck passed. No
+paid probe was run.
