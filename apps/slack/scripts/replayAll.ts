@@ -83,7 +83,7 @@ const FIXTURES: Fixture[] = [
     jobId: "lp3-state-capsule-20260712-d",
     expectedRaw: {
       "storyboard-1-rejected.raw.txt": { artifactSha256: "7a6bd2d3534a9c73b636a3c20b1a0a7ef17bacd12edd8ab7170d6719b6b341ff", replaySha256: "14fe444d78682450f95a33087def9fec9107411445d20ee1b79d64e17f6f1a41", outcome: "parsed" },
-      "storyboard-2-rejected.raw.txt": { artifactSha256: "7c9540286b775ef84b6cd75b137e8c3681b4ecbf439676ecf121cbd14e53df3f", replaySha256: "6314405a441e079e3d3da903be91b124b0dab21e881cbb700cb6fbdcd0dcae0b", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "7c9540286b775ef84b6cd75b137e8c3681b4ecbf439676ecf121cbd14e53df3f", replaySha256: "10ed0dfb016a99dd9960b5f3a94cec414ffe3bd9c71b4ee5840aef7a02875f9f", outcome: "parsed" },
     },
     expectedSource: {
       "author-1-static-rejected.html": { artifactSha256: "c58162278b6a34fa61da8672b3ab0b98a422b830e9436fffbae02f3cf4079347", replaySha256: "7114b406e85034515dcc96f0f0f851ecdcdbb6e8bc6f148825a00926e32d1b79", outcome: "accepted" },
@@ -97,6 +97,15 @@ const FIXTURES: Fixture[] = [
     expectedSource: {
       "author-1-browser-rejected.html": { artifactSha256: "38d5aaa59a78bab243e8094e27d7fd6967f16dc40f15a12d3840474bfbb9b74b", replaySha256: "32d994673371213e06d40e37112f74046235ed55b0de9647e6328dd0bf0b6107", outcome: "accepted" },
     },
+  },
+  {
+    id: "ProofArc F",
+    jobId: "lp3-state-capsule-20260712-f",
+    expectedRaw: {
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "76edbc2aa75434637f3a190a22abe72aa39db14a9dacee19081c1f8a4778f604", replaySha256: "be88891b799550d80c632abf7c488187da016f47b2042826742c0d8b760c5a3e", outcome: "parsed" },
+      "storyboard-2-rejected.raw.txt": { artifactSha256: "e35654ae5cc203e7cd2383a0817156759d8f67e763b6fa733d80e5a10b05508f", replaySha256: "103d707101f26ebcc3f8d92cd9ab48e903e2039e97a66e764626227eaca4f31c", outcome: "parsed" },
+    },
+    expectedSource: {},
   },
 ];
 

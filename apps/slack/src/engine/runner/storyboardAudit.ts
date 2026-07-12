@@ -55,6 +55,7 @@ import {
   reconcileMetricComponentKinds,
   resolveComponentPlan,
   retimeLateLoadBearingEntrances,
+  topUpHeldInteractionResultDevelopment,
   trimOverBudgetComponents,
   type ComponentBeatIntentV1,
   type ComponentBeatKind,
@@ -616,9 +617,18 @@ function parseStoryboard(raw: string): DirectScene[] {
     const authoredFrame = { startSec: authoredStart, durationSec };
     const timeRamp = normalizeStoryboardTimeRamp(scene.timeRamp, authoredFrame);
     const gradeShift = normalizeStoryboardGradeShift(scene.gradeShift, authoredFrame);
-    const camera = normalizeStoryboardCameraIntent(scene.camera, authoredFrame);
-    const worldLayout = normalizeWorldLayout(scene.worldLayout, Boolean(camera?.path.length));
     let components = normalizeStoryboardComponents(scene.components);
+    const focalComponent = components.find((component) => component.id === spatialIntent?.focalPart);
+    const heroComponents = components.filter((component) => component.role === "hero");
+    const cameraSubject = focalComponent ??
+      (heroComponents.length === 1 ? heroComponents[0] : undefined) ??
+      (components.length === 1 ? components[0] : undefined);
+    const camera = normalizeStoryboardCameraIntent(
+      scene.camera,
+      authoredFrame,
+      cameraSubject ? { toPart: cameraSubject.id } : {},
+    );
+    const worldLayout = normalizeWorldLayout(scene.worldLayout, Boolean(camera?.path.length));
     const componentEntranceFamily = normalizeStoryboardComponentEntranceFamily(
       scene.componentEntranceFamily,
     );
@@ -2183,7 +2193,8 @@ export function parseStoryboardResponse(
     : { storyboard: entranceRetime.scenes, normalized: [] };
   let committedBlockingChassisNormalizations = blockingChassis.normalized.length;
   const componentTrim = trimOverBudgetComponents(blockingChassis.storyboard);
-  const crossStationTravel = upgradeCrossStationDrifts(componentTrim.storyboard);
+  const heldResultDevelopment = topUpHeldInteractionResultDevelopment(componentTrim.storyboard);
+  const crossStationTravel = upgradeCrossStationDrifts(heldResultDevelopment.scenes);
   const cameraBudget = normalizeCameraBudget(crossStationTravel.storyboard);
   const framingTopUp = topUpFramingFloor(cameraBudget.storyboard);
   const energyLift = liftCameraEnergyPeak(framingTopUp.storyboard);
@@ -2221,6 +2232,7 @@ export function parseStoryboardResponse(
     ...blockingChassis.normalized,
     ...entranceRetime.normalized,
     ...componentTrim.normalized,
+    ...heldResultDevelopment.normalized,
     ...crossStationTravel.normalized,
     ...cameraBudget.normalized,
     ...framingTopUp.normalized,
@@ -2361,6 +2373,12 @@ export function parseStoryboardResponse(
     }
     if (atomicNormalizationCommitted && componentTrim.normalized.length) {
       recordSentinelNormalization("component-trim", componentTrim.normalized.length);
+    }
+    if (atomicNormalizationCommitted && heldResultDevelopment.normalized.length) {
+      recordSentinelNormalization(
+        "held-result-development",
+        heldResultDevelopment.normalized.length,
+      );
     }
     if (atomicNormalizationCommitted && cameraBudget.normalized.length) {
       recordSentinelNormalization("camera-budget-clamp", cameraBudget.normalized.length);

@@ -1260,6 +1260,107 @@ export function retimeLateLoadBearingEntrances(
   return { scenes, normalized };
 }
 
+const HELD_RESULT_STATES = new Set([
+  "approved",
+  "complete",
+  "completed",
+  "done",
+  "ready",
+  "resolved",
+  "succeeded",
+  "success",
+  "verified",
+]);
+const HELD_RESULT_FRONT_FRACTION = 0.35;
+const HELD_RESULT_HIGHLIGHT_DURATION_SEC = 0.8;
+const HELD_RESULT_HIGHLIGHT_TAIL_SEC = 1.6;
+const HELD_RESULT_MIN_BREATH_SEC = 0.8;
+
+/**
+ * Give a deliberately held interaction result one late, host-owned proof
+ * accent when the typed plan would otherwise freeze after its entrance.
+ *
+ * This is intentionally narrower than a general liveness generator. It only
+ * applies when a 4s+ scene:
+ * - declares two or more moments, all in the front 35%;
+ * - keeps the camera locked (no full move to provide later development);
+ * - lands an explicit successful set-state on the interaction target; and
+ * - leaves enough tail for a separated 800ms highlight and a final settle.
+ *
+ * The accent changes no copy, value, state, component count, or camera idea.
+ * It gives `topUpStoryboardMoments` executable evidence for the already-
+ * promised held result instead of making a paid planner invent another
+ * surface merely to satisfy the back-half moment grid.
+ */
+export function topUpHeldInteractionResultDevelopment(
+  storyboard: DirectScene[],
+): { scenes: DirectScene[]; normalized: string[] } {
+  const normalized: string[] = [];
+  const scenes = storyboard.map((scene) => {
+    const moments = scene.moments ?? [];
+    const beats = scene.beats ?? [];
+    const interactions = scene.interactions ?? [];
+    if (scene.durationSec < 4 || moments.length < 2 || !beats.length || !interactions.length) {
+      return scene;
+    }
+    const frontEdge = scene.startSec + scene.durationSec * HELD_RESULT_FRONT_FRACTION;
+    if (moments.some((moment) => moment.atSec > frontEdge)) return scene;
+    if ((scene.camera?.path ?? []).some((move) => move.move !== "hold")) return scene;
+
+    const interactionTargets = new Set(interactions.map((interaction) => interaction.targetPart));
+    const result = beats
+      .filter((beat) =>
+        beat.kind === "set-state" &&
+        interactionTargets.has(beat.component) &&
+        Boolean(beat.toState && HELD_RESULT_STATES.has(beat.toState))
+      )
+      .sort((a, b) => a.atSec - b.atSec)
+      .at(-1);
+    if (!result) return scene;
+    if (beats.some((beat) =>
+      beat.id !== result.id &&
+      beat.atSec > Math.max(frontEdge, result.atSec + HELD_RESULT_MIN_BREATH_SEC)
+    )) return scene;
+
+    const atSec = round(scene.startSec + scene.durationSec - HELD_RESULT_HIGHLIGHT_TAIL_SEC);
+    const resultEnd = result.atSec + beatDuration(result);
+    if (atSec < resultEnd + HELD_RESULT_MIN_BREATH_SEC) return scene;
+    if (atSec + HELD_RESULT_HIGHLIGHT_DURATION_SEC > scene.startSec + scene.durationSec - 0.3) {
+      return scene;
+    }
+
+    const ids = new Set(beats.map((beat) => beat.id));
+    const base = `${scene.id}-held-result-highlight`.slice(0, 64);
+    let id = base;
+    let serial = 2;
+    while (ids.has(id)) {
+      const suffix = `-${serial}`;
+      id = `${base.slice(0, 64 - suffix.length)}${suffix}`;
+      serial += 1;
+    }
+    const note =
+      `added a late highlight on "${result.component}" at ${atSec.toFixed(2)}s so the ` +
+      `successful interaction result develops during its held frame`;
+    normalized.push(`scene "${scene.id}": ${note}`);
+    return {
+      ...scene,
+      beats: [...beats, {
+        version: 1 as const,
+        id,
+        sceneId: scene.id,
+        component: result.component,
+        kind: "highlight" as const,
+        atSec,
+        durationSec: HELD_RESULT_HIGHLIGHT_DURATION_SEC,
+        style: "ring",
+        ease: "power2.out",
+      }].sort((a, b) => a.atSec - b.atSec),
+      sentinelNormalizations: [...(scene.sentinelNormalizations ?? []), note],
+    };
+  });
+  return { scenes, normalized };
+}
+
 /**
  * Deterministic de-double pass over a parsed storyboard, run before moments
  * top-up and validation. Planners double-trigger motion three ways, and each

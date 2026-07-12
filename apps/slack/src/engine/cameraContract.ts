@@ -365,11 +365,19 @@ function normalizeFocus(value: unknown): CameraFocusIntentV1 | undefined {
 export function normalizeStoryboardCameraIntent(
   value: unknown,
   scene: { startSec: number; durationSec: number },
+  fallbackTarget: { toPart?: string; toRegion?: string } = {},
 ): SceneCameraIntentV1 | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const object = value as Record<string, unknown>;
   if (!Array.isArray(object.path)) return undefined;
   const sceneEnd = scene.startSec + scene.durationSec;
+  const fallbackToPart = stableName(fallbackTarget.toPart);
+  const fallbackToRegion = stableName(fallbackTarget.toRegion);
+  const pathHasExplicitTarget = object.path.some((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const item = entry as Record<string, unknown>;
+    return Boolean(stableName(item.toPart) || stableName(item.toRegion));
+  });
   const path = object.path.flatMap((entry): CameraMoveIntentV1[] => {
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
     const item = entry as Record<string, unknown>;
@@ -392,8 +400,16 @@ export function normalizeStoryboardCameraIntent(
     const startSec = clamp(candidateStart, scene.startSec, sceneEnd);
     const endSec = clamp(candidateStart + item.durationSec, startSec, sceneEnd);
     if (endSec - startSec < 0.15) return [];
-    const toRegion = stableName(item.toRegion);
-    const toPart = stableName(item.toPart);
+    let toRegion = stableName(item.toRegion);
+    let toPart = stableName(item.toPart);
+    // A targetless route is still fully resolvable when the typed scene has one
+    // declared focal surface. Preserve the authored move and bind it to that
+    // host-validated part/region instead of dropping the whole path and later
+    // manufacturing a neutral hold (ProofArc F scene-repair artifact).
+    if (!pathHasExplicitTarget && !toRegion && !toPart) {
+      toPart = fallbackToPart;
+      toRegion = toPart ? "" : fallbackToRegion;
+    }
     const fromRegion = stableName(item.fromRegion);
     const fromPart = stableName(item.fromPart);
     if (move === "track-to-anchor" && !toPart) return [];

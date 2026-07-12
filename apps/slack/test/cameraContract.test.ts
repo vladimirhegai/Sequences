@@ -71,6 +71,31 @@ describe("normalizeStoryboardCameraIntent", () => {
     }, window)).toBeUndefined();
   });
 
+  it("binds a targetless authored route to an explicit typed focal fallback", () => {
+    const camera = normalizeStoryboardCameraIntent({
+      version: 1,
+      path: [
+        { version: 1, move: "hold", startSec: 0, durationSec: 1.6 },
+        { version: 1, move: "push-in", startSec: 1.6, durationSec: 2.4 },
+      ],
+    }, window, { toPart: "metric-ring" });
+    expect(camera?.path).toMatchObject([
+      { move: "hold", toPart: "metric-ring" },
+      { move: "push-in", toPart: "metric-ring" },
+    ]);
+    // The fallback never overrides a route that already names its station.
+    expect(normalizeStoryboardCameraIntent({
+      version: 1,
+      path: [{ version: 1, move: "pan", toRegion: "proof", startSec: 0, durationSec: 2 }],
+    }, window, { toPart: "metric-ring" })?.path[0]).toMatchObject({
+      toRegion: "proof",
+    });
+    expect(normalizeStoryboardCameraIntent({
+      version: 1,
+      path: [{ version: 1, move: "hold", startSec: 0, durationSec: 2 }],
+    }, window, { toPart: "Bad focal!" })).toBeUndefined();
+  });
+
   it("rejects unknown eases and non-kebab station names", () => {
     const camera = normalizeStoryboardCameraIntent({
       version: 1,

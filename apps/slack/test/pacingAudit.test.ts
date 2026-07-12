@@ -1046,6 +1046,117 @@ describe("Sentinel Phase 5 — delayConflictingCameraMoves (normalize-before-ret
       .toBe(false);
   });
 
+  it("lands one same-station camera phrase with its payoff when a delay cannot fit", () => {
+    const settling = scene({
+      id: "metric-settle",
+      startSec: 0,
+      durationSec: 3.6,
+      components: [{ version: 1, id: "metric", kind: "progress-ring" }],
+      beats: [beat("metric-settle", {
+        id: "settle",
+        component: "metric",
+        kind: "set-state",
+        atSec: 2.3,
+        durationSec: 0.4,
+        toState: "settled",
+      })],
+      camera: {
+        version: 1,
+        path: [move({
+          move: "push-in",
+          startSec: 0.8,
+          durationSec: 2.38,
+          toRegion: "station",
+        })],
+      },
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric",
+        composition: "layout-center-stack",
+        relationships: ["metric is the only station"],
+      },
+      worldLayout: [{ region: "station", cell: [0, 0] }],
+      moments: [moment("metric-settle", "camera-push-settle", 2.3)],
+    });
+    expect(auditPacing([settling]).some((finding) => finding.startsWith("pacing/outcome:")))
+      .toBe(true);
+
+    const result = delayConflictingCameraMoves([settling]);
+    const landed = result.storyboard[0]!.camera!.path[0]!;
+    expect(landed.startSec).toBe(0.8);
+    expect(landed.durationSec).toBe(1.84);
+    expect(result.normalized[0]).toContain("lands with the payoff");
+    expect(auditPacing(result.storyboard).some((finding) => finding.startsWith("pacing/outcome:")))
+      .toBe(false);
+    expect(delayConflictingCameraMoves(result.storyboard).normalized).toEqual([]);
+
+    const { worldLayout: _worldLayout, ...withoutWorldLayout } = settling;
+    const directTarget: DirectScene = {
+      ...withoutWorldLayout,
+      id: "metric-direct",
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          startSec: 0.8,
+          durationSec: 2.38,
+          toPart: "metric",
+        }],
+      },
+      beats: settling.beats!.map((entry) => ({ ...entry, sceneId: "metric-direct" })),
+      moments: settling.moments!.map((entry) => ({ ...entry, sceneId: "metric-direct" })),
+    };
+    const directResult = delayConflictingCameraMoves([directTarget]);
+    expect(directResult.storyboard[0]!.camera!.path[0]!.durationSec).toBe(1.84);
+    expect(auditPacing(directResult.storyboard).some((finding) =>
+      finding.startsWith("pacing/outcome:")
+    )).toBe(false);
+  });
+
+  it("never shortens cross-station travel to manufacture a payoff hold", () => {
+    const travel = scene({
+      id: "metric-travel",
+      startSec: 0,
+      durationSec: 3.6,
+      components: [{ version: 1, id: "metric", kind: "progress-ring" }],
+      beats: [beat("metric-travel", {
+        id: "settle",
+        component: "metric",
+        kind: "set-state",
+        atSec: 2.3,
+        durationSec: 0.4,
+        toState: "settled",
+      })],
+      camera: {
+        version: 1,
+        path: [move({
+          move: "push-in",
+          startSec: 0.8,
+          durationSec: 2.38,
+          fromRegion: "origin",
+          toRegion: "station",
+        })],
+      },
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric",
+        composition: "layout-center-stack",
+        relationships: ["camera travels from origin to station"],
+      },
+      worldLayout: [
+        { region: "origin", cell: [-1, 0] },
+        { region: "station", cell: [0, 0] },
+      ],
+      moments: [moment("metric-travel", "camera-travel-settle", 2.3)],
+    });
+    const result = delayConflictingCameraMoves([travel]);
+    expect(result.normalized).toEqual([]);
+    expect(result.storyboard).toEqual([travel]);
+    expect(auditPacing(result.storyboard).some((finding) => finding.startsWith("pacing/outcome:")))
+      .toBe(true);
+  });
+
   it("carries a single camera phrase's moment when delaying that phrase", () => {
     const loadBearing = scene({
       id: "pinned",

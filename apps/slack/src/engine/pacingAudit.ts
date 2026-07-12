@@ -126,6 +126,11 @@ export const MAX_PACING_STRETCH_SEC = 1.5;
  * the same four-second maximum reading floor the move is clearing.
  */
 export const MAX_PACING_RETIME_SEC = READING_MAX_SEC;
+/** A same-station camera phrase may land on a payoff instead of crossing it,
+ * but never by collapsing below a readable phrase or below 60% of its authored
+ * duration. Cross-station travel is never shortened by this repair. */
+const PAYOFF_LANDING_MIN_CAMERA_SEC = 0.6;
+const PAYOFF_LANDING_MIN_DURATION_RATIO = 0.6;
 /**
  * A cursor interaction owns the frame from just before the cursor arrives
  * until its result settles: a full camera move IN FLIGHT there stacks two
@@ -938,6 +943,10 @@ export function delayConflictingCameraMoves(
       const componentRegions = new Map(
         (scene.components ?? []).map((component) => [component.id, component.region]),
       );
+      const componentIds = new Set((scene.components ?? []).map((component) => component.id));
+      const soleWorldRegion = scene.worldLayout?.length === 1
+        ? scene.worldLayout[0]!.region
+        : undefined;
       const beats = fullMoves.length ? resolvedBeatsByScene.get(scene.id) ?? [] : [];
       const destinationIdsFor = (move: CameraMoveIntentV1): Set<string> => new Set(
         [...componentRegions.entries()]
@@ -978,9 +987,32 @@ export function delayConflictingCameraMoves(
       const sameStationReframe = namedCameraTargets.size === 1 &&
         declaredContentStations.size === 1 &&
         [...namedCameraTargets].every((target) => declaredContentStations.has(target));
+      // World-layout completion can prove a sole station even when the model
+      // omitted `region` on its focal component. Keep that inference local to
+      // payoff landing; the broader delay/drop policy must retain its stricter
+      // authored-region test so an opening route is not reclassified.
+      const inferredSoleStationPayoffRoute = Boolean(
+        soleWorldRegion &&
+        declaredContentStations.size === 1 &&
+        declaredContentStations.has(`region:${soleWorldRegion}`) &&
+        [...namedCameraTargets].every((target) =>
+          target === `region:${soleWorldRegion}` ||
+          (target.startsWith("part:") && componentIds.has(target.slice("part:".length)))
+        ),
+      );
+      const samePartPayoffRoute = Boolean(
+        focalTarget &&
+        focalTarget.startsWith("part:") &&
+        componentIds.has(focalTarget.slice("part:".length)) &&
+        namedCameraTargets.size === 1 &&
+        namedCameraTargets.has(focalTarget),
+      );
+      const sameTargetPayoffReframe = sameStationReframe ||
+        inferredSoleStationPayoffRoute || samePartPayoffRoute;
       // The latest hold each too-early move must clear, from every beat it cuts.
       const requiredStart = new Map<number, number>();
       const conflictCount = new Map<number, number>();
+      const conflictingPayoffEnd = new Map<number, number>();
       for (const beat of beats) {
         let needed = 0;
         if ((beat.kind === "type" || beat.kind === "swap") && beat.text) {
@@ -990,7 +1022,8 @@ export function delayConflictingCameraMoves(
           );
         }
         const isToastOpen = beat.kind === "open" && componentKinds.get(beat.component) === "toast";
-        if (PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen) {
+        const isPayoff = PAYOFF_BEAT_KINDS.has(beat.kind) || isToastOpen;
+        if (isPayoff) {
           needed = Math.max(needed, OUTCOME_HOLD_SEC);
         }
         if (!needed) continue;
@@ -1002,7 +1035,7 @@ export function delayConflictingCameraMoves(
           // moving. A same-station reframe cannot: it is still interrupting copy
           // that is already visible in the active station, and the pacing audit
           // deliberately treats that overlap as a reading conflict.
-          if (!sameStationReframe && destinationIdsFor(entry.move).has(beat.component)) continue;
+          if (!sameTargetPayoffReframe && destinationIdsFor(entry.move).has(beat.component)) continue;
           const start = entry.move.startSec;
           const activeUntil = start + entry.move.durationSec;
           if (activeUntil <= beat.endSec + 0.05) continue;
@@ -1012,6 +1045,12 @@ export function delayConflictingCameraMoves(
             Math.max(requiredStart.get(entry.index) ?? 0, round(beat.endSec + needed)),
           );
           conflictCount.set(entry.index, (conflictCount.get(entry.index) ?? 0) + 1);
+          if (isPayoff) {
+            conflictingPayoffEnd.set(
+              entry.index,
+              Math.max(conflictingPayoffEnd.get(entry.index) ?? 0, beat.endSec),
+            );
+          }
         }
       }
       if (requiredStart.size) {
@@ -1080,10 +1119,46 @@ export function delayConflictingCameraMoves(
             ((conflictCount.get(entry.index) ?? 0) >= 2 || sameStationReframe) &&
             !isLoadBearingMove(scene, entry.move) &&
             (!servesGatedDestination || sameStationReframe);
-          if (
-            !fitsDelay || !fitsBeforeNext || !bindingsSafe || !fitsScene ||
-            shouldDropCrowdedOverflow
-          ) {
+          const delayFits = fitsDelay && fitsBeforeNext && bindingsSafe && fitsScene &&
+            !shouldDropCrowdedOverflow;
+          if (!delayFits) {
+            // A single same-station push that is already carrying the payoff
+            // can land WITH that payoff instead of being delayed until after
+            // it. This preserves the authored route and declared camera
+            // evidence while turning an in-flight result into a framed settle.
+            // It is deliberately unavailable to cross-station travel, crowded
+            // holds, or a trim that would collapse the authored phrase.
+            const payoffEnd = conflictingPayoffEnd.get(entry.index);
+            // `nextFramingChangeAfter` treats a move ending within 50ms of a
+            // payoff as still in flight. Land 60ms before resolution so the
+            // audit and the rendered frame agree that the camera has settled.
+            const landedDuration = payoffEnd === undefined
+              ? 0
+              : round(payoffEnd - entry.move.startSec - 0.06);
+            const shortenedKeepsBindings = payoffEnd !== undefined && boundMoments.every((moment) =>
+              entry.move.startSec + landedDuration >= moment.atSec - EVIDENCE_BEFORE_SEC &&
+              entry.move.startSec <= moment.atSec + EVIDENCE_AFTER_SEC
+            );
+            const canLandOnPayoff =
+              sameTargetPayoffReframe &&
+              fullMoves.length === 1 &&
+              (conflictCount.get(entry.index) ?? 0) === 1 &&
+              payoffEnd !== undefined &&
+              landedDuration >= PAYOFF_LANDING_MIN_CAMERA_SEC &&
+              landedDuration >= entry.move.durationSec * PAYOFF_LANDING_MIN_DURATION_RATIO &&
+              landedDuration < entry.move.durationSec - 0.05 &&
+              sceneEnd - payoffEnd + PACING_TOLERANCE_SEC >= OUTCOME_HOLD_SEC &&
+              shortenedKeepsBindings;
+            if (canLandOnPayoff) {
+              newPath[entry.index] = { ...entry.move, durationSec: landedDuration };
+              const note =
+                `shortened the same-station ${entry.move.move} from ` +
+                `${entry.move.durationSec.toFixed(2)}s to ${landedDuration.toFixed(2)}s so it ` +
+                `lands with the payoff and leaves the resolved frame readable`;
+              notes.push(note);
+              normalized.push(`scene "${scene.id}": ${note}`);
+              continue;
+            }
             // One camera phrase cutting across several independent reading /
             // payoff holds has no free slot left. When it carries no camera
             // moment, dropping that reframe is safer than repeatedly asking

@@ -30,6 +30,7 @@ import {
   reconcileMetricComponentKinds,
   retimeLateLoadBearingEntrances,
   resolveComponentPlan,
+  topUpHeldInteractionResultDevelopment,
   trimOverBudgetComponents,
   validateComponentContract,
   type ComponentBeatIntentV1,
@@ -967,6 +968,106 @@ describe("deterministic fallback proof", () => {
     const parsed = parseComponentPlan(draft.html);
     expect(parsed.errors).toEqual([]);
     expect(parsed.plan).toEqual(resolveComponentPlan(draft.storyboard));
+  });
+});
+
+describe("topUpHeldInteractionResultDevelopment", () => {
+  const heldApproval = (): DirectScene => scene({
+    id: "approval",
+    startSec: 10,
+    durationSec: 6,
+    camera: {
+      version: 1,
+      path: [{ version: 1, move: "hold", startSec: 10, durationSec: 6, toRegion: "approval" }],
+    },
+    components: [{ version: 1, id: "confirm", kind: "button", region: "approval" }],
+    beats: [{
+      version: 1,
+      id: "confirm-ready",
+      sceneId: "approval",
+      component: "confirm",
+      kind: "set-state",
+      atSec: 12,
+      toState: "succeeded",
+    }],
+    interactions: [{
+      version: 1,
+      id: "confirm-click",
+      sceneId: "approval",
+      cursorId: "cursor-1",
+      targetPart: "confirm",
+      action: "click",
+      startSec: 11,
+      arriveSec: 11.5,
+      pressSec: 11.7,
+      releaseSec: 11.9,
+      from: "frame:bottom-right",
+      path: "arc",
+      aimX: 0.5,
+      aimY: 0.5,
+      feedback: "press-ripple",
+    }],
+    moments: [
+      {
+        version: 1,
+        id: "cursor-arrives",
+        sceneId: "approval",
+        atSec: 11.5,
+        title: "Cursor arrives",
+        visualState: "Cursor is on confirm",
+        change: "Confirmation begins",
+        motionIntent: "interaction",
+        importance: "primary",
+      },
+      {
+        version: 1,
+        id: "ready",
+        sceneId: "approval",
+        atSec: 12,
+        title: "Ready",
+        visualState: "Confirmation succeeded",
+        change: "Result is ready",
+        motionIntent: "resolve",
+        importance: "primary",
+      },
+    ],
+  });
+
+  it("adds one late typed highlight to a successful result held under a camera lock", () => {
+    const result = topUpHeldInteractionResultDevelopment([heldApproval()]);
+    expect(result.normalized).toHaveLength(1);
+    expect(result.scenes[0]!.beats).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "approval-held-result-highlight",
+        component: "confirm",
+        kind: "highlight",
+        atSec: 14.4,
+        durationSec: 0.8,
+        style: "ring",
+      }),
+    ]));
+    expect(topUpHeldInteractionResultDevelopment(result.scenes)).toEqual({
+      scenes: result.scenes,
+      normalized: [],
+    });
+  });
+
+  it("does not manufacture a late accent for travel, a non-final state, or a cramped tail", () => {
+    const moving = heldApproval();
+    moving.camera = {
+      version: 1,
+      path: [{ version: 1, move: "push-in", startSec: 12.8, durationSec: 2, toRegion: "approval" }],
+    };
+    const pending = heldApproval();
+    pending.beats![0] = { ...pending.beats![0]!, toState: "pending" };
+    const cramped = heldApproval();
+    cramped.beats![0] = { ...cramped.beats![0]!, atSec: 13.9 };
+    for (const candidate of [moving, pending, cramped]) {
+      expect(topUpHeldInteractionResultDevelopment([candidate])).toEqual({
+        scenes: [candidate],
+        normalized: [],
+      });
+    }
   });
 });
 
