@@ -523,7 +523,7 @@ Do this only after Phases 1–5 (handoff: don't optimize prompts before
 eliminating contradictory contracts).
 
 ### S6.1 Prompt payload audit + budget enforcement
-- [ ] Measure actual composed prompt sizes per stage (ledger already knows).
+- [x] Measure actual composed prompt sizes per stage (ledger already knows).
   Reinstate a hard budget test (author ≤45k chars; the 125–137k repair
   prompts are the target). Remove now-redundant prose that restates typed
   contracts (the contracts are injected; the prose was compensating).
@@ -1190,3 +1190,22 @@ demo, MCP demo, direct demo, and `sequence:check --demo --no-mcp --format both`.
 No paid probe, publish, or deploy. The four strict-source replay outcomes
 changed deliberately from browser-rejected artifacts to expected L3 static
 rejections; artifact bytes remain frozen.
+
+## S6.1 — 2026-07-12 — DONE (LP-3 pending authorization)
+Measured the pre-diet payloads at 65.8k chars for a normal locked author
+prompt, 125.1k for repair, and 72.2k for the historical multi-scene slot
+prompt; archived stress runs reached 125–137k. Added a shared 45,000-char
+author/patch assertion before provider calls. Locked and slot prompts now
+project only author-needed creative plan fields, compact host-owned director
+chapters and skills, and omit duplicated component/world/camera/cut contract
+prose. Repair prompts now carry exact finding-targeted source excerpts rather
+than the whole scratch document. The ledger still records successful model-call
+prompt sizes; receipt behavior is unchanged.
+
+Files: `src/engine/runner/prompts.ts`, `src/engine/runner/ladder.ts`,
+`test/promptBudget.test.ts`, and this plan.
+Verification: root typecheck; Slack typecheck; root `npm test`; full Slack unit
+suite (80 files / 1,327 tests); focused prompt/direct/plugin/scene/runner tests;
+`replay:all` (13/0/0); MCP demo; direct demo; and
+`sequence:check --demo --no-mcp --format both`. Exact replays remain unchanged.
+No paid probe, publish, or deploy. LP-3 remains pending owner authorization.

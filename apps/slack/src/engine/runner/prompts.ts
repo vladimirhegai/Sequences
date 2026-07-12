@@ -38,6 +38,10 @@ const DIRECTOR_PROMPT = fs.readFileSync(
 
 
 export const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
+/** Hard ceiling for every source-authoring and source-repair request. */
+export const AUTHOR_PROMPT_BUDGET_CHARS = 45_000;
+const REPAIR_SOURCE_CONTEXT_CHARS = 30_000;
+const BOUNDED_INITIAL_SKILL_BUDGET_CHARS = 24_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
 const SLOT_SKILL_BUDGET_CHARS = 5_000;
 function compactSkillText(text: string, budgetChars = COMPACT_SKILL_BUDGET_CHARS): string {
@@ -48,6 +52,17 @@ function compactSkillText(text: string, budgetChars = COMPACT_SKILL_BUDGET_CHARS
   const paragraphEnd = compacted.lastIndexOf("\n\n", budgetChars);
   return compacted.slice(0, paragraphEnd >= Math.floor(budgetChars * 0.8) ? paragraphEnd : budgetChars);
 }
+function boundedInitialSkillText(text: string): string {
+  const compacted = text.replace(/\n{3,}/g, "\n\n");
+  if (compacted.length <= BOUNDED_INITIAL_SKILL_BUDGET_CHARS) return compacted;
+  const paragraphEnd = compacted.lastIndexOf("\n\n", BOUNDED_INITIAL_SKILL_BUDGET_CHARS);
+  return compacted.slice(
+    0,
+    paragraphEnd >= Math.floor(BOUNDED_INITIAL_SKILL_BUDGET_CHARS * 0.8)
+      ? paragraphEnd
+      : BOUNDED_INITIAL_SKILL_BUDGET_CHARS,
+  );
+}
 export function availableAssets(projectDir: string): string {
   const assetsDir = path.join(projectDir, "assets");
   if (!fs.existsSync(assetsDir)) return "No project assets are available.";
@@ -55,6 +70,155 @@ export function availableAssets(projectDir: string): string {
     .filter((entry) => entry.isFile())
     .map((entry) => `- assets/${entry.name}`);
   return files.length ? files.join("\n") : "No project assets are available.";
+}
+
+/**
+ * The author prompt is the expensive input-side budget. Keep the check next
+ * to the prompt builder so every paid author/patch seam can enforce the same
+ * ceiling before a provider request is made.
+ */
+export function assertAuthorPromptBudget(prompt: string, stage: string): void {
+  if (!/^(author source|author patch|critique patch)$/i.test(stage)) return;
+  if (prompt.length <= AUTHOR_PROMPT_BUDGET_CHARS) return;
+  throw new Error(
+    `${stage} prompt is ${prompt.length} chars; the hard author prompt budget is ` +
+      `${AUTHOR_PROMPT_BUDGET_CHARS} chars. Compact the composed context before calling the provider.`,
+  );
+}
+
+function repairPromptNeedles(findings: readonly string[]): string[] {
+  const candidates = new Set<string>();
+  for (const finding of findings) {
+    for (const match of finding.matchAll(/(?:["'`])([^"'`\r\n]{3,96})(?:["'`])/g)) {
+      candidates.add(match[1]!);
+    }
+    for (const match of finding.matchAll(/(?:data-[a-z0-9-]+|[#.]?[a-z_][a-z0-9_-]{3,})/gi)) {
+      candidates.add(match[0]!);
+    }
+  }
+  return [...candidates]
+    .filter((needle) => needle.length >= 3)
+    .sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Repair patches only need exact source windows around the reported defect.
+ * Sending a 120k HTML document to fix one selector made the repair prompt the
+ * largest input in the run. The returned windows are byte-exact slices of the
+ * current source; the marker is prompt-only and never reaches the patcher.
+ */
+export function compactRepairSource(
+  html: string,
+  findings: readonly string[],
+  budgetChars = REPAIR_SOURCE_CONTEXT_CHARS,
+): string {
+  if (html.length <= budgetChars) return html;
+
+  type Range = { start: number; end: number; priority: number };
+  const ranges: Range[] = [
+    { start: 0, end: Math.min(html.length, 4_000), priority: 1 },
+    { start: Math.max(0, html.length - 4_000), end: html.length, priority: 1 },
+  ];
+  const needles = repairPromptNeedles(findings);
+  for (const needle of needles.slice(0, 48)) {
+    let from = 0;
+    let hits = 0;
+    while (hits < 4) {
+      const at = html.indexOf(needle, from);
+      if (at < 0) break;
+      ranges.push({
+        start: Math.max(0, at - 1_400),
+        end: Math.min(html.length, at + needle.length + 1_400),
+        priority: 3,
+      });
+      from = at + needle.length;
+      hits += 1;
+    }
+  }
+  // When a finding contains no source token, retain a few evenly-spaced exact
+  // windows so a patch can still discover the relevant structure without the
+  // old whole-document payload.
+  if (ranges.length === 2) {
+    const window = 2_000;
+    for (let index = 1; index <= 8; index += 1) {
+      const center = Math.round((html.length * index) / 9);
+      ranges.push({
+        start: Math.max(0, center - window / 2),
+        end: Math.min(html.length, center + window / 2),
+        priority: 1,
+      });
+    }
+  }
+
+  const selected: Range[] = [];
+  let selectedChars = 0;
+  for (const range of [...ranges].sort((a, b) => b.priority - a.priority || a.start - b.start)) {
+    const length = range.end - range.start;
+    if (selectedChars + length > budgetChars) continue;
+    selected.push(range);
+    selectedChars += length;
+  }
+  selected.sort((a, b) => a.start - b.start);
+  const merged: Range[] = [];
+  for (const range of selected) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+      previous.priority = Math.max(previous.priority, range.priority);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+  const marker = "\n<!-- omitted exact source context; patch only text visible in these slices -->\n";
+  let output = merged.map((range) => html.slice(range.start, range.end)).join(marker);
+  if (output.length > budgetChars) output = output.slice(0, budgetChars);
+  return output;
+}
+
+/** Prompt-only projection: host contracts are already present in the slots. */
+function authorStoryboardPromptProjection(scene: DirectScene): Record<string, unknown> {
+  const projected = authorStoryboardProjection(scene);
+  const {
+    id,
+    title,
+    purpose,
+    incomingIdea,
+    foreground,
+    background,
+    cameraIntent,
+    continuityAnchor,
+    startSec,
+    durationSec,
+    blueprint,
+    rules,
+    outgoingCut,
+    moments,
+  } = projected;
+  return {
+    id,
+    title,
+    purpose,
+    incomingIdea,
+    foreground,
+    background,
+    cameraIntent,
+    continuityAnchor,
+    startSec,
+    durationSec,
+    blueprint,
+    rules,
+    outgoingCut,
+    moments: moments?.map(({ version, id: momentId, atSec, title: momentTitle, visualState, change, motionIntent, importance }) => ({
+      version,
+      id: momentId,
+      atSec,
+      title: momentTitle,
+      visualState,
+      change,
+      motionIntent,
+      importance,
+    })),
+  };
 }
 
 /**
@@ -487,7 +651,49 @@ export function slotDirectorPrompt(prompt: string, misses?: string[]): string {
       "",
     )
     .trim();
-  return precedence ? `${compact}\n\n${precedence}` : compact;
+  const compacted = compactHostOwnedDirectorChapters(compact);
+  return precedence ? `${compacted}\n\n${precedence}` : compacted;
+}
+
+function compactHostOwnedDirectorChapters(text: string): string {
+  return text
+    .replace(
+      /## Continuous spatial world[\s\S]*?(?=## Motion-native components)/,
+      [
+        "## Continuous spatial world",
+        "Use the locked data-camera-world plane and named data-region stations exactly as",
+        "scaffolded. Keep product surfaces inside those bindings; the host owns camera",
+        "motion, focal carriers, cuts, and interaction actors.",
+        "",
+      ].join("\n"),
+    )
+    .replace(
+      /## Anti-patterns[\s\S]*?(?=## Spatial intent)/,
+      [
+        "## Anti-patterns",
+        "Avoid generic SaaS gradients, repeated card grids, guessed coordinates, and",
+        "ambient motion on copy that is meant to be read.",
+        "",
+      ].join("\n"),
+    );
+}
+
+/**
+ * Whole-document recovery still has to return `<index_html>`, but the locked
+ * storyboard and scaffold already carry the camera, cut, component, and
+ * runtime contracts. Keep the creative chapters and a short document seam;
+ * do not resend the host's full contract encyclopedia on every repair.
+ */
+export function compactLockedDirectorPrompt(prompt: string, misses?: string[]): string {
+  const compact = slotDirectorPrompt(prompt, misses).trim();
+  return [
+    compact,
+    "",
+    "## Full-document response contract",
+    "Return exactly one <index_html> tag containing the complete document and nothing",
+    "else. The host re-injects the locked typed plan after authoring; keep every",
+    "scaffolded scene id, data-region, data-part, data-component, and timing intact.",
+  ].join("\n");
 }
 
 export function creationPrompt(args: {
@@ -506,66 +712,35 @@ export function creationPrompt(args: {
   slots?: boolean;
 }): string {
   if (args.scratch) {
-    const scratchComponents = componentReferenceFor(
-      args.lockedStoryboard ?? args.scratch.storyboard,
-    );
     const cutChecklist = bridgedCutRepairChecklist(
       args.validationFeedback ?? [],
       args.lockedStoryboard ?? args.scratch.storyboard,
       args.scratch.html,
     );
+    const scratchContext = compactRepairSource(
+      args.scratch.html,
+      args.validationFeedback ?? [],
+    );
     return [
       "SYSTEM: You are a precise HTML/CSS/GSAP repair engineer.",
-      "Repair the supplied scratch composition with the fewest local edits. Preserve its art",
-      "direction, copy, timing, scene structure, and all unrelated source exactly.",
-      "For deliberate entrance/exit overflow or decorative overlap, add the narrowest matching",
-      "data-layout-allow-* annotation to the moving wrapper. Hard clipped_text/text_box_overflow",
-      "must be reflowed or resized; never annotate away load-bearing clipped text.",
-      "For overlap, clipping, container overflow, or safe-area findings, move the affected",
-      "semantic groups into .zone children of the existing .layout-split,",
-      ".layout-editorial-left, .layout-meta-top, .layout-hero-band, or",
-      ".layout-center-stack flow container. Prefer that structural repair over offsets.",
-      "For camera_framed_clipped findings, the named element hangs outside the station",
-      "rect the camera frames: move it fully inside its data-region box (keep an ~8%",
-      "inner margin) or shrink it — never move the region itself or edit the camera plan.",
-      "For camera_framed_sparse findings, the framed content is a small subject adrift",
-      "in an empty frame: enlarge the station's content, tighten its data-region rect so",
-      "the fit zoom lands closer, or move more of that scene's content into the framed",
-      "station — the viewer should never study a mostly-empty frame.",
-      "For cut_degraded findings, a declared morph/match compiled as a plain",
-      "swipe because the endpoint silhouettes do not rhyme. Use the measured",
-      "numbers in the finding: restyle one endpoint, or move its data-part attribute",
-      "onto a sub-element whose box does rhyme (e.g. a condensed header band matching",
-      "the outgoing pill), so both parts sit within a 2.5x aspect ratio, under 60 nodes,",
-      "and on frame at the boundary. Never rename the parts or edit the cut plan JSON.",
-      "For eye_trace_jump findings, the viewer's gaze is on the outgoing focal element",
-      "when the cut lands but the incoming subject appears across the frame: move the",
-      "incoming scene's opening subject (or its station rect) so it appears near the",
-      "measured outgoing position — the finding carries both viewport coordinates.",
-      "Never retime the cut, change scene timing, or edit the cut plan JSON for it.",
-      "For eye_trace_pingpong findings, consecutive beats yank the eye across the frame:",
-      "bring the two beat targets closer together in the layout — never delete beats.",
-      "For motion/liveness findings, add seek-safe GSAP beats on child elements,",
-      "semantic component parts, or data-camera-world wrappers at explicit",
-      "composition times. Do not animate scene wrappers to fake activity.",
-      "For storyboard/moments findings, the named moment's changed state must",
-      "actually happen at its atSec: author a visible, explicitly positioned",
-      "beat on that scene's content there. Never delete or retime the moment;",
-      "make the timeline honor it.",
-      "Never edit data-composition-id, data-scene values, scene element ids, or storyboard timing.",
-      "Do not edit JavaScript unless a finding explicitly identifies script/source validation.",
-      "While repairing one finding, never remove or rename other data-part, data-region,",
-      "or data-component attributes and never delete a component root — destroying a valid",
-      "binding creates new blocking findings and rejects the whole patch atomically.",
+      "Make the smallest exact source edits that resolve every listed finding. Preserve",
+      "the art direction, copy, timing, scene graph, host bindings, and unrelated source.",
+      "The host owns typed camera, cut, component, interaction, timeline, and runtime",
+      "contracts: never retime or rename them, delete a data-part/data-region/",
+      "data-component root, or duplicate typed motion. Reflow load-bearing text; do",
+      "not annotate it away. For layout findings prefer the existing flow containers",
+      "and measured station rects over guessed offsets. For motion/liveness findings",
+      "use seek-safe child/component beats at explicit times, never wrapper activity.",
       "",
       "## Deterministic findings to repair",
       ...(args.validationFeedback ?? []).map((issue) => `- ${issue}`),
       "",
       ...(cutChecklist ? [cutChecklist, ""] : []),
-      ...(scratchComponents ? [scratchComponents, ""] : []),
       "## Scratch HTML",
+      "Only exact source excerpts are shown when the document exceeds the input budget;",
+      "patch searches must be copied from the excerpts, never invented.",
       "<scratch_index_html>",
-      args.scratch.html,
+      scratchContext,
       "</scratch_index_html>",
       "",
       "## Response contract",
@@ -621,14 +796,7 @@ export function creationPrompt(args: {
         // Plugin-owned components/beats are likewise host business: the author
         // seeing them invites double-authoring the units the host injects, so
         // the projection collapses each unit back to its one-line declaration.
-        JSON.stringify(
-          args.lockedStoryboard.map(
-            ({ sentinelNormalizations: _normalizations, layoutRepairs: _layoutRepairs, ...scene }) =>
-              authorStoryboardProjection(scene),
-          ),
-          null,
-          2,
-        ),
+        JSON.stringify(args.lockedStoryboard.map(authorStoryboardPromptProjection)),
         "</locked_storyboard_json>",
         "",
         // The host already knows the exact scene shells; handing them over
@@ -665,8 +833,8 @@ export function creationPrompt(args: {
                 `data-track-index="1">…your scene content…</section>`
               ),
             ]),
-        ...[worldLayoutGuidance(args.lockedStoryboard)].filter(Boolean),
-        lockedLayoutGuidance(args.lockedStoryboard),
+        ...(!args.slots ? [worldLayoutGuidance(args.lockedStoryboard)] : []),
+        ...(!args.slots ? [lockedLayoutGuidance(args.lockedStoryboard)] : []),
       ].join("\n")
     : "";
   const lockedResponse = args.lockedStoryboard
@@ -691,17 +859,28 @@ export function creationPrompt(args: {
         "</frame_capsule>",
       ].join("\n")
     : "";
-  const componentReference = componentReferenceFor(
-    args.lockedStoryboard ?? args.current?.storyboard,
-  );
+  // Slot templates already contain the exact host component roots. Repeating
+  // the full catalog here only restates the typed contract and consumed most
+  // of the budget in the six-scene incident; whole-document recovery retains
+  // the reference because it still authors the outer document.
+  const componentReference = args.slots
+    ? ""
+    : componentReferenceFor(args.lockedStoryboard ?? args.current?.storyboard);
+  const directorPrompt = args.slots
+    ? slotDirectorPrompt(DIRECTOR_PROMPT)
+    : args.lockedStoryboard || args.compact
+      ? compactLockedDirectorPrompt(DIRECTOR_PROMPT)
+      : DIRECTOR_PROMPT;
   return [
     "SYSTEM:",
-    args.slots ? slotDirectorPrompt(DIRECTOR_PROMPT) : DIRECTOR_PROMPT,
+    directorPrompt,
     "",
     args.slots
       ? compactSkillText(args.skills.text, SLOT_SKILL_BUDGET_CHARS)
       : args.compact
       ? compactSkillText(args.skills.text)
+      : args.lockedStoryboard
+      ? boundedInitialSkillText(args.skills.text)
       : args.skills.text,
     "",
     componentReference,

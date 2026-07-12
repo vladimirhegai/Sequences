@@ -7,6 +7,12 @@ import {
   adaptDirectorPromptForSlots,
   creationPrompt,
 } from "../src/engine/compositionRunner.ts";
+import {
+  AUTHOR_PROMPT_BUDGET_CHARS,
+  assertAuthorPromptBudget,
+  compactLockedDirectorPrompt,
+  compactRepairSource,
+} from "../src/engine/runner/prompts.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 import { retrieveHyperframesSkillContext } from "../src/agent/skillContext.ts";
 
@@ -24,7 +30,7 @@ const APP_DIR = path.resolve(fileURLToPath(import.meta.url), "../..");
  */
 const PLANNING_DIRECTOR_BASELINE_BYTES = 37_010; // post-Phase-1 (SENTINEL_REPORT)
 const PLANNING_DIRECTOR_BUDGET_BYTES = Math.round(PLANNING_DIRECTOR_BASELINE_BYTES * 1.1); // 40,711
-const AUTHOR_PROMPT_TARGET_CHARS = 45_000;
+const AUTHOR_PROMPT_TARGET_CHARS = AUTHOR_PROMPT_BUDGET_CHARS;
 const AUTHOR_PROMPT_REGRESSION_CEILING = AUTHOR_PROMPT_TARGET_CHARS;
 
 function assembledFixturePrompt(): { prompt: string; directorChars: number; skillsChars: number } {
@@ -120,5 +126,86 @@ describe("Prompt budget — assembled author prompt", () => {
       `${AUTHOR_PROMPT_REGRESSION_CEILING}). If growth is intentional, update the ` +
         `mission target and its rationale in Sentinel docs; otherwise cut it.`,
     ).toBeLessThanOrEqual(AUTHOR_PROMPT_REGRESSION_CEILING);
+  });
+
+  it("keeps full, multi-scene, and large repair payloads under the same ceiling", () => {
+    const brief = "Product: Cursorflow. What shipped: deploy console, terminal stream, modal confirm, stat-card, and button. Audience: platform engineers. Length: 24s.";
+    const draft = buildFallbackComposition({
+      product: "Cursorflow",
+      whatShipped: "deploy console; terminal stream; modal confirm; stat-card; button",
+      audience: "platform engineers",
+      lengthSec: 24,
+    });
+    const skills = retrieveHyperframesSkillContext("create", brief);
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "sentinel-promptdiagnostic-"));
+    try {
+      const full = creationPrompt({
+        brief,
+        projectDir,
+        skills,
+        frameMd: "# Frame\n".repeat(80),
+        lockedStoryboard: draft.storyboard,
+        compact: true,
+      });
+      const multiSceneStoryboard = Array.from({ length: 10 }, (_, index) => ({
+        ...draft.storyboard[index % draft.storyboard.length]!,
+        id: `scene-${index + 1}`,
+        startSec: index * 2.4,
+      }));
+      const multiScene = creationPrompt({
+        brief,
+        projectDir,
+        skills,
+        frameMd: "# Frame\n".repeat(80),
+        lockedStoryboard: multiSceneStoryboard,
+        slots: true,
+      });
+      const repair = creationPrompt({
+        brief,
+        projectDir,
+        skills,
+        lockedStoryboard: draft.storyboard,
+        scratch: {
+          storyboard: draft.storyboard,
+          html: `${"x".repeat(80_000)}<div data-part="repair-target">${"y".repeat(40_000)}</div>`,
+        },
+        validationFeedback: ['dead_gsap_target: data-part="repair-target"'],
+        compact: true,
+        structuredPatches: true,
+      });
+      expect(full.length).toBeLessThanOrEqual(AUTHOR_PROMPT_TARGET_CHARS);
+      expect(multiScene.length).toBeLessThanOrEqual(AUTHOR_PROMPT_TARGET_CHARS);
+      expect(repair.length).toBeLessThanOrEqual(AUTHOR_PROMPT_TARGET_CHARS);
+      assertAuthorPromptBudget(full, "author source");
+      assertAuthorPromptBudget(multiScene, "author source");
+      assertAuthorPromptBudget(repair, "author patch");
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps repair excerpts exact and includes the reported late source", () => {
+    const source = `${"x".repeat(70_000)}<div data-part="repair-target">${"y".repeat(40_000)}</div>`;
+    const compact = compactRepairSource(source, ['data-part="repair-target"']);
+    expect(compact.length).toBeLessThanOrEqual(30_000);
+    expect(compact).toContain('<div data-part="repair-target">');
+    expect(compact).toContain("omitted exact source context");
+  });
+
+  it("compacts the locked whole-document director without dropping creative guidance", () => {
+    const director = fs.readFileSync(path.join(APP_DIR, "prompts", "planning-director.md"), "utf8");
+    const compact = compactLockedDirectorPrompt(director);
+    expect(compact.length).toBeLessThan(director.length / 2);
+    expect(compact).not.toContain("## Architecture laws");
+    expect(compact).not.toContain("## Hard runtime contract");
+    expect(compact).toContain("## Motion doctrine");
+    expect(compact).toContain("Full-document response contract");
+  });
+
+  it("rejects an oversized author request before a provider call", () => {
+    expect(() => assertAuthorPromptBudget("x".repeat(AUTHOR_PROMPT_TARGET_CHARS + 1), "author patch"))
+      .toThrow(/hard author prompt budget/);
+    expect(() => assertAuthorPromptBudget("x".repeat(AUTHOR_PROMPT_TARGET_CHARS + 1), "storyboard"))
+      .not.toThrow();
   });
 });

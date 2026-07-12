@@ -97,6 +97,7 @@ import {
 } from "./repairs.ts";
 import { slotScaffoldViolations } from "./scaffold.ts";
 import {
+  assertAuthorPromptBudget,
   COMPOSITION_SOURCE_BUDGET_CHARS,
   CRITIC_MAX_DIRECTIVES,
   CRITIC_RESPONSE_FORMAT,
@@ -567,6 +568,7 @@ async function completeWithRetry(
   label: string,
   attempts = 3,
 ): Promise<string> {
+  assertAuthorPromptBudget(prompt, label);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -618,6 +620,7 @@ async function completeReasoningWithRetry(
   label: string,
   attempts = 3,
 ): Promise<string> {
+  assertAuthorPromptBudget(prompt, label);
   if (!provider.streamComplete) {
     return completeWithRetry(provider, prompt, options, label, attempts);
   }
