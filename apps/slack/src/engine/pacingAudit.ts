@@ -779,6 +779,13 @@ export function topUpFramingFloor(
 
   const pushDuration = (scene: DirectScene): number =>
     round(Math.min(1.0, Math.max(0.5, scene.durationSec * 0.4)));
+  const neutralChassis = (scene: DirectScene): CameraMoveIntentV1 | undefined => {
+    const path = scene.camera?.path ?? [];
+    const only = path.length === 1 ? path[0] : undefined;
+    return only?.move === "hold" && Boolean(only.toPart || only.toRegion)
+      ? only
+      : undefined;
+  };
   // A candidate "holds a single framing" with NO declared camera path at all —
   // a fresh single-move push-in can be created without colliding with an
   // existing hold/drift segment at the scene start (a scene that already owns a
@@ -789,7 +796,7 @@ export function topUpFramingFloor(
     .map((scene, index) => ({ scene, index }))
     .filter(
       ({ scene }) =>
-        (scene.camera?.path.length ?? 0) === 0 &&
+        ((scene.camera?.path.length ?? 0) === 0 || Boolean(neutralChassis(scene))) &&
         hasFramingSubject(scene) &&
         !(scene.beats ?? []).some(
           (beat) => beat.atSec <= scene.startSec + pushDuration(scene) + 0.05,
@@ -810,6 +817,11 @@ export function topUpFramingFloor(
       zoom: FRAMING_TOPUP_ZOOM,
       startSec: round(scene.startSec),
       durationSec: pushDuration(scene),
+      ...(neutralChassis(scene)?.toPart
+        ? { toPart: neutralChassis(scene)!.toPart }
+        : neutralChassis(scene)?.toRegion
+          ? { toRegion: neutralChassis(scene)!.toRegion }
+          : {}),
     };
     const note =
       `added a gentle establishing push-in (zoom ${FRAMING_TOPUP_ZOOM}) to meet the ` +

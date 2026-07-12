@@ -1483,6 +1483,36 @@ describe("Sentinel — topUpFramingFloor (normalize-before-retry)", () => {
     expect(result.storyboard.find((entry) => entry.id === "c")?.camera?.path).toHaveLength(1);
   });
 
+  it("upgrades continuity-owned neutral holds without inventing a second idea", () => {
+    const withChassis = (id: string, startSec: number, durationSec: number): DirectScene => ({
+      ...held(id, startSec, durationSec),
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "hold",
+          startSec,
+          durationSec,
+          toPart: `${id}-card`,
+          zoom: 1,
+        }],
+      },
+    });
+    const storyboard = [
+      withChassis("a", 0, 5.5),
+      withChassis("b", 5.5, 6),
+      withChassis("c", 11.5, 6),
+    ];
+    const result = topUpFramingFloor(storyboard);
+    expect(result.normalized).toHaveLength(2);
+    expect(result.storyboard.length + fullMoveCount(result.storyboard)).toBe(5);
+    for (const id of ["b", "c"]) {
+      expect(result.storyboard.find((entry) => entry.id === id)?.camera?.path).toEqual([
+        expect.objectContaining({ move: "push-in", toPart: `${id}-card` }),
+      ]);
+    }
+  });
+
   it("leaves a film short by three as a finding (a real content deficit)", () => {
     const storyboard = [held("a", 0, 7), held("b", 7, 7), held("c", 14, 7)];
     expect(requiredFramingCount(21)).toBe(6);

@@ -1307,8 +1307,9 @@ export function validateStoryboardPlan(
   if (expectedStart >= FRAMING_FLOOR_MIN_FILM_SEC && framings < requiredFramings) {
     errors.push(
       `a ${expectedStart.toFixed(0)}s film needs at least ${requiredFramings} distinct framings ` +
-        `(shots plus typed camera moves); it has ${framings} — add shots or give scenes ` +
-        `camera paths over a larger data-camera-world`,
+        `(shots plus typed camera moves); it has ${framings} — add shots or develop a ` +
+        `scene's one primary target/context through an additional camera pose. Do not tour ` +
+        `supporting evidence to satisfy this floor`,
     );
   }
   if (requirements.minCameraMoves && cameraMoves < requirements.minCameraMoves) {

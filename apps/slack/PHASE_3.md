@@ -233,3 +233,30 @@ S3.x commit is completed.
   attempt-3 replay dropped only the duplicate workspace finding; Slack
   typecheck passed; the complete unit project passed 78 files / 1,303 tests;
   and frozen replay remained green.
+
+### LP-1 attempt B — failed loudly; framing-floor integration defect found
+
+- Ran cache-distinct retry `phase3-lp1-camera-20260711-b` with the same
+  fail-loud environment and a five-shot brief. It again stopped at storyboard
+  planning with no published video. Triage recorded 7 logical / 10 physical
+  calls, including two transient request failures and one hedge; no fallback,
+  degradation, or browser QA class was recorded.
+- The duplicate semantic-idea finding from attempt A did not recur. Every
+  idea-budget finding named genuinely different focal targets/context, so the
+  S3.4 rejection itself was correct.
+- The retry exposed a separate mechanical integration defect: continuity
+  installs a single target-owned `hold` chassis before `topUpFramingFloor`,
+  but the framing top-up accepted only scenes with no camera path. A neutral
+  host chassis therefore made a one- or two-framing deficit impossible for the
+  host to close. The old framing-floor message then told the planner to travel
+  across a larger camera world, directly encouraging the competing evidence
+  routes S3.4 correctly rejects.
+- `topUpFramingFloor` now treats one target-owned hold as an upgradable neutral
+  chassis, replaces it with a bounded push-in to the same target, and thus
+  adds a pose without inventing a second semantic idea. Its finding guidance
+  now says to add shots or develop the same primary target/context through an
+  additional pose, explicitly forbidding a supporting-evidence tour.
+- Added a regression proving two continuity-owned holds can satisfy a
+  two-framing deficit while retaining their original `toPart` destinations.
+  Focused pacing/phrase tests passed 87/87 and typecheck passed. The complete
+  unit project then passed 78 files / 1,304 tests, and replay remained green.
