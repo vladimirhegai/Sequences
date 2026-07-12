@@ -15,7 +15,6 @@ import {
   HOST_PLAN_ISLAND_IDS,
   injectMissingLivenessBeats,
   mergeEmbeddedDevelopmentScenes,
-  normalizeInteractionActors,
   reconcileCameraWorldPlanes,
   reconcileComponentBindings,
   reconcileComponentInternalPartAliases,
@@ -24,7 +23,6 @@ import {
   repairMalformedFromToCalls,
   quoteBareCssVarsInInlineScripts,
   stripInvalidSvgPathPlaceholders,
-  scopeRingValueGeometryStyles,
   repairStrategyAfterStaticRejection,
   rewriteDegradedCutStoryboard,
   stripAllHostPlanIslands,
@@ -35,6 +33,10 @@ import {
   topUpRowsMarkup,
   volunteeredCutBoundaries,
 } from "../src/engine/compositionRunner.ts";
+import {
+  normalizeInteractionActors,
+  scopeRingValueGeometryStyles,
+} from "../src/engine/runner/repairs/implementation.ts";
 import { degradeCrossKindComponentMorphCuts } from "../src/engine/runner/storyboardAudit.ts";
 import { hasPausedTimeline } from "../src/engine/directComposition.ts";
 import { auditKitMarkupCompleteness } from "../src/engine/kitMarkupAudit.ts";
