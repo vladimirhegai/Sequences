@@ -371,7 +371,7 @@ Goal (handoff §4): single `CameraPhrase` consumed by blocking, runtime, and QA;
 collapse zero-distance/same-target phrases; budget visual ideas.
 
 ### S3.1 Define `CameraPhrase` and compile into it
-- [ ] New `src/engine/cameraPhrase.ts` (target, contextual framing target,
+- [x] New `src/engine/cameraPhrase.ts` (target, contextual framing target,
   source/arrival pose, travel/settle/dwell/departure intervals, importance,
   evidence owner, occupancy contract, route ownership authored|continuity|
   host-derived). Compile authored paths AND continuity/blocking requests into
@@ -872,3 +872,18 @@ plan. Verification: Slack typecheck; focused audit/time/direct suites (7 files,
 No paid probe, publish, or deploy. One initial browser command was invoked from
 the repository root and found no matching project; rerunning from `apps/slack`
 passed, so this was an operator command-location error, not a test failure.
+
+## S3.1 — 2026-07-11 — DONE
+Added `src/engine/cameraPhrase.ts` as the canonical typed semantic model and
+made camera blocking compile authored segments plus direction/continuity
+requests into it before injection. Every phrase now carries source/arrival
+poses, travel/settle/dwell/departure intervals, importance, evidence owner,
+occupancy/anchor contracts, and `authored|continuity|host-derived` route
+ownership. The existing blocking names/island remain compatibility adapters;
+runtime behavior is unchanged at this seam. Files: `cameraPhrase.ts`,
+`cameraBlocking.ts`, focused fixtures/tests, `PHASE_3.md`, and this plan.
+Verification: Slack typecheck; focused camera/blocking/environment unit tests
+(87/87); camera depth, blocking landing, and continuity runtime browser tests
+(14/14); deterministic `film:demo` completed with all four cuts, 0 eligible
+dead-frame windows, and unchanged runtime routing. No paid probe, publish, or
+deploy.

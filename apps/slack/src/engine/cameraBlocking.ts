@@ -10,62 +10,27 @@
  */
 import type { DirectScene } from "./directComposition.ts";
 import { resolveCutPlan } from "./cutContract.ts";
+import { resolveCameraPlan } from "./cameraContract.ts";
 import { resolveFilmDirectionScore, type DirectionPhraseV1 } from "./directionScore.ts";
 import type { ContinuityEntityKind, ContinuityGraphV1 } from "./continuityGraph.ts";
 import type { ContinuousMotionEvidenceV1 } from "./continuousMotion.ts";
+import {
+  compileCameraPhrasePlan,
+  type CameraPhraseAnchorV1,
+  type CameraPhrasePlanV1,
+  type CameraPhraseSeedV1,
+  type CameraPhraseTargetV1,
+  type CameraPhraseV1,
+} from "./cameraPhrase.ts";
 
-export interface BlockingTargetV1 {
-  kind: "part" | "region" | "selector";
-  id: string;
-  entityId?: string;
-  entityKind?: ContinuityEntityKind;
-}
-
-export interface ScreenAnchorV1 {
-  x: number;
-  y: number;
-  name: "center" | "left-third" | "right-third" | "top-third" | "bottom-third" |
-    "top-right" | "bottom-right";
-}
-
-export interface CameraBlockingPhraseV1 {
-  id: string;
-  sceneId: string;
-  phraseId: string;
-  role: DirectionPhraseV1["role"];
-  importance: "primary" | "supporting";
-  startSec: number;
-  arrivalSec: number;
-  endSec: number;
-  target: BlockingTargetV1;
-  /** Camera frames this contextual station while evidence follows `target`. */
-  framingTarget?: { kind: "part" | "region"; id: string };
-  occupancy: { min: number; preferred: number; max: number };
-  framingOccupancy?: { min: number; preferred: number; max: number };
-  arrivalPose: { anchor: ScreenAnchorV1; lens: "fit" | "detail" | "wide"; zoom: number };
-  corridor: { from: ScreenAnchorV1; to: ScreenAnchorV1; padding: number };
-  dwell: { startSec: number; endSec: number; readableSec: number };
-  nextHandoff?: { entityId: string; toScene: string; toPart: string; atSec: number };
-}
-
-export interface CameraBlockingPlanV1 {
-  version: 1;
-  enabled: true;
-  solver: {
-    curve: "minimum-jerk-quintic";
-    measuredDom: true;
-    maxNormalizedVelocity: number;
-    maxNormalizedAcceleration: number;
-    maxNormalizedJerk: number;
-  };
-  scenes: Array<{ sceneId: string; phrases: CameraBlockingPhraseV1[] }>;
-  summary: {
-    phraseCount: number;
-    explicitTargetCount: number;
-    primaryPhraseCount: number;
-    primaryWithReadableLandingCount: number;
-  };
-}
+/** @deprecated Wire-compatible names retained while consumers migrate. */
+export type BlockingTargetV1 = CameraPhraseTargetV1;
+/** @deprecated Wire-compatible names retained while consumers migrate. */
+export type ScreenAnchorV1 = CameraPhraseAnchorV1;
+/** @deprecated Use CameraPhraseV1. */
+export type CameraBlockingPhraseV1 = CameraPhraseV1;
+/** @deprecated Use CameraPhrasePlanV1. */
+export type CameraBlockingPlanV1 = CameraPhrasePlanV1;
 
 const ANCHORS: Record<ScreenAnchorV1["name"], ScreenAnchorV1> = {
   center: { x: 0.5, y: 0.5, name: "center" },
@@ -289,7 +254,7 @@ export function resolveCameraBlockingPlan(
   const planScenes = score.scenes.map((scoreScene) => {
     const scene = scenes.find((entry) => entry.id === scoreScene.sceneId)!;
     const moments = new Map((scene.moments ?? []).map((moment) => [moment.id, moment]));
-    const phrases = scoreScene.phrases.map((phrase): CameraBlockingPhraseV1 => {
+    const phrases = scoreScene.phrases.map((phrase): CameraPhraseSeedV1 => {
       const moment = phrase.momentId ? moments.get(phrase.momentId) : undefined;
       const target = targetFor(scene, phrase, graph);
       const component = scene.components?.find((entry) => entry.id === target.id);
@@ -404,7 +369,7 @@ export function resolveCameraBlockingPlan(
         : target.kind === "part" && target.entityKind !== "product-shell"
           ? "detail" as const
           : "fit" as const;
-      const block: CameraBlockingPhraseV1 = {
+      const block: CameraPhraseSeedV1 = {
         id: `${scene.id}:${phrase.id}:blocking`,
         sceneId: scene.id,
         phraseId: phrase.id,
@@ -424,6 +389,7 @@ export function resolveCameraBlockingPlan(
           endSec: Math.max(arrivalSec, dwellEnd),
           readableSec: round(Math.max(0, dwellEnd - arrivalSec)),
         },
+        settleUntilSec: phrase.settleUntilSec,
         ...(nextHandoff(graph, scene.id, target)
           ? { nextHandoff: nextHandoff(graph, scene.id, target) }
           : {}),
@@ -433,11 +399,8 @@ export function resolveCameraBlockingPlan(
     });
     return { sceneId: scene.id, phrases };
   });
-  const phrases = planScenes.flatMap((scene) => scene.phrases);
-  const primary = phrases.filter((phrase) => phrase.importance === "primary");
-  return {
-    version: 1,
-    enabled: true,
+  return compileCameraPhrasePlan({
+    cameraPlan: resolveCameraPlan(scenes),
     solver: {
       curve: "minimum-jerk-quintic",
       measuredDom: true,
@@ -446,13 +409,7 @@ export function resolveCameraBlockingPlan(
       maxNormalizedJerk: 60,
     },
     scenes: planScenes,
-    summary: {
-      phraseCount: phrases.length,
-      explicitTargetCount: phrases.filter((phrase) => Boolean(phrase.target.id)).length,
-      primaryPhraseCount: primary.length,
-      primaryWithReadableLandingCount: primary.filter((phrase) => phrase.dwell.readableSec >= 0.35).length,
-    },
-  };
+  });
 }
 
 /** Quintic minimum-jerk interpolation: position, velocity, acceleration are continuous at endpoints. */
@@ -499,7 +456,11 @@ export interface CameraBlockingLandingEvidenceV1 {
 export interface CameraBlockingEvidenceV1 {
   version: 1;
   advisory: true;
-  planSummary: CameraBlockingPlanV1["summary"];
+  planSummary: Pick<
+    CameraBlockingPlanV1["summary"],
+    "phraseCount" | "explicitTargetCount" | "primaryPhraseCount" |
+      "primaryWithReadableLandingCount"
+  >;
   landings: CameraBlockingLandingEvidenceV1[];
   trajectories: Array<{
     sceneId: string;
