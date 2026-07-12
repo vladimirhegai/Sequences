@@ -757,16 +757,16 @@ clearly broken. The audit removes model veto power from taste heuristics; it
 does not remove their diagnostic visibility.
 
 ### S6.9 Hackathon guardrail and retry map
-- [ ] Produce `.reports/hackathon-guardrails.md`. Enumerate every finding path
+- [x] Produce `.reports/hackathon-guardrails.md`. Enumerate every finding path
   that can influence `validateStoryboardPlan`, browser-QA retry feedback,
   `repairSlotDraftForFindings`, quality penalties, critic/patch work,
   `sequenceCheckStatus`, and normalizer/repair registries. For each row record
   its deterministic owner, current tier, paid-call cost, whether it can block
   publish, and its target tier under the policy above.
-- [ ] Explicitly trace the three ProofLane J findings and all current
+- [x] Explicitly trace the three ProofLane J findings and all current
   out-of-frame/visibility findings from detector to retry decision. Identify
   duplicate detectors that charge separately for the same rendered symptom.
-- [ ] This is an inventory step only: do not change production behavior, run a
+- [x] This is an inventory step only: do not change production behavior, run a
   paid probe, or expand the audit into a new quality taxonomy.
 - Verify: focused registry/status tests, Slack typecheck, exact artifact
   replays, and `replay:all` remain green. Commit the report and plan/journal
@@ -1790,3 +1790,21 @@ product skill entrypoints; skill-mirror SHA-256 hashes match;
 Railway reports the service online and `/healthz` returned `200 ready`; public
 `main` was read without mutation; `git diff --check` green. No product code,
 paid probe, publish, deployment, or S7+ work.
+
+## S6.9 — 2026-07-12 — DONE
+Added `.reports/hackathon-guardrails.md`, an inventory-only trace from plan,
+static, browser, penalty, scene-repair, rescue, critic, status, hedge, and
+normalizer seams to the active HARD / deterministic same-attempt / ADVISORY
+policy. The report records present paid-call cost and publication behavior,
+classifies the mixed detector families by measured evidence, inventories the
+source/storyboard/browser repair registries, and identifies the retry-owner
+duplicates across focal visibility, camera clipping/landing, safe-area,
+overflow, sparse, and near-blank checks. ProofLane J is frozen as the negative
+control: its fully visible ~12% headline, parent/child shell overlap, and
+unsettled opener remain QA advisories and must cost zero repair/critic calls.
+
+Files: `.reports/hackathon-guardrails.md` and this plan. Verification: focused
+Sentinel, sequence-status, normalizer-registry, and attempt-ledger unit tests
+(34/34); Slack typecheck; exact ProofLane J `source:replay`; and exact
+`replay:all` (25 replayed / 0 skipped / 0 failed), all green. No production
+code, paid probe, publish, deployment, or S7+ work. S6.10 is next.
