@@ -269,11 +269,16 @@ describe("shared host contract registry", () => {
 
   it("routes ordered source injection, kits, and staging through adapters", () => {
     const runnerDir = new URL("../src/engine/runner/", import.meta.url);
+    const readRunnerSources = (directory: URL): string[] => fs.readdirSync(directory, {
+      withFileTypes: true,
+    }).flatMap((entry) => {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, directory);
+      if (entry.isDirectory()) return readRunnerSources(child);
+      return entry.name.endsWith(".ts") ? [fs.readFileSync(child, "utf8")] : [];
+    });
     const runnerSource = [
       fs.readFileSync(new URL("../src/engine/compositionRunner.ts", import.meta.url), "utf8"),
-      ...fs.readdirSync(runnerDir)
-        .filter((file) => file.endsWith(".ts"))
-        .map((file) => fs.readFileSync(new URL(file, runnerDir), "utf8")),
+      ...readRunnerSources(runnerDir),
     ].join("\n");
     for (const id of IDS) expect(runnerSource).toContain(`hostContract("${id}")`);
     expect(runnerSource).toContain("...HOST_CONTRACTS.map((contract) => contract.file)");

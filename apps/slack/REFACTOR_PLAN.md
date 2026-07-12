@@ -493,7 +493,7 @@ Goal (handoff §6). Mechanical moves, no behavior change; keep import facades.
 - Verify: browser suite + QA cache hash unchanged on a cached project.
 
 ### S5.2 repairs: split by domain
-- [ ] Split `runner/repairs.ts` into `repairs/htmlChassis.ts`,
+- [x] Split `runner/repairs.ts` into `repairs/htmlChassis.ts`,
   `repairs/cssSafety.ts`, `repairs/selectorDataflow.ts`,
   `repairs/timelineNormalize.ts`, `repairs/contractIslands.ts`,
   `repairs/boundedLayout.ts`. Each repair returns edits + proof (intended
@@ -1130,3 +1130,20 @@ typecheck; `replay:all` (13/0/0); full browser suite (22/23 files passed,
 54/55 tests passed, with the known 5s parallel-Chrome timeout isolated and
 passing in `continuityRuntime.browser.test.ts` at 30s); cached QA evidence
 reused hash `a2f66a26`. No paid probe, publish, or deploy.
+
+## S5.2 — 2026-07-12 — DONE
+Moved the repair implementation behind the stable `runner/repairs.ts` facade
+and added domain entrypoints for `htmlChassis`, `cssSafety`,
+`selectorDataflow`, `timelineNormalize`, `contractIslands`, and
+`boundedLayout`. Added `repairs/proof.ts` with `withRepairProof`, which
+returns edits plus intended-finding evidence and rejects newly introduced
+finding classes; the source normalizer seams now expose that proof while
+preserving the exact normalized state and registry order. Updated Sentinel's
+closed-world source list and the host-contract source scan to include nested
+repair/layout implementations. Files: `src/engine/runner/repairs.ts`,
+`src/engine/runner/repairs/implementation.ts`, the six domain modules,
+`repairs/proof.ts`, `src/engine/sentinel.ts`, `test/hostContract.test.ts`,
+`test/repairProof.test.ts`, and this plan. Verification: Slack typecheck;
+focused normalizer/extraction/proof/host-contract/Sentinel tests (38/38);
+full Slack unit suite green; `replay:all` (13/0/0). No paid probe, publish,
+or deploy.
