@@ -206,3 +206,30 @@ S3.x commit is completed.
   boundaries retained outgoing motion/incoming settle evidence and eligible
   runtime reported zero dead-frame windows over 1.5s.
 - LP-1 remained unspent until all of the above local evidence was green.
+
+### LP-1 attempt A — failed loudly; mechanical false positive found
+
+- Ran the authorized paid probe as job
+  `phase3-lp1-camera-20260711-a` with OpenRouter, fallback off, continuity on,
+  audit composition, MCP transport, render, and temporal evidence requested.
+- The run failed at storyboard planning after five attempts; fail-loud mode
+  published no storyboard or video. Triage recorded `runtimeValid=false`, no
+  fallback/degradation, 6 logical / 8 physical calls (including frame-design
+  hedging), and no browser QA classes because authoring never began.
+- Attempts 3 and 4 exposed a Phase 3 false positive: the idea gate reported
+  `"confidence-ring in release-workspace"` as competing with the identical
+  idea. The two phrases had distinct semantic poses and therefore correctly
+  remained separate runtime visits, but S3.4 incorrectly treated visit count
+  as idea count.
+- Exact strict replay reproduced the same finding without another model call.
+  The final attempt cleared the idea findings but still failed independent
+  pre-existing framing-count and moment-gap gates.
+- Fix: `auditCameraIdeaBudgetPlan` now de-duplicates routes by semantic
+  target + contextual framing before counting ideas, while leaving both
+  runtime phrases intact. Added a regression with two same-target/context
+  phrases at materially different zoom poses; the phrase plan retains two
+  visits and the idea audit returns no finding.
+- Post-fix verification: focused camera/pacing tests passed 101/101; exact
+  attempt-3 replay dropped only the duplicate workspace finding; Slack
+  typecheck passed; the complete unit project passed 78 files / 1,303 tests;
+  and frozen replay remained green.

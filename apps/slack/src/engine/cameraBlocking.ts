@@ -416,9 +416,24 @@ export function auditCameraIdeaBudgetPlan(
   const sceneById = new Map(scenes.map((scene) => [scene.id, scene]));
   const findings: string[] = [];
   for (const plannedScene of plan.scenes) {
-    const routes = plannedScene.phrases.filter((phrase) =>
+    const candidateRoutes = plannedScene.phrases.filter((phrase) =>
       phrase.target.id !== "composition-root" || plannedScene.phrases.length === 1
     );
+    // An idea is semantic, not a visit count. The runtime may legitimately
+    // develop one subject through two meaningfully different poses (for
+    // example, a contextual arrival followed by a closer read). Those
+    // phrases should remain executable, but they are still one idea for this
+    // gate. Preserve first-appearance order for deterministic diagnostics.
+    const seenIdeas = new Set<string>();
+    const routes = candidateRoutes.filter((phrase) => {
+      const key = `${phrase.target.kind}:${phrase.target.id}|` +
+        (phrase.framingTarget
+          ? `${phrase.framingTarget.kind}:${phrase.framingTarget.id}`
+          : "");
+      if (seenIdeas.has(key)) return false;
+      seenIdeas.add(key);
+      return true;
+    });
     if (routes.length <= 1) continue;
     const scene = sceneById.get(plannedScene.sceneId);
     if (!scene) continue;

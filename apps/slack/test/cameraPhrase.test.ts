@@ -102,6 +102,47 @@ describe("CameraPhrase compiler", () => {
     expect(plan.summary).toMatchObject({ continuityRouteCount: 1, hostDerivedRouteCount: 1 });
   });
 
+  it("budgets repeated semantic visits as one idea even when their poses must remain distinct", () => {
+    const plan = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{
+        sceneId: "proof",
+        phrases: [
+          seed({
+            framingTarget: { kind: "region", id: "workspace" },
+            arrivalPose: { anchor, lens: "detail", zoom: 1 },
+          }),
+          seed({
+            id: "proof:proof-02:blocking",
+            phraseId: "proof-02",
+            startSec: 2.5,
+            arrivalSec: 3,
+            endSec: 5,
+            framingTarget: { kind: "region", id: "workspace" },
+            arrivalPose: { anchor, lens: "detail", zoom: 1.4 },
+            dwell: { startSec: 3, endSec: 4.5, readableSec: 1.5 },
+            settleUntilSec: 3.3,
+          }),
+        ],
+      }],
+    });
+    expect(plan.scenes[0]!.phrases).toHaveLength(2);
+    expect(auditCameraIdeaBudgetPlan([{
+      id: "proof",
+      title: "Proof",
+      purpose: "Develop one confidence idea",
+      startSec: 0,
+      durationSec: 5,
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric",
+        composition: "metric in workspace",
+        relationships: [],
+      },
+    }], plan)).toEqual([]);
+  });
+
   it("collapses SignalDock-shaped direction paperwork from 14 phrases to 7 routes", () => {
     const phrase = (
       sceneId: string,
