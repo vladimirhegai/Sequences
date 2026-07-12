@@ -5,11 +5,13 @@ app is Bolt + Socket Mode and runs TypeScript through `tsx`.
 
 Keep the active documentation set small:
 
+- [REFACTOR_PLAN.md](REFACTOR_PLAN.md): the ACTIVE step-by-step refactor work
+  order — if you are here for refactor work, follow its agent protocol.
 - [OPERATIONS.md](OPERATIONS.md): local probes, publish, deploy, and recovery.
 - [SENTINEL.md](SENTINEL.md): correctness ownership, retries, and fallback.
 - [PROBE_LOG.md](PROBE_LOG.md): current paid-probe evidence.
-- [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md): next-session architecture and
-  motion-quality brief.
+- [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md): architecture rationale behind
+  the plan.
 
 ## Delivery and scope
 
@@ -24,9 +26,9 @@ Publishing and deploying are separate. The live sandbox changes only after
 `railway up`. Never publish or deploy unless the user explicitly asks.
 
 Active work lives in `apps/slack`. It may use `@sequences/core`,
-`@sequences/platform`, and pinned HyperFrames packages, but it must not import
-from `apps/forge` or `apps/sequences`. Those apps and `packages/*` are paused
-unless the task explicitly expands scope.
+`@sequences/platform`, and pinned HyperFrames packages. The retired app/studio
+trees are gone (REFACTOR_PLAN.md Phase P); never recreate or import from them.
+Treat `packages/*` as stable dependencies.
 
 ## Model boundaries
 

@@ -1,50 +1,35 @@
 # CLAUDE.md — workspace pointer
 
+This repository is **Sequences for Slack** (`apps/slack`) — a Slack agent that
+turns a release brief into a launch video in the channel. It is the only
+active product here. Start any task by loading the `sequences` skill
+(`.claude/skills/sequences/SKILL.md`), then:
+
+> ## 👉 Read **[apps/slack/CLAUDE.md](apps/slack/CLAUDE.md)** before doing any work.
+
+Canonical docs (all under `apps/slack/`): `CLAUDE.md` (rules),
+`REFACTOR_PLAN.md` (the ACTIVE step-by-step refactor — follow its agent
+protocol), `SENTINEL.md` (correctness/fallback discipline), `OPERATIONS.md`
+(probes/publish/deploy), `PROBE_LOG.md` (live-probe ledger),
+`REFACTOR_HANDOFF.md` (architecture rationale).
+
 ## GitHub destination — do not get this wrong
 
-All Slack Sequences code must be published to:
+All Slack Sequences code publishes to:
 
 > **https://github.com/vladimirhegai/Slack_Sequences**
 
-This `Sequences` monorepo is the local development workspace, not the GitHub
-delivery destination for Slack work. Never treat a push to
-`vladimirhegai/Sequences` as publishing the Slack app. After committing local
-source, run `bash scripts/publish-public.sh "<message>"`; it creates and pushes
-the standalone Slack repository on `Slack_Sequences/main`. **Deploying the live
-bot is separate:** `railway up` from the monorepo root (GitHub autodeploy is off,
-so publishing does not deploy) — see [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
+This monorepo is the local development workspace, not the delivery
+destination. After committing, `bash scripts/publish-public.sh "<message>"`
+pushes the standalone public repo. **Deploying is separate:** `railway up`
+from the repo root (GitHub autodeploy is OFF) — see
+[apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md). Never publish or deploy
+without explicit authorization.
 
-## Active work lives in `apps/slack`
+## Retired trees are gone
 
-The active work in this repo is **Sequences for Slack** — a Slack agent for the
-**Slack Agent Builder Challenge** (deadline Jul 13 2026). It has its own,
-authoritative agent guide:
-
-> ## 👉 Read **[apps/slack/CLAUDE.md](apps/slack/CLAUDE.md)** before doing any work.
->
-> It covers the two bots, isolation rule, pipeline ownership, failure discipline,
-> and verification. From there: [OPERATIONS.md](apps/slack/OPERATIONS.md) for
-> probes/deploy, [SENTINEL.md](apps/slack/SENTINEL.md) for correctness ownership,
-> and [REFACTOR_HANDOFF.md](apps/slack/REFACTOR_HANDOFF.md) for the next architecture pass.
-
-`apps/slack` is **self-contained**: it may depend on shared packages
-(`@sequences/core`, `@sequences/platform`, pinned `@hyperframes/*@0.6.86`) but
-must **never import from `apps/forge` or `apps/sequences`** — copy what it needs
-in instead. The Railway sandbox app is the only live Slack process; never copy its
-tokens locally or start a second Socket Mode process.
-
-## Forge and Sequences are PAUSED ⏸
-
-Forge (`apps/forge`), Sequences (`apps/sequences`), and the shared engine packages
-they sit on (`packages/core`, `packages/platform`) are **frozen for the
-hackathon.** Do not change them as part of Slack work. Their docs are preserved in
-**[docs/paused/](docs/paused/)**:
-
-- [docs/paused/WORKSPACE.md](docs/paused/WORKSPACE.md) — full workspace guide (the
-  original **9 laws**, engine layout, working rules). Read if you resume engine work.
-- [docs/paused/FORGE.md](docs/paused/FORGE.md) · [docs/paused/SEQUENCES.md](docs/paused/SEQUENCES.md)
-  · [docs/paused/PLAN.md](docs/paused/PLAN.md) — the paused products.
-- [docs/paused/LINEAR_DESIGN.md](docs/paused/LINEAR_DESIGN.md) ·
-  [docs/paused/MOTION_RESEARCH.md](docs/paused/MOTION_RESEARCH.md) ·
-  [docs/paused/MOTION_CATEGORIES.md](docs/paused/MOTION_CATEGORIES.md) — design/research.
-- To resume: [docs/paused/README.md](docs/paused/README.md).
+The retired app/studio trees, their examples and fixtures, paused docs, and
+vendored research snapshots have been removed. Do not recreate or import from
+those surfaces. What remains as real dependencies of `apps/slack`:
+`packages/core`, `packages/platform` (workspace packages; treat as stable),
+and `@hyperframes/*@0.6.86` from npm.
