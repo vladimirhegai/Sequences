@@ -247,7 +247,7 @@ plus root `npm test` and root `npm run typecheck` for the kept packages).
   green, slack fast loop green, `npm run demo --workspace @sequences/slack`.
 
 ### SP.2 Delete retired docs; keep Slack history
-- [ ] Delete `docs/paused/`. Move `docs/RECIPE_STUDIO_PLAN.md`,
+- [x] Delete `docs/paused/`. Move `docs/RECIPE_STUDIO_PLAN.md`,
   `docs/RECIPE_STUDIO_HANDOFF.md`, `docs/DETERMINISTIC_LAYOUT_REPAIR_PLAN.md`
   into `apps/slack/docs/history/` (they document the Slack studio). Delete
   the now-empty root `docs/`. Sweep root `AGENTS.md` for retired content.
@@ -258,7 +258,7 @@ plus root `npm test` and root `npm run typecheck` for the kept packages).
   --include="*.md"` returns nothing load-bearing.
 
 ### SP.3 Delete `references/` vendored snapshots
-- [ ] `references/upstream` + `references/agent-sources` were Forge-era
+- [x] `references/upstream` + `references/agent-sources` were Forge-era
   vendored HyperFrames sources. Confirm zero non-test consumers outside the
   deleted trees (`grep -rn "references/" packages apps/slack scripts
   Dockerfile railway.json --include-dir excludes node_modules`), then delete
@@ -705,3 +705,17 @@ source test now resolves from its own workspace. Verification: root
 typecheck and full root `npm test` passed; the purge-sensitive core/Studio
 tests passed 12/12; Slack typecheck, unit suite (75 files / 1,275 tests), and
 model-free demo passed. No paid probe was run.
+
+## SP.2 â€” 2026-07-11 â€” DONE
+Deleted `docs/paused/` and moved the three Slack studio plans into
+`apps/slack/docs/history/`. Rewrote the local Slack bug-hunt and verification
+guides, updated the workspace orientation and launch config, and removed stale
+retired-path guidance from the tracked agent docs. Verification: the required
+guidance scan has no `docs/paused` or retired-app references. The updated local
+ignored `.claude` files are intentionally not tracked. No paid probe was run.
+
+## SP.3 â€” 2026-07-11 â€” DONE
+Confirmed there were no root `references/` consumers in packages, Slack source,
+scripts, Docker, or Railway configuration outside documentation/skill links;
+deleted the vendored `references/` snapshots and README. Verification: the
+consumer scan is empty. No runtime code changed and no paid probe was run.
