@@ -29,6 +29,7 @@ import {
 import { resolveMomentContract } from "../storyboardMoments.ts";
 import { analyzeMotionDensity } from "../motionDensity.ts";
 import { frameCapsule } from "../frameDesign.ts";
+import { parseFrameBasis } from "../frameValidation.ts";
 import {
   activeSentinelLedgerEvents,
   appendSentinelLedgerEvent,
@@ -77,6 +78,7 @@ import {
   parseCompositionResponse,
   parseStoryboardResponse,
   reportWorldLayoutCompletions,
+  storyboardProductionBasis,
   validateStoryboardPlan,
   type StoryboardPlanRequirements,
 } from "./storyboardAudit.ts";
@@ -1276,6 +1278,7 @@ interface PersistedStoryboardRecovery {
   requested: boolean;
   storyboard?: DirectScene[];
   degradations?: string[];
+  productionBasis?: "light" | "dark";
   source?: string;
   failures: string[];
 }
@@ -1293,6 +1296,7 @@ export function recoverPersistedStoryboardAttempt(
   cacheKey: string,
   requirements: StoryboardPlanRequirements,
   selector = slackSequencesEnvRawValue("SLACK_SEQUENCES_RECOVER_REJECTED_STORYBOARD")?.trim(),
+  frameMd?: string,
 ): PersistedStoryboardRecovery {
   const attemptsDir = path.join(projectDir, "planning", "attempts");
   const explicit = Boolean(selector);
@@ -1355,13 +1359,16 @@ export function recoverPersistedStoryboardAttempt(
       // so replay it with the same late-attempt policy used by the final rescue
       // draw. All non-polish validation remains blocking.
       const storyboard = parseStoryboardResponse(raw, requirements, {
+        ...(frameMd ? { frameMd } : {}),
         degradeShapeHintMismatches: true,
         degradePacingFindings: true,
       });
+      const productionBasis = storyboardProductionBasis(raw);
       return {
         requested: true,
         storyboard,
         degradations: acceptedStoryboardDegradations.get(storyboard) ?? [],
+        ...(productionBasis ? { productionBasis } : {}),
         source: path.join(attemptsDir, file),
         failures,
       };
@@ -1686,11 +1693,12 @@ export async function requestStoryboardPlan(
   const planningDir = path.join(args.projectDir, "planning");
   const cacheFile = path.join(planningDir, "storyboard.json");
   const sharedFile = sharedPlanningCacheFile(args.projectDir, "storyboard", cacheKey);
+  const expectedBasis = args.frameMd ? parseFrameBasis(args.frameMd) : undefined;
   for (const candidate of [cacheFile, sharedFile]) {
     const cached = readPlanningArtifact(candidate, cacheKey) as
-      | { storyboard?: DirectScene[]; degradations?: string[] }
+      | { storyboard?: DirectScene[]; degradations?: string[]; productionBasis?: "light" | "dark" }
       | undefined;
-    if (cached?.storyboard) {
+    if (cached?.storyboard && (!expectedBasis || cached.productionBasis === expectedBasis)) {
       const autoDeclared = autoDeclareRecipes(cached.storyboard);
       const errors = validateStoryboardPlan(autoDeclared, requirements);
       if (!errors.length) {
@@ -1728,12 +1736,22 @@ export async function requestStoryboardPlan(
     args.projectDir,
     cacheKey,
     requirements,
+    undefined,
+    args.frameMd,
   );
   if (persistedRecovery.storyboard) {
     const storyboard = autoDeclareRecipes(persistedRecovery.storyboard);
     const degradations = persistedRecovery.degradations ?? [];
     for (const degradation of degradations) recordSentinelDegradation(degradation);
-    const payload = { version: 1, key: cacheKey, storyboard, degradations };
+    const payload = {
+      version: 1,
+      key: cacheKey,
+      storyboard,
+      degradations,
+      ...(persistedRecovery.productionBasis
+        ? { productionBasis: persistedRecovery.productionBasis }
+        : {}),
+    };
     writePlanningArtifact(cacheFile, payload);
     writePlanningArtifact(sharedFile, payload);
     process.stderr.write(
@@ -2052,8 +2070,8 @@ export async function requestStoryboardPlan(
     "",
     "## Response contract",
     structuredOutput
-      ? 'Return only a JSON object with one "storyboard" array. No tags, Markdown, or prose.'
-      : "Return only <storyboard_json> containing a JSON array. No Markdown or prose.",
+      ? 'Return only a JSON object with "productionBasis" (light|dark) and one "storyboard" array. No tags, Markdown, or prose.'
+      : "Return only <storyboard_json> containing a JSON object with productionBasis (light|dark) and a storyboard array. No Markdown or prose.",
     "Shots must be contiguous, start at 0, total 6-60 seconds, and last 1.5-15 seconds each.",
     "Use this exact shape for every shot:",
     '{"id":"kebab-case","title":"human title","purpose":"viewer change",',
@@ -2327,6 +2345,7 @@ export async function requestStoryboardPlan(
       let storyboard: DirectScene[];
       try {
         storyboard = parseStoryboardResponse(raw, requirements, {
+          ...(args.frameMd ? { frameMd: args.frameMd } : {}),
           // Degrade only on the FINAL storyboard attempt of the FINAL rung: a
           // hopeless volunteered pair degraded on the primary rung's last
           // attempt would return immediately and the independent rescue model
@@ -2435,12 +2454,14 @@ export async function requestStoryboardPlan(
                 key: cacheKey,
                 storyboard: repaired,
                 degradations: repairDegradations,
+                ...(expectedBasis ? { productionBasis: expectedBasis } : {}),
               });
               writePlanningArtifact(sharedFile, {
                 version: 1,
                 key: cacheKey,
                 storyboard: repaired,
                 degradations: repairDegradations,
+                ...(expectedBasis ? { productionBasis: expectedBasis } : {}),
               });
               return repaired;
             }
@@ -2459,11 +2480,19 @@ export async function requestStoryboardPlan(
       }
       const degradations = acceptedStoryboardDegradations.get(storyboard) ?? [];
       storyboard = autoDeclareRecipes(storyboard);
+      const productionBasis = storyboardProductionBasis(raw);
       for (const degradation of degradations) {
         recordSentinelDegradation(degradation);
       }
-      writePlanningArtifact(cacheFile, { version: 1, key: cacheKey, storyboard, degradations });
-      writePlanningArtifact(sharedFile, { version: 1, key: cacheKey, storyboard, degradations });
+      const payload = {
+        version: 1,
+        key: cacheKey,
+        storyboard,
+        degradations,
+        ...(productionBasis ? { productionBasis } : {}),
+      };
+      writePlanningArtifact(cacheFile, payload);
+      writePlanningArtifact(sharedFile, payload);
       endAttempt("accepted");
       return storyboard;
     }

@@ -30,6 +30,23 @@ export interface ParsedFrame {
   mono?: string;
 }
 
+export type FrameBasis = "light" | "dark";
+
+/** Read the committed canvas polarity without treating prose as authority. */
+export function parseFrameBasis(frameMd: string): FrameBasis | undefined {
+  const metadata = frameMd.match(/<!--\s*sequences-frame:\s*(\{.*?\})\s*-->/s)?.[1];
+  if (metadata) {
+    try {
+      const basis = (JSON.parse(metadata) as { basis?: unknown }).basis;
+      if (basis === "light" || basis === "dark") return basis;
+    } catch {
+      // Fall through to the human-readable line for old/corrupt metadata.
+    }
+  }
+  const prose = frameMd.match(/^Basis:\s*\*\*(light|dark)\*\*/im)?.[1]?.toLowerCase();
+  return prose === "light" || prose === "dark" ? prose : undefined;
+}
+
 export function parseFrame(frameMd: string): ParsedFrame {
   const metadata = frameMd.match(/<!--\s*sequences-frame:\s*(\{.*?\})\s*-->/s)?.[1];
   let brandMatched = false;

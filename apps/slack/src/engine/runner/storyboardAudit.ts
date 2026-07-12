@@ -95,6 +95,7 @@ import {
   withNormalizationNotes,
 } from "../pacingAudit.ts";
 import { recordSentinelNormalization } from "../sentinelTelemetry.ts";
+import { parseFrameBasis, type FrameBasis } from "../frameValidation.ts";
 import { pluginsEnabled, recipesEnabled } from "../sentinelFlags.ts";
 import {
   normalizeStoryboardRecipeDeclarations,
@@ -507,6 +508,46 @@ export function mergeEmbeddedDevelopmentScenes(
   return { storyboard, normalized };
 }
 
+export function storyboardProductionBasis(raw: string): FrameBasis | undefined {
+  const source = raw.match(/<storyboard_json>\s*([\s\S]*?)\s*<\/storyboard_json>/i)?.[1] ?? raw;
+  try {
+    const value = JSON.parse(
+      source.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""),
+    ) as unknown;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const object = value as Record<string, unknown>;
+      const basis = object.productionBasis ?? object.production_basis ?? object.basis;
+      return basis === "light" || basis === "dark" ? basis : undefined;
+    }
+    if (Array.isArray(value)) {
+      const firstObject = value.find((entry) => entry && typeof entry === "object") as
+        | Record<string, unknown>
+        | undefined;
+      const basis = firstObject?.productionBasis ?? firstObject?.production_basis;
+      return basis === "light" || basis === "dark" ? basis : undefined;
+    }
+  } catch {
+    // The normal parser owns the actionable JSON/truncation error.
+  }
+  return undefined;
+}
+
+export function assertStoryboardBasisMatchesFrame(raw: string, frameMd: string): void {
+  const storyboardBasis = storyboardProductionBasis(raw);
+  const frameBasis = parseFrameBasis(frameMd);
+  if (!frameBasis || storyboardBasis === frameBasis) return;
+  if (!storyboardBasis) {
+    throw new Error(
+      `storyboard/basis: productionBasis is missing; declare the storyboard's ` +
+        `"${frameBasis}" basis committed by frame.md before authoring`,
+    );
+  }
+  throw new Error(
+    `storyboard/basis: production basis "${storyboardBasis}" contradicts frame.md's ` +
+      `committed "${frameBasis}" basis; return productionBasis "${frameBasis}" before authoring`,
+  );
+}
+
 function parseStoryboard(raw: string): DirectScene[] {
   let value: unknown;
   try {
@@ -514,7 +555,10 @@ function parseStoryboard(raw: string): DirectScene[] {
   } catch (error) {
     throw new Error(`storyboard_json is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!Array.isArray(value)) throw new Error("storyboard_json must be an array");
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    value = (value as Record<string, unknown>).storyboard;
+  }
+  if (!Array.isArray(value)) throw new Error("storyboard_json must be an array or storyboard envelope");
   const embeddedDevelopment = mergeEmbeddedDevelopmentScenes(value);
   const normalizedValue = embeddedDevelopment.storyboard;
   if (embeddedDevelopment.normalized.length) {
@@ -2014,12 +2058,15 @@ export function parseStoryboardResponse(
   raw: string,
   requirements: StoryboardPlanRequirements = {},
   options: {
+    /** The committed per-job frame; basis is checked before scene authoring. */
+    frameMd?: string;
     degradeShapeHintMismatches?: boolean;
     /** Accept pacing/* findings as advisories instead of vetoes (late attempts). */
     degradePacingFindings?: boolean;
   } = {},
 ): DirectScene[] {
   const degradations: string[] = [];
+  if (options.frameMd) assertStoryboardBasisMatchesFrame(raw, options.frameMd);
   const knownCapabilities = new Set(
     loadCapabilityIndex().capabilities.map((capability) => capability.id),
   );

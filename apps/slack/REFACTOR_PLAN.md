@@ -536,7 +536,7 @@ eliminating contradictory contracts).
   conversion check rides the same probe.
 
 ### S6.2 Frame/storyboard basis contradiction gate
-- [ ] L0/L3: storyboard `production basis` (dark/light) must match frame.md's
+- [x] L0/L3: storyboard `production basis` (dark/light) must match frame.md's
   committed basis; mismatch is a cheap findings-retry before any authoring
   (SignalDock shipped dark-plan-on-light-frame).
 - Verify: fixture from SignalDock's storyboard rejects at plan time with an
@@ -1209,3 +1209,17 @@ suite (80 files / 1,327 tests); focused prompt/direct/plugin/scene/runner tests;
 `replay:all` (13/0/0); MCP demo; direct demo; and
 `sequence:check --demo --no-mcp --format both`. Exact replays remain unchanged.
 No paid probe, publish, or deploy. LP-3 remains pending owner authorization.
+
+## S6.2 — 2026-07-12 — DONE
+Added a plan-time production-basis gate: structured storyboard responses now
+declare `productionBasis`, tagged/legacy envelopes are inspected when present,
+and a committed frame basis rejects missing or contradictory plans before scene
+validation/authoring. Basis-aware cache and rejected-artifact recovery prevent
+old SignalDock-shaped arrays or stale cache entries from bypassing the gate.
+
+Files: `src/engine/frameValidation.ts`, `src/engine/runner/storyboardAudit.ts`,
+`src/engine/runner/storyboardResponseFormat.ts`, `src/engine/runner/ladder.ts`,
+`src/engine/sentinel.ts`,
+`test/storyboardBasis.test.ts`, `test/runnerExtraction.test.ts`, and this plan.
+Verification: Slack typecheck; focused basis, runner-extraction, and direct
+composition tests green. No Live Probe, publish, or deploy.

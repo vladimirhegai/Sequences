@@ -1322,14 +1322,16 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
     group: "frame",
     layer: "static",
     blocking: "blocking",
-    findingPrefixes: ["frame/"],
+    findingPrefixes: ["frame/", "storyboard/basis"],
     promptCostChars: 0,
     test: "test/frameDesign.test.ts",
     addedBecause:
       "validateCompositionAgainstFrame / validateTypography: the per-job frame.md " +
       "brand contract (frame/font, frame/accent, frame/palette, frame/type). " +
       "frame-design failures ALWAYS fail loud regardless of the fallback flag — " +
-      "brand direction can't be faked. Deterministic tokens, no prompt prose.",
+      "brand direction can't be faked. The S6.2 storyboard/basis gate also rejects " +
+      "a missing or contradictory production basis before authoring. Deterministic " +
+      "tokens, no prompt prose.",
   },
 
   // ── L4 browser — measured pixel/geometry truth; scene-scoped retry ──────────

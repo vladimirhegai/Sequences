@@ -20,6 +20,7 @@ export function storyboardResponseFormat(): NonNullable<CompleteOptions["respons
       schema: {
         type: "object",
         properties: {
+          productionBasis: { type: "string", enum: ["light", "dark"] },
           storyboard: {
             type: "array",
             minItems: 3,
@@ -385,10 +386,9 @@ export function storyboardResponseFormat(): NonNullable<CompleteOptions["respons
             },
           },
         },
-        required: ["storyboard"],
+        required: ["productionBasis", "storyboard"],
         additionalProperties: false,
       },
     },
   };
 }
-

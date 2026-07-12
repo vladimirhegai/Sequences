@@ -455,7 +455,7 @@ const tl = gsap.timeline({ paused: true });
     const hash = createHash("sha256")
       .update(JSON.stringify(storyboardResponseFormat()))
       .digest("hex");
-    expect(hash).toBe("551c0f3eca037db921640b14c30f7b9928b2c31c4b8f2b6933d5ce3813d9aa97");
+    expect(hash).toBe("df74c6a6eb86c48e2970f528dfaea5e550d0bc7c607972cb505eef8fe3d3f057");
   });
 
   it("preserves public quality/signature exports and their exact scoring", () => {
