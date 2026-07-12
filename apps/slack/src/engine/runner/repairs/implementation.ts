@@ -50,9 +50,11 @@ import { assetsEnabled, pluginsEnabled, recipesEnabled } from "../../sentinelFla
 import { injectRecipeContract } from "../../recipeContract.ts";
 import { injectPluginContract } from "../../pluginContract.ts";
 import {
+  declareLinearNormalizerRegistry,
   runNormalizerRegistry,
   type NormalizerRuntimeHooks,
   type OrderedNormalizer,
+  type UndeclaredNormalizer,
 } from "../normalizerRegistry.ts";
 import {
   firstHtmlDocument,
@@ -3613,7 +3615,60 @@ export function unwrapPersistedSceneSlotArrows(
  * load-bearing: in particular, host compile injections must precede the time
  * wrapper and the two final ordering guards.
  */
-export const NORMALIZERS = [
+export const SOURCE_NORMALIZER_ORDER = [
+  "normalize.root-data-start",
+  "normalize.inline-source-syntax.css-var",
+  "normalize.inline-source-syntax.template-selector",
+  "normalize.inline-source-syntax.svg-placeholder",
+  "normalize.inline-source-syntax.persisted-scene-arrow",
+  "normalize.inline-source-syntax.connector-svg-policy",
+  "normalize.inline-source-syntax.visibility",
+  "normalize.gsap-call-shape",
+  "normalize.source-bindings.scene-id",
+  "normalize.lint-font-var-artifact.font-face",
+  "normalize.host-plan-islands.asset-reference",
+  "normalize.inline-source-syntax.deterministic-random",
+  "normalize.gsap-repeat-clamp",
+  "normalize.station-position",
+  "normalize.brand-base",
+  "normalize.source-bindings.timeline-registration",
+  "normalize.host-plan-islands.strip",
+  "normalize.source-bindings.layout-intent",
+  "normalize.source-bindings.interaction-near-miss",
+  "normalize.source-bindings.contract",
+  "normalize.source-bindings.camera-world",
+  "normalize.host-plan-islands.environment",
+  "normalize.host-plan-islands.display-type",
+  "normalize.plugin-lower.source-inject",
+  "normalize.source-bindings.component-pre-continuity",
+  "normalize.source-bindings.component-region-home",
+  "normalize.source-bindings.component-alias",
+  "normalize.source-bindings.rows-markup",
+  "normalize.source-bindings.underline-markup",
+  "normalize.kit-chart-complete",
+  "normalize.kit-progress-complete",
+  "normalize.host-plan-islands.cuts",
+  "normalize.source-bindings.camera-runtime",
+  "normalize.host-plan-islands.camera",
+  "normalize.host-plan-islands.continuity",
+  "normalize.source-bindings.component-post-continuity",
+  "normalize.host-plan-islands.components",
+  "normalize.fx-plan.source-inject",
+  "normalize.asset-lower.source-inject",
+  "normalize.recipe-reconcile.source-inject",
+  "normalize.source-bindings.liveness",
+  "normalize.host-plan-islands.component-kit",
+  "normalize.host-plan-islands.cinema-kit",
+  "normalize.brand-base.cinema-profile",
+  "normalize.world-layout-derive.styles",
+  "normalize.source-bindings.layout-repair",
+  "normalize.dead-tween-strip",
+  "normalize.host-plan-islands.time",
+  "normalize.source-bindings.compile-order",
+  "normalize.source-bindings.runtime-order",
+] as const;
+
+export const NORMALIZERS = declareLinearNormalizerRegistry<string, SourceNormalizerContext>([
   {
     id: "normalize.root-data-start",
     telemetryTag: "root-data-start",
@@ -5038,7 +5093,22 @@ export const NORMALIZERS = [
       };
     },
   },
-] as const satisfies readonly OrderedNormalizer<string, SourceNormalizerContext>[];
+] as const satisfies readonly UndeclaredNormalizer<string, SourceNormalizerContext>[], {
+  order: SOURCE_NORMALIZER_ORDER,
+  reads: ["source.html", "context.storyboard", "context.project-files"],
+  writes: ["source.html"],
+  atomicGroup: "source-composition",
+  preconditions: [{
+    id: "source-string",
+    description: "input is the authored HTML source string",
+  }],
+  postconditions: [{
+    id: "canonical-source",
+    description: "source is canonical and ready for the complete static audit",
+  }],
+  idempotenceTestRef:
+    "test/normalizerRegistry.test.ts#keeps-the-full-registry-byte-identical-and-convergent",
+});
 
 /** Focused syntax-only seam retained for minimized golden replay fixtures. */
 export const SOURCE_SYNTAX_NORMALIZERS: readonly OrderedNormalizer<

@@ -21,6 +21,13 @@ must be bounded, idempotent, visible in telemetry, and committed only after the
 whole plan revalidates. If it introduces a new finding class, revert the atomic
 group and preserve the model artifact.
 
+Normalizer order is an executable contract, not incidental array position.
+Every pass declares its read/write fields, pre/postconditions, dependencies,
+atomic group, and idempotence proof. Shared writes require a dependency path;
+the full invariant audit runs once at the atomic-group boundary so later edits
+cannot act on stale partial-audit results. Prefer one declared owner and one
+group audit over repeated L2 churn across overlapping fields.
+
 Do not loosen a gate, increase attempts, or add prompt prose to compensate for
 a mechanical defect.
 

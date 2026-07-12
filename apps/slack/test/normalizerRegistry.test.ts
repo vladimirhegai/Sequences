@@ -10,6 +10,10 @@ import {
   stripUnboundConnectorSvgs,
 } from "../src/engine/compositionRunner.ts";
 import { auditSentinelNormalizerRegistry } from "../src/engine/sentinel.ts";
+import {
+  auditNormalizerDependencyGraph,
+  type OrderedNormalizer,
+} from "../src/engine/runner/normalizerRegistry.ts";
 
 const SYNTAX_ORDER = [
   "normalize.root-data-start",
@@ -174,6 +178,38 @@ describe("ordered source normalizer registry (WS-F1)", () => {
     ]);
   });
 
+  it("declares an acyclic dependency graph with ordered writes and proof refs", () => {
+    const audit = auditNormalizerDependencyGraph(NORMALIZERS);
+    expect(audit).toEqual({
+      duplicateIds: [],
+      missingDependencies: [],
+      cycles: [],
+      orderViolations: [],
+      writeConflicts: [],
+      splitAtomicGroups: [],
+    });
+    expect(NORMALIZERS.every((entry) => entry.reads.length > 0)).toBe(true);
+    expect(NORMALIZERS.every((entry) => entry.writes.length > 0)).toBe(true);
+    expect(NORMALIZERS.every((entry) => entry.preconditions.length > 0)).toBe(true);
+    expect(NORMALIZERS.every((entry) => entry.postconditions.length > 0)).toBe(true);
+    expect(NORMALIZERS.every((entry) => entry.idempotenceTestRef.includes("normalizerRegistry.test.ts")))
+      .toBe(true);
+  });
+
+  it("rejects write/write conflicts that have no declared order", () => {
+    const first = NORMALIZERS[0]!;
+    const second: OrderedNormalizer<string, never> = {
+      ...first,
+      id: "normalize.test-unordered-writer",
+      orderingDependencies: [],
+      run: (state) => ({ state, repairCount: 0 }),
+    };
+    const audit = auditNormalizerDependencyGraph([first, second]);
+    expect(audit.writeConflicts).toEqual([
+      "normalize.root-data-start <> normalize.test-unordered-writer: source.html",
+    ]);
+  });
+
   it("keeps the full registry byte-identical to the public repair seam and converges", () => {
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-normalizers-"));
     try {
@@ -190,15 +226,19 @@ describe("ordered source normalizer registry (WS-F1)", () => {
         ].join("\n"),
       };
       const telemetry: Array<[string, number]> = [];
+      const groupAudits: string[] = [];
       const first = runSourceNormalizerRegistry(
         draft.html,
         { draft, projectDir },
         {
           recordTelemetry: (tag, count) => telemetry.push([tag, count]),
           writeDiagnostic: () => undefined,
+          auditAtomicGroup: ({ group }) => groupAudits.push(group),
         },
       );
       expect(first.executedIds).toEqual(FULL_ORDER);
+      expect(first.auditedGroups).toEqual(["source-composition"]);
+      expect(groupAudits).toEqual(["source-composition"]);
       expect(telemetry).toContainEqual(["root-data-start", 1]);
 
       const publicResult = applyDeterministicSourceRepairs(draft, projectDir);

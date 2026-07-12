@@ -501,7 +501,7 @@ Goal (handoff §6). Mechanical moves, no behavior change; keep import facades.
 - Verify: replay:all byte-identical; unit suite.
 
 ### S5.3 Normalizer registry gets real dependencies
-- [ ] Extend `runner/normalizerRegistry.ts` entries with read/write fields,
+- [x] Extend `runner/normalizerRegistry.ts` entries with read/write fields,
   pre/postconditions, ordering deps, atomic group, and idempotence test ref.
   Add a test that builds the dependency graph and fails on write/write
   conflicts without declared order. Run the full audit once per atomic group
@@ -699,7 +699,7 @@ motion design → probe again**. Everything it needs must be one command away.
 
 - Root `CLAUDE.md` + orientation skill: fixed 2026-07-11 (S0.5 — skill is now
   `.claude/skills/sequences`); keep it updated when layout changes.
-- `SENTINEL.md`: good; add the L2-churn principle from S5.3 when it lands.
+- `SENTINEL.md`: good; S5.3 added the L2-churn/dependency-group principle.
 - `OPERATIONS.md`: add probe:run/probe:triage (S9.2); refresh flag list after
   S7.1.
 - `PROBE_LOG.md`: keep as the concise ledger; probe:run appends skeletons.
@@ -1147,3 +1147,24 @@ repair/layout implementations. Files: `src/engine/runner/repairs.ts`,
 focused normalizer/extraction/proof/host-contract/Sentinel tests (38/38);
 full Slack unit suite green; `replay:all` (13/0/0). No paid probe, publish,
 or deploy.
+
+## S5.3 — 2026-07-12 — DONE
+Made source-normalizer ordering an executable dependency contract. Registry
+entries now expose read/write fields, pre/postconditions, explicit transitive
+ordering, atomic-group membership, and a stable idempotence-test reference.
+Added a dependency-graph audit for duplicate/missing/cyclic dependencies,
+execution-order violations, split atomic groups, and unordered write/write
+conflicts. The runtime now invokes one full-audit hook at each atomic-group
+boundary and reports only groups actually audited; source repair remains one
+atomic `source-composition` group in the exact historical order. Added the L2
+churn/group-audit principle to SENTINEL.md. Files:
+`src/engine/runner/normalizerRegistry.ts`,
+`src/engine/runner/repairs/implementation.ts`,
+`test/normalizerRegistry.test.ts`, `SENTINEL.md`, and this plan.
+Verification: Slack and root typechecks; focused registry/proof/extraction
+tests (20/20); full Slack unit suite; root `npm test` including browser tests;
+`replay:all` (13/0/0); model-free demo, MCP demo, direct demo, and
+`sequence:check --demo --no-mcp --format both`, all green. The first full-unit
+invocation hit the command wrapper's 124s limit without a test failure; the
+same suite completed green with a 300s allowance. No paid probe, publish, or
+deploy.
