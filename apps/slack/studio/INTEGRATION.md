@@ -8,6 +8,12 @@ engine change can silently break the studio or the shipped recipe library.
 **Rule: touching a seam in the left column requires updating the right column
 — or recording a TODO here in this file.**
 
+**Current status (2026-07-12):** catalog expansion is frozen during the active
+S6.9-S6.13 hackathon stabilization work. The exported recipe library contains
+seven recipes; `last-word-roulette` is currently revision 13. Historical
+revision notes below record the revision proven at that moment and should not
+be read as the current library version.
+
 **2026-07-10 pivot:** recipes are now **agent-authored source files** —
 `recipes/<id>.recipe.html` (one file per recipe, committed; format +
 authoring guide in [../recipes/README.md](../recipes/README.md)). The

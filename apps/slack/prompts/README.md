@@ -13,10 +13,12 @@ Sequences for Slack. Keep them here so they can be tuned without hunting through
    (Must be OpenAI: the Responses `mcp` tool type is OpenAI-only — OpenRouter /
    DeepSeek cannot drive it.)
 
-2. **Planning / authoring bot — the main agent** (`src/engine/compositionRunner.ts`).
+2. **Planning / authoring bot — the main pipeline** (`src/engine/runner/`).
    Runs on the provider in `SLACK_SEQUENCES_PROVIDER` — Railway uses
-   `openrouter-api` (DeepSeek). This is the agent that turns the brief + context
-   into a direct HyperFrames composition. Its system prompt is
+   `openrouter-api`. Current defaults split the work: GLM 5.2 directs frame and
+   storyboard decisions; DeepSeek v4 Pro emits full source; model policy and
+   bounded rescue routes live in `src/engine/modelPolicy.ts` and
+   `src/engine/runner/ladder.ts`. The shared general prompt is
    [`planning-director.md`](planning-director.md).
 
 ## What belongs here vs. what does not
@@ -40,7 +42,13 @@ assembled per-project from data or retrieval, it stays in `src/`.
 ## Current wiring
 
 - `context-retrieval.md` → read by `src/slackMcpContext.ts`.
-- `planning-director.md` → read by `src/engine/compositionRunner.ts`; exact
+- `planning-director.md` → read by `src/engine/runner/prompts.ts`; exact
   HyperFrames core references, blueprints, motion rules, available assets, the
-  per-job `frame.md` design system, and current revision state are appended
-  deterministically per run.
+  per-job `frame.md` design system, locked storyboard/scaffold, and current
+  revision state are composed deterministically per stage.
+
+Prompt prose directs creative choices. It must not become the repair owner for
+selector syntax, canonical component children, binding, runtime ordering, or
+measured frame containment. During the active hackathon stabilization work,
+advisory QA findings remain visible but must not be appended to paid repair
+prompts merely to chase zero residue.

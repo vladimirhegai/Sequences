@@ -1,5 +1,10 @@
 # Studio agent ergonomics — the library must stay easy to author
 
+Current status (2026-07-12): this remains the catalog-authoring charter, but
+new components/assets/recipes/looks/camera/plugins are frozen during the active
+S6.9-S6.13 hackathon stabilization work. Do not use this backlog to expand the
+current sprint or delay the first judge-ready MP4.
+
 **Owner mandate (2026-07-10).** The Studio catalogs — Components, Assets,
 Recipes, Looks, Camera patterns, Plugins — are the product's **library**: the
 place where capable coding agents make proven, parameterized craft that the

@@ -14,7 +14,7 @@ explains how to change them.
 | L2 normalize | Deterministic transforms | Delete, degrade, retime, rebind, or complete only when the result is exact and non-creative. |
 | L3 static gate | Source/DOM analysis | Reject defects provable without a browser. |
 | L4 browser gate | Rendered evidence | Measure geometry, visibility, interaction, framing, and motion. |
-| L5 model retry | Bounded ladder | Repair creative/layout residue only after lower layers are exhausted. |
+| L5 model retry | Bounded ladder | Repair only an unresolved hard authoring failure after lower layers are exhausted. |
 
 Decision rule: if the host can know the answer, the host owns it. A normalizer
 must be bounded, idempotent, visible in telemetry, and committed only after the
@@ -30,6 +30,37 @@ group audit over repeated L2 churn across overlapping fields.
 
 Do not loosen a gate, increase attempts, or add prompt prose to compensate for
 a mechanical defect.
+
+## Current hackathon guardrail policy
+
+The active S6.9-S6.13 work order narrows which evidence may veto an authored
+film. It preserves visibility into all QA findings while separating them into
+three decisions:
+
+1. **Hard:** parse/schema/contract failure, runtime exception, missing or
+   invalid timeline, blank/load-bearing content failure, state reset, missing
+   render, or a load-bearing focal that remains out of frame after one bounded
+   deterministic repair. These may block publication and, as a last resort,
+   buy one author repair.
+2. **Deterministic:** canonical markup/binding/script order and measured
+   wrapper/station/camera containment. Repair once in the same source attempt,
+   remeasure, and adopt only on strict improvement with no new hard finding.
+   Never change copy, story order, component choice, timing, palette,
+   typography, or motion style.
+3. **Advisory:** washout/contrast preference, occupancy preference when the
+   focal is visible, camera-settle or reversal taste, supporting static
+   moments, parent/child surface overlap, density, and non-catastrophic pacing
+   or readability. Record these honestly, but do not feed them to storyboard
+   repair, source repair, rescue, or critic patch prompts.
+
+When classification is ambiguous, default to advisory unless the rendered
+output is clearly broken. A runtime-valid film may therefore ship as `warn`
+and still satisfy the current hackathon acceptance contract.
+
+This is the target policy, not a claim that every legacy path already follows
+it. S6.9 inventories current routing and S6.11 implements/enforces the attempt
+economy. Until those steps land, operators must not interpret an advisory-only
+retry as necessary or launch another probe to clear it.
 
 ## Fallback and degradation
 
@@ -68,7 +99,11 @@ separately from logical attempts. Environmental faults are not product fixes,
 but they must not be described as a one-call success.
 
 The current bounded ladders remain implementation details in the runner. Do not
-raise them as a quality strategy.
+raise them as a quality strategy. The active target is at most two logical
+storyboard attempts, two logical source attempts, six logical calls, and eight
+physical requests per job. Stop once a runtime-valid candidate has no hard
+failure; do not spend rescue or critic calls to manufacture zero advisory
+residue. S6.11 owns code-level enforcement of these limits.
 
 ## Executable registries
 

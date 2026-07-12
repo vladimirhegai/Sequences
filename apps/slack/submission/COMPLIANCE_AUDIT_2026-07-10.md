@@ -1,11 +1,14 @@
 # Slack Agent Builder Challenge — submission compliance audit
 
-Audited 2026-07-10 against the public
+Originally audited 2026-07-10 and refreshed 2026-07-12 against the public
 [official rules](https://slackhack.devpost.com/rules),
 [challenge overview](https://slackhack.devpost.com/), and
 [official FAQ](https://slackhack.devpost.com/details/faq-slackagent-builder).
-This is an engineering checklist, not legal advice. Recheck the live rules at
-submission because the rules permit amendments.
+The live overview/FAQ still show a **2026-07-13 5:00 PM PDT** deadline, require
+a live Slack developer-sandbox URL, require both judge accounts as Members,
+and request an approximately three-minute working-project video plus an
+architecture diagram. This is an engineering checklist, not legal advice.
+Recheck the live pages immediately before submission because rules may change.
 
 ## Result
 
@@ -26,8 +29,8 @@ The project is not submission-ready until the owner actions below are complete.
 | Eligible entrant/team | Not discoverable from source | Owner must confirm age, residence, employer/conflict, team registration, and team size ≤4. |
 | New Slack Agent track | Slack manifest and new app architecture | Correct intended track. Do not select Organizations unless Marketplace requirements are completed. |
 | Uses a required Slack technology | `src/slackMcpContext.ts` calls Slack-hosted `https://mcp.slack.com/mcp` with permission-scoped user OAuth | Meets the MCP-integration route. Describe this accurately; the internal stdio Sequences MCP is additional plumbing, not the qualifying Slack integration. |
-| Installs and runs consistently | Slack app manifest + Bolt Socket Mode + Railway service | Architecture is valid. Live `/healthz` returned `200 ready` on 2026-07-10. Run the full sandbox flow again after the final deployment. |
-| Public demo under 3 minutes | New editable 27s Slack ad source under `demos/slack-ad/` | The ad is supporting proof, not a substitute for footage showing `/sequences` functioning in Slack. Final edit must stay below 3:00 and show the real sandbox workflow. |
+| Installs and runs consistently | Slack app manifest + Bolt Socket Mode + Railway service | Architecture is valid. Live `/healthz` returned `200 ready` on 2026-07-12. Run the full sandbox flow again after the final deployment. |
+| Approximately 3-minute working demo | New editable 27s Slack ad source under `demos/slack-ad/` | The FAQ says judges are not required to watch beyond three minutes. Front-load the strongest material, stay at or below 3:00, and show `/sequences` functioning in the real sandbox; the ad alone is only supporting proof. |
 | Public video host | Not yet uploaded | Upload final video publicly to YouTube, Vimeo, Facebook Video, or Youku and verify logged-out playback. |
 | Architecture diagram | `submission/architecture.svg` | Export/upload this visual; update it if deployment boundaries change. |
 | Sandbox URL and judge access | Railway URL is not the requested sandbox URL | Submit the `*.slack.com` developer-sandbox URL. Invite `slackhack@salesforce.com` and `testing@devpost.com` as Members at org level and confirm both appear. |
@@ -59,12 +62,14 @@ This evidence is stronger than attempting to prove a negative. Railway's
 deployment history plus the immutable public tag establishes which build was
 submitted and which build judges were intended to test.
 
-## Current operational gaps found on 2026-07-10
+## Current operational gaps rechecked on 2026-07-12
 
-- Railway is online and healthy, but its latest successful deployment is dated
-  2026-07-07. The public Slack repository reference inspected locally is also
-  behind the current development branch. Final source must be committed,
-  published to `vladimirhegai/Slack_Sequences`, deployed, and sandbox-tested.
+- Railway is online and `/healthz` returned `200 ready` on 2026-07-12, but its
+  latest successful deployment is still `d6a4c279-2fb1-4a06-b7a1-a410617af9a5`
+  from 2026-07-07. The public repository's `main` currently resolves to
+  `0a6c59bae6f679db6e17b6ffc4a82e68bca857f2`, while the local development
+  branch contains later July-12 stabilization work. Final source must be
+  committed, intentionally published, deployed, and sandbox-tested.
 - Judge membership cannot be verified from source. Confirm both accounts at
   the Slack organization member list, not merely one workspace screen.
 - The repository cannot prove that each judge completed per-user hosted-MCP
@@ -73,6 +78,9 @@ submitted and which build judges were intended to test.
 - The final public video and Devpost submission do not yet exist.
 - The sponsor-logo/trademark ambiguity should be confirmed in the official
   hackathon Slack channel before locking the end card.
+- The current engineering sprint stops at the first runtime-valid,
+  human-acceptable MP4 and keeps a known-good backup. Do not delay submission
+  chasing advisory QA residue or an open-ended probe chain.
 
 ## Final freeze record
 

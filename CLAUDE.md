@@ -3,7 +3,8 @@
 This repository is **Sequences for Slack** (`apps/slack`) — a Slack agent that
 turns a release brief into a launch video in the channel. It is the only
 active product here. Start any task by loading the `sequences` skill
-(`.claude/skills/sequences/SKILL.md`), then:
+(`.agents/skills/sequences/SKILL.md`; local tool-specific mirrors must keep the
+same product rules), then:
 
 > ## 👉 Read **[apps/slack/CLAUDE.md](apps/slack/CLAUDE.md)** before doing any work.
 
@@ -12,6 +13,13 @@ Canonical docs (all under `apps/slack/`): `CLAUDE.md` (rules),
 protocol), `SENTINEL.md` (correctness/fallback discipline), `OPERATIONS.md`
 (probes/publish/deploy), `PROBE_LOG.md` (live-probe ledger),
 `REFACTOR_HANDOFF.md` (architecture rationale).
+
+Current operating state (2026-07-12): the first unchecked work is the
+pre-Phase-7 hackathon stabilization section at S6.9. The short-term acceptance
+target is one runtime-valid, human-acceptable MP4 with bounded model calls, not
+zero advisory residue. S7 and later work are frozen; advisory taste findings do
+not justify another paid probe. See the active override in `REFACTOR_PLAN.md`
+before changing gates, retries, or probe behavior.
 
 ## GitHub destination — do not get this wrong
 

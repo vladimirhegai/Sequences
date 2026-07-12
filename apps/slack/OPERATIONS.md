@@ -27,12 +27,50 @@ app locally with sandbox tokens; Railway already owns that connection.
 Deterministic checks:
 
 ```powershell
+npm run typecheck
 npm run typecheck --workspace @sequences/slack
 npm run test:unit --workspace @sequences/slack
 npm run test:browser --workspace @sequences/slack
+npm run replay:all --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
 npm run sequence:check --workspace @sequences/slack -- --demo --no-mcp --format both
 ```
+
+For a persisted job with a completed Sentinel ledger:
+
+```powershell
+npm run probe:triage --workspace @sequences/slack -- <job-id-or-project-dir>
+```
+
+`probe:triage` intentionally requires `planning/sentinel-run.json`. An
+early-stopped job without that file must be documented directly from its
+persisted storyboard/source/QA artifacts; do not invent call counts.
+
+### Current hackathon probe contract (2026-07-12)
+
+The active work order is S6.9-S6.13 in `REFACTOR_PLAN.md`. It supersedes the
+older goal of proving zero residue across an open-ended probe chain:
+
+- use one ordinary 14-18 second launch brief containing facts, audience, tone,
+  before/after story, and CTA; do not specify five scenes, exact components, or
+  camera moves just to stress the gates;
+- the goal is one runtime-valid, human-acceptable MP4 with no surviving hard
+  failure. A truthful `warn` is acceptable when only advisory taste findings
+  remain;
+- target no more than two logical storyboard attempts, two logical source
+  attempts, six logical calls, and eight physical requests for the job. These
+  code-level caps are implementation work in S6.11; until it lands, the
+  operator must stop an obviously runaway run when practical and must not hide
+  the excess in reporting;
+- stop after the first acceptable MP4. Do not rerun for advisory washout,
+  occupancy preference on an already-visible focal, camera-settle taste,
+  supporting static moments, or parent/child surface overlap;
+- a second paid probe is allowed only after probe A has a hard failure or an
+  obvious judge-visible break, that exact artifact has been replayed, and the
+  lowest deterministic owner has been fixed and fully verified. There is no
+  third probe in this sprint; and
+- after success, keep the authored MP4 and a model-free known-good backup, then
+  freeze product code except for a P0 launch failure.
 
 An explicitly authorized paid probe must name OpenRouter and disable the proof
 film so failures remain inspectable:
@@ -49,8 +87,8 @@ npm run sequence:check --workspace @sequences/slack -- `
   --format both
 ```
 
-Use a cache-distinct brief and job id. Live probes can take 6–20+ minutes; let
-them run for a meaningful interval instead of polling continuously. Preserve
+Use a cache-distinct job id without changing the semantic brief. Live probes
+can take 6–20+ minutes; poll no more often than once per 60 seconds. Preserve
 `planning/attempts/*`, `planning/author-run.json`, `planning/sentinel-run.json`,
 `build/qa/sequence-check.json`, temporal strips, blocking overlays, and MP4s.
 

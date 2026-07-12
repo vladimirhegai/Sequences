@@ -1,14 +1,21 @@
 # Refactor handoff — architecture, reliability, and motion quality
 
+Status: **historical architecture rationale**. `REFACTOR_PLAN.md` is the active
+work order and supersedes this file whenever the two differ. As of 2026-07-12,
+the first unchecked work is the pre-Phase-7 hackathon stabilization section at
+S6.9. Do not resume this document's broad refactor sequence, S7+, or its old
+open-ended probe acceptance loop.
+
 ## Mission
 
-Refactor `apps/slack` so a plausible production brief usually reaches a clean
-storyboard and source in one logical attempt, while moving its motion language
-toward the restraint and clarity of `demos/slack-ad`.
+The long-term mission was to refactor `apps/slack` so a plausible production
+brief usually reaches a clean storyboard and source in one logical attempt,
+while moving its motion language toward the restraint and clarity of
+`demos/slack-ad`.
 
-The next agent should own the broad refactor. This session intentionally
-stopped after the final SignalDock probe and only fixed exact shared defects.
-Preserve behavior while moving ownership; do not rewrite the engine all at once.
+This document was written after SignalDock and before the Phase 0-6 work now
+recorded in the plan/journal. Preserve it as the explanation for those
+architectural decisions, not as a current status report.
 
 Success means:
 
@@ -18,6 +25,13 @@ Success means:
 - a clean result is visually directed, not merely validator-compliant;
 - live probes are part of the refactor loop, with fallback disabled and honest
   logical/physical attempt accounting.
+
+For the current hackathon sprint, success is intentionally narrower: one real,
+runtime-valid, human-acceptable MP4 with no surviving hard failure and bounded
+model calls. Advisory taste residue may remain a truthful `warn`. Mechanical
+frame/contract problems belong to deterministic repair; advisory findings do
+not buy another author call or probe. The first acceptable MP4 freezes product
+code.
 
 ## Current assessment
 
@@ -45,7 +59,7 @@ The largest hotspots are approximately:
 There are roughly 213 TypeScript files across `src` and `test`. File size alone
 is not the defect; implicit pass ordering and duplicated semantics are.
 
-## Evidence from the final probe
+## Historical evidence from the SignalDock baseline
 
 `architecture-stress-5-20260711` / SignalDock is the refactor seed fixture.
 Keep its exact artifacts.
@@ -214,7 +228,7 @@ ideas, motivated routes, stateful cause/effect, explicit holds, and restraint.
 Do not attempt to solve taste by adding more camera moves, plugins, recipes, or
 prompt adjectives.
 
-## Refactor sequence
+## Original refactor sequence (historical; do not resume from here)
 
 1. Freeze behavior with exact fixtures for LaunchRelay, PulseForge, GatePilot,
    RelayGuard, and SignalDock. Add property tests for normalizer idempotence,
@@ -236,7 +250,12 @@ prompt adjectives.
 Commit after each migration seam. Keep commits reversible and avoid mixing
 architecture moves with creative tuning.
 
-## Verification and live-probe loop
+## Original verification and live-probe loop (superseded for the hackathon)
+
+The active S6.12 loop permits one representative probe and, only after a hard
+or judge-visible failure is fixed and replayed, one rerun. It does not require a
+stress probe followed by a calm probe, and it stops on the first acceptable
+MP4. The steps below explain the original long-term method only.
 
 For every migrated seam:
 
@@ -259,7 +278,7 @@ broken state, unreadable hierarchy, or clearly bad motion. Do not expand into
 Studio component, asset, recipe, plugin, background, or camera-pattern product
 work unless a concrete integration bug blocks the existing path.
 
-## Acceptance gate
+## Original long-term acceptance gate (superseded for the hackathon)
 
 The refactor is ready to hand back when:
 

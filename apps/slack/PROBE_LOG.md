@@ -10,6 +10,12 @@ fix the lowest deterministic owner, add a regression, and record the honest
 terminal status. Provider faults are environmental but still count in call
 accounting.
 
+Current boundary (2026-07-12): this ledger now runs through the early-stopped
+ProofLane J probe. The next work is S6.9's guardrail/retry inventory, not probe
+K. The active sprint permits at most two new paid probes total and stops after
+the first runtime-valid, human-acceptable MP4; advisory-only residue is not a
+reason to rerun.
+
 ## 2026-07-11 audit sequence
 
 ### LaunchRelay — `architecture-audit-live-1-20260711`
@@ -301,3 +307,104 @@ or bounded L2 kit-markup completion must emit the canonical fill child for a
 typed `progress` root before author repair; separately, compact full-re-author
 locked context below 45k without dropping the plan/scaffold/frame contract.
 No further paid probe was launched.
+
+## 2026-07-12 Phase 6 convergence sequence (ProofLine through ProofLane)
+
+### ProofLine — `lp3-state-capsule-20260712-e` (published-degraded)
+
+The first storyboard was accepted, but source QA exposed three typed-ownership
+collisions: ring-only `.cmp-value` geometry escaped into a stat card, an
+authored class-only cursor lived beside the host cursor, and repeated legs on
+the same targets inflated motion density while the actual arrival changed only
+0.069% of rendered pixels.
+
+Terminal triage: `published-degraded`, status `warn`, `runtimeValid=true`,
+`qualityResidue=3`, no fallback; 9 logical / 11 physical calls, including two
+hedges. The MP4 and temporal evidence exist. Shipped findings were
+`camera_blocking_landing`, `content_overlap`, and `moment_static_frame`.
+Commit `1375c21` scoped the shared class geometry, retired only unmistakable
+duplicate cursors, counted distinct moving targets, and added measured arrival
+feedback. Exact browser replay then reached `strictOk:true`, removed the
+overlap/static findings, and measured 6.574% arrival change.
+
+### ProofArc — `lp3-state-capsule-20260712-f` (published, zero QA residue)
+
+Terminal triage: `published`, status `warn`, `runtimeValid=true`,
+`qualityResidue=0`, no degradation/fallback; 8 logical / 10 physical calls,
+including two hedges. A real MP4, strip, blocking overlay, and thumbs exist.
+The first two storyboard responses were rejected on front-loaded moments,
+payoff dwell, framing floor, and energy-peak requirements. The accepted source
+record contains no author repair attempt and no terminal QA finding, but the
+overall run was not one-attempt because planning plus downstream quality calls
+still exceeded the desired path.
+
+Commit `95c0dec` added bounded host-owned late result development, explicit
+focal fallback for targetless camera routes, and same-station payoff landing
+without inventing another camera idea. This is convergence evidence, not a
+reason to require zero warnings on future judge-ready films.
+
+### ProofSpan — `lp3-state-capsule-20260712-g` (fail-loud before runtime)
+
+Storyboard attempt 1 falsely split a hero ring from its subordinate same-
+station hairline. Source attempts 1 and 2 then repeated one 3.4s evidence-gap
+finding; the full recovery prompt stopped at 46,522 characters before a third
+provider source call. Terminal triage: fail-loud, `runtimeValid=false`, 6
+logical / 8 physical calls, two hedges, no fallback, QA report, MP4, or temporal
+evidence.
+
+Commit `0412db1` grouped the exact ring/hairline station, bound unsupported
+late held-result moments at the deterministic component owner, and compacted
+only redundant full-recovery reference prose while preserving the locked plan,
+frame, scaffold, and finding. Exact fixtures and prompt-budget proof cover this
+run.
+
+### ProofRail — `lp3-state-capsule-20260712-h` (stopped at first browser QA)
+
+The persisted browser result was runtime `ok:true`, `strictOk:false` with four
+warnings: an 8% painted sparse opener, a fully visible 10% metric landing,
+`motion_reversal_excess`, and a supporting rail moment changing only 0.002% of
+pixels. The run was stopped before terminal persistence. It has a storyboard
+and QA cache but no `sentinel-run.json`, author ledger, sequence-check report,
+MP4, or terminal disposition; logical/physical call counts are therefore
+unprovable and are intentionally not estimated.
+
+Commit `ecebb39` added measured ring/rail station co-location, one bounded
+targeted-drift promotion for genuinely sparse framing, and a final landing-
+reserve pass after later retimes. Exact ProofRail QA and negative controls are
+in replay/browser coverage.
+
+### ProofGrid — `lp3-state-capsule-20260712-i` (published)
+
+The first storyboard and first full source response were accepted and a real
+non-fallback MP4 was published. Deterministic source work plus critic/patch
+activity still made the terminal accounting 7 logical / 10 physical calls
+(one failed request, two hedges), so `oneAttemptSuccess=false`. Triage reports
+`published`, `runtimeValid=true`, `qualityResidue=2`, status `warn`; both
+recorded findings were `composition_washed_out`.
+
+Commit `00dfedb` promoted the narrow typed metric opener's single drift into a
+monotonic push, added a measurement-guarded focal contrast plate that is
+adopted only on strict improvement, and skipped the visual critic when rendered
+QA is pristine. Exact ProofGrid browser replay clears both washout findings.
+The new hackathon policy still treats washout as advisory for retry decisions;
+S6.9 must inventory whether the deterministic contrast path should remain.
+
+### ProofLane — `lp3-state-capsule-20260712-j` (early stop; advisory evidence)
+
+The run was stopped at its first persisted source browser QA. The QA result was
+runtime `ok:true`, `strictOk:false`. Its three findings were:
+
+- `stale_asset_lingers`: an approval app-window shell overlapped the child
+  readiness stat it contains;
+- `camera_blocking_landing`: the ready headline itself was 100% visible at
+  about 12% occupancy and inside its 2.5-22% target range, while the enclosing
+  station measured 94.6% against an ensemble preference; and
+- `camera_blocking_unsettled`: the opener was still moving at the sampled
+  landing, a motion-taste concern rather than a runtime break.
+
+The project contains the accepted storyboard, first browser-rejected source,
+and QA caches, but no attempt ledger, `author-run.json`, `sentinel-run.json`,
+sequence-check report, render, or MP4. A repair request may have begun before
+the process tree was stopped; without a ledger its call count is unprovable.
+These findings are the primary S6.9/S6.11 controls: they remain visible for
+human review but must not spend another author call or trigger a new probe.

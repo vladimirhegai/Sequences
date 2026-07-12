@@ -13,6 +13,11 @@ Keep the active documentation set small:
 - [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md): architecture rationale behind
   the plan.
 
+Current work (2026-07-12) starts at S6.9 in the pre-Phase-7 hackathon
+stabilization override. Its acceptance target is a runtime-valid,
+human-acceptable MP4 within bounded model calls; advisory residue may remain a
+truthful `warn`. S7 and later work are frozen until that override is complete.
+
 ## Delivery and scope
 
 Slack work publishes to **https://github.com/vladimirhegai/Slack_Sequences**.
@@ -36,8 +41,9 @@ There are two different bots:
 
 1. `src/slackMcpContext.ts` uses the OpenAI Responses API and Slack hosted MCP
    with the invoking user's OAuth token. This path requires `OPENAI_API_KEY`.
-2. `src/engine/compositionRunner.ts` plans and authors through
-   `SLACK_SEQUENCES_PROVIDER` (production uses `openrouter-api`). The internal
+2. `src/engine/runner/` plans and authors through
+   `SLACK_SEQUENCES_PROVIDER` (production uses `openrouter-api`: GLM for frame
+   and storyboard direction, DeepSeek v4 Pro for full source). The internal
    Sequences MCP owns mutation, preview, render, and undo.
 
 Editable general prompts belong in `prompts/*.md`. Runtime facts, typed
@@ -55,7 +61,9 @@ The pipeline is staged and transactional:
    the host retains the document chassis and all typed plan islands.
 5. Reinject canonical interaction, cut, camera, continuity, component,
    time-ramp, FX, asset, and environment contracts.
-6. Run static and browser QA, then the bounded vision critic.
+6. Run static and browser QA. The bounded vision critic is a conditional
+   quality observer and is skipped when rendered QA is pristine; the active
+   hackathon audit must prevent advisory residue from buying critic repair.
 7. Checkpoint accepted source, capture moment thumbnails, and render the MP4.
 
 `SLACK_SEQUENCES_USE_MCP=0` is diagnostic only. Receipts never contain prompts,
@@ -80,6 +88,10 @@ credentials, workspace content, plan data, or model output.
 - A green JSON report is not a motion-quality pass. Inspect representative
   frames and blocking evidence, then read the motion code for movement between
   those frames.
+- Preserve creative ownership. Host repairs may correct contracts, bindings,
+  measured frame containment, and camera/station fit. They must not rewrite
+  copy, story order, component choice, beat timing, palette, typography, or
+  motion style merely to satisfy a taste heuristic.
 
 The authoritative environment-variable registry is
 `src/engine/featureFlags.ts`. Do not add an unregistered
@@ -100,8 +112,12 @@ For a paid attempt or fallback:
 4. Fix only the shared deterministic cause and add a minimized regression.
 5. Record it in [PROBE_LOG.md](PROBE_LOG.md), then rerun only if authorized.
 
-Never raise attempt counts, loosen a gate, or add prompt prose merely to hide a
-mechanical failure.
+Classify before acting: runtime/schema failures are hard; host-known mechanical
+defects belong to one bounded deterministic repair; taste preferences remain
+visible advisories and do not trigger another author call or probe. Never raise
+attempt counts, loosen a hard gate, or add prompt prose merely to hide a
+mechanical failure. During the active hackathon override, stop after the first
+judge-ready MP4 and never run more than the two explicitly budgeted probes.
 
 ## Safety and verification
 

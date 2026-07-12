@@ -1,5 +1,10 @@
 # Phase 3 implementation and audit log
 
+Status: **historical Phase 3 execution log**. It accurately records S3.1-S3.4
+and LP-1 as they existed on 2026-07-11/12. Later incident work added S3.5-S3.7
+and is documented in `REFACTOR_PLAN.md` and `PROBE_LOG.md`; do not infer the
+current first unchecked step or probe policy from this file.
+
 Date: 2026-07-11
 Scope requested: Phase 3 camera phrase work and LP-1 validation.
 

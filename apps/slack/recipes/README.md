@@ -127,7 +127,7 @@ usable value drops the declaration (degrade-never-veto).
 - `outgoing-morph-seam` — a resolved product surface clears detail,
   compresses into a pill, and carries momentum into a shape-match boundary.
 
-Authoring conventions proven by these four (follow them — they are why the
+Authoring conventions proven by these recipes (follow them — they are why the
 gate reports zero warnings): tween targets are INLINE STRING LITERALS with
 `{{uid}}` filled by the host (the pinned GSAP parser resolves literals, never
 concatenations), and the timing spine derives from `{{start}}`/`{{settleSec}}`
@@ -141,7 +141,11 @@ ring pulse, a flash) must pass `immediateRender: false` or it parks a ghost
 on the frame from scene start (the iris-cta-close ring incident). The gate's
 endpoint thumbnails will NOT catch this — eyeball the first frame.
 
-## Backlog worth building (from the plan, §5.6)
+## Post-hackathon catalog backlog (not active refactor scope)
+
+The active S6.9-S6.13 stabilization work freezes new Studio/catalog expansion.
+The ideas below are optional future work, not a current plan section and not a
+reason to delay the first judge-ready MP4.
 
 cursor demo click-through · bento-grid feature reveal · pricing table build +
 tier highlight · command-palette power-user flow · before/after wipe ·

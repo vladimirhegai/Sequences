@@ -5,6 +5,13 @@ It supersedes the narrative in [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md)
 (keep that file — it is the architecture rationale; this file is the work
 order).
 
+Current boundary (2026-07-12): the first unchecked work is S6.9 in
+"Hackathon stabilization override -- finish before Phase 7." That section
+supersedes the older LP checkpoint budgets and zero-residue/one-attempt
+acceptance language for the current sprint. S7+ is frozen. The immediate goal
+is the first runtime-valid, human-acceptable MP4 within the bounded call/probe
+budget; advisory-only `warn` is acceptable.
+
 ## Agent protocol — read this first, follow it exactly
 
 1. Find the first step whose checkbox is `[ ]` (top to bottom). Steps inside a
@@ -147,6 +154,17 @@ never into more prompt adjectives.
   No fallback, source, render,
   temporal, or state-runtime evidence was produced; full ledger in
   PROBE_LOG.md.
+- LP-3 sequence (`lp3-state-capsule-20260712-a…j`): A-D exposed prompt budget,
+  hero-modal camera grouping, and missing canonical progress-fill ownership;
+  E-I then reached source/runtime convergence. ProofGrid I published a real
+  non-fallback MP4 after its first storyboard and first full source response,
+  but deterministic/critic work still produced 7 logical / 10 physical calls
+  and two washout advisories. ProofLane J was deliberately stopped at its first
+  browser QA because its fully visible 12% headline, parent/child surface
+  overlap, and unsettled opener were taste evidence rather than justification
+  for another repair loop. J has no terminal ledger or MP4, so its call count
+  is not guessed. Full E-J evidence is now in PROBE_LOG.md; the next action is
+  S6.9, not probe K.
 
 ## Staffing guide — which agent runs which steps
 
@@ -174,6 +192,7 @@ the first step and leave crisp notes so a LIGHT agent can finish.
 | S6.1 prompt diet | HEAVY | Judging which prose is redundant vs load-bearing. |
 | S6.2 basis gate | LIGHT | Small typed check + fixture. |
 | S6.3 studio capsule | LIGHT build + HEAVY probe read | Counters are mechanical; the conversion judgment isn't. |
+| S6.9-S6.13 hackathon stabilization | LUNA high/xhigh only if delegation is necessary | Guardrail classification and rendered acceptance require judgment; keep delegation narrow and do not create a probe swarm. |
 | S7.1–S7.3 flags/dead exports/compat | LIGHT | Evidence-driven deletion with full-suite verification. |
 | S8.1–S8.5 motion gates | HEAVY | This is taste-to-measurement translation from the golden demo; requires reading rendered frames. |
 | S9.1 probe:run tool | LIGHT | Wraps existing scripts. |
@@ -204,12 +223,14 @@ mechanical class blocks further probes until it is fixed and replayed.
 | **LP-2 state** | After S4.2 (Phase 4 complete) | One metric-continuity brief (value develops across ≥3 scenes). No reset flicker, morphs honest, reverse-seek clean. May combine with LP-1 into one probe if Phases 3+4 land together. |
 | **LP-3 prompt diet** | After S6.1 (and S6.3's capsule probe folds in here) | One normal probe. Prompt changes alter MODEL behavior — replays prove nothing here. Watch: attempts, parse failures, findings-retry classes vs LP-0; acceptance quality must not drop. |
 | **LP-4 per motion gate** | Tail of each S8.x that says so | One probe each: the new gate fires on real output without false-positives on the golden film. |
-| **LP-5 acceptance** | S9.3 | One clean stress probe (1 logical storyboard + 1 logical source, no fallback/degradation) + one clean normal probe. This is the definition of done. |
+| **LP-5 acceptance** | POST-HACKATHON / PAUSED at S9.3 | Original long-term target: one clean stress probe plus one clean normal probe. It is not the current definition of done. |
+| **Hackathon stabilization override** | ACTIVE at S6.9-S6.13 | One ordinary 14-18s brief. Stop at the first runtime-valid, human-acceptable MP4; allow only one rerun after a hard/judge-visible failure is replayed and fixed. Advisory-only `warn` is acceptable. |
 
-Budget expectation: ~6–8 paid probes for the whole refactor outside Phase 8,
-plus one per Phase 8 gate. If a checkpoint probe fails on a *mechanical*
-class, the fix + replay is free — rerun the checkpoint only after replay:all
-is green again, and count both runs honestly in PROBE_LOG.md.
+The older ~6-8-probe refactor budget and LP-4/LP-5 acceptance loop are paused
+until after the hackathon. The active stabilization section permits at most two
+new paid probes total. If probe A is acceptable, there is no probe B; if it
+fails hard, the exact replay + deterministic fix is free and only then may the
+same semantic brief run once more. Count every call honestly in PROBE_LOG.md.
 
 ---
 
@@ -260,10 +281,12 @@ is green again, and count both runs honestly in PROBE_LOG.md.
   (ARCHITECTURE.md, ROADMAP.md, FALLBACKS.md, ASSETS.md, …) and a pre-runner
   file layout. DONE 2026-07-11: `.claude/skills/slack-map` was replaced by
   `.claude/skills/sequences` (current doc set + runner layout), `forge-map`
-  deleted, root `CLAUDE.md` rewritten to the Slack-only reality. If layout
-  changes again, update the skill in the same commit.
-- Verify: `grep -rn "ROADMAP.md\|FALLBACKS.md\|slack-map" CLAUDE.md
-  .claude/skills/` returns nothing.
+  deleted, root `CLAUDE.md` rewritten to the Slack-only reality. The
+  2026-07-12 doc sync made `.agents/skills/sequences` the tracked canonical
+  source and kept the ignored `.claude` mirror byte-identical. If layout
+  changes again, update both in the same commit.
+- Verify: `rg -n "ROADMAP.md|FALLBACKS.md|slack-map" CLAUDE.md
+  .agents/skills/` returns nothing.
 
 ---
 
@@ -994,14 +1017,18 @@ motion design → probe again**. Everything it needs must be one command away.
 
 # Documentation debt (fold into the phases; listed for visibility)
 
-- Root `CLAUDE.md` + orientation skill: fixed 2026-07-11 (S0.5 — skill is now
-  `.claude/skills/sequences`); keep it updated when layout changes.
-- `SENTINEL.md`: good; S5.3 added the L2-churn/dependency-group principle.
-- `OPERATIONS.md`: add probe:run/probe:triage (S9.2); refresh flag list after
-  S7.1.
-- `PROBE_LOG.md`: keep as the concise ledger; probe:run appends skeletons.
-- `REFACTOR_HANDOFF.md`: mark superseded-by-this-plan in its header (keep the
-  analysis).
+- Root `CLAUDE.md` + orientation skill: fixed 2026-07-11 and resynced
+  2026-07-12 (tracked source `.agents/skills/sequences`, ignored local
+  `.claude` mirror); keep both updated when layout changes.
+- `SENTINEL.md`: current through the hackathon three-tier target policy; S5.3
+  added the L2-churn/dependency-group principle.
+- `OPERATIONS.md`: current `probe:triage` and bounded hackathon runbook added
+  2026-07-12; `probe:run` remains post-hackathon S9.2 work; refresh the flag
+  list after S7.1.
+- `PROBE_LOG.md`: current through ProofLane J; keep it concise and append future
+  probe skeletons only when a probe is actually authorized.
+- `REFACTOR_HANDOFF.md`: marked historical/superseded in its header on
+  2026-07-12; preserve its architecture analysis.
 - apps/slack/docs/history/: leave as history.
 
 # Explicitly out of scope (do not drift)
@@ -1738,3 +1765,28 @@ and early-stopped ProofLane J evidence, restricts any delegation to LUNA
 high/xhigh, and forbids S7+, publish, deploy, and unrelated edge-case work. No
 production code, paid provider call, probe, publish, or deployment was performed
 for this documentation step.
+
+## DOC-STATE-SYNC — 2026-07-12 — DONE (docs and workflow skills only)
+Aligned the canonical agent/operator docs around the S6.9-S6.13 hackathon
+override: hard failures may block, host-known mechanics get one measured
+deterministic repair, and taste residue remains advisory without another paid
+call. Updated the live ledger with honest ProofLine E through ProofLane J
+evidence; J's missing terminal ledger/call count is explicitly left unknown.
+Marked the broad handoff and Phase 3 narrative as historical, corrected the
+current model/prompt/runner paths, froze Studio/catalog expansion, replaced the
+stale submission handoff, and refreshed the dated compliance checklist against
+the official 2026-07-12 Devpost overview/FAQ plus read-only Railway/public-repo
+state.
+
+Files: root/app `CLAUDE.md`; `OPERATIONS.md`, `SENTINEL.md`, `PROBE_LOG.md`,
+`REFACTOR_HANDOFF.md`, `PHASE_3.md`, this plan, prompt/recipe/Studio docs,
+submission handoff/compliance audit, `website-to-video`'s two repaired local
+references, and the tracked `sequences`, `bug-hunt`, and `verify` workflow
+skills under `.agents/skills/`. Local ignored `.claude` mirrors were
+synchronized byte-for-byte. Verification: model-free triage for E-I (H/J
+correctly lack terminal Sentinel ledgers); local Markdown links and current-doc
+npm script names all resolve across 45 current first-party docs and all 25
+product skill entrypoints; skill-mirror SHA-256 hashes match;
+Railway reports the service online and `/healthz` returned `200 ready`; public
+`main` was read without mutation; `git diff --check` green. No product code,
+paid probe, publish, deployment, or S7+ work.
