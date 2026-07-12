@@ -260,7 +260,7 @@ SequencesContinuity.compile(tl,document.getElementById("root"));
 window.__timelines["approach-browser"]=tl;tl.seek(0,false);</script></body></html>`;
 }
 
-function singleSubjectContextFilm(): string {
+function singleSubjectContextFilm(svgMetric = false): string {
   const scenes: DirectScene[] = [{
     id: "recovery-metric",
     title: "Recovery metric",
@@ -270,7 +270,7 @@ function singleSubjectContextFilm(): string {
     components: [{
       version: 1,
       id: "recovery-stat",
-      kind: "stat-card",
+      kind: svgMetric ? "progress-ring" : "stat-card",
       region: "metric-wall",
       role: "hero",
       entityId: "metric",
@@ -327,15 +327,22 @@ function singleSubjectContextFilm(): string {
   primary.dwell = { startSec: 0, endSec: 2.5, readableSec: 2.5 };
   blocking.scenes[0]!.phrases = [primary];
   const camera = resolveCameraPlan(scenes);
+  const compositionId = svgMetric ? "svg-subject-context" : "single-subject-context";
+  const metricCss = svgMetric
+    ? `.metric{position:relative;width:360px;height:360px;color:#171717;display:grid;place-items:center;font:900 96px Arial}.metric svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}.metric circle{fill:none;stroke:#5c4a63;stroke-width:5}.metric span{position:relative;z-index:1}`
+    : `.metric{width:620px;height:340px;border:2px solid #5c4a63;border-radius:20px;background:#fff;color:#171717;display:grid;place-items:center;font:900 120px Arial}`;
+  const metricMarkup = svgMetric
+    ? `<div class="metric" data-layout-important data-component="progress-ring" data-part="recovery-stat" data-continuity-entity="metric"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52"/></svg><span>94%</span></div>`
+    : `<div class="metric" data-layout-important data-component="stat-card" data-part="recovery-stat" data-continuity-entity="metric">94%</div>`;
   return `<!doctype html><html><head><meta charset="utf-8">
 <script src="gsap.min.js"></script><script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CONTINUITY_RUNTIME_FILE}"></script>
 <style>*{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#fff}
 #root,.scene{position:absolute;inset:0;overflow:hidden}.world{position:relative;width:3520px;height:1080px}
 .station{position:absolute;left:1860px;top:140px;width:1400px;height:800px;display:flex;align-items:center;justify-content:center;background:#fff}
-.metric{width:620px;height:340px;border:2px solid #5c4a63;border-radius:20px;background:#fff;color:#171717;display:grid;place-items:center;font:900 120px Arial}</style></head><body>
-<main id="root" data-composition-id="single-subject-context" data-width="1920" data-height="1080" data-duration="4">
+${metricCss}</style></head><body>
+<main id="root" data-composition-id="${compositionId}" data-width="1920" data-height="1080" data-duration="4">
 <section class="scene" data-scene="recovery-metric"><div class="world" data-camera-world>
-<div class="station" data-region="metric-wall"><div class="metric" data-layout-important data-component="stat-card" data-part="recovery-stat" data-continuity-entity="metric">94%</div></div>
+<div class="station" data-region="metric-wall">${metricMarkup}</div>
 </div></section></main>
 <script type="application/json" id="sequences-camera">${JSON.stringify(camera)}</script>
 <script type="application/json" id="sequences-continuity">${JSON.stringify(graph)}</script>
@@ -343,7 +350,7 @@ function singleSubjectContextFilm(): string {
 <script>window.__timelines={};const tl=gsap.timeline({paused:true});
 SequencesCamera.compile(tl,document.getElementById("root"));
 SequencesContinuity.compile(tl,document.getElementById("root"));
-window.__timelines["single-subject-context"]=tl;tl.seek(0,false);</script></body></html>`;
+window.__timelines["${compositionId}"]=tl;tl.seek(0,false);</script></body></html>`;
 }
 
 function longTailFilm(): string {
@@ -1016,6 +1023,52 @@ describe("continuity + camera blocking browser runtime", () => {
       expect(occupancy).toBeGreaterThanOrEqual(0.015 * 0.9);
       expect(occupancy).toBeLessThanOrEqual(0.24 * 1.1);
       expect(Math.abs(occupancy - 0.06)).toBeLessThan(0.005);
+      expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 45_000);
+
+  it("measures SVG media in layout space before solving a collapsed metric station", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-camera-svg-context-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), singleSubjectContextFilm(true), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, CONTINUITY_RUNTIME_FILE), continuityRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(String(error)));
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const occupancy = await page.evaluate(() => {
+        const timeline = (window as unknown as {
+          __timelines: Record<string, { seek: (time: number, suppress?: boolean) => void }>;
+        }).__timelines["svg-subject-context"]!;
+        timeline.seek(0.6, false);
+        const rect = document.querySelector<HTMLElement>('[data-part="recovery-stat"]')!
+          .getBoundingClientRect();
+        return rect.width * rect.height / (1920 * 1080);
+      });
+
+      // The SVG fills the transparent component root. It is real framing
+      // content even though SVG does not expose HTMLElement offsetWidth.
+      // The named station therefore collapses to the metric and its 2â€“22%
+      // subject contract binds; treating the SVG as 1px over-zooms to ~36%.
+      expect(occupancy).toBeGreaterThanOrEqual(0.02 * 0.9);
+      expect(occupancy).toBeLessThanOrEqual(0.22 * 1.1);
+      expect(Math.abs(occupancy - 0.08)).toBeLessThan(0.008);
       expect(errors).toEqual([]);
     } finally {
       await browser.close();

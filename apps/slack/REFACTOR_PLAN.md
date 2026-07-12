@@ -447,6 +447,17 @@ collapse zero-distance/same-target phrases; budget visual ideas.
 - Verify: exact rejected artifact passes strict replay; minimized modal
   regression, camera suites, browser suite, and `replay:all` green.
 
+### S3.6 SVG layout geometry parity in the camera runtime
+- [x] CurrentProof D's source was runtime-valid but two 360px SVG metric rings
+  landed at 36% and 46% occupancy. The camera runtime measured framing media
+  through HTMLElement-only `offsetWidth`/`offsetParent`; SVG collapsed to 1px
+  at world origin, so the lens solved against its small text label while
+  browser QA measured the real ring. Continue SVG geometry through client
+  dimensions and the DOM-parent offset chain before applying camera transforms.
+- Verify: an SVG-only metric station lands at its 8% preferred occupancy;
+  exact CurrentProof D source loses both `camera_blocking_landing` findings;
+  continuity runtime, camera unit suites, typecheck, and `replay:all` green.
+
 ---
 
 # Phase 4 — State continuity (kills the 0% reset class)
@@ -1420,3 +1431,21 @@ Verification: exact CurrentProof D-shaped adoption declines in favor of
 `continuity-metric`; focused asset/plugin/capsule tests (92/92); Slack
 typecheck; exact `replay:all` (17/0/0), all green. No paid probe, publish,
 deploy, or S7 work.
+
+## S3.6 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+Browser replay of CurrentProof D exposed a runtime/QA geometry split: the
+camera's transform-free layout helper used HTMLElement offsets for every node,
+but SVG media supplies neither a reliable `offsetWidth` nor `offsetParent`.
+The runtime therefore treated each full 360px progress ring as a 1px graphic
+at world origin, solved the contextual lens from its much smaller text label,
+and zoomed the two carried metrics to 36%/46% even though their typed maximum
+was 22%. SVG/media measurement now falls through to client/bounds dimensions
+and continues through the DOM parent until the normal offset chain resumes.
+
+Files: `src/engine/templates/sequences-camera.v1.js`,
+`test/continuityRuntime.browser.test.ts`, and this plan. Verification: the
+new SVG-only metric lands at 8%; the full continuity runtime browser file
+(9/9), focused camera units (81/81), Slack typecheck, exact CurrentProof D
+browser replay (both blocking warnings cleared), and `replay:all` (17/0/0)
+are green. The genuine sparse opening and deterministic contrast repairs remain
+separate; no paid probe, publish, deploy, or S7 work.

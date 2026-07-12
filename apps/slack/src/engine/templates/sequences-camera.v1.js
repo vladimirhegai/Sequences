@@ -151,13 +151,31 @@
     while (node && node !== world && node !== document.body) {
       x += node.offsetLeft || 0;
       y += node.offsetTop || 0;
-      node = node.offsetParent;
+      // SVG elements commonly expose no offsetParent. Continue through their
+      // DOM parent until the first HTMLElement restores the normal offset
+      // chain; otherwise an in-station SVG is measured at world origin and
+      // fabricates a huge contextual union.
+      node = node.offsetParent || node.parentElement;
+    }
+    // HTMLElement offset dimensions are transform-free layout geometry, but
+    // SVG/media nodes do not consistently expose offsetWidth/offsetHeight.
+    // Falling straight to 1px made a full-size SVG progress ring look like
+    // only its small text label to regionContentRect, so blocking zoomed the
+    // station 2-3x while browser QA measured the real SVG and rejected the
+    // landing. clientWidth/clientHeight keep the same layout-space semantics
+    // for SVG; getBoundingClientRect is the final media fallback at bind time,
+    // before this runtime applies a camera-world transform.
+    var bounds = null;
+    var width = Number(element.offsetWidth) || Number(element.clientWidth);
+    var height = Number(element.offsetHeight) || Number(element.clientHeight);
+    if (!(width > 0) || !(height > 0)) {
+      bounds = element.getBoundingClientRect && element.getBoundingClientRect();
     }
     return {
       x: x,
       y: y,
-      width: element.offsetWidth || 1,
-      height: element.offsetHeight || 1,
+      width: width > 0 ? width : Number(bounds && bounds.width) || 1,
+      height: height > 0 ? height : Number(bounds && bounds.height) || 1,
     };
   }
 
