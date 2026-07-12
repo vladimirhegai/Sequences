@@ -1553,7 +1553,7 @@ export async function requestStoryboardPlan(
     frameMd?: string;
     targetDurationSec?: number;
     options?: CompleteOptions;
-    /** Out-param: written each attempt so stage receipts can report retries. */
+    /** @deprecated Attempt counts are folded from ledger events; ignored. */
     attempts?: { count: number };
   },
 ): Promise<DirectScene[]> {
@@ -2192,20 +2192,23 @@ export async function requestStoryboardPlan(
       rung.thinkingMode === "none" ? STORYBOARD_MAX_TOKENS : REASONING_STORYBOARD_MAX_TOKENS;
     attempts: for (let attempt = 1; attempt <= rung.maxAttempts; attempt += 1) {
       totalAttempts += 1;
-      if (args.attempts) args.attempts.count = totalAttempts;
       appendSentinelLedgerEvent({
         kind: "attempt-start",
         stage: "storyboard-plan",
         number: totalAttempts,
         mode: rung.label,
       });
-      const endAttempt = (outcome: string): void =>
+      const endAttempt = (outcome: string, findings: string[] = []): void => {
         appendSentinelLedgerEvent({
           kind: "attempt-end",
           stage: "storyboard-plan",
           number: totalAttempts,
           outcome,
         });
+        for (const signature of findings.map(findingSignature)) {
+          appendSentinelLedgerEvent({ kind: "qa-finding", signature });
+        }
+      };
       const prompt = [
         basePrompt,
         ...(lastValidationError
@@ -2398,7 +2401,7 @@ export async function requestStoryboardPlan(
             findings: rejectionFindings,
             cacheKey,
           });
-          endAttempt("rejected");
+          endAttempt("rejected", rejectionFindings);
           // Scene-scoped repair rung (once per run): if EVERY blocking finding
           // maps to a named shot, re-plan ONLY those shots against the locked
           // remainder in one bounded low-reasoning call instead of gambling the
@@ -2558,6 +2561,9 @@ function recordAuthorAttempt(summary: AuthorRunSummary, entry: AuthorRunAttempt)
     number: entry.number,
     outcome: entry.outcome,
   });
+  for (const signature of entry.findingSignatures) {
+    appendSentinelLedgerEvent({ kind: "qa-finding", signature });
+  }
   summary.attempts.push(entry);
 }
 
@@ -2922,7 +2928,7 @@ async function authorCompositionLoop(
   // measures, so the banked least-bad draft ships early (see
   // stagnantPolishShipReason).
   let previousBrowserSignatures: ReadonlySet<string> = new Set();
-  let lastBrowserValid:
+  let lastRuntimeValid:
     | (CompositionRunResult & { qualityPenalty: number })
     | undefined;
   // Sentinel slot persistence (2026-07-07): the slot map that assembled the
@@ -2934,13 +2940,13 @@ async function authorCompositionLoop(
   // whole-document patch; adopting a non-slot draft invalidates the map.
   let persistedSlots: ParsedSceneSlots | undefined;
   let slotRetryUsed = false;
-  const publishBrowserValidCandidate = (
+  const publishRuntimeValidCandidate = (
     candidate: CompositionRunResult & { qualityPenalty: number },
     attempts: number,
     reason: string,
   ): CompositionRunResult => {
     process.stderr.write(
-      `[author] ${reason}; publishing browser-valid attempt ${candidate.attempts}/3 ` +
+      `[author] ${reason}; publishing runtime-valid attempt ${candidate.attempts}/3 ` +
         `after ${attempts} attempt(s)\n`,
     );
     summary.strategyChanges.push(reason);
@@ -2964,17 +2970,16 @@ async function authorCompositionLoop(
   let reasoningFloor: CompleteOptions["thinkingMode"] | undefined;
   // One initial authoring pass plus at most two bounded repairs.
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    if (args.attempts) args.attempts.count = attempt;
     // Never spend the FINAL attempt on a compact patch when nothing
     // publishable is banked: a patch that misapplies or breaks syntax there
     // guarantees the deterministic fallback (both recorded 2026-07-04
     // fallbacks died exactly this way), while a full-context re-author at
     // least rolls new dice with the complete findings list. When an earlier
-    // attempt already produced a browser-valid draft, a final patch stays
+    // attempt already produced a runtime-valid draft, a final patch stays
     // cheap and safe — its failure still publishes the banked draft.
-    if (attempt === 3 && scratch && !lastBrowserValid) {
+    if (attempt === 3 && scratch && !lastRuntimeValid) {
       process.stderr.write(
-        `[author] final attempt with no browser-valid draft banked; ` +
+        `[author] final attempt with no runtime-valid draft banked; ` +
           `forcing a full-context re-author instead of a compact patch\n`,
       );
       summary.strategyChanges.push("full-reauthor-final-attempt");
@@ -3287,10 +3292,10 @@ async function authorCompositionLoop(
         }
         previousStaticSignatures = signatures;
         lastError = new Error(validationFeedback.join("; "));
-        if (attempt === 2 && lastBrowserValid) {
-          const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+        if (attempt === 2 && lastRuntimeValid) {
+          const earlyReason = earlyLeastBadPublishReason(lastRuntimeValid);
           if (earlyReason) {
-            return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+            return publishRuntimeValidCandidate(lastRuntimeValid, attempt, earlyReason);
           }
         }
         continue;
@@ -3656,8 +3661,8 @@ async function authorCompositionLoop(
       }
       if (browserQa.ok) {
         const qualityPenalty = browserQualityPenalty(browserQa, staticRepairWarnings);
-        if (!lastBrowserValid || qualityPenalty < lastBrowserValid.qualityPenalty) {
-          lastBrowserValid = {
+        if (!lastRuntimeValid || qualityPenalty < lastRuntimeValid.qualityPenalty) {
+          lastRuntimeValid = {
             draft,
             raw,
             attempts: attempt,
@@ -3693,21 +3698,21 @@ async function authorCompositionLoop(
         }
         return { draft, raw, attempts: attempt, browserQa };
       }
-      if (attempt === 2 && lastBrowserValid) {
-        const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+      if (attempt === 2 && lastRuntimeValid) {
+        const earlyReason = earlyLeastBadPublishReason(lastRuntimeValid);
         if (earlyReason) {
-          return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+          return publishRuntimeValidCandidate(lastRuntimeValid, attempt, earlyReason);
         }
       }
-      if (attempt === 3 && browserQa.ok && lastBrowserValid) {
-        // The least-bad pick: browser-valid but with open polish findings /
+      if (attempt === 3 && browserQa.ok && lastRuntimeValid) {
+        // The least-bad pick: runtime-valid but with open quality residue /
         // repair warnings — an honest publish, not a clean one.
-        if (lastBrowserValid.qualityPenalty > 0 || !lastBrowserValid.browserQa?.strictOk) {
+        if (lastRuntimeValid.qualityPenalty > 0 || !lastRuntimeValid.browserQa?.strictOk) {
           recordSentinelDegradation(
-            `least-bad-pick:penalty=${lastBrowserValid.qualityPenalty}`,
+            `least-bad-pick:penalty=${lastRuntimeValid.qualityPenalty}`,
           );
         }
-        const { qualityPenalty: _qualityPenalty, ...best } = lastBrowserValid;
+        const { qualityPenalty: _qualityPenalty, ...best } = lastRuntimeValid;
         return { ...best, attempts: attempt };
       }
       validationFeedback = sourceRetryFeedbackForBrowserQa(browserQa, [
@@ -3735,10 +3740,10 @@ async function authorCompositionLoop(
         browserQaOk: browserQa.ok,
         currentSignatures: stagnationKeys,
         previousSignatures: previousBrowserSignatures,
-        bankedPenalty: lastBrowserValid?.qualityPenalty,
+        bankedPenalty: lastRuntimeValid?.qualityPenalty,
       });
-      if (stagnantReason && lastBrowserValid) {
-        return publishBrowserValidCandidate(lastBrowserValid, attempt, stagnantReason);
+      if (stagnantReason && lastRuntimeValid) {
+        return publishRuntimeValidCandidate(lastRuntimeValid, attempt, stagnantReason);
       }
       previousBrowserSignatures = new Set(stagnationKeys);
       // A runtime bind exception means the compile aborted before the timeline
@@ -3821,28 +3826,28 @@ async function authorCompositionLoop(
         compact = true;
       }
       lastError = error;
-      if (attempt === 2 && lastBrowserValid) {
-        const earlyReason = earlyLeastBadPublishReason(lastBrowserValid);
+      if (attempt === 2 && lastRuntimeValid) {
+        const earlyReason = earlyLeastBadPublishReason(lastRuntimeValid);
         if (earlyReason) {
-          return publishBrowserValidCandidate(lastBrowserValid, attempt, earlyReason);
+          return publishRuntimeValidCandidate(lastRuntimeValid, attempt, earlyReason);
         }
       }
     }
   }
-  if (lastBrowserValid) {
+  if (lastRuntimeValid) {
     process.stderr.write(
-      `[author] final repair regressed; publishing browser-valid attempt ` +
-        `${lastBrowserValid.attempts}/3 instead\n`,
+      `[author] final repair regressed; publishing runtime-valid attempt ` +
+        `${lastRuntimeValid.attempts}/3 instead\n`,
     );
     // The other least-bad publish seam (the s5-slotrepair probe found it
-    // unmarked): browser-valid but carrying open polish findings / repair
+    // unmarked): runtime-valid but carrying open quality residue / repair
     // warnings — an honest publish, not a clean one.
-    if (lastBrowserValid.qualityPenalty > 0 || !lastBrowserValid.browserQa?.strictOk) {
+    if (lastRuntimeValid.qualityPenalty > 0 || !lastRuntimeValid.browserQa?.strictOk) {
       recordSentinelDegradation(
-        `least-bad-pick:penalty=${lastBrowserValid.qualityPenalty}`,
+        `least-bad-pick:penalty=${lastRuntimeValid.qualityPenalty}`,
       );
     }
-    const { qualityPenalty: _qualityPenalty, ...best } = lastBrowserValid;
+    const { qualityPenalty: _qualityPenalty, ...best } = lastRuntimeValid;
     return { ...best, attempts: 3 };
   }
   // Quarantine each statically valid interaction candidate, then keep the best
@@ -3871,7 +3876,6 @@ async function authorCompositionLoop(
       `[author] primary model exhausted its attempts; rescue attempt on ${rescueTier}\n`,
     );
     summary.strategyChanges.push(`source-rescue:${rescueTier}`);
-    if (args.attempts) args.attempts.count = 4;
     appendSentinelLedgerEvent({
       kind: "attempt-start",
       stage: "source-author",

@@ -44,4 +44,21 @@ describe("sequence-check status honesty", () => {
     value.artifacts.mp4 = { exists: false, bytes: 0 };
     expect(summarizeSequenceCheckStatus(value)).toBe("fail");
   });
+
+  it("uses ledger axes and predicates instead of stage-local attempt counters", () => {
+    const value = clean();
+    value.result.ledgerStatus = {
+      runtimeValid: true,
+      qualityResidue: 8,
+      degradedAxes: ["qualityResidue"],
+      repeatedQaClasses: [],
+      modelRepair: false,
+      proofFilm: false,
+      materialDegradation: false,
+      oneAttemptSuccess: true,
+      disposition: "published-degraded",
+    };
+    value.result.stages = [{ attempts: 99 }];
+    expect(summarizeSequenceCheckStatus(value)).toBe("warn");
+  });
 });

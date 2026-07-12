@@ -35,6 +35,11 @@ import { reportTemporalEvidence } from "../src/engine/temporalInspector.ts";
 import { CAMERA_FULL_MOVES } from "../src/engine/cameraContract.ts";
 import { resolveCliInputPath } from "../src/engine/cliPaths.ts";
 import { summarizeSequenceCheckStatus } from "../src/engine/sequenceCheckStatus.ts";
+import {
+  AttemptLedger,
+  deriveLedgerStageReceipts,
+  deriveLedgerStatus,
+} from "../src/engine/runner/attemptLedger.ts";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.env.SLACK_SEQUENCES_DATA_DIR ??= path.join(appDir, ".data");
@@ -359,6 +364,20 @@ async function main(): Promise<void> {
         degradations?: string[];
       }
     : undefined;
+  const ledgerPath = path.join(result.projectDir, "planning", "attempt-ledger.json");
+  const persistedLedger = fs.existsSync(ledgerPath)
+    ? safeReadJson(ledgerPath) as { events?: unknown[] } | undefined
+    : undefined;
+  const ledgerEvents = Array.isArray(persistedLedger?.events)
+    ? AttemptLedger.replay(persistedLedger.events as Parameters<typeof AttemptLedger.replay>[0]).events
+    : [];
+  const legacyRuntimeValid = direct?.manifest.qa?.browserValidated ?? direct?.validation.ok ?? true;
+  const legacyQualityResidue = direct?.manifest.qa?.warningCount ?? 0;
+  const ledgerStatus = deriveLedgerStatus(ledgerEvents, {
+    runtimeValid: legacyRuntimeValid,
+    qualityResidue: legacyQualityResidue,
+  });
+  const ledgerStages = deriveLedgerStageReceipts(ledgerEvents);
 
   const report = {
     schemaVersion: 1,
@@ -403,7 +422,12 @@ async function main(): Promise<void> {
       mcpRequested: result.mcpRequested,
       usedPreset: result.usedPreset,
       authoringMode: directAuthoringMode(result.projectDir, result.fallback?.stage),
-      stages: result.stages ?? [],
+      stages: ledgerStages.length ? ledgerStages : result.stages ?? [],
+      ledgerStatus,
+      runtimeValid: ledgerStatus.runtimeValid,
+      qualityResidue: ledgerStatus.qualityResidue,
+      degradedAxes: ledgerStatus.degradedAxes,
+      oneAttemptSuccess: ledgerStatus.oneAttemptSuccess,
       fallback: result.fallback ?? null,
       sentinelDisposition: sentinel?.disposition ?? null,
       sentinelDegradations: sentinel?.degradations ?? [],
@@ -471,6 +495,7 @@ async function main(): Promise<void> {
       temporal: temporal ?? null,
     },
     progress,
+    ledger: ledgerStatus,
   };
   report.status = summarizeSequenceCheckStatus(report);
 

@@ -8,6 +8,7 @@ import { normalizeStoryboardCutIntent } from "../cutContract.ts";
 import { discoverShapeMatchUpgrades } from "../cutDiscovery.ts";
 import {
   recordSentinelDegradation,
+  recordSentinelQualityStatus,
   recordSentinelScaffold,
 } from "../sentinelTelemetry.ts";
 import {
@@ -29,6 +30,7 @@ import {
 } from "./ladder.ts";
 import type { CompositionRunResult, DirectCompositionArgs } from "./types.ts";
 import { slackSequencesEnvRawValue } from "../featureFlags.ts";
+import { findingSignature } from "./findingSignatures.ts";
 
 
 /**
@@ -254,6 +256,13 @@ export async function requestDirectComposition(
   // attempts that later lose) keeps the ledger exact.
   if (/<style\s+data-sequences-quarantine\b/i.test(final.draft.html)) {
     recordSentinelDegradation("interaction-quarantine-shipped");
+  }
+  if (final.browserQa) {
+    recordSentinelQualityStatus({
+      runtimeValid: final.browserQa.ok,
+      qualityResidue: final.browserQa.warnings.length,
+      findingSignatures: final.browserQa.warnings.map(findingSignature),
+    });
   }
   return final;
 }

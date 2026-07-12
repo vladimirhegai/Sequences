@@ -163,6 +163,31 @@ ladder/camera coupling, or interprets rendered evidence goes HEAVY. A LIGHT
 agent that finds itself making a judgment call must stop, journal `BLOCKED`,
 and leave it for a HEAVY agent — that is cheaper than a wrong guess.
 
+## Live-probe checkpoints — when reality gets a vote
+
+A live probe is the only proof the architecture works end-to-end; replays and
+tests only prove we didn't change behavior. But probes cost real money and
+20–40 minutes, so they run at **fixed checkpoints**, not per step. Every probe
+needs explicit owner authorization, uses a cache-distinct brief + job id with
+fallback disabled, and ends with `probe:triage` + a PROBE_LOG.md entry + a
+Step Journal pointer. The fix-first policy always applies: a repeated
+mechanical class blocks further probes until it is fixed and replayed.
+
+| Checkpoint | When | What it must prove |
+| --- | --- | --- |
+| **LP-0 baseline** | DONE (SignalDock + `refactor-review-normal-1`) | The defect classes this plan targets. Compare every later probe's triage against these two. |
+| **(no probes)** | Phases 0, P, 1, 2, 5, 7 | Behavior-preserving phases. The referee is `replay:all` + suites + the golden render. If a step here changes replay output unexpectedly, STOP and fix — do not "check with a probe". |
+| **LP-1 camera** | After S3.4 (Phase 3 complete) | One stress-shaped probe (SignalDock-style brief). Triage vs LP-0: phrase count collapsed (≤1 primary route/scene), landings readable/in-range, occupancy in range, no new QA class. |
+| **LP-2 state** | After S4.2 (Phase 4 complete) | One metric-continuity brief (value develops across ≥3 scenes). No reset flicker, morphs honest, reverse-seek clean. May combine with LP-1 into one probe if Phases 3+4 land together. |
+| **LP-3 prompt diet** | After S6.1 (and S6.3's capsule probe folds in here) | One normal probe. Prompt changes alter MODEL behavior — replays prove nothing here. Watch: attempts, parse failures, findings-retry classes vs LP-0; acceptance quality must not drop. |
+| **LP-4 per motion gate** | Tail of each S8.x that says so | One probe each: the new gate fires on real output without false-positives on the golden film. |
+| **LP-5 acceptance** | S9.3 | One clean stress probe (1 logical storyboard + 1 logical source, no fallback/degradation) + one clean normal probe. This is the definition of done. |
+
+Budget expectation: ~6–8 paid probes for the whole refactor outside Phase 8,
+plus one per Phase 8 gate. If a checkpoint probe fails on a *mechanical*
+class, the fix + replay is free — rerun the checkpoint only after replay:all
+is green again, and count both runs honestly in PROBE_LOG.md.
+
 ---
 
 # Phase 0 — Tooling and safety net (do this before any code moves)
@@ -300,12 +325,12 @@ stop calling quality-degraded drafts "browser-valid".
   exact sentinel-run.json counters; `npm run replay:all`.
 
 ### S1.2 Derive all status from the ledger
-- [ ] `sequenceCheckStatus.ts`, Slack receipts, and sentinel telemetry read
+- [x] `sequenceCheckStatus.ts`, Slack receipts, and sentinel telemetry read
   the ledger. Delete per-site counters. `probe:triage` switches to the ledger.
 - Verify: run `sequence:check --demo`; JSON identical except additive fields.
 
 ### S1.3 Rename quality axes honestly
-- [ ] Split the internal "browser-valid" notion into `runtimeValid` (binds,
+- [x] Split the internal "browser-valid" notion into `runtimeValid` (binds,
   seeks, finite) and `qualityResidue` (blocking-quality findings that remain).
   `published-degraded` must list which axis degraded. One-attempt success =
   no model repair + no proof-film + no material degradation + no repeated QA
@@ -374,6 +399,10 @@ collapse zero-distance/same-target phrases; budget visual ideas.
 - Verify: pacing/camera unit tests updated; a SignalDock-shaped fixture that
   previously passed with 14 phrases now yields a findings-retry with an
   actionable message.
+- **Checkpoint LP-1:** Phase 3 is complete only after the LP-1 live probe
+  (see "Live-probe checkpoints") passes triage comparison vs LP-0. If Phase 4
+  is starting immediately, you may defer to a combined LP-1+LP-2 probe after
+  S4.2 — journal the deferral.
 
 ---
 
@@ -397,6 +426,9 @@ handoff; morphs ship only with proven structure + state transfer.
   component from the handoff (extend the existing degrade path).
 - Verify: GatePilot's impossible cross-kind morph fixture degrades cleanly;
   reverse seek restores both endpoint state and visibility (browser test).
+- **Checkpoint LP-2:** Phase 4 is complete only after the LP-2 live probe
+  (metric-continuity brief) shows no reset flicker and honest morphs on real
+  output. Combine with a deferred LP-1 if applicable.
 
 ---
 
@@ -448,6 +480,11 @@ eliminating contradictory contracts).
   contracts (the contracts are injected; the prose was compensating).
 - Verify: budget test green; one exact storyboard replay + one authored
   replay unchanged in acceptance.
+- **Checkpoint LP-3:** prompt changes alter model behavior, so replays are
+  NOT sufficient proof for this step — Phase 6 is complete only after the
+  LP-3 live probe (see "Live-probe checkpoints") shows attempts and
+  findings-retry classes at or below the LP-0 baseline. S6.3's capsule
+  conversion check rides the same probe.
 
 ### S6.2 Frame/storyboard basis contradiction gate
 - [ ] L0/L3: storyboard `production basis` (dark/light) must match frame.md's
@@ -463,7 +500,7 @@ eliminating contradictory contracts).
   only entries with a typed declaration path that has ever converted, and
   host-auto-declare recipes/assets where the brief matches (extend the
   existing `recipe-auto-declare` L2) instead of asking the planner to opt in.
-- Verify: unit tests for the capsule; one live probe (Phase 9 loop) shows the
+- Verify: unit tests for the capsule; the LP-3 checkpoint probe shows the
   declared unit actually appearing in the plan.
 
 ---
@@ -762,5 +799,25 @@ existing `sentinelTelemetry.test.ts` passes untouched; Slack typecheck, 1,284
 unit tests, `replay:all` (13/0/0), and the model-free demo all green. Notes:
 degradation dedupe moved record→view (ledger keeps every emission); the
 finalize event stores the caller's disposition and the fold applies the
-published→published-degraded honesty downgrade; `fallback` events currently
-carry a generic reason until S1.2 enriches them. No paid probe was run.
+published→published-degraded honesty downgrade; S1.2 enriches fallback events
+with the failed stage and bounded reason. No paid probe was run.
+
+## S1.2–S1.3 — 2026-07-11 — DONE
+Moved status ownership to the append-only ledger. Added final
+`runtimeValid`/`qualityResidue` evidence, normalized QA-class events, degraded
+axis labels, derived stage receipts, and the computed `oneAttemptSuccess`
+predicate. `sequence:check`, Slack result receipts, Sentinel persistence, and
+`probe:triage` now consume the ledger; legacy artifact fallbacks remain only
+for pre-S1.3 projects without `attempt-ledger.json`. Removed orchestrator and
+ladder telemetry out-parameter writes; the compatibility fields are ignored.
+Renamed the internal banked-draft path from browser-valid to runtime-valid.
+Files: `src/engine/runner/attemptLedger.ts`, `sentinelTelemetry.ts`,
+`sequenceCheckStatus.ts`, `scripts/sequenceCheck.ts`, `scripts/probeTriage.ts`,
+`src/orchestrator.ts`, `src/index.ts`, `src/blocks.ts`, runner ladder/
+orchestration/types, focused tests, and this plan.
+Verification: Slack typecheck; focused ledger/status/receipt tests; full Slack
+unit suite (after correcting the obsolete out-parameter assertion);
+`npm run replay:all --workspace @sequences/slack` (13/0/0); and model-free
+`sequence:check --demo --no-mcp --format both` plus `probe:triage`, both green.
+No paid probe, publish, or deploy. SignalDock status replay asserts
+`runtimeValid: true, qualityResidue: 8`.

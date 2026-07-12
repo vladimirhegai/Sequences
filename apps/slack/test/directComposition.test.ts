@@ -3260,7 +3260,7 @@ describe("direct HyperFrames composition", () => {
     expect(result.attempts).toBe(3);
     expect(complete).toHaveBeenCalledTimes(3);
     // Attempt 2 was the mid-ladder patch; the final attempt must be a
-    // full-context re-author because no browser-valid draft was banked.
+    // full-context re-author because no runtime-valid draft was banked.
     expect(complete.mock.calls[1]![0]).toContain("patches");
     expect(complete.mock.calls[2]![0]).not.toContain("patches_json");
     const summary = JSON.parse(
@@ -4152,18 +4152,15 @@ describe("direct HyperFrames composition", () => {
       detect: async () => ({ available: true, detail: "test" }),
       complete,
     };
-    const attempts = { count: 0 };
     const plan = await requestStoryboardPlan(provider, {
       brief: "Launch Relay",
       projectDir: dir,
       skills: skills(),
-      attempts,
     });
     expect(plan).toEqual(storyboard());
     // One artifact-less grace replay + 3 primary attempts with findings, then
     // the rescue rung recovers.
     expect(complete).toHaveBeenCalledTimes(5);
-    expect(attempts.count).toBe(5);
     const rescueCall = complete.mock.calls[4] as [string, { model?: string; thinkingMode?: string }];
     expect(rescueCall[1]).toMatchObject({
       model: "tencent/hy3-preview",
@@ -4571,7 +4568,7 @@ describe("direct HyperFrames composition", () => {
     const complete = vi.fn()
       .mockResolvedValueOnce(response(invalid))
       .mockResolvedValueOnce(patchResponse("setTimeout(() => {}, 1)", "Date.now()"))
-      // The final attempt is a full-context re-author (no browser-valid
+      // The final attempt is a full-context re-author (no runtime-valid
       // draft is banked), never a third compact patch.
       .mockResolvedValueOnce(response(draft()));
     const provider: AgentProvider = {
@@ -4630,7 +4627,7 @@ describe("direct HyperFrames composition", () => {
       .toBe("operator/patch-model");
   });
 
-  it("falls back to the last browser-valid draft when final polish regresses", async () => {
+  it("falls back to the last runtime-valid draft when final polish regresses", async () => {
     const dir = projectDir();
     const initial = draft();
     const complete = vi.fn()

@@ -11,6 +11,7 @@ import type {
   ToolCallReceipt,
 } from "./orchestrator.ts";
 import type { CheckStatus, DiagnosticsReport } from "./diagnostics.ts";
+import type { LedgerStatus } from "./engine/runner/attemptLedger.ts";
 
 export interface ModalContext {
   channel: string;
@@ -405,6 +406,8 @@ export interface ResultView {
    * attempts, durations only.
    */
   debugStages?: StageReceipt[];
+  /** Honest runtime/quality axes folded from the create attempt ledger. */
+  ledgerStatus?: LedgerStatus;
   /** Countdown shown on the "rendering" headline (e.g. "~60s remaining"). */
   renderEtaLabel?: string;
   /** The per-job frame.md design system chosen for this video, if any. */
@@ -458,6 +461,13 @@ export function resultBlocks(view: ResultView): KnownBlock[] {
         view.frame.brandMatched ? "brand-matched palette + type" : "house preset"
       } - frame.md attached`
     : "";
+  const ledgerReceipt = view.ledgerStatus
+    ? `*Ledger status*  -  runtimeValid: \`${view.ledgerStatus.runtimeValid}\`  -  ` +
+      `qualityResidue: \`${view.ledgerStatus.qualityResidue}\`  -  disposition: \`${view.ledgerStatus.disposition}\`` +
+      (view.ledgerStatus.degradedAxes.length
+        ? `  -  degraded axes: \`${view.ledgerStatus.degradedAxes.join(", ")}\``
+        : "")
+    : "";
   return [
     { type: "section", text: { type: "mrkdwn", text: headline } },
     ...(fallbackNotice
@@ -478,6 +488,12 @@ export function resultBlocks(view: ResultView): KnownBlock[] {
       ? [{
           type: "context" as const,
           elements: [{ type: "mrkdwn" as const, text: `*Build trace*  -  ${buildTrace}` }],
+        }]
+      : []),
+    ...(ledgerReceipt
+      ? [{
+          type: "context" as const,
+          elements: [{ type: "mrkdwn" as const, text: ledgerReceipt }],
         }]
       : []),
     ...(debugTrace

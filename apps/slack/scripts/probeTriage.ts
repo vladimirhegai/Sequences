@@ -3,6 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SENTINEL_CONTRACT } from "../src/engine/sentinel.ts";
+import {
+  AttemptLedger,
+  deriveLedgerStatus,
+  type AttemptLedgerEvent,
+  type LedgerStatus,
+} from "../src/engine/runner/attemptLedger.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -40,6 +46,10 @@ interface TriageReport {
   projectDir: string;
   disposition: string;
   status: string;
+  runtimeValid: boolean | null;
+  qualityResidue: number | null;
+  degradedAxes: string[];
+  oneAttemptSuccess: boolean | null;
   calls: {
     logicalTotal: number;
     physicalTotal: number;
@@ -250,13 +260,40 @@ function collectEvidence(
   return evidence;
 }
 
-function stageCalls(sentinel: JsonObject): {
+function stageCallsFromLedger(events: readonly AttemptLedgerEvent[]): TriageReport["calls"] {
+  const logicalByStage = new Map<StageName, number>();
+  const physicalByStage = new Map<StageName, number>();
+  const add = (target: Map<StageName, number>, stage: StageName): void => {
+    target.set(stage, (target.get(stage) ?? 0) + 1);
+  };
+  for (const event of events) {
+    if (event.kind === "model-call") {
+      add(logicalByStage, stageForCallKey(event.stage));
+      add(physicalByStage, stageForCallKey(event.stage));
+    } else if (event.kind === "model-call-failure" || event.kind === "hedge-launch") {
+      add(physicalByStage, stageForCallKey(event.stage));
+    }
+  }
+  const byStage = (["frame-design", "storyboard-plan", "source-author", "other"] as StageName[])
+    .map((stage) => ({ stage, logical: logicalByStage.get(stage) ?? 0, physical: physicalByStage.get(stage) ?? 0 }))
+    .filter((stage) => stage.logical > 0 || stage.physical > 0);
+  return {
+    logicalTotal: [...logicalByStage.values()].reduce((sum, count) => sum + count, 0),
+    physicalTotal: [...physicalByStage.values()].reduce((sum, count) => sum + count, 0),
+    failedTotal: events.filter((event) => event.kind === "model-call-failure").length,
+    hedgedTotal: events.filter((event) => event.kind === "hedge-launch").length,
+    byStage,
+  };
+}
+
+function stageCalls(sentinel: JsonObject, ledgerEvents?: readonly AttemptLedgerEvent[]): {
   logicalTotal: number;
   physicalTotal: number;
   failedTotal: number;
   hedgedTotal: number;
   byStage: StageCalls[];
 } {
+  if (ledgerEvents?.length) return stageCallsFromLedger(ledgerEvents);
   const modelCalls = asObject(sentinel.modelCalls);
   const logicalByStage = new Map<StageName, number>();
   const physicalByStage = new Map<StageName, number>();
@@ -329,7 +366,19 @@ function collectTriage(jobId: string, projectDir: string): TriageReport {
   const sentinel = readJson(path.join(projectDir, "planning", "sentinel-run.json"), warnings);
   const author = readJson(path.join(projectDir, "planning", "author-run.json"), warnings);
   const sequence = readJson(path.join(projectDir, "build", "qa", "sequence-check.json"), warnings);
+  const ledgerPayload = readJson(path.join(projectDir, "planning", "attempt-ledger.json"), warnings);
+  const ledgerEvents = Array.isArray(ledgerPayload.events)
+    ? AttemptLedger.replay(ledgerPayload.events as Parameters<typeof AttemptLedger.replay>[0]).events
+    : [];
   const result = asObject(sequence.result);
+  const checks = asObject(sequence.checks);
+  const legacyStatus: Partial<Pick<LedgerStatus, "runtimeValid" | "qualityResidue">> = {
+    runtimeValid: typeof checks.browserValidated === "boolean" ? checks.browserValidated : undefined,
+    qualityResidue: asNumber(checks.qaWarningCount) ?? undefined,
+  };
+  const ledgerStatus = ledgerEvents.length
+    ? deriveLedgerStatus(ledgerEvents, legacyStatus)
+    : undefined;
   const degradationReasons = new Set<string>();
   for (const reason of asArray(sentinel.degradations)) if (typeof reason === "string") degradationReasons.add(reason);
   for (const reason of asArray(result.sentinelDegradations)) if (typeof reason === "string") degradationReasons.add(reason);
@@ -347,7 +396,17 @@ function collectTriage(jobId: string, projectDir: string): TriageReport {
       reason: fallbackReason,
     });
   }
-  const status = asString(sequence.status) ?? "unknown";
+  const sequenceStatus = asString(sequence.status) ?? "unknown";
+  const status = ledgerStatus
+    ? sequenceStatus === "fail"
+      ? "fail"
+      : ledgerStatus.runtimeValid &&
+          ledgerStatus.qualityResidue === 0 &&
+          ledgerStatus.disposition === "published" &&
+          ledgerStatus.oneAttemptSuccess
+        ? "pass"
+        : "warn"
+    : sequenceStatus;
   const evidence = collectEvidence(projectDir, sequence, warnings);
   return {
     schemaVersion: 1,
@@ -355,7 +414,11 @@ function collectTriage(jobId: string, projectDir: string): TriageReport {
     projectDir,
     disposition: asString(sentinel.disposition) ?? asString(result.sentinelDisposition) ?? "unknown",
     status,
-    calls: stageCalls(sentinel),
+    runtimeValid: ledgerStatus?.runtimeValid ?? (typeof checks.browserValidated === "boolean" ? checks.browserValidated : null),
+    qualityResidue: ledgerStatus?.qualityResidue ?? (asNumber(checks.qaWarningCount) ?? null),
+    degradedAxes: ledgerStatus?.degradedAxes ?? [],
+    oneAttemptSuccess: ledgerStatus?.oneAttemptSuccess ?? null,
+    calls: stageCalls(sentinel, ledgerEvents),
     degradations,
     qa: collectQa(sequence, author),
     evidence,
@@ -370,6 +433,12 @@ function markdown(report: TriageReport): string {
     `- Project: \`${report.projectDir}\``,
     `- Disposition: **${report.disposition}**`,
     `- Sequence-check status: **${report.status}**`,
+    `- Ledger axes: **runtimeValid=${String(report.runtimeValid)}**, **qualityResidue=${String(report.qualityResidue)}**`,
+    `- Degraded axes: ${report.degradedAxes.length ? report.degradedAxes.join(", ") : "none"}`,
+    /*
+      (report.degradedAxes.length ? ` · degraded: `${report.degradedAxes.join(", ")}`` : ""),
+    */
+    `- One-attempt success: **${String(report.oneAttemptSuccess)}**`,
     "",
     "## Calls",
     "",

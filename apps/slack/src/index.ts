@@ -328,6 +328,7 @@ function stageBlocks(
     usedPreset: result.usedPreset,
     fallback: result.fallback ? { stage: result.fallback.stage } : undefined,
     provider: result.provider,
+    ledgerStatus: result.ledgerStatus,
     renderQuality,
     debugStages: isDebugEnabled() ? result.stages : undefined,
     renderEtaLabel: stage === "rendering"

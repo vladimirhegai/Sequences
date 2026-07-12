@@ -328,7 +328,7 @@ function browserIssueBlocksEarlyLeastBad(issue: DirectLayoutIssue): boolean {
 }
 
 /**
- * Attempt-2 budget broker: publish a banked browser-valid draft early only
+ * Attempt-2 budget broker: publish a banked runtime-valid draft early only
  * when the remaining findings are low-penalty advisory/polish classes. This
  * saves the third paid author pass without weakening hard runtime, blank-film,
  * interaction, or high-visibility visual gates.

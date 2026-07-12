@@ -1,5 +1,7 @@
 export type SequenceCheckStatus = "pass" | "warn" | "fail";
 
+import type { LedgerStatus } from "./runner/attemptLedger.ts";
+
 export interface SequenceCheckStatusInput {
   direct?: { validation?: { ok?: boolean; motionWarnings?: string[] } };
   result: {
@@ -9,7 +11,9 @@ export interface SequenceCheckStatusInput {
     stages?: Array<{ attempts?: number }>;
     sentinelDisposition?: string | null;
     sentinelDegradations?: string[];
+    ledgerStatus?: LedgerStatus;
   };
+  ledger?: LedgerStatus;
   checks?: { qaWarningCount?: number | null };
   artifacts: { mp4?: { exists: boolean; bytes: number } | null };
   options: { render: boolean };
@@ -26,6 +30,16 @@ export function summarizeSequenceCheckStatus(
   }
   if (report.result.authoringMode === "deterministic-fallback") return "warn";
   if (report.result.fallback) return "warn";
+  const ledger = report.ledger ?? report.result.ledgerStatus;
+  if (ledger) {
+    // Runtime-invalid authored output is already caught as a hard validation
+    // failure above when the defect is provable. A false axis here means the
+    // browser proof was unavailable, so keep the artifact but report honestly.
+    if (!ledger.runtimeValid) return "warn";
+    if (ledger.qualityResidue > 0) return "warn";
+    if (ledger.disposition !== "published") return "warn";
+    if (!ledger.oneAttemptSuccess) return "warn";
+  }
   if (report.result.sentinelDisposition && report.result.sentinelDisposition !== "published") {
     return "warn";
   }

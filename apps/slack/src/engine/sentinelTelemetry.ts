@@ -21,17 +21,25 @@ import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 import {
   AttemptLedger,
   countHedgeLaunches,
+  deriveLedgerStatus,
+  deriveLedgerStageReceipts,
   deriveSentinelRunView,
   type AttemptLedgerEvent,
   type AttemptLedgerEventBody,
   type SentinelDisposition,
   type SentinelLayer,
+  type LedgerStatus,
+  type LedgerStatusAxis,
+  type LedgerStageReceipt,
   type SentinelScaffoldRestorationSource,
   type SentinelSlotCallKind,
   type SentinelStageTiming,
 } from "./runner/attemptLedger.ts";
 
 export type {
+  LedgerStatus,
+  LedgerStatusAxis,
+  LedgerStageReceipt,
   SentinelDisposition,
   SentinelLayer,
   SentinelScaffoldRestorationSource,
@@ -158,6 +166,27 @@ export function recordSentinelDegradation(reason: string): void {
   appendSentinelLedgerEvent({ kind: "degradation", reason });
 }
 
+/** Record the reason a deterministic proof film replaced model authoring. */
+export function recordSentinelFallback(reason: string): void {
+  if (!reason) return;
+  appendSentinelLedgerEvent({ kind: "fallback", reason });
+}
+
+/** Record final runtime proof and the quality findings left on the film. */
+export function recordSentinelQualityStatus(args: {
+  runtimeValid: boolean;
+  qualityResidue: number;
+  findingSignatures?: string[];
+}): void {
+  const findingSignatures = (args.findingSignatures ?? []).filter(Boolean);
+  appendSentinelLedgerEvent({
+    kind: "quality-status",
+    runtimeValid: args.runtimeValid,
+    qualityResidue: Math.max(0, Math.floor(args.qualityResidue)),
+    ...(findingSignatures.length ? { findingSignatures } : {}),
+  });
+}
+
 /** Count a finding caught (or a state made unrepresentable) at a given layer. */
 export function recordSentinelLayerFinding(layer: SentinelLayer, count = 1): void {
   if (count <= 0) return;
@@ -237,16 +266,19 @@ export function finalizeSentinelRun(disposition: SentinelDisposition): void {
     // The orchestrator only reports the disposition today; a reason-carrying
     // fallback event is emitted here so the raw ledger names the class. S1.2
     // enriches this from the fallback path itself.
-    context.ledger.append({ kind: "fallback", reason: "deterministic-fallback-published" });
+    if (!context.ledger.events.some((event) => event.kind === "fallback")) {
+      context.ledger.append({ kind: "fallback", reason: "deterministic-fallback-published" });
+    }
   }
   context.ledger.append({ kind: "finalize", disposition });
   try {
     const dir = path.join(context.projectDir, "planning");
     fs.mkdirSync(dir, { recursive: true });
     const view = deriveSentinelRunView(context.ledger.events);
+    const status = deriveLedgerStatus(context.ledger.events);
     fs.writeFileSync(
       path.join(dir, "sentinel-run.json"),
-      JSON.stringify(view, null, 2),
+      JSON.stringify({ ...view, ...status }, null, 2),
       "utf8",
     );
     fs.writeFileSync(

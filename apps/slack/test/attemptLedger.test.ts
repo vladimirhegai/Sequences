@@ -15,6 +15,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AttemptLedger,
+  deriveLedgerStageReceipts,
+  deriveLedgerStatus,
   deriveSentinelRunView,
   type SentinelDisposition,
   type SentinelLayer,
@@ -204,6 +206,20 @@ describe("recorded probe headline numbers (PROBE_LOG.md)", () => {
       expect(view.disposition).toBe("published-degraded");
     }
   });
+
+  it("reports SignalDock's two honest status axes", () => {
+    const recorded = loadRecordedRun("sentinel-run-signaldock-20260711.json");
+    const ledger = ledgerFromRecordedRun(recorded);
+    ledger.append({
+      kind: "quality-status",
+      runtimeValid: true,
+      qualityResidue: 8,
+      findingSignatures: Array.from({ length: 8 }, (_, index) => `qa_${index}`),
+    });
+    const status = deriveLedgerStatus(ledger.events);
+    expect(status.runtimeValid).toBe(true);
+    expect(status.qualityResidue).toBe(8);
+  });
 });
 
 describe("AttemptLedger", () => {
@@ -252,5 +268,39 @@ describe("AttemptLedger", () => {
     expect(view.modelCalls.total).toBe(0);
     expect(view.modelCalls.physicalRequestTotal).toBe(0);
     expect(view.disposition).toBe("fallback");
+  });
+
+  it("derives the honest axes and repeated QA classes from events", () => {
+    const ledger = new AttemptLedger();
+    ledger.append({ kind: "run-start", projectDir: "/x" });
+    ledger.append({ kind: "attempt-start", stage: "storyboard-plan", number: 1, mode: "primary" });
+    ledger.append({ kind: "attempt-start", stage: "source-author", number: 1, mode: "full" });
+    ledger.append({
+      kind: "quality-status",
+      runtimeValid: true,
+      qualityResidue: 8,
+      findingSignatures: ["camera_framed_sparse:one", "composition_washed_out:one"],
+    });
+    ledger.append({ kind: "finalize", disposition: "published-degraded" });
+    const status = deriveLedgerStatus(ledger.events);
+    expect(status.runtimeValid).toBe(true);
+    expect(status.qualityResidue).toBe(8);
+    expect(status.degradedAxes).toEqual(["qualityResidue"]);
+    expect(status.repeatedQaClasses).toEqual([]);
+    expect(status.oneAttemptSuccess).toBe(true);
+  });
+
+  it("derives receipt attempts from attempt-start events", () => {
+    const ledger = new AttemptLedger();
+    ledger.append({ kind: "run-start", projectDir: "/x" });
+    ledger.append({ kind: "attempt-start", stage: "source-author", number: 1, mode: "full" });
+    ledger.append({ kind: "attempt-start", stage: "source-author", number: 2, mode: "patch" });
+    ledger.append({
+      kind: "stage-timings",
+      stages: [{ stage: "source-author", status: "succeeded", durationMs: 12 }],
+    });
+    expect(deriveLedgerStageReceipts(ledger.events)).toEqual([
+      { stage: "source-author", status: "succeeded", durationMs: 12, attempts: 2 },
+    ]);
   });
 });

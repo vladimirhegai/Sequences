@@ -13,7 +13,7 @@ export interface DirectCompositionArgs {
   lockedStoryboard?: DirectScene[];
   revisionInstruction?: string;
   options?: CompleteOptions;
-  /** Out-param: written each attempt so stage receipts can report retries. */
+  /** @deprecated Attempt counts are folded from ledger events; ignored. */
   attempts?: { count: number };
 }
 
@@ -40,7 +40,7 @@ export interface CompositionRunResult {
   slots?: ParsedSceneSlots;
   /**
    * The economy-exit reason the run shipped a banked least-bad draft under
-   * (`publishBrowserValidCandidate`), when it did. The critic reads it to skip a
+   * (`publishRuntimeValidCandidate`), when it did. The critic reads it to skip a
    * run that already proved it resists targeted patches
    * (`stagnant-polish-early-ship`) — a third patch will not absorb what two
    * identical-signature rejections already left untouched.

@@ -31,6 +31,9 @@ export type SentinelLayer =
   | "browser" // L4 — measured browser truth
   | "model-retry"; // L5 — a paid re-author
 
+/** The two independent publication axes (REFACTOR_PLAN.md S1.3). */
+export type LedgerStatusAxis = "runtimeValid" | "qualityResidue";
+
 /** Scene-slot subcalls hidden inside one outer logical attempt. */
 export type SentinelSlotCallKind =
   | "truncation-continuation"
@@ -66,6 +69,8 @@ export type LedgerAttemptStage = "storyboard-plan" | "source-author";
  * - `degradation`: the shipping draft carries this degradation (dedup happens
  *   in the derived view; the ledger keeps every emission).
  * - `fallback`: a deterministic replacement film shipped instead of authoring.
+ * - `qa-finding`: one normalized QA class observed during an attempt.
+ * - `quality-status`: the final runtime/quality evidence for the shipping draft.
  */
 export type AttemptLedgerEventBody =
   | {
@@ -84,6 +89,13 @@ export type AttemptLedgerEventBody =
   | { kind: "slot-call"; callKind: SentinelSlotCallKind; scenes: number }
   | { kind: "degradation"; reason: string }
   | { kind: "fallback"; reason: string }
+  | { kind: "qa-finding"; signature: string }
+  | {
+      kind: "quality-status";
+      runtimeValid: boolean;
+      qualityResidue: number;
+      findingSignatures?: string[];
+    }
   | { kind: "layer-finding"; layer: SentinelLayer; count: number }
   | { kind: "normalization"; tag: string; count: number }
   | { kind: "scaffold-coverage"; present: number; planned: number }
@@ -158,6 +170,27 @@ export interface SentinelRunView {
   at: string;
 }
 
+/** Status derived exclusively from the append-only event stream. */
+export interface LedgerStatus {
+  runtimeValid: boolean;
+  qualityResidue: number;
+  degradedAxes: LedgerStatusAxis[];
+  repeatedQaClasses: string[];
+  modelRepair: boolean;
+  proofFilm: boolean;
+  materialDegradation: boolean;
+  oneAttemptSuccess: boolean;
+  disposition: SentinelDisposition;
+}
+
+/** Argument-free receipt data derived from stage-timing and attempt events. */
+export interface LedgerStageReceipt {
+  stage: string;
+  status: "succeeded" | "failed";
+  durationMs: number;
+  attempts?: number;
+}
+
 function emptyLayers(): Record<SentinelLayer, number> {
   return {
     schema: 0,
@@ -176,6 +209,126 @@ function emptySlotCalls(): Record<SentinelSlotCallKind, { calls: number; scenes:
     "validation-repair": { calls: 0, scenes: 0 },
     "storyboard-scene-repair": { calls: 0, scenes: 0 },
     "critic-scene-repair": { calls: 0, scenes: 0 },
+  };
+}
+
+function qaClass(signature: string): string {
+  const text = signature.trim().replace(/^other:/i, "");
+  return text.match(/^[a-z][a-z0-9_/-]*/i)?.[0] ?? text.slice(0, 120);
+}
+
+function finalDisposition(events: readonly AttemptLedgerEvent[]): {
+  disposition: SentinelDisposition;
+  degradations: string[];
+} {
+  let disposition: SentinelDisposition | undefined;
+  const degradations: string[] = [];
+  for (const event of events) {
+    if (event.kind === "degradation" && !degradations.includes(event.reason)) {
+      degradations.push(event.reason);
+    }
+    if (event.kind === "finalize") disposition = event.disposition;
+  }
+  let resolved = disposition ?? "fail-loud";
+  if (resolved === "published" && degradations.length) resolved = "published-degraded";
+  return { disposition: resolved, degradations };
+}
+
+function stageAttemptCounts(events: readonly AttemptLedgerEvent[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const event of events) {
+    if (event.kind !== "attempt-start") continue;
+    counts[event.stage] = Math.max(counts[event.stage] ?? 0, event.number);
+  }
+  return counts;
+}
+
+/** Derive the display receipt without consulting orchestrator-local counters. */
+export function deriveLedgerStageReceipts(
+  events: readonly AttemptLedgerEvent[],
+): LedgerStageReceipt[] {
+  const attempts = stageAttemptCounts(events);
+  let timings: SentinelStageTiming[] = [];
+  for (const event of events) {
+    if (event.kind === "stage-timings") timings = event.stages;
+  }
+  return timings.map((stage) => ({
+    ...stage,
+    ...(stage.attempts !== undefined
+      ? { attempts: stage.attempts }
+      : attempts[stage.stage] !== undefined
+        ? { attempts: attempts[stage.stage] }
+        : {}),
+  }));
+}
+
+/**
+ * Fold honest publication semantics from the event stream. The optional
+ * fallback is only for pre-S1.3 persisted runs that have no quality-status
+ * event; new runs always carry the explicit event.
+ */
+export function deriveLedgerStatus(
+  events: readonly AttemptLedgerEvent[],
+  fallback?: Partial<Pick<LedgerStatus, "runtimeValid" | "qualityResidue">>,
+): LedgerStatus {
+  const terminal = finalDisposition(events);
+  let runtimeValid = fallback?.runtimeValid ?? terminal.disposition !== "fail-loud";
+  let qualityResidue = fallback?.qualityResidue ?? 0;
+  const qaClasses = new Map<string, number>();
+  let proofFilm = false;
+  let modelRepair = false;
+
+  for (const event of events) {
+    if (event.kind === "quality-status") {
+      runtimeValid = event.runtimeValid;
+      qualityResidue = Math.max(0, Math.floor(event.qualityResidue));
+      for (const signature of event.findingSignatures ?? []) {
+        const key = qaClass(signature);
+        qaClasses.set(key, (qaClasses.get(key) ?? 0) + 1);
+      }
+    } else if (event.kind === "qa-finding") {
+      const key = qaClass(event.signature);
+      qaClasses.set(key, (qaClasses.get(key) ?? 0) + 1);
+    } else if (event.kind === "fallback") {
+      proofFilm = true;
+    } else if (event.kind === "attempt-start" && event.number > 1) {
+      modelRepair = true;
+    } else if (
+      event.kind === "model-call" &&
+      /patch|critic|repair|rescue/i.test(event.stage)
+    ) {
+      modelRepair = true;
+    } else if (event.kind === "slot-call") {
+      modelRepair = true;
+    }
+  }
+
+  const repeatedQaClasses = [...qaClasses.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([key]) => key)
+    .sort();
+  const materialDegradation = terminal.degradations.length > 0;
+  const degradedAxes: LedgerStatusAxis[] = [];
+  if (!runtimeValid) degradedAxes.push("runtimeValid");
+  if (qualityResidue > 0 || (terminal.disposition === "published-degraded" && runtimeValid)) {
+    degradedAxes.push("qualityResidue");
+  }
+  const oneAttemptSuccess =
+    !modelRepair &&
+    !proofFilm &&
+    !materialDegradation &&
+    repeatedQaClasses.length === 0;
+
+  return {
+    runtimeValid,
+    qualityResidue,
+    degradedAxes,
+    repeatedQaClasses,
+    modelRepair,
+    proofFilm,
+    materialDegradation,
+    oneAttemptSuccess,
+    disposition: terminal.disposition,
   };
 }
 
@@ -264,7 +417,15 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
         scaffoldRestorationEvents[event.source] += Math.floor(event.count);
         break;
       case "stage-timings":
-        stages = event.stages;
+        {
+          const attempts = stageAttemptCounts(events);
+          stages = event.stages.map((stage) => ({
+            ...stage,
+            ...(stage.attempts === undefined && attempts[stage.stage] !== undefined
+              ? { attempts: attempts[stage.stage] }
+              : {}),
+          }));
+        }
         break;
       case "tier":
         if (event.tier === "tier1") tier1Ms = event.ms;
@@ -274,7 +435,7 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
         finalizedAt = event.at;
         disposition = event.disposition;
         break;
-      // attempt-start/attempt-end/hedge-win/stream-timeout/fallback carry
+      // attempt-start/attempt-end/hedge-win/stream-timeout/fallback/QA status carry
       // detail the legacy view never aggregated; S1.2/S1.3 read them from the
       // raw events.
       default:

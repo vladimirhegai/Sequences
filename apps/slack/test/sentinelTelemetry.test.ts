@@ -10,6 +10,7 @@ import {
   recordSentinelHedge,
   recordSentinelModelCall,
   recordSentinelModelCallFailure,
+  recordSentinelQualityStatus,
   recordSentinelScaffold,
   recordSentinelScaffoldRestoration,
   recordSentinelSlotCall,
@@ -60,6 +61,30 @@ describe("sentinel telemetry — disposition honesty", () => {
     recordSentinelDegradation("anything");
     finalizeSentinelRun("fallback");
     expect(readRun(dir).disposition).toBe("fallback");
+  });
+
+  it("persists runtime validity, quality residue, and degraded axes from the ledger", () => {
+    const dir = tempDir();
+    beginSentinelRun(dir);
+    recordSentinelQualityStatus({
+      runtimeValid: true,
+      qualityResidue: 8,
+      findingSignatures: [
+        "camera_framed_sparse:one",
+        "composition_washed_out:one",
+        "important_safe_area:one",
+        "moment_static_frame:one",
+        "cut_degraded:one",
+        "text_box_overflow:one",
+        "eye_trace_jump:one",
+        "cursor_path:one",
+      ],
+    });
+    finalizeSentinelRun("published-degraded");
+    const run = readRun(dir);
+    expect(run.runtimeValid).toBe(true);
+    expect(run.qualityResidue).toBe(8);
+    expect(run.degradedAxes).toEqual(["qualityResidue"]);
   });
 });
 

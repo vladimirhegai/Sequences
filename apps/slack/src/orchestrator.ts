@@ -60,11 +60,19 @@ import {
 import { inspectDirectComposition } from "./engine/layoutInspector.ts";
 import { tryDirectInteractionRevision } from "./engine/directRevisionRouter.ts";
 import {
+  activeSentinelLedgerEvents,
   beginSentinelRun,
   finalizeSentinelRun,
+  recordSentinelFallback,
+  recordSentinelQualityStatus,
   recordSentinelStages,
   recordSentinelTierFromRunStart,
 } from "./engine/sentinelTelemetry.ts";
+import {
+  deriveLedgerStageReceipts,
+  deriveLedgerStatus,
+  type LedgerStatus,
+} from "./engine/runner/attemptLedger.ts";
 import { sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./engine/sentinelFlags.ts";
 import { slackSequencesEnvRawValue } from "./engine/featureFlags.ts";
 
@@ -182,6 +190,8 @@ export interface VideoResult {
   /** True when the plan came from a curated preset rather than a planning brain. */
   usedPreset: boolean;
   provider: ProviderId;
+  /** Honest runtime/quality publication axes folded from the attempt ledger. */
+  ledgerStatus?: LedgerStatus;
   /** The per-job frame.md design system chosen for this video, if any. */
   frame?: FrameInfo;
   /** Argument-free receipts for the named authoring stages that actually ran. */
@@ -206,6 +216,21 @@ export interface StageReceipt {
   durationMs: number;
   /** How many model attempts the stage consumed (1 = clean first pass). */
   attempts?: number;
+}
+
+function ledgerStageReceipts(): StageReceipt[] {
+  return deriveLedgerStageReceipts(activeSentinelLedgerEvents() ?? [])
+    .filter((stage): stage is typeof stage & { stage: AuthoringStage } =>
+      stage.stage === "frame-design" ||
+      stage.stage === "storyboard-plan" ||
+      stage.stage === "source-author",
+    )
+    .map((stage) => ({
+      stage: stage.stage,
+      status: stage.status,
+      durationMs: stage.durationMs,
+      ...(stage.attempts === undefined ? {} : { attempts: stage.attempts }),
+    }));
 }
 
 export interface FrameInfo {
@@ -779,14 +804,6 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     };
     const stageReason = (error: unknown): string =>
       (error instanceof Error ? error.message : String(error)).slice(0, 300);
-    // Attempt counters are out-params the retry loops write into; the debug
-    // receipt trail renders them so an operator can see silent retries.
-    const setStageAttempts = (stage: AuthoringStage, count: number): void => {
-      if (count <= 0) return;
-      const receipt = [...stages].reverse().find((entry) => entry.stage === stage);
-      if (receipt) receipt.attempts = count;
-    };
-
     // Per-job frame.md: bounded art direction + deterministic design tools.
     // Hard brand/contrast/font constraints, tunable recommendations, safe
     // fallback — buildJobFrame degrades internally, so a throw here is real.
@@ -816,7 +833,6 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     const frame = framed.value;
     let authoredDraft: DirectCompositionDraft | undefined;
     let fallbackInfo: VideoResult["fallback"];
-    const storyboardAttempts = { count: 0 };
     const planned = await runStage("storyboard-plan", () =>
       requestStoryboardPlan(provider, {
         brief,
@@ -824,12 +840,9 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
         skills,
         frameMd: frame.frameMd,
         targetDurationSec: targetLengthSec,
-        attempts: storyboardAttempts,
       }));
-    setStageAttempts("storyboard-plan", storyboardAttempts.count);
     let authoredError: unknown;
     if (planned.value) {
-      const authorAttempts = { count: 0 };
       const authored = await runStage("source-author", () =>
         requestDirectComposition(provider, {
           brief,
@@ -837,9 +850,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
           skills,
           frameMd: frame.frameMd,
           lockedStoryboard: planned.value,
-          attempts: authorAttempts,
         }));
-      setStageAttempts("source-author", authorAttempts.count);
       if (authored.value) {
         authoredDraft = authored.value.draft;
       }
@@ -880,6 +891,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
           `full diagnostic at ${reportPath ?? `${dir}/FAILURE.md`}\n`,
       );
       fallbackInfo = { stage: failedStage, reason };
+      recordSentinelFallback(`${failedStage}:${reason}`);
       authoredDraft = buildFallbackComposition({
         product: options.product,
         whatShipped: options.whatShipped,
@@ -899,6 +911,15 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       options.preferMcp,
       options.onProgress,
     );
+    // A deterministic fallback bypasses the author runner's final browser
+    // evidence event; recover its two axes from the committed manifest.
+    if (!activeSentinelLedgerEvents()?.some((event) => event.kind === "quality-status")) {
+      const committedQa = loadDirectComposition(dir).manifest.qa;
+      recordSentinelQualityStatus({
+        runtimeValid: committedQa?.browserValidated ?? false,
+        qualityResidue: committedQa?.warningCount ?? 0,
+      });
+    }
     if (resumedFailedProject) {
       // The attempt documents remain valuable probe evidence; only the stale
       // top-level fail-loud marker is retired after a composition really commits.
@@ -916,6 +937,8 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     });
     recordSentinelStages(stages);
     finalizeSentinelRun(fallbackInfo ? "fallback" : "published");
+    const ledgerEvents = activeSentinelLedgerEvents() ?? [];
+    const ledgerStatus = deriveLedgerStatus(ledgerEvents);
     const current = loadDirectComposition(dir);
     return {
       ...previews,
@@ -928,7 +951,8 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       skillsUsed,
       usedPreset: false,
       provider: providerId,
-      stages,
+      stages: ledgerStageReceipts(),
+      ledgerStatus,
       ...(fallbackInfo ? { fallback: fallbackInfo } : {}),
       frame: {
         presetId: frame.presetId,
@@ -968,7 +992,9 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     preferMcp: options.preferMcp,
     onProgress: options.onProgress,
   });
+  recordSentinelQualityStatus({ runtimeValid: true, qualityResidue: 0 });
   finalizeSentinelRun("published");
+  const ledgerStatus = deriveLedgerStatus(activeSentinelLedgerEvents() ?? []);
   const applied = loadProject(dir);
   return {
     ...previews,
@@ -981,6 +1007,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     skillsUsed,
     usedPreset,
     provider: providerId,
+    ledgerStatus,
   };
 }
 
