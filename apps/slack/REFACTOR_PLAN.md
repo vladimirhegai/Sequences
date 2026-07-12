@@ -351,7 +351,7 @@ Goal (handoff §3): branded `SourceTime` / `ViewerTime` / `Duration` /
 - Verify: new unit tests green; no call-site changes yet.
 
 ### S2.2 One cascade transform for scene stretching
-- [ ] Implement `cascadeRetime(plan, sceneId, delta)` returning a mapping
+- [x] Implement `cascadeRetime(plan, sceneId, delta)` returning a mapping
   applied to scenes, moments, beats, camera segments, interactions, grades,
   cuts, and evidence in ONE operation. Migrate the pacing stretch + marginal
   approach trim (`pacing-stretch`, `interaction-hold-retime`,
@@ -836,3 +836,22 @@ derivation remains consistent with the plan (`runtimeValid: true`,
 time/ledger/status/telemetry tests (32/32), Slack typecheck, full Slack unit
 suite (76 files / 1,291 tests), and model-free `sequence:check --demo --no-mcp
 --format both`, all green. No paid probe, publish, or deploy.
+
+## S2.2 — 2026-07-11 — DONE
+Added immutable `cascadeRetime(plan, sceneId, delta)` to the branded time
+service. One operation now stretches the selected scene boundary and shifts
+all later absolute owners together: scene starts, display type, time ramps,
+grade shifts, camera segments, component beats, interactions, moments, and
+bound evidence intervals. Cut entry/exit values remain relative by contract;
+resolved cut `atSec` is re-derived from the shifted boundary and is covered by
+the cascade regression. Migrated all five stretch-producing pacing passes,
+including `interaction-hold-retime` and `pacing-stretch`, off their duplicated
+cumulative-shift helper; later time-ramp declarations now travel through the
+same cascade instead of separate arithmetic. Files: `src/engine/time.ts`,
+`src/engine/pacingAudit.ts`, `test/time.test.ts`, this plan. Verification:
+Slack typecheck; focused time/pacing/direct-composition/time-ramp tests (288);
+all 82 pacing tests; full Slack unit suite (76 files / 1,293 tests); relevant
+time-ramp browser test; `replay:all` (13/0/0), including RelayGuard and
+PulseForge byte-stable; deterministic `film:demo` render and 100-frame temporal
+strip inspected with all four cuts intact and no eligible dead-frame window.
+No paid probe, publish, or deploy.

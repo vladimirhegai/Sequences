@@ -47,9 +47,22 @@ import {
 } from "./storyboardMoments.ts";
 import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
 import type { DirectScene } from "./directComposition.ts";
+import { cascadeRetime, duration } from "./time.ts";
 
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function applyCascadeStretches(
+  storyboard: DirectScene[],
+  stretches: ReadonlyMap<string, number>,
+): DirectScene[] {
+  let retimed = storyboard;
+  for (const scene of storyboard) {
+    const delta = stretches.get(scene.id) ?? 0;
+    if (delta > 0) retimed = cascadeRetime(retimed, scene.id, duration(delta)).plan;
+  }
+  return retimed;
 }
 
 /** Seconds of post-introduction development each introduced surface needs. */
@@ -900,7 +913,7 @@ export function delayConflictingCameraMoves(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
   const out: DirectScene[] = [];
-  let cumulativeShift = 0;
+  const stretches = new Map<string, number>();
   // Detection runs in each scene's ORIGINAL frame (where the resolved beats
   // live); the cascade shift from earlier boundary stretches preserves every
   // within-scene distance and is applied only when emitting the output scene.
@@ -1137,15 +1150,10 @@ export function delayConflictingCameraMoves(
         }
       }
     }
-    const shifted = withShiftedSceneTimes(result, cumulativeShift);
-    if (stretch > 0) {
-      out.push({ ...shifted, durationSec: round(shifted.durationSec + stretch) });
-      cumulativeShift = round(cumulativeShift + stretch);
-    } else {
-      out.push(shifted);
-    }
+    out.push(result);
+    if (stretch > 0) stretches.set(scene.id, stretch);
   }
-  return { storyboard: out, normalized };
+  return { storyboard: applyCascadeStretches(out, stretches), normalized };
 }
 
 /**
@@ -1173,7 +1181,7 @@ export function retimeCameraOverInteractions(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
   const out: DirectScene[] = [];
-  let cumulativeShift = 0;
+  const stretches = new Map<string, number>();
   for (const scene of storyboard) {
     let result = scene;
     let stretch = 0;
@@ -1303,15 +1311,10 @@ export function retimeCameraOverInteractions(
         stretch = 0;
       }
     }
-    const shifted = withShiftedSceneTimes(result, cumulativeShift);
-    if (stretch > 0) {
-      out.push({ ...shifted, durationSec: round(shifted.durationSec + stretch) });
-      cumulativeShift = round(cumulativeShift + stretch);
-    } else {
-      out.push(shifted);
-    }
+    out.push(result);
+    if (stretch > 0) stretches.set(scene.id, stretch);
   }
-  return { storyboard: out, normalized };
+  return { storyboard: applyCascadeStretches(out, stretches), normalized };
 }
 
 /**
@@ -1338,7 +1341,7 @@ export function spaceStackedCameraMoves(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
   const out: DirectScene[] = [];
-  let cumulativeShift = 0;
+  const stretches = new Map<string, number>();
   storyboard.forEach((scene, sceneIndex) => {
     let result = scene;
     let stretch = 0;
@@ -1434,15 +1437,10 @@ export function spaceStackedCameraMoves(
         stretch = 0;
       }
     }
-    const shifted = withShiftedSceneTimes(result, cumulativeShift);
-    if (stretch > 0) {
-      out.push({ ...shifted, durationSec: round(shifted.durationSec + stretch) });
-      cumulativeShift = round(cumulativeShift + stretch);
-    } else {
-      out.push(shifted);
-    }
+    out.push(result);
+    if (stretch > 0) stretches.set(scene.id, stretch);
   });
-  return { storyboard: out, normalized };
+  return { storyboard: applyCascadeStretches(out, stretches), normalized };
 }
 
 /**
@@ -1474,7 +1472,7 @@ export function delayEarlySwapBeats(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
   const out: DirectScene[] = [];
-  let cumulativeShift = 0;
+  const stretches = new Map<string, number>();
   storyboard.forEach((scene, sceneIndex) => {
     let result = scene;
     let stretch = 0;
@@ -1549,51 +1547,10 @@ export function delayEarlySwapBeats(
         stretch = 0;
       }
     }
-    const shifted = withShiftedSceneTimes(result, cumulativeShift);
-    if (stretch > 0) {
-      out.push({ ...shifted, durationSec: round(shifted.durationSec + stretch) });
-      cumulativeShift = round(cumulativeShift + stretch);
-    } else {
-      out.push(shifted);
-    }
+    out.push(result);
+    if (stretch > 0) stretches.set(scene.id, stretch);
   });
-  return { storyboard: out, normalized };
-}
-
-/** Shift a scene's own start and every nested absolute time by `delta` seconds. */
-function withShiftedSceneTimes(scene: DirectScene, delta: number): DirectScene {
-  if (Math.abs(delta) < 1e-6) return scene;
-  const shift = (value: number): number => round(value + delta);
-  return {
-    ...scene,
-    startSec: shift(scene.startSec),
-    ...(scene.timeRamp ? { timeRamp: { ...scene.timeRamp, atSec: shift(scene.timeRamp.atSec) } } : {}),
-    ...(scene.gradeShift
-      ? { gradeShift: { ...scene.gradeShift, atSec: shift(scene.gradeShift.atSec) } }
-      : {}),
-    ...(scene.camera
-      ? {
-          camera: {
-            ...scene.camera,
-            path: scene.camera.path.map((move) => ({ ...move, startSec: shift(move.startSec) })),
-          },
-        }
-      : {}),
-    ...(scene.beats ? { beats: scene.beats.map((beat) => ({ ...beat, atSec: shift(beat.atSec) })) } : {}),
-    ...(scene.interactions
-      ? {
-          interactions: scene.interactions.map((interaction) => ({
-            ...interaction,
-            startSec: shift(interaction.startSec),
-            arriveSec: shift(interaction.arriveSec),
-            ...(interaction.pressSec !== undefined ? { pressSec: shift(interaction.pressSec) } : {}),
-            ...(interaction.releaseSec !== undefined ? { releaseSec: shift(interaction.releaseSec) } : {}),
-            ...(interaction.holdUntilSec !== undefined ? { holdUntilSec: shift(interaction.holdUntilSec) } : {}),
-          })),
-        }
-      : {}),
-    ...(scene.moments ? { moments: scene.moments.map((moment) => ({ ...moment, atSec: shift(moment.atSec) })) } : {}),
-  };
+  return { storyboard: applyCascadeStretches(out, stretches), normalized };
 }
 
 /**
@@ -1619,7 +1576,7 @@ export function stretchMarginalPacingMisses(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
   const out: DirectScene[] = [];
-  let cumulativeShift = 0;
+  const stretches = new Map<string, number>();
 
   // Detection runs in each scene's ORIGINAL frame (where the resolved beats
   // live); a uniform later shift preserves every within-scene distance, so the
@@ -1698,20 +1655,19 @@ export function stretchMarginalPacingMisses(
         if (applied <= 0.01) applied = 0;
       }
     }
-    const shifted = withShiftedSceneTimes(original, cumulativeShift);
     if (applied > 0) {
       const note =
         `stretched ${applied.toFixed(2)}s to close a marginal pacing-floor ` +
         `shortfall at its own cut boundary`;
       out.push(withNormalizationNotes(
-        { ...shifted, durationSec: round(shifted.durationSec + applied) },
+        original,
         [note],
       ));
-      cumulativeShift = round(cumulativeShift + applied);
+      stretches.set(original.id, applied);
       normalized.push(`scene "${original.id}": ${note}`);
     } else {
-      out.push(shifted);
+      out.push(original);
     }
   }
-  return { storyboard: out, normalized };
+  return { storyboard: applyCascadeStretches(out, stretches), normalized };
 }
