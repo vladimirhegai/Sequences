@@ -9,6 +9,7 @@ import {
 } from "../src/engine/compositionRunner.ts";
 import {
   AUTHOR_PROMPT_BUDGET_CHARS,
+  AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS,
   assertAuthorPromptBudget,
   compactLockedDirectorPrompt,
   compactRepairSource,
@@ -16,6 +17,7 @@ import {
 } from "../src/engine/runner/prompts.ts";
 import { buildFallbackComposition } from "../src/engine/fallbackComposition.ts";
 import { retrieveHyperframesSkillContext } from "../src/agent/skillContext.ts";
+import { assembleBrief } from "../src/orchestrator.ts";
 
 const APP_DIR = path.resolve(fileURLToPath(import.meta.url), "../..");
 
@@ -33,6 +35,20 @@ const PLANNING_DIRECTOR_BASELINE_BYTES = 37_010; // post-Phase-1 (SENTINEL_REPOR
 const PLANNING_DIRECTOR_BUDGET_BYTES = Math.round(PLANNING_DIRECTOR_BASELINE_BYTES * 1.1); // 40,711
 const AUTHOR_PROMPT_TARGET_CHARS = AUTHOR_PROMPT_BUDGET_CHARS;
 const AUTHOR_PROMPT_REGRESSION_CEILING = AUTHOR_PROMPT_TARGET_CHARS;
+const CURRENT_PROOF_D_DIR = path.join(
+  APP_DIR,
+  ".data",
+  "projects",
+  "lp3-state-capsule-20260712-d",
+);
+const CURRENT_PROOF_D_INPUT = path.resolve(
+  APP_DIR,
+  "../..",
+  ".tmp",
+  "lp3-state-capsule-20260712.json",
+);
+const CURRENT_PROOF_D_AVAILABLE =
+  fs.existsSync(CURRENT_PROOF_D_DIR) && fs.existsSync(CURRENT_PROOF_D_INPUT);
 
 function assembledFixturePrompt(): { prompt: string; directorChars: number; skillsChars: number } {
   const brief = [
@@ -239,6 +255,118 @@ describe("Prompt budget — assembled author prompt", () => {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   });
+
+  it("compacts planner-only scene prose when a locked slot prompt consumes feedback headroom", () => {
+    const draft = buildFallbackComposition({
+      product: "Headroom",
+      whatShipped: "one continuity metric develops across five scenes",
+      audience: "release engineers",
+      lengthSec: 20,
+    });
+    const seed = draft.storyboard[0]!;
+    const plannerOnly = "incoming planner paperwork ".repeat(60);
+    const storyboard = Array.from({ length: 5 }, (_, index) => ({
+      ...seed,
+      id: `proof-${index + 1}`,
+      title: `Proof ${index + 1}`,
+      purpose: "planner purpose already compiled into the locked contracts ".repeat(24),
+      incomingIdea: plannerOnly,
+      foreground: `Visible continuity metric ${index + 1}`,
+      background: "Restrained product field behind the metric",
+      cameraIntent: "host-owned lens paperwork ".repeat(60),
+      continuityAnchor: "release-readiness",
+      outgoingCut: "host-owned cut paperwork ".repeat(60),
+      startSec: index * 4,
+      durationSec: 4,
+      moments: [{
+        version: 1 as const,
+        id: `visible-moment-${index + 1}`,
+        sceneId: `proof-${index + 1}`,
+        atSec: index * 4 + 1,
+        title: "Planner moment title",
+        visualState: `visible-state-${index + 1}`,
+        change: "The continuity metric develops without resetting.",
+        motionIntent: "ui-state" as const,
+        importance: "primary" as const,
+      }],
+    }));
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "sentinel-prompt-headroom-"));
+    try {
+      const brief = "Headroom carries one release-readiness metric across five scenes.";
+      const prompt = creationPrompt({
+        brief,
+        projectDir,
+        skills: retrieveHyperframesSkillContext("create", brief),
+        frameMd: "# Frame\nDark product field with one bright continuity metric.\n".repeat(40),
+        lockedStoryboard: storyboard,
+        slots: true,
+      });
+      expect(prompt.length).toBeLessThanOrEqual(
+        AUTHOR_PROMPT_TARGET_CHARS - AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS,
+      );
+      expect(prompt).toContain("visible-state-5");
+      expect(prompt).not.toContain(plannerOnly);
+      expect(prompt).toContain("Scene interior templates");
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(CURRENT_PROOF_D_AVAILABLE)(
+    "recomposes the exact CurrentProof D initial and full re-author with feedback headroom",
+    () => {
+      const input = JSON.parse(fs.readFileSync(
+        CURRENT_PROOF_D_INPUT,
+        "utf8",
+      )) as Parameters<typeof assembleBrief>[0];
+      const brief = assembleBrief(input);
+      const storyboard = (JSON.parse(fs.readFileSync(
+        path.join(CURRENT_PROOF_D_DIR, "planning", "storyboard.json"),
+        "utf8",
+      )) as { storyboard: ReturnType<typeof buildFallbackComposition>["storyboard"] }).storyboard;
+      const firstFindings = (JSON.parse(fs.readFileSync(
+        path.join(
+          CURRENT_PROOF_D_DIR,
+          "planning",
+          "attempts",
+          "author-1-static-rejected.json",
+        ),
+        "utf8",
+      )) as { findings: string[] }).findings;
+      const validationFeedback = [
+        ...firstFindings,
+        "The proposed patch was rejected atomically because it made the last valid scratch fail static validation:",
+        ...firstFindings,
+      ];
+      const skills = retrieveHyperframesSkillContext("create", brief);
+      const frameMd = fs.readFileSync(path.join(CURRENT_PROOF_D_DIR, "frame.md"), "utf8");
+      const slotPrompt = creationPrompt({
+        brief,
+        projectDir: CURRENT_PROOF_D_DIR,
+        skills,
+        frameMd,
+        lockedStoryboard: storyboard,
+        slots: true,
+      });
+      const prompt = creationPrompt({
+        brief,
+        projectDir: CURRENT_PROOF_D_DIR,
+        skills,
+        frameMd,
+        lockedStoryboard: storyboard,
+        validationFeedback,
+        compact: true,
+      });
+      const ceilingWithHeadroom =
+        AUTHOR_PROMPT_TARGET_CHARS - AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS;
+      expect(slotPrompt.length).toBeLessThanOrEqual(ceilingWithHeadroom);
+      expect(prompt.length).toBeLessThanOrEqual(ceilingWithHeadroom);
+      expect(prompt).toContain("metric-resolves-91");
+      expect(prompt).toContain("Mandatory scene skeleton");
+      expect(prompt).toContain("Frame design capsule");
+      expect(prompt.match(/progress beat "rule-draw-41"/g)).toHaveLength(1);
+    },
+  );
 
   it("keeps repair excerpts exact and includes the reported late source", () => {
     const source = `${"x".repeat(70_000)}<div data-part="repair-target">${"y".repeat(40_000)}</div>`;

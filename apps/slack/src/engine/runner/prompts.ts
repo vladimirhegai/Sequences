@@ -40,6 +40,8 @@ const DIRECTOR_PROMPT = fs.readFileSync(
 export const COMPOSITION_SOURCE_BUDGET_CHARS = 38_000;
 /** Hard ceiling for every source-authoring and source-repair request. */
 export const AUTHOR_PROMPT_BUDGET_CHARS = 45_000;
+/** Space reserved for deterministic findings on a production-shaped locked plan. */
+export const AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS = 512;
 const REPAIR_SOURCE_CONTEXT_CHARS = 30_000;
 const BOUNDED_INITIAL_SKILL_BUDGET_CHARS = 24_000;
 const COMPACT_SKILL_BUDGET_CHARS = 16_000;
@@ -194,8 +196,11 @@ export function compactRepairSource(
   return output;
 }
 
-/** Prompt-only projection: host contracts are already present in the slots. */
-function authorStoryboardPromptProjection(scene: DirectScene): Record<string, unknown> {
+/** Prompt-only projection: host contracts are already present in the scaffold. */
+function authorStoryboardPromptProjection(
+  scene: DirectScene,
+  compactRecovery = false,
+): Record<string, unknown> {
   const projected = authorStoryboardProjection(scene);
   const {
     id,
@@ -213,6 +218,29 @@ function authorStoryboardPromptProjection(scene: DirectScene): Record<string, un
     outgoingCut,
     moments,
   } = projected;
+  if (compactRecovery) {
+    // A full-document recovery already carries the exact scene skeleton and
+    // host-owned camera/cut/continuity bindings. Keep the creative scene thesis
+    // plus every visible moment, but omit the planner's duplicate incoming,
+    // lens, cut, moment-id, and motion-taxonomy prose. CurrentProof D proved
+    // that resending those parallel descriptions can make the non-optional
+    // locked context exceed the 45k preflight after all skills are removed.
+    return {
+      id,
+      title,
+      foreground,
+      background,
+      continuityAnchor,
+      startSec,
+      durationSec,
+      moments: moments?.map(({ atSec, visualState, change, importance }) => ({
+        atSec,
+        visualState,
+        change,
+        importance,
+      })),
+    };
+  }
   return {
     id,
     title,
@@ -238,6 +266,16 @@ function authorStoryboardPromptProjection(scene: DirectScene): Record<string, un
       importance,
     })),
   };
+}
+
+function uniqueValidationFeedback(findings: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  return (findings ?? []).filter((finding) => {
+    const signature = findingSignature(finding);
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
 }
 
 /**
@@ -730,15 +768,16 @@ export function creationPrompt(args: {
   /** Sentinel Phase 2: request scene-addressable slots, not one <index_html>. */
   slots?: boolean;
 }): string {
+  const validationFeedback = uniqueValidationFeedback(args.validationFeedback);
   if (args.scratch) {
     const cutChecklist = bridgedCutRepairChecklist(
-      args.validationFeedback ?? [],
+      validationFeedback,
       args.lockedStoryboard ?? args.scratch.storyboard,
       args.scratch.html,
     );
     const scratchContext = compactRepairSource(
       args.scratch.html,
-      args.validationFeedback ?? [],
+      validationFeedback,
     );
     return [
       "SYSTEM: You are a precise HTML/CSS/GSAP repair engineer.",
@@ -752,7 +791,7 @@ export function creationPrompt(args: {
       "use seek-safe child/component beats at explicit times, never wrapper activity.",
       "",
       "## Deterministic findings to repair",
-      ...(args.validationFeedback ?? []).map((issue) => `- ${issue}`),
+      ...validationFeedback.map((issue) => `- ${issue}`),
       "",
       ...(cutChecklist ? [cutChecklist, ""] : []),
       "## Scratch HTML",
@@ -786,7 +825,7 @@ export function creationPrompt(args: {
   const revision = args.revisionInstruction
     ? `## Revision request\n${args.revisionInstruction}\nPreserve what works and make this one coherent transactional revision.`
     : "";
-  const feedback = args.validationFeedback?.length
+  const feedback = validationFeedback.length
     ? [
         "## Deterministic validation feedback",
         "The previous scratch draft was not published. Repair every item below while preserving its visual thesis:",
@@ -800,10 +839,10 @@ export function creationPrompt(args: {
         "For storyboard/moments findings, author the promised changed state at",
         "the named atSec (a cut, camera arrival, interaction, or positioned",
         "component beat) instead of removing or retiming the moment.",
-        ...args.validationFeedback.map((issue) => `- ${issue}`),
+        ...validationFeedback.map((issue) => `- ${issue}`),
       ].join("\n")
     : "";
-  const lockedStoryboard = args.lockedStoryboard
+  const lockedStoryboardBlock = (compactProjection: boolean): string => args.lockedStoryboard
     ? [
         "## Locked storyboard and cut graph",
         "This plan was created and deterministically validated in a prior pass.",
@@ -815,7 +854,9 @@ export function creationPrompt(args: {
         // Plugin-owned components/beats are likewise host business: the author
         // seeing them invites double-authoring the units the host injects, so
         // the projection collapses each unit back to its one-line declaration.
-        JSON.stringify(args.lockedStoryboard.map(authorStoryboardPromptProjection)),
+        JSON.stringify(args.lockedStoryboard.map((scene) =>
+          authorStoryboardPromptProjection(scene, compactProjection)
+        )),
         "</locked_storyboard_json>",
         "",
         // The host already knows the exact scene shells; handing them over
@@ -897,7 +938,7 @@ export function creationPrompt(args: {
     : args.lockedStoryboard
     ? boundedInitialSkillText(args.skills.text)
     : args.skills.text;
-  const compose = (authorSkillText: string): string => [
+  const compose = (authorSkillText: string, compactProjection: boolean): string => [
     "SYSTEM:",
     directorPrompt,
     "",
@@ -930,22 +971,34 @@ export function creationPrompt(args: {
     args.compact
       ? "This is a compact recovery pass: finish the complete document well before the limit."
       : "",
-    lockedStoryboard,
+    lockedStoryboardBlock(compactProjection),
     current,
     revision,
     feedback,
     lockedResponse,
   ].filter(Boolean).join("\n\n");
-  let prompt = compose(selectedSkillText);
-  if (args.lockedStoryboard && prompt.length > AUTHOR_PROMPT_BUDGET_CHARS && selectedSkillText) {
+  const promptTarget = AUTHOR_PROMPT_BUDGET_CHARS - AUTHOR_PROMPT_FEEDBACK_HEADROOM_CHARS;
+  let compactProjection = Boolean(args.compact);
+  let fittedSkillText = selectedSkillText;
+  let prompt = compose(fittedSkillText, compactProjection);
+  if (args.lockedStoryboard && prompt.length > promptTarget && fittedSkillText) {
     // Typed plans and host scaffolds vary substantially by scene. A fixed
     // skill allowance passed the synthetic S6.1 fixture but failed two real
     // LP-3 plans. Fit the optional author reference to the remaining budget;
     // the full skill context already informed planning, while the locked plan,
     // frame capsule, and scaffold are the source-authoring contract.
-    const overflow = prompt.length - AUTHOR_PROMPT_BUDGET_CHARS;
-    const fittedBudget = Math.max(0, selectedSkillText.length - overflow - 512);
-    prompt = compose(compactSkillText(selectedSkillText, fittedBudget));
+    const overflow = prompt.length - promptTarget;
+    const fittedBudget = Math.max(0, fittedSkillText.length - overflow);
+    fittedSkillText = compactSkillText(fittedSkillText, fittedBudget);
+    prompt = compose(fittedSkillText, compactProjection);
+  }
+  if (args.lockedStoryboard && prompt.length > promptTarget && !compactProjection) {
+    // A plan can consume the headroom after every optional skill byte is gone
+    // (CurrentProof D's first slot prompt was 44,829 chars). Keep every scene,
+    // timing, visible moment, frame capsule, and scaffold, but collapse the
+    // parallel planner descriptions already compiled into host contracts.
+    compactProjection = true;
+    prompt = compose(fittedSkillText, compactProjection);
   }
   return prompt;
 }

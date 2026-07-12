@@ -582,7 +582,7 @@ eliminating contradictory contracts).
   typecheck, and `replay:all` green.
 
 ### S6.6 Full re-author prompt headroom
-- [ ] CurrentProof D's non-optional full re-author context was 49,040 chars
+- [x] CurrentProof D's non-optional full re-author context was 49,040 chars
   after optional skills reached zero. Compact only planner prose already
   compiled into the locked scaffold/host contracts, dedupe repeated finding
   feedback, and reserve 512 chars for findings on both initial slot and full
@@ -1342,3 +1342,20 @@ Files: `src/engine/runner/repairs/implementation.ts`, `src/engine/sentinel.ts`,
 Verification: both exact `source:replay` artifacts pass; focused author/Sentinel
 tests (118/118); Slack typecheck; exact `replay:all` (15 replayed / 2 skipped /
 0 failed), all green. S6.6 is next; no paid probe, publish, deploy, or S7 work.
+
+## S6.6 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+The exact CurrentProof D prompt fixture reproduces the 49,040-character full
+re-author preflight. Locked recovery prompts now keep the scene title,
+foreground/background thesis, continuity anchor, timing, and every visible
+moment while omitting duplicated planner purpose/blueprint/rule/camera/cut
+paperwork already compiled into the scaffold and host contracts. Repeated
+finding signatures are emitted once. The same compact projection now activates
+on an initial slot prompt only when all optional skill bytes are gone and the
+512-character feedback reserve is still consumed.
+
+Exact recomposition: initial slot 40,865 chars (was 44,829); full re-author
+44,485 chars (was 49,040). Both retain every scene, the mandatory templates,
+frame capsule, and visible moment contract. Files: `runner/prompts.ts`,
+`test/promptBudget.test.ts`, and this plan. Verification: prompt-budget tests
+(12/12) and Slack typecheck, green. No paid probe, publish, deploy, or S7 work;
+LP-2/LP-3 still require a fresh runtime-reaching probe.
