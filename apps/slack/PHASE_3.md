@@ -163,3 +163,46 @@ S3.x commit is completed.
 - Verification: Slack typecheck; 175 focused pacing/camera/Sentinel tests;
   exact replay 13 passed, 0 skipped, 0 failed.
 - No paid call, publish, or deploy.
+
+### Full-suite fixture migration after S3.4
+
+- The first full unit checkpoint exposed eight failures, all in
+  `directComposition.test.ts`. They were not runtime regressions: four tests
+  still asserted the removed numeric `pacing/camera-budget` deletion, and four
+  interaction/world-layout fixtures accidentally asked the lens to visit
+  multiple evidence stations while testing unrelated behavior.
+- Replaced the obsolete numeric-budget assertions with phrase-level contract
+  assertions: competing authored routes are rejected by
+  `camera/idea-budget`, the finding names what to keep/cut, and the host does
+  not delete authored camera moves to satisfy a numeric move requirement.
+- Preserved the rack-focus and continuity-chassis coverage. The rack-focus
+  case now proves its host top-up survives local supporting-motion collapse;
+  the continuity case proves the generated opening chassis survives when a
+  later scene earns an idea-budget finding.
+- Reframed the interaction fixture around its CTA target, and reframed the
+  world-layout fixtures as one lens route plus multiple component stations.
+  This keeps their original timing/cache/layout assertions while expressing
+  secondary evidence as local component motion inside one framing.
+- The first focused rerun had four remaining failures because a region camera
+  route and the continuity graph's first component target compiled as distinct
+  phrases. Aligned each fixture's `spatialIntent.focalPart` and camera
+  `toPart`, retaining component regions solely for layout completion. The next
+  focused run passed all 181 tests.
+- No production gate or tolerance changed during this migration.
+
+### Pre-LP-1 checkpoint
+
+- Slack typecheck passed.
+- The complete unit project passed. `directComposition.test.ts` contributed
+  181 passing tests, including the migrated Phase 3 fixtures.
+- The first browser-project run was intentionally launched alongside the unit
+  and replay workloads. It reached two existing wall-clock limits (one 5s
+  continuity test and one 30s plugin test) without a semantic assertion. Both
+  files passed alone (10/10; the timed-out tests completed in 2.2s and 15.3s),
+  proving resource contention. The uncontended full browser rerun passed 22
+  files and 52 tests.
+- Exact artifact replay passed 13, skipped 0, failed 0.
+- `film:demo` rendered its five-scene, four-cut deterministic film; all cut
+  boundaries retained outgoing motion/incoming settle evidence and eligible
+  runtime reported zero dead-frame windows over 1.5s.
+- LP-1 remained unspent until all of the above local evidence was green.

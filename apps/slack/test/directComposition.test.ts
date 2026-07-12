@@ -984,11 +984,8 @@ describe("semantic highlight style reconciliation", () => {
   });
 });
 
-describe("Sentinel Phase 3 — storyboard normalization is wired into parseStoryboardResponse", () => {
-  it("clamps an over-budget camera scene before the pacing gate, so it never throws", () => {
-    // The 3s middle scene declares 3 full moves (budget = 1). Without the
-    // Phase-3 clamp this throws `pacing/camera-budget`; with it, the two
-    // lowest-energy moves are dropped deterministically and the plan parses.
+describe("Sentinel Phase 3 — camera phrase gating is wired into parseStoryboardResponse", () => {
+  it("rejects competing camera ideas without deleting authored routes", () => {
     const scenes = storyboard();
     const raw = scenes.map((scene, index) =>
       index === 1
@@ -1006,19 +1003,22 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
         : scene
     );
     const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
-    const parsed = parseStoryboardResponse(response);
-    // The over-budget scene survived and its path was clamped to the budget.
-    const middle = parsed[1]!;
-    expect(middle.camera!.path.filter((move) => move.move !== "hold" && move.move !== "drift"))
-      .toHaveLength(1);
-    // The surviving move is the highest-energy one (pull-back outranks pan/track).
-    expect(middle.camera!.path.some((move) => move.move === "pull-back")).toBe(true);
-    // The committed normalization is visible on the scene → STORYBOARD.md
-    // (a derived default worldLayout may add its own note beside it).
+    let failure: StoryboardValidationError | undefined;
+    try {
+      parseStoryboardResponse(response);
+    } catch (error) {
+      if (error instanceof StoryboardValidationError) failure = error;
+      else throw error;
+    }
+    expect(failure?.findings).toEqual([
+      expect.stringContaining("camera/idea-budget"),
+    ]);
+    expect(failure?.findings[0]).toContain('Keep "left"');
+    expect(failure?.findings[0]).toContain('cut the lens routes to "chip", "wide"');
+    expect(failure?.storyboard[1]?.camera?.path).toHaveLength(3);
     expect(
-      middle.sentinelNormalizations?.filter((note) => note.includes("camera")).length,
-    ).toBe(1);
-    expect(storyboardMarkdown("t", parsed)).toContain("- Sentinel normalized: dropped 2");
+      failure?.storyboard[1]?.sentinelNormalizations?.some((note) => note.includes("camera")),
+    ).not.toBe(true);
   });
 
   it("renders one host-generated line per declared plugin in STORYBOARD.md", () => {
@@ -1046,12 +1046,7 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     expect(md).toContain('- plugin: lockup "closing" (headline=Ship it faster) — host-generated');
   });
 
-  it("reverts a normalization that would mint a NEW blocking finding (atomic commit)", () => {
-    // Same over-budget scene, but the brief explicitly demands 3 typed camera
-    // moves: the clamp would satisfy pacing/camera-budget while violating
-    // minCameraMoves — a finding the model never earned. The parse must
-    // revert to the model's own plan and throw ITS findings, not the
-    // normalization's.
+  it("does not trade authored ideas for a numeric minimum-move requirement", () => {
     const scenes = storyboard();
     const raw = scenes.map((scene, index) =>
       index === 1
@@ -1075,13 +1070,11 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
     }
-    // The model's own finding (over budget), not the normalization's side
-    // effect (too few moves after the clamp).
-    expect(message).toContain("pacing/camera-budget");
+    expect(message).toContain("camera/idea-budget");
     expect(message).not.toContain("typed camera moves");
   });
 
-  it("keeps an explicit rack-focus top-up when unrelated arithmetic is reverted", () => {
+  it("keeps an explicit rack-focus top-up when supporting motion collapses locally", () => {
     const scenes = storyboard();
     const raw = scenes.map((scene, index) =>
       index === 1
@@ -1111,17 +1104,11 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
         : scene
     );
     const response = `<storyboard_json>${JSON.stringify(raw)}</storyboard_json>`;
-    let failure: StoryboardValidationError | undefined;
-    try {
-      parseStoryboardResponse(response, { minCameraMoves: 3, requireRackFocus: true });
-    } catch (error) {
-      if (error instanceof StoryboardValidationError) failure = error;
-      else throw error;
-    }
-
-    expect(failure?.findings.some((finding) => finding.includes("pacing/camera-budget"))).toBe(true);
-    expect(failure?.findings.some((finding) => finding.includes("rack-focus"))).toBe(false);
-    const focused = failure?.storyboard[1]?.camera?.path.find((move) => move.toPart === "chip");
+    const parsed = parseStoryboardResponse(response, {
+      minCameraMoves: 3,
+      requireRackFocus: true,
+    });
+    const focused = parsed[1]?.camera?.path.find((move) => move.toPart === "chip");
     expect(focused?.focus).toEqual({ part: "chip", blurMaxPx: 6 });
   });
 
@@ -1167,7 +1154,7 @@ describe("Sentinel Phase 3 — storyboard normalization is wired into parseStory
         else throw error;
       }
 
-      expect(failure?.findings.some((finding) => finding.includes("pacing/camera-budget"))).toBe(true);
+      expect(failure?.findings.some((finding) => finding.includes("camera/idea-budget"))).toBe(true);
       expect(failure?.storyboard[0]?.camera?.path).toEqual([{
         version: 1,
         move: "hold",
@@ -3452,8 +3439,8 @@ describe("direct HyperFrames composition", () => {
     const plan = storyboard();
     plan[1]!.spatialIntent = {
       version: 1,
-      focalPart: "a live, updating metric: 'Incidents -99.7%'",
-      composition: "Metric-led product proof",
+      focalPart: "the 'Get Live View' CTA button",
+      composition: "CTA-led product proof",
       relationships: [],
     };
     plan[1]!.interactions = [{
@@ -3479,7 +3466,7 @@ describe("direct HyperFrames composition", () => {
     const interaction = parsed[1]?.interactions?.[0];
     expect(interaction).toBeDefined();
     expect(parsed[1]?.spatialIntent?.focalPart).toBe(
-      "a-live-updating-metric-incidents-99-7",
+      "the-get-live-view-cta-button",
     );
     expect(interaction?.sceneId).toBe("product-proof");
     expect(interaction?.targetPart).toBe("the-get-live-view-cta-button");
@@ -3902,21 +3889,20 @@ describe("direct HyperFrames composition", () => {
     const raw = storyboard().map((scene, index) => index === 1
       ? {
           ...scene,
+          spatialIntent: {
+            version: 1 as const,
+            focalPart: "terminal-surface",
+            composition: "Terminal-led product proof",
+            relationships: ["metrics update inside the terminal framing"],
+          },
           camera: {
             version: 1 as const,
             path: [
               {
                 version: 1 as const,
                 move: "pan" as const,
-                toRegion: "terminal-strip",
+                toPart: "terminal-surface",
                 startSec: 3.2,
-                durationSec: 0.8,
-              },
-              {
-                version: 1 as const,
-                move: "pan" as const,
-                toRegion: "metric-wall",
-                startSec: 4.4,
                 durationSec: 0.8,
               },
             ],
@@ -5474,19 +5460,28 @@ describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", ()
     expect(injectWorldLayoutStyles(first.html, scenes).html).toBe(first.html);
   });
 
-  it("synthesizes viewport cells for camera-path regions when the plan omits worldLayout", () => {
+  it("synthesizes viewport cells for one camera route and its local component regions", () => {
     const scenes = storyboard();
     const raw = scenes.map((scene, index) =>
       index === 1
         ? {
             ...scene,
+            spatialIntent: {
+              version: 1,
+              focalPart: "terminal-surface",
+              composition: "Terminal-led product proof",
+              relationships: ["metrics update inside the terminal framing"],
+            },
             camera: {
               version: 1,
               path: [
-                { version: 1, move: "pan", toRegion: "terminal-strip", startSec: 3.2, durationSec: 0.8 },
-                { version: 1, move: "pan", toRegion: "metric-wall", startSec: 4.4, durationSec: 0.8 },
+                { version: 1, move: "pan", toPart: "terminal-surface", startSec: 3.2, durationSec: 0.8 },
               ],
             },
+            components: [
+              { version: 1, id: "terminal-surface", kind: "terminal", region: "terminal-strip" },
+              { version: 1, id: "metric-surface", kind: "stat-card", region: "metric-wall" },
+            ],
           }
         : scene
     );
@@ -5523,13 +5518,18 @@ describe("L2 default worldLayout derivation (fix-probe-1 mega-station void)", ()
           components: [
             { version: 1 as const, id: "overview-shell", kind: "app-window" as const, region: "overview-station" },
             { version: 1 as const, id: "root-panel", kind: "stat-card" as const, region: "root-cause" },
+            { version: 1 as const, id: "dependency-shell", kind: "app-window" as const, region: "dependency-chain" },
           ],
+          spatialIntent: {
+            version: 1 as const,
+            focalPart: "dependency-shell",
+            composition: "Dependency-led product proof",
+            relationships: ["overview and root cause develop inside the dependency framing"],
+          },
           camera: {
             version: 1 as const,
             path: [
-              { version: 1 as const, move: "hold" as const, toRegion: "overview-station", startSec: 3.05, durationSec: 0.4 },
-              { version: 1 as const, move: "pan" as const, toRegion: "dependency-chain", startSec: 3.6, durationSec: 0.7 },
-              { version: 1 as const, move: "track-to-anchor" as const, toPart: "root-panel", startSec: 4.5, durationSec: 0.7 },
+              { version: 1 as const, move: "pan" as const, toPart: "dependency-shell", startSec: 3.6, durationSec: 0.7 },
             ],
           },
           worldLayout: [{ region: "dependency-chain", cell: [1, 0] as [number, number] }],
