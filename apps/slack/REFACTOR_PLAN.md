@@ -195,7 +195,7 @@ and leave it for a HEAVY agent — that is cheaper than a wrong guess.
 - Verify: `npm run replay:all` green at HEAD.
 
 ### S0.3 Delete dead code: `planRunner.ts`
-- [ ] `src/engine/planRunner.ts` has zero importers (the demo Plan path uses
+- [x] `src/engine/planRunner.ts` has zero importers (the demo Plan path uses
   `@sequences/core` `planToCommands` directly from `orchestrator.ts` /
   `engine/mcp.ts`). Delete the file and any orphaned tests.
 - Verify: typecheck + `npm run test:unit` + `npm run demo` (model-free).
@@ -678,3 +678,9 @@ local fixtures with a warning. Files: `apps/slack/scripts/replayAll.ts`,
 Verification: `npm run replay:all --workspace @sequences/slack` passed 13
 replays with 0 skips and 0 failures; Slack typecheck passed. No paid probe was
 run.
+
+## S0.3 â€” 2026-07-11 â€” DONE
+Deleted the confirmed-unreferenced `apps/slack/src/engine/planRunner.ts`;
+the active demo path already uses `@sequences/core` directly. No orphaned
+tests or importers were present. Verification: Slack typecheck, Slack unit
+tests, and the model-free Slack demo passed.
