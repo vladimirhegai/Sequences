@@ -15,6 +15,7 @@
     "render:existing": "tsx scripts/renderExisting.ts",
     "sequence:check": "tsx scripts/sequenceCheck.ts",
     "storyboard:replay": "tsx scripts/replayStoryboard.ts",
+    "probe:triage": "tsx scripts/probeTriage.ts",
     "temporal:replay": "tsx scripts/replayTemporal.ts",
     "continuity:replay": "tsx scripts/replayContinuity.ts",
     "model:smoke": "tsx scripts/modelAuthoringSmoke.ts",
