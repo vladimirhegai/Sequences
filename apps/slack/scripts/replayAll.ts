@@ -61,8 +61,8 @@ const FIXTURES: Fixture[] = [
       "storyboard-1-rejected.raw.txt": { artifactSha256: "7dfa968896f689e8a485f5daef62b40607c7d3fc4123b496980d5017ac4fa364", replaySha256: "bccef7656d570436edb3c28520f4685a03920a55bf940bc7ae60d01b9c6ff290", outcome: "rejected" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "34fb0dcb4b70820c0de007e8294e6b6c5503b2bb365ef279307f7f9d9c53753d" },
-      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "bf1a2379c83eb6fccf90751adec1c6bbb30456deed05923bdc74f6516a120133" },
+      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "8adcbe78f77ad6d45a6a08e85e64fea737e53dade29c4967d46e4900cfdb8a90" },
+      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "102fa22bb8bb3b2fa2ec1a2d5952587ab241fb0a4a4f8bf8062788bf90674718" },
     },
   },
   {

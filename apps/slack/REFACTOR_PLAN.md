@@ -427,7 +427,7 @@ handoff; morphs ship only with proven structure + state transfer.
   reset flicker.
 
 ### S4.2 Morph honesty gate
-- [ ] A `morph` cut requires both endpoint structure AND state transfer
+- [x] A `morph` cut requires both endpoint structure AND state transfer
   proof; otherwise degrade to swipe/match AND initialize the incoming
   component from the handoff (extend the existing degrade path).
 - Verify: GatePilot's impossible cross-kind morph fixture degrades cleanly;
@@ -988,3 +988,20 @@ diagnostics health-check flake passed in isolation and on full rerun); full
 browser suite rerun green; `replay:all` 13/0/0; deterministic `film:demo` and
 100-frame temporal strip inspected with all four cuts intact and no eligible
 dead-frame window. No paid probe, publish, or deploy.
+
+## S4.2 — 2026-07-12 — DONE (implementation; LP-2 pending authorization)
+Made continuity-state proof a prerequisite for discovered and runtime morphs.
+The cut runtime initializes the incoming endpoint before geometry/structure
+audit and clone capture, then degrades missing-proof or structurally impossible
+morphs to the existing axis-derived swipe path. Shape-match discovery now
+upgrades only boundaries already proven by the continuity graph. Added a
+GatePilot-shaped stat-card→app-window regression proving the incoming 94 state,
+clean swipe degradation, and forward/reverse visibility/state restoration.
+Files: `cutDiscovery.ts`, cuts runtime, cut-discovery unit/browser fixtures,
+`stateHandoff.browser.test.ts`, and this plan. Verification: Slack typecheck;
+focused cut-discovery/state-handoff/component/continuity tests; full unit suite;
+full browser suite (initial parallel component-runtime timeout passed focused
+and on full rerun); `replay:all` 13/0/0; deterministic `film:demo` and temporal
+strip inspected. No LP-2 paid probe was run because owner authorization was not
+provided, so the Phase 4 live checkpoint remains outstanding. No publish or
+deploy.

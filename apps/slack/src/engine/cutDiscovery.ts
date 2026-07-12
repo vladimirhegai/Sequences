@@ -18,6 +18,7 @@
  *   continuity graph's stable entity id proves it is the same product object.
  */
 import type { DirectScene } from "./directComposition.ts";
+import { resolveContinuityGraph } from "./continuityGraph.ts";
 import type {
   BoundaryPartMeasurement,
   DirectBoundaryInventory,
@@ -122,6 +123,11 @@ export function discoverShapeMatchUpgrades(
   boundaries: DirectBoundaryInventory[],
 ): CutUpgradeDecision[] {
   const scenesById = new Map(scenes.map((scene) => [scene.id, scene]));
+  const stateProofs = new Set(
+    resolveContinuityGraph(scenes).edges
+      .filter((edge) => edge.stateTransfer)
+      .map((edge) => `${edge.fromScene}\0${edge.fromPart}\0${edge.toScene}\0${edge.toPart}`),
+  );
   const candidates: CutUpgradeDecision[] = [];
   for (const boundary of boundaries) {
     const fromScene = scenesById.get(boundary.fromScene);
@@ -130,6 +136,9 @@ export function discoverShapeMatchUpgrades(
     if (!UPGRADABLE_STYLES.has(style)) continue;
     for (const outgoing of boundary.outgoing) {
       for (const incoming of boundary.incoming) {
+        if (!stateProofs.has(
+          `${boundary.fromScene}\0${outgoing.part}\0${boundary.toScene}\0${incoming.part}`,
+        )) continue;
         const base = scoreShapePair(outgoing, incoming);
         if (base === undefined) continue;
         const outgoingEntity = entityForPart(fromScene, outgoing.part);

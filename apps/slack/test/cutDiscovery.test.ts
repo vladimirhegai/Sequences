@@ -30,6 +30,25 @@ function scene(id: string, extras: Partial<DirectScene> = {}): DirectScene {
   return { id, title: id, purpose: "p", startSec: 0, durationSec: 3, ...extras };
 }
 
+function statefulScene(
+  id: string,
+  startSec: number,
+  partId: string,
+  entityId: string,
+  value: number,
+  extras: Partial<DirectScene> = {},
+): DirectScene {
+  return scene(id, {
+    startSec,
+    components: [{ version: 1, id: partId, kind: "stat-card", entityId }],
+    beats: [{
+      version: 1, id: `${partId}-count`, sceneId: id, component: partId,
+      kind: "count", atSec: startSec + 0.4, durationSec: 0.8, value,
+    }],
+    ...extras,
+  });
+}
+
 const rhymingPair = {
   outgoing: part({ part: "query-pill" }),
   incoming: part({ part: "status-bar", width: 480, radiusPx: 48, nodeCount: 5 }),
@@ -82,7 +101,7 @@ describe("shape-match discovery policy", () => {
 
   it("upgrades a hard boundary whose measured pair provably rhymes", () => {
     const upgrade = discoverShapeMatchUpgrade(
-      [scene("one"), scene("two", { startSec: 3 })],
+      [statefulScene("one", 0, "query-pill", "query", 38), statefulScene("two", 3, "status-bar", "query", 71)],
       [boundary("one", "two", [rhymingPair.outgoing], [rhymingPair.incoming])],
     );
     expect(upgrade).toMatchObject({
@@ -112,8 +131,8 @@ describe("shape-match discovery policy", () => {
   it("still upgrades a directional boundary (velocity carry → premium rhyme)", () => {
     const upgrade = discoverShapeMatchUpgrade(
       [
-        scene("one", { cut: { version: 1, style: "cut-left" } }),
-        scene("two", { startSec: 3 }),
+        statefulScene("one", 0, "query-pill", "query", 38, { cut: { version: 1, style: "cut-left" } }),
+        statefulScene("two", 3, "status-bar", "query", 71),
       ],
       [boundary("one", "two", [rhymingPair.outgoing], [rhymingPair.incoming])],
     );
@@ -124,7 +143,21 @@ describe("shape-match discovery policy", () => {
     const square = part({ part: "tile-a", width: 200, height: 200, radiusPx: 0 });
     const squareIn = part({ part: "tile-b", width: 200, height: 200, radiusPx: 0 });
     const upgrade = discoverShapeMatchUpgrade(
-      [scene("one"), scene("two", { startSec: 3 }), scene("three", { startSec: 6 })],
+      [
+        statefulScene("one", 0, "query-pill", "query", 38),
+        scene("two", {
+          startSec: 3,
+          components: [
+            { version: 1, id: "status-bar", kind: "stat-card", entityId: "query" },
+            { version: 1, id: "tile-a", kind: "stat-card", entityId: "result" },
+          ],
+          beats: [
+            { version: 1, id: "status-count", sceneId: "two", component: "status-bar", kind: "count", atSec: 3.4, value: 71 },
+            { version: 1, id: "tile-count", sceneId: "two", component: "tile-a", kind: "count", atSec: 3.5, value: 80 },
+          ],
+        }),
+        statefulScene("three", 6, "tile-b", "result", 94),
+      ],
       [
         boundary("one", "two", [rhymingPair.outgoing], [rhymingPair.incoming]),
         boundary("two", "three", [square], [squareIn]),
@@ -140,6 +173,7 @@ describe("shape-match discovery policy", () => {
     const scenes = [
       scene("one", {
         components: [{ version: 1, id: "query-pill", kind: "search", entityId: "query" }],
+        beats: [{ version: 1, id: "query-count", sceneId: "one", component: "query-pill", kind: "count", atSec: 0.4, value: 38 }],
       }),
       scene("two", {
         startSec: 3,
@@ -147,10 +181,15 @@ describe("shape-match discovery policy", () => {
           { version: 1, id: "status-bar", kind: "toast", entityId: "query" },
           { version: 1, id: "tile-a", kind: "stat-card", entityId: "result" },
         ],
+        beats: [
+          { version: 1, id: "status-count", sceneId: "two", component: "status-bar", kind: "count", atSec: 3.4, value: 71 },
+          { version: 1, id: "tile-count", sceneId: "two", component: "tile-a", kind: "count", atSec: 3.5, value: 80 },
+        ],
       }),
       scene("three", {
         startSec: 6,
         components: [{ version: 1, id: "tile-b", kind: "stat-card", entityId: "result" }],
+        beats: [{ version: 1, id: "tile-final", sceneId: "three", component: "tile-b", kind: "count", atSec: 6.4, value: 94 }],
       }),
     ];
     const upgrades = discoverShapeMatchUpgrades(scenes, [
@@ -170,7 +209,7 @@ describe("shape-match discovery policy", () => {
         boundary("two", "three", [tileOut], [tileIn]),
       ],
     );
-    expect(withoutIdentity).toHaveLength(1);
+    expect(withoutIdentity).toHaveLength(0);
   });
 
   it("prefers parts the storyboard names (component ids beat anonymous parts)", () => {
@@ -178,10 +217,11 @@ describe("shape-match discovery policy", () => {
     const component = part({ part: "status-bar", width: 480, radiusPx: 48 });
     const upgrade = discoverShapeMatchUpgrade(
       [
-        scene("one"),
+        statefulScene("one", 0, "query-pill", "query", 38),
         scene("two", {
           startSec: 3,
-          components: [{ version: 1, id: "status-bar", kind: "toast" }],
+          components: [{ version: 1, id: "status-bar", kind: "toast", entityId: "query" }],
+          beats: [{ version: 1, id: "status-count", sceneId: "two", component: "status-bar", kind: "count", atSec: 3.4, value: 71 }],
         }),
       ],
       [boundary("one", "two", [rhymingPair.outgoing], [anonymous, component])],

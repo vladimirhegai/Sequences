@@ -51,7 +51,16 @@ function stateFilm(): string {
   const scenes: DirectScene[] = [
     { ...metricScene("signal", 0, "score-38", 38), cut: { version: 1, style: "swipe", axis: "left" } },
     { ...metricScene("proof", 3, "score-71", 71), cut: { version: 1, style: "swipe", axis: "left" } },
-    metricScene("resolve", 6, "score-94", 94),
+    {
+      ...metricScene("resolve", 6, "score-94", 94),
+      cut: {
+        version: 1,
+        style: "morph",
+        focalPartOut: "score-94",
+        focalPartIn: "gate-shell",
+      },
+    },
+    metricScene("gate", 9, "gate-shell", 99, "app-window"),
   ];
   const components = resolveComponentPlan(scenes);
   const cuts = resolveCutPlan(scenes);
@@ -63,7 +72,7 @@ function stateFilm(): string {
       `<div class="cmp ${kind === "app-window" ? "cmp-window" : "cmp-stat"}" data-component="${kind}" ` +
       `data-part="${part}" data-continuity-entity="release-score">` +
       `<div class="chrome">${kind === "app-window" ? "GatePilot" : "Score"}</div>` +
-      `<div class="cmp-value" data-cmp-value>${[38, 71, 94][index]}%</div>` +
+      `<div class="cmp-value" data-cmp-value>${[38, 71, 94, 99][index]}%</div>` +
       `${kind === "app-window" ? "<div class=body><div>Policy</div><div>Owner</div><div>Status</div></div>" : ""}` +
       `</div></section>`;
   }).join("");
@@ -74,7 +83,7 @@ function stateFilm(): string {
     `.cmp{background:#172033;color:#fff;border-radius:28px;padding:36px;font:700 48px Arial}` +
     `.cmp-stat{width:520px;height:300px}.cmp-window{width:1200px;height:700px}` +
     `.cmp-value{font-size:112px}.body{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:120px}</style>` +
-    `</head><body><main id="root" data-composition-id="state-handoff" data-duration="9">${sections}</main>` +
+    `</head><body><main id="root" data-composition-id="state-handoff" data-duration="12">${sections}</main>` +
     `<script type="application/json" id="sequences-cuts">${JSON.stringify(cuts)}</script>` +
     `<script type="application/json" id="sequences-components">${JSON.stringify(components)}</script>` +
     `<script type="application/json" id="sequences-continuity">${JSON.stringify(continuity)}</script>` +
@@ -112,7 +121,7 @@ function serve(dir: string): Promise<{ url: string; close: () => Promise<void> }
 }
 
 describe("typed continuity state handoff browser contract", () => {
-  it("never resets 38→71→94 across swipe cuts and reverse seeks", async () => {
+  it("never resets 38→71→94 and degrades an impossible cross-kind morph seek-safely", async () => {
     const executablePath = findBrowserExecutable();
     expect(executablePath).toBeTruthy();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-state-handoff-"));
@@ -145,9 +154,23 @@ describe("typed continuity state handoff browser contract", () => {
 
       expect(await at(3.05, "score-71")).toBe(38);
       expect(await at(6.05, "score-94")).toBe(71);
+      expect(await at(9.05, "gate-shell")).toBe(94);
       expect(await at(4.4, "score-71")).toBe(71);
       expect(await at(7.4, "score-94")).toBe(94);
       expect(await at(3.05, "score-71")).toBe(38);
+
+      const binding = await page.evaluate(() => {
+        const bindings = (window as unknown as {
+          __sequencesCutBindings: Array<{ cut: { fromScene: string }; degraded?: boolean; target?: string; reason?: string }>;
+        }).__sequencesCutBindings;
+        const found = bindings.find((entry) => entry.cut.fromScene === "resolve");
+        return found
+          ? { degraded: found.degraded, target: found.target, reason: found.reason }
+          : null;
+      });
+      expect(binding).toMatchObject({ degraded: true });
+      expect(binding?.target).toMatch(/^swipe-/);
+      expect(binding?.reason).toContain("different semantic families");
       expect(errors).toEqual([]);
     } finally {
       await browser.close();
