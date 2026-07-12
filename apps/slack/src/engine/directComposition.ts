@@ -408,6 +408,7 @@ function normalizeStoryboard(
       ...(proposed?.continuityAnchor
         ? { continuityAnchor: proposed.continuityAnchor }
         : {}),
+      ...(proposed?.continuity?.length ? { continuity: proposed.continuity } : {}),
       startSec: startSec ?? 0,
       durationSec: durationSec ?? 0,
       ...(proposed?.blueprint ? { blueprint: proposed.blueprint } : {}),

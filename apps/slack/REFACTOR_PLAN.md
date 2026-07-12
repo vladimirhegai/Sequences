@@ -418,7 +418,7 @@ Goal (handoff §5): a stable `entityId` optionally carries a typed state
 handoff; morphs ship only with proven structure + state transfer.
 
 ### S4.1 Typed state handoff on continuity entities
-- [ ] Extend the continuity graph entity with `state?: { kind: metric|button|
+- [x] Extend the continuity graph entity with `state?: { kind: metric|button|
   progress|selection|shell; value }`. The scaffold initializes the incoming
   scene's component from the prior resolved state (host-owned, L1). Metrics
   must begin at the previous value — never 0.
@@ -972,3 +972,19 @@ HEAD: typecheck, 78 files / 1,306 unit tests, `replay:all` 13/0/0 all green.
 Note: this commit also carries the previously uncommitted Briefly
 (`refactor-review-normal-1-20260711`) PROBE_LOG entry that the committed docs
 already referenced. Next agent: Phase 4, S4.1.
+
+## S4.1 — 2026-07-12 — DONE
+Added typed metric/button/progress/selection/shell state to continuity entities,
+appearances, and edges. The component plan now derives incoming state from the
+prior resolved appearance, initializes the destination component before its
+first beat, and counts/progresses from that value instead of zero. Preserved
+explicit continuity through direct-composition validation and extended the
+component island parser for exact round trips. Files: `continuityGraph.ts`,
+`componentContract.ts`, `directComposition.ts`, components runtime, focused
+unit/browser tests, replay expectations, and this plan. Verification: Slack
+typecheck; focused continuity/component tests; 38→71→94 swipe + reverse-seek
+browser regression; full unit suite (one initial
+diagnostics health-check flake passed in isolation and on full rerun); full
+browser suite rerun green; `replay:all` 13/0/0; deterministic `film:demo` and
+100-frame temporal strip inspected with all four cuts intact and no eligible
+dead-frame window. No paid probe, publish, or deploy.

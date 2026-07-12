@@ -25,8 +25,8 @@ const FIXTURES: Fixture[] = [
       "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "eeb67ad53cf6937380641d507f9273c3f332bb6eed935581f145c55616c14a10", outcome: "parsed" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "15667412ee754cc1ebac39c46550b18f942bc38b8bfd97599de1cca1dae6d95f" },
-      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "b5f3ec130e860daa70b6cc3eab9606c3ed094120fd1198caa16afdc71a5c2cf9" },
+      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "0bec5a67b4294f36931b2baa1cae6ab217fbc42bbd1e6946e71ae66a48ce66fc" },
+      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "f8729811abac1e7308170b55240c786ef88c7cd7eb256111a79ea775063d229e" },
     },
   },
   {
@@ -42,7 +42,7 @@ const FIXTURES: Fixture[] = [
     jobId: "architecture-stress-3-20260711",
     expectedRaw: {},
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "9c3ee94688d10e812159649b20ddffef6255e9e8c99ef431b66bce26ef122876", replaySha256: "36820b3bf247eda7bf8c648daf144d898555fd6cc522b003d081d94555942bad" },
+      "author-1-browser-rejected.html": { artifactSha256: "9c3ee94688d10e812159649b20ddffef6255e9e8c99ef431b66bce26ef122876", replaySha256: "b340ff5b6f744f1bd27f49816756d8728f7603d5910aa52918c53f84ec043e8e" },
     },
   },
   {
@@ -61,8 +61,8 @@ const FIXTURES: Fixture[] = [
       "storyboard-1-rejected.raw.txt": { artifactSha256: "7dfa968896f689e8a485f5daef62b40607c7d3fc4123b496980d5017ac4fa364", replaySha256: "bccef7656d570436edb3c28520f4685a03920a55bf940bc7ae60d01b9c6ff290", outcome: "rejected" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "76f18be38461637fba72da7e8bccd16e1c74ba173bb782651954a39635a1ab59" },
-      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "627814b324a4a85f400720433b596b31e17ede4c88f786ab8c17c7e5cb3ac063" },
+      "author-1-browser-rejected.html": { artifactSha256: "a4c3f044f738b03e628d10a57f69976b9228b43fd04dd41a2650c2112dc6f597", replaySha256: "34fb0dcb4b70820c0de007e8294e6b6c5503b2bb365ef279307f7f9d9c53753d" },
+      "author-2-browser-rejected.html": { artifactSha256: "ba82df19b8447ae7372bc58300b99a253acd4652677ed52f8726f9907c89f2fb", replaySha256: "bf1a2379c83eb6fccf90751adec1c6bbb30456deed05923bdc74f6516a120133" },
     },
   },
   {
@@ -70,8 +70,8 @@ const FIXTURES: Fixture[] = [
     jobId: "refactor-review-normal-1-20260711",
     expectedRaw: {},
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "615a5d6217a9a9a952502aa33dcbeee7220c0b30ca8a19f8c1c22369bc76aace", replaySha256: "1d1c6d8d0cac5e58f30fee4b714166abc55a24d077aaf45fb263403e5a100976" },
-      "author-2-browser-rejected.html": { artifactSha256: "67c3fc17b64348c49a38da5aee1798306f4d1aa63377139843c2e2809b48e64d", replaySha256: "05a90bd33b978a6ea401800c5dc6bee3180404c0d5a8cdf2c03b8baf9214368a" },
+      "author-1-browser-rejected.html": { artifactSha256: "615a5d6217a9a9a952502aa33dcbeee7220c0b30ca8a19f8c1c22369bc76aace", replaySha256: "14f76a290a5185325ac07829c082516c610e4e4a3d5b30ebb26730a99018f565" },
+      "author-2-browser-rejected.html": { artifactSha256: "67c3fc17b64348c49a38da5aee1798306f4d1aa63377139843c2e2809b48e64d", replaySha256: "1f1b009cdc93f493234450f73d5b1356af649be3a42435367dd636cae7db4575" },
     },
   },
 ];

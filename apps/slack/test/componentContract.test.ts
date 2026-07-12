@@ -305,6 +305,31 @@ describe("retimeLateLoadBearingEntrances", () => {
 });
 
 describe("resolveComponentPlan", () => {
+  it("starts a repeated metric from the prior resolved continuity value", () => {
+    const metric = (id: string, startSec: number, part: string, value: number): DirectScene => ({
+      id,
+      title: id,
+      purpose: "advance a persistent metric",
+      startSec,
+      durationSec: 3,
+      components: [{ version: 1, id: part, kind: "stat-card", entityId: "score" }],
+      beats: [{
+        version: 1, id: `${part}-count`, sceneId: id, component: part,
+        kind: "count", atSec: startSec + 0.5, durationSec: 1, value,
+      }],
+    });
+    const plan = resolveComponentPlan([
+      { ...metric("one", 0, "score-a", 38), cut: { version: 1, style: "swipe", axis: "left" } },
+      metric("two", 3, "score-b", 71),
+    ]);
+    expect(plan.scenes[1]?.initialStates).toEqual([
+      { component: "score-b", state: { kind: "metric", value: 38 } },
+    ]);
+    expect(plan.scenes[1]?.beats[0]).toMatchObject({ value: 71, fromValue: 38 });
+    expect(parseComponentPlan(
+      `<script type="application/json" id="sequences-components">${JSON.stringify(plan)}</script>`,
+    )).toEqual({ plan, errors: [] });
+  });
   function planScene(beats: ComponentBeatIntentV1[], components?: SceneComponentSpecV1[]): DirectScene {
     return scene({
       id: "s1",

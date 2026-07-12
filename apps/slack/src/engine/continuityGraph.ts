@@ -36,6 +36,13 @@ export type ContinuityEntityKind =
 export const CONTINUITY_ENTITY_KINDS: ReadonlySet<ContinuityEntityKind> =
   new Set(["product-shell", "trace", "alert", "metric", "cta", "generic"]);
 
+export type ContinuityStateKind = "metric" | "button" | "progress" | "selection" | "shell";
+
+export interface ContinuityStateV1 {
+  kind: ContinuityStateKind;
+  value: number | string | boolean;
+}
+
 /** Planner-facing declaration for one entity representation in one scene. */
 export interface SceneContinuityAppearanceV1 {
   version: 1;
@@ -54,6 +61,8 @@ export interface ContinuityAppearanceV1 extends SceneContinuityAppearanceV1 {
   componentKind?: string;
   role?: "hero" | "support";
   source: "explicit" | "component" | "repeated-part" | "product-shell";
+  /** State resolved by this appearance before its scene exits. */
+  state?: ContinuityStateV1;
 }
 
 export interface ContinuityEntityV1 {
@@ -61,6 +70,8 @@ export interface ContinuityEntityV1 {
   kind: ContinuityEntityKind;
   appearances: ContinuityAppearanceV1[];
   traceableAcrossShots: number;
+  /** Last state resolved by the entity's ordered appearances. */
+  state?: ContinuityStateV1;
 }
 
 export type ContinuityHandoffMode = "shared-element" | "cut-owned" | "reacquire";
@@ -76,6 +87,10 @@ export interface ContinuityEdgeV1 {
   durationSec: number;
   mode: ContinuityHandoffMode;
   cutStyle: string;
+  /** State already resolved at the outgoing endpoint. */
+  state?: ContinuityStateV1;
+  /** True only when the host can initialize the incoming endpoint exactly. */
+  stateTransfer: boolean;
 }
 
 export interface ContinuityGraphV1 {
@@ -157,6 +172,60 @@ interface AppearanceSeed {
   componentKind?: string;
   role?: "hero" | "support";
   source: ContinuityAppearanceV1["source"];
+}
+
+function stateFromSceneComponent(
+  scene: DirectScene,
+  part: string,
+  componentKind: string | undefined,
+): ContinuityStateV1 | undefined {
+  const beats = (scene.beats ?? [])
+    .filter((beat) => beat.component === part)
+    .sort((a, b) => a.atSec - b.atSec);
+  let state: ContinuityStateV1 | undefined;
+  for (const beat of beats) {
+    if (beat.kind === "count" && typeof beat.value === "number") {
+      state = { kind: "metric", value: beat.value };
+    } else if (beat.kind === "progress" && typeof beat.value === "number") {
+      state = { kind: "progress", value: beat.value };
+    } else if (beat.kind === "select" && typeof beat.item === "number") {
+      state = { kind: "selection", value: beat.item };
+    } else if ((beat.kind === "set-state" || beat.kind === "press") && beat.toState) {
+      state = {
+        kind: componentKind === "button" || componentKind === "toggle" ? "button" : "shell",
+        value: beat.toState,
+      };
+    } else if (beat.kind === "open" || beat.kind === "close") {
+      state = { kind: "shell", value: beat.kind === "open" ? "open" : "closed" };
+    }
+  }
+  return state;
+}
+
+function appearanceAcceptsState(
+  scene: DirectScene | undefined,
+  appearance: ContinuityAppearanceV1,
+  state: ContinuityStateV1 | undefined,
+): boolean {
+  if (!scene || !state) return false;
+  const beatKinds = new Set(
+    (scene.beats ?? []).filter((beat) => beat.component === appearance.part).map((beat) => beat.kind),
+  );
+  const kind = appearance.componentKind ?? "";
+  if (state.kind === "metric") {
+    return beatKinds.has("count") || ["stat-card", "count-up"].includes(kind);
+  }
+  if (state.kind === "progress") {
+    return beatKinds.has("progress") || ["progress", "progress-ring"].includes(kind);
+  }
+  if (state.kind === "selection") {
+    return beatKinds.has("select") || ["list", "table", "kanban", "sidebar", "dropdown"].includes(kind);
+  }
+  if (state.kind === "button") {
+    return beatKinds.has("press") || beatKinds.has("set-state") || kind === "button" || kind === "toggle";
+  }
+  return beatKinds.has("set-state") || beatKinds.has("open") || beatKinds.has("close") ||
+    ["app-window", "search", "command-palette", "modal", "terminal"].includes(kind);
 }
 
 function sceneSeeds(scene: DirectScene, repeatedParts: ReadonlySet<string>): AppearanceSeed[] {
@@ -265,6 +334,10 @@ export function resolveContinuityGraph(scenes: DirectScene[]): ContinuityGraphV1
         ...(seed.componentKind ? { componentKind: seed.componentKind } : {}),
         ...(seed.role ? { role: seed.role } : {}),
         source: seed.source,
+        ...(() => {
+          const state = stateFromSceneComponent(scene, seed.part, seed.componentKind);
+          return state ? { state } : {};
+        })(),
       };
       const bucket = appearancesByEntity.get(seed.entityId) ?? [];
       if (!bucket.some((entry) => entry.sceneId === scene.id && entry.part === seed.part)) {
@@ -283,6 +356,10 @@ export function resolveContinuityGraph(scenes: DirectScene[]): ContinuityGraphV1
         kind: explicitKind ?? classifyEntity(id, ordered[0]?.componentKind),
         appearances: ordered,
         traceableAcrossShots: new Set(ordered.map((appearance) => appearance.sceneId)).size,
+        ...(() => {
+          const state = [...ordered].reverse().find((appearance) => appearance.state)?.state;
+          return state ? { state } : {};
+        })(),
       };
     })
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -333,6 +410,7 @@ export function resolveContinuityGraph(scenes: DirectScene[]): ContinuityGraphV1
       const durationSec = mode === "shared-element"
         ? Math.max(0.32, Math.min(0.72, (fromScene.cut?.entrySec ?? 0.38) + 0.14))
         : 0;
+      const stateTransfer = appearanceAcceptsState(scenes[to.sceneIndex], to, from.state);
       edges.push({
         id: `${entity.id}:${from.sceneId}->${to.sceneId}`,
         entityId: entity.id,
@@ -344,6 +422,8 @@ export function resolveContinuityGraph(scenes: DirectScene[]): ContinuityGraphV1
         durationSec: Math.round(durationSec * 1000) / 1000,
         mode,
         cutStyle,
+        ...(stateTransfer && from.state ? { state: from.state } : {}),
+        stateTransfer,
       });
     }
   }

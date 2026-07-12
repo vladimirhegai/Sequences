@@ -35,6 +35,10 @@ import { fileURLToPath } from "node:url";
 import type { DirectScene } from "./directComposition.ts";
 import { SEQUENCES_EASES } from "./cameraContract.ts";
 import { canonicalCutStyle, type CutAxis } from "./cutContract.ts";
+import {
+  resolveContinuityGraph,
+  type ContinuityStateV1,
+} from "./continuityGraph.ts";
 
 export const COMPONENT_RUNTIME_VERSION = 1;
 export const COMPONENT_RUNTIME_FILE = "sequences-components.v1.js";
@@ -540,6 +544,8 @@ export interface ResolvedComponentBeatV1 {
   ease: string;
   text?: string;
   value?: number;
+  /** Host-derived baseline resolved by the prior continuity appearance. */
+  fromValue?: number;
   item?: number;
   toState?: string;
   morphTo?: string;
@@ -564,6 +570,8 @@ export interface ResolvedComponentEntranceV1 {
 
 export interface SceneComponentPlanV1 {
   sceneId: string;
+  /** State applied before any incoming-scene beat; survives arbitrary seek. */
+  initialStates?: Array<{ component: string; state: ContinuityStateV1 }>;
   /** Declared once; every entry below uses this same visual grammar. */
   entranceFamily?: ComponentEntranceFamily;
   entrances?: ResolvedComponentEntranceV1[];
@@ -879,6 +887,13 @@ function followEase(kind: ComponentBeatKind): string {
  */
 export function resolveComponentPlan(scenes: DirectScene[]): ComponentPlanV1 {
   const planScenes: SceneComponentPlanV1[] = [];
+  const continuity = resolveContinuityGraph(scenes);
+  const incomingStates = new Map<string, ContinuityStateV1>();
+  for (const edge of continuity.edges) {
+    if (edge.stateTransfer && edge.state) {
+      incomingStates.set(`${edge.toScene}:${edge.toPart}`, edge.state);
+    }
+  }
   for (const scene of scenes) {
     const beats = scene.beats ?? [];
     const componentKinds = new Map(
@@ -1025,11 +1040,43 @@ export function resolveComponentPlan(scenes: DirectScene[]): ComponentPlanV1 {
       cache.set(index, resolved);
       return resolved;
     };
-    const resolved = candidates.map((_candidate, index) => resolveCandidate(index));
+    const stateByComponent = new Map<string, ContinuityStateV1>();
+    const initialStates = (scene.components ?? []).flatMap((component) => {
+      const state = incomingStates.get(`${scene.id}:${component.id}`);
+      if (!state) return [];
+      stateByComponent.set(component.id, state);
+      return [{ component: component.id, state }];
+    });
+    const resolved = candidates.map((_candidate, index) => resolveCandidate(index))
+      .sort((a, b) => a.startSec - b.startSec)
+      .map((beat): ResolvedComponentBeatV1 => {
+        const prior = stateByComponent.get(beat.component);
+        let next: ContinuityStateV1 | undefined;
+        if (beat.kind === "count" && typeof beat.value === "number") {
+          next = { kind: "metric", value: beat.value };
+        } else if (beat.kind === "progress" && typeof beat.value === "number") {
+          next = { kind: "progress", value: beat.value };
+        } else if (beat.kind === "select" && typeof beat.item === "number") {
+          next = { kind: "selection", value: beat.item };
+        } else if ((beat.kind === "set-state" || beat.kind === "press") && beat.toState) {
+          next = { kind: prior?.kind === "button" ? "button" : "shell", value: beat.toState };
+        }
+        if (next) stateByComponent.set(beat.component, next);
+        return {
+          ...beat,
+          ...(prior?.kind === "metric" && typeof prior.value === "number" && beat.kind === "count"
+            ? { fromValue: prior.value }
+            : {}),
+          ...(prior?.kind === "progress" && typeof prior.value === "number" && beat.kind === "progress"
+            ? { fromValue: prior.value }
+            : {}),
+        };
+      });
     const entrance = resolveSceneComponentEntrances(scene, sceneEnd);
-    if (resolved.length || entrance.entrances.length) {
+    if (resolved.length || entrance.entrances.length || initialStates.length) {
       planScenes.push({
         sceneId: scene.id,
+        ...(initialStates.length ? { initialStates } : {}),
         ...(entrance.family ? { entranceFamily: entrance.family } : {}),
         ...(entrance.entrances.length ? { entrances: entrance.entrances } : {}),
         beats: resolved,
@@ -2026,6 +2073,34 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
     if (entrances.length && !entranceFamily) {
       errors.push(`components scene[${index}] entrances need one entranceFamily`);
     }
+    const initialStates = (Array.isArray(sceneObject.initialStates) ? sceneObject.initialStates : [])
+      .flatMap((raw, stateIndex): Array<{ component: string; state: ContinuityStateV1 }> => {
+        const label = `components scene[${index}].initialStates[${stateIndex}]`;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+          errors.push(`${label} must be an object`);
+          return [];
+        }
+        const entry = raw as Record<string, unknown>;
+        const component = stableName(entry.component);
+        const state = entry.state;
+        if (!component || !state || typeof state !== "object" || Array.isArray(state)) {
+          errors.push(`${label} needs a stable component and state`);
+          return [];
+        }
+        const stateObject = state as Record<string, unknown>;
+        const kind = typeof stateObject.kind === "string" ? stateObject.kind : "";
+        const value = stateObject.value;
+        if (!["metric", "button", "progress", "selection", "shell"].includes(kind) ||
+            !(typeof value === "number" && Number.isFinite(value)) &&
+            typeof value !== "string" && typeof value !== "boolean") {
+          errors.push(`${label} has an invalid typed state`);
+          return [];
+        }
+        return [{ component, state: { kind: kind as ContinuityStateV1["kind"], value } }];
+      });
+    if (sceneObject.initialStates !== undefined && !Array.isArray(sceneObject.initialStates)) {
+      errors.push(`components scene[${index}].initialStates must be an array`);
+    }
     const beats = sceneObject.beats.flatMap((raw, beatIndex): ResolvedComponentBeatV1[] => {
       const label = `components scene[${index}].beats[${beatIndex}]`;
       if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -2076,6 +2151,7 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
         ease,
         ...(typeof beat.text === "string" && beat.text ? { text: beat.text } : {}),
         ...(finite(beat.value) ? { value: beat.value } : {}),
+        ...(finite(beat.fromValue) ? { fromValue: beat.fromValue } : {}),
         ...(finite(beat.item) ? { item: beat.item } : {}),
         ...(toState ? { toState } : {}),
         ...(morphTo ? { morphTo } : {}),
@@ -2096,12 +2172,13 @@ export function parseComponentPlan(html: string): { plan?: ComponentPlanV1; erro
         ...(finite(beat.followDepth) ? { followDepth: beat.followDepth } : {}),
       }];
     });
-    if (!beats.length && !entrances.length) {
-      errors.push(`components scene[${index}] needs beats or entrances`);
+    if (!beats.length && !entrances.length && !initialStates.length) {
+      errors.push(`components scene[${index}] needs beats, entrances, or initial states`);
     }
-    return sceneId && (beats.length || entrances.length)
+    return sceneId && (beats.length || entrances.length || initialStates.length)
       ? [{
           sceneId,
+          ...(initialStates.length ? { initialStates } : {}),
           ...(entranceFamily ? { entranceFamily } : {}),
           ...(entrances.length ? { entrances } : {}),
           beats,

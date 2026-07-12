@@ -508,9 +508,10 @@
       }
       return prefix + fixed + suffix;
     };
-    slot.textContent = format(0);
-    var proxy = { v: 0 };
-    move(timeline, proxy, { v: 0 }, {
+    var startValue = typeof beat.fromValue === "number" ? beat.fromValue : 0;
+    slot.textContent = format(startValue);
+    var proxy = { v: startValue };
+    move(timeline, proxy, { v: startValue }, {
       v: target,
       duration: beat.endSec - beat.startSec,
       ease: beat.ease,
@@ -522,6 +523,7 @@
 
   function compileProgress(timeline, el, beat) {
     var value = typeof beat.value === "number" ? clamp(beat.value, 0, 1) : 1;
+    var startValue = typeof beat.fromValue === "number" ? clamp(beat.fromValue, 0, 1) : 0;
     var duration = beat.endSec - beat.startSec;
     var ring = el.querySelector(".cmp-ring-fg");
     if (ring && typeof ring.getTotalLength === "function") {
@@ -531,8 +533,8 @@
       // markup carries the FULL final state, so without this the ring renders
       // full from t=0, snaps empty at the beat, then animates — the
       // flash-of-full tell. The inline write is what a pre-beat seek shows.
-      ring.style.strokeDashoffset = String(length);
-      move(timeline, ring, { strokeDashoffset: length }, {
+      ring.style.strokeDashoffset = String(length * (1 - startValue));
+      move(timeline, ring, { strokeDashoffset: length * (1 - startValue) }, {
         strokeDashoffset: length * (1 - value),
         duration: duration,
         ease: beat.ease,
@@ -541,8 +543,8 @@
     }
     var fill = firstMatch(el, ["[data-cmp-fill]", ":scope > i"]);
     if (!fill) fail(beat.id, "progress component has no fill element");
-    fill.style.transform = "scaleX(0)";
-    move(timeline, fill, { scaleX: 0 }, {
+    fill.style.transform = "scaleX(" + startValue + ")";
+    move(timeline, fill, { scaleX: startValue }, {
       scaleX: value,
       duration: duration,
       ease: beat.ease,
@@ -1120,6 +1122,53 @@
     var scene = root.querySelector('[data-scene="' + CSS.escape(scenePlan.sceneId) + '"]');
     if (!scene) {
       throw new Error('component plan references absent scene "' + scenePlan.sceneId + '"');
+    }
+    var initialStates = Array.isArray(scenePlan.initialStates) ? scenePlan.initialStates : [];
+    for (var initialIndex = 0; initialIndex < initialStates.length; initialIndex += 1) {
+      var initial = initialStates[initialIndex];
+      var initialEl = scene.querySelector('[data-part="' + CSS.escape(initial.component) + '"]');
+      if (!initialEl || !initial.state) continue;
+      var initialValue = initial.state.value;
+      if (initial.state.kind === "metric" && typeof initialValue === "number") {
+        var valueSlot = firstMatch(initialEl, ["[data-cmp-value]", ".cmp-value"]) || initialEl;
+        var authored = valueSlot.textContent || "";
+        var number = authored.match(/-?\d[\d,]*(?:\.\d+)?/);
+        valueSlot.textContent = number
+          ? authored.slice(0, number.index) + String(initialValue) + authored.slice(number.index + number[0].length)
+          : String(initialValue);
+      } else if ((initial.state.kind === "button" || initial.state.kind === "shell") &&
+          (typeof initialValue === "string" || typeof initialValue === "boolean")) {
+        initialEl.setAttribute("data-state", String(initialValue));
+      } else if (initial.state.kind === "progress" && typeof initialValue === "number") {
+        var initialProgress = clamp(initialValue, 0, 1);
+        var initialRing = initialEl.querySelector(".cmp-ring-fg");
+        if (initialRing && typeof initialRing.getTotalLength === "function") {
+          var initialLength = initialRing.getTotalLength();
+          initialRing.style.strokeDasharray = String(initialLength);
+          initialRing.style.strokeDashoffset = String(initialLength * (1 - initialProgress));
+        } else {
+          var initialFill = firstMatch(initialEl, ["[data-cmp-fill]", ":scope > i"]);
+          if (initialFill) initialFill.style.transform = "scaleX(" + initialProgress + ")";
+        }
+      } else if (initial.state.kind === "selection" && typeof initialValue === "number") {
+        var initialItems = childItems(initialEl);
+        if (initialItems.length) {
+          var activeIndex = clamp(Math.round(initialValue) - 1, 0, initialItems.length - 1);
+          var mechanism = activeMechanismOf(initialItems);
+          for (var itemIndex = 0; itemIndex < initialItems.length; itemIndex += 1) {
+            if (mechanism === "class") {
+              initialItems[itemIndex].classList.toggle("active", itemIndex === activeIndex);
+            } else {
+              initialItems[itemIndex].setAttribute(
+                mechanism === "data-state" ? "data-state" : "data-active",
+                mechanism === "data-state"
+                  ? (itemIndex === activeIndex ? "active" : "inactive")
+                  : (itemIndex === activeIndex ? "true" : "false"),
+              );
+            }
+          }
+        }
+      }
     }
     var entrances = compileSceneEntrances(timeline, scene, scenePlan);
     var bound = 0;

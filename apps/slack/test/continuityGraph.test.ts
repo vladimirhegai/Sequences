@@ -127,6 +127,50 @@ describe("continuity graph", () => {
     expect(graph.edges.find((edge) => edge.entityId === "product-shell")?.mode).toBe("cut-owned");
   });
 
+  it("carries resolved metric state and proves only compatible endpoint transfers", () => {
+    const metricScene = (id: string, startSec: number, part: string, value: number, kind: "stat-card" | "app-window" = "stat-card"): DirectScene => ({
+      id,
+      title: id,
+      purpose: "advance one persistent metric",
+      startSec,
+      durationSec: 3,
+      components: [{ version: 1, id: part, kind, entityId: "release-score" }],
+      beats: [{
+        version: 1,
+        id: `${part}-count`,
+        sceneId: id,
+        component: part,
+        kind: "count",
+        atSec: startSec + 0.5,
+        durationSec: 0.8,
+        value,
+      }],
+    });
+    const compatible = resolveContinuityGraph([
+      { ...metricScene("one", 0, "score-a", 38), cut: { version: 1, style: "swipe", axis: "left" } },
+      { ...metricScene("two", 3, "score-b", 71), cut: { version: 1, style: "morph", focalPartOut: "score-b", focalPartIn: "score-c" } },
+      metricScene("three", 6, "score-c", 94),
+    ]);
+    expect(compatible.entities.find((entity) => entity.id === "release-score")?.state)
+      .toEqual({ kind: "metric", value: 94 });
+    expect(compatible.edges.map((edge) => ({ value: edge.state?.value, proof: edge.stateTransfer })))
+      .toEqual([{ value: 38, proof: true }, { value: 71, proof: true }]);
+
+    const impossible = resolveContinuityGraph([
+      { ...metricScene("metric", 0, "score", 71), cut: { version: 1, style: "morph", focalPartOut: "score", focalPartIn: "shell" } },
+      {
+        id: "shell", title: "shell", purpose: "show a product shell", startSec: 3, durationSec: 3,
+        components: [{ version: 1, id: "shell", kind: "app-window", entityId: "release-score" }],
+        beats: [{
+          version: 1, id: "shell-ready", sceneId: "shell", component: "shell",
+          kind: "set-state", atSec: 3.5, durationSec: 0.4, toState: "ready",
+        }],
+      },
+    ]);
+    expect(impossible.edges[0]).toMatchObject({ stateTransfer: false });
+    expect(impossible.edges[0]?.state).toBeUndefined();
+  });
+
   it("chooses one canonical representation per shot and never emits self-edges", () => {
     const middle = scene("middle", 3, "shell-middle", {
       components: [
