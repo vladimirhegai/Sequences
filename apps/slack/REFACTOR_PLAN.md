@@ -138,6 +138,15 @@ never into more prompt adjectives.
   PROBE_LOG.md. The checkpoint remains outstanding; no second paid attempt was
   launched because the fix-first rule blocks retries on the repeated planning
   class.
+- LP-2 follow-up (`s4-lp2-state-20260712-b`, `-c`, `-d`, `-d-resume`):
+  **still inconclusive before authoring**. Fix-first stops produced three
+  deterministic repairs (semantic camera identity, no quantitatively worsened
+  atomic moment gap, metric kind reconciliation). Exact affected artifacts
+  converge and digit-leading scene slugs now canonicalize, but the final fresh
+  response still carried planner-owned two-station lens and read-hold findings.
+  No fallback, source, render,
+  temporal, or state-runtime evidence was produced; full ledger in
+  PROBE_LOG.md.
 
 ## Staffing guide — which agent runs which steps
 
@@ -455,6 +464,19 @@ handoff; morphs ship only with proven structure + state transfer.
   regression; absent-proof degradation; selection-class morph-clone capture;
   full unit/browser/root suites; replay:all; model-free demos; golden film and
   temporal strip. LP-2 remains open until an authorized paid run reaches the
+  state runtime.
+
+### S4.4 Fix LP-2 planning blockers without weakening the checkpoint
+- [x] Treat child evidence inside one framing surface and alternate
+  representations of one continuity `entityId` as one semantic camera idea;
+  revert an atomic normalizer when it quantitatively worsens an existing
+  dead-moment gap; and reconcile only the unambiguous
+  `headline + metric entity + count` declaration to `stat-card`; prefix an
+  otherwise-valid digit-leading scene slug with `scene-`.
+- Verify: exact ProofRail and MetricThread rejected artifacts replay clean;
+  SignalLedger replays to its honest pre-normalization creative gap; minimized
+  positive/negative regressions; full unit suite; `replay:all`. LP-2 remains
+  open because every follow-up was stopped at storyboard planning before the
   state runtime.
 
 ---
@@ -1071,3 +1093,24 @@ initial full-unit timeout and two full-browser timeouts were reproduced as
 parallel Chrome contention; the tests passed alone, the unit suite passed
 sequentially, and the browser suite passed after the orchestration-only timeout
 correction. No paid probe, publish, or deploy. LP-2 remains open.
+
+## S4.4 / LP-2 follow-up — 2026-07-12 — DONE (runtime checkpoint still open)
+Ran the authorized fix-first Phase-4 follow-up sequence: ProofRail
+(`s4-lp2-state-20260712-b`), SignalLedger (`...-c`), MetricThread (`...-d`),
+and one MetricThread resume. Each process was stopped when rejected storyboard
+artifacts appeared; none reached authoring/render/runtime, no fallback film was
+used, and LP-2 therefore remains inconclusive. Fixed three deterministic
+owners: camera idea identity now groups a stable framing subject or continuity
+  entity; atomic normalization rejects a numerically worse dead-moment gap even
+  when the finding class is unchanged; the exact metric-headline/count
+  conjunction lowers to `stat-card`; and digit-leading scene slugs receive a
+  bounded `scene-` prefix. Exact ProofRail/MetricThread artifacts now
+parse strictly; SignalLedger preserves its smaller genuine creative gap.
+The resume's genuine two-station lens request and read-hold miss were logged
+without inventing content. Files: `cameraBlocking.ts`,
+`componentContract.ts`, `runner/storyboardAudit.ts`, `sentinel.ts`, focused
+tests, replay expectation, PROBE_LOG, and this plan. Verification: Slack
+typecheck; full unit suite; focused camera/component/Sentinel/normalization
+tests; `replay:all` 13/0/0; model-free demo/MCP/direct/sequence-check gates.
+Root `npm test` produced five parallel-Chrome timeouts; all five affected files
+passed serially (19/19). No publish or deploy.

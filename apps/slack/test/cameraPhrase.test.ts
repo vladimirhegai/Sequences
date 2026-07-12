@@ -143,6 +143,122 @@ describe("CameraPhrase compiler", () => {
     }], plan)).toEqual([]);
   });
 
+  it("budgets local interaction evidence inside one shared product framing as one idea", () => {
+    const plan = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{
+        sceneId: "proof",
+        phrases: [
+          seed({
+            framingTarget: { kind: "region", id: "relay-surface" },
+          }),
+          seed({
+            id: "proof:proof-02:blocking",
+            phraseId: "proof-02",
+            role: "develop",
+            importance: "supporting",
+            startSec: 2.5,
+            arrivalSec: 2.8,
+            endSec: 4,
+            target: { kind: "part", id: "last-check", entityId: "cta", entityKind: "cta" },
+            framingTarget: { kind: "region", id: "relay-surface" },
+            arrivalPose: {
+              anchor: { x: 0.78, y: 0.62, name: "bottom-right" },
+              lens: "detail",
+              zoom: 1,
+            },
+            dwell: { startSec: 2.8, endSec: 3.5, readableSec: 0.7 },
+            settleUntilSec: 3,
+            nextHandoff: undefined,
+          }),
+        ],
+      }],
+    });
+    const localAction = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{ sceneId: "proof", phrases: [seed({
+        id: "proof:proof-02:blocking",
+        phraseId: "proof-02",
+        role: "develop",
+        importance: "supporting",
+        startSec: 2.5,
+        arrivalSec: 2.8,
+        endSec: 4,
+        target: { kind: "part", id: "last-check", entityId: "cta", entityKind: "cta" },
+        framingTarget: { kind: "region", id: "relay-surface" },
+        arrivalPose: {
+          anchor: { x: 0.78, y: 0.62, name: "bottom-right" },
+          lens: "detail",
+          zoom: 1,
+        },
+        dwell: { startSec: 2.8, endSec: 3.5, readableSec: 0.7 },
+        settleUntilSec: 3,
+        nextHandoff: undefined,
+      })] }],
+    }).scenes[0]!.phrases[0]!;
+    const auditPlan = {
+      ...plan,
+      scenes: [{ sceneId: "proof", phrases: [plan.scenes[0]!.phrases[0]!, localAction] }],
+    };
+    expect(auditPlan.scenes[0]!.phrases).toHaveLength(2);
+    expect(auditCameraIdeaBudgetPlan([{
+      id: "proof",
+      title: "Owner verifies",
+      purpose: "Carry the metric into one product surface and verify locally",
+      startSec: 0,
+      durationSec: 4,
+      spatialIntent: {
+        version: 1,
+        focalPart: "metric",
+        composition: "metric and local action inside relay surface",
+        relationships: ["last-check develops inside the relay-surface framing"],
+      },
+    }], auditPlan)).toEqual([]);
+  });
+
+  it("budgets two representations of one continuity entity as one idea", () => {
+    const meter = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{ sceneId: "proof", phrases: [seed({
+        target: { kind: "part", id: "score-meter", entityId: "metric", entityKind: "metric" },
+      })] }],
+    });
+    const ring = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{ sceneId: "proof", phrases: [seed({
+        id: "proof:proof-02:blocking",
+        phraseId: "proof-02",
+        startSec: 2.5,
+        arrivalSec: 3,
+        endSec: 4,
+        target: { kind: "part", id: "score-ring", entityId: "metric", entityKind: "metric" },
+        framingTarget: { kind: "region", id: "metric-resolve" },
+        nextHandoff: undefined,
+      })] }],
+    }).scenes[0]!.phrases[0]!;
+    const auditPlan = {
+      ...meter,
+      scenes: [{ sceneId: "proof", phrases: [meter.scenes[0]!.phrases[0]!, ring] }],
+    };
+    expect(auditCameraIdeaBudgetPlan([{
+      id: "proof",
+      title: "Confidence resolves",
+      purpose: "Morph one metric from a card into a ring",
+      startSec: 0,
+      durationSec: 4,
+      spatialIntent: {
+        version: 1,
+        focalPart: "score-ring",
+        composition: "one metric changes representation",
+        relationships: ["score-meter morphs into score-ring"],
+      },
+    }], auditPlan)).toEqual([]);
+  });
+
   it("collapses SignalDock-shaped direction paperwork from 14 phrases to 7 routes", () => {
     const phrase = (
       sceneId: string,

@@ -27,6 +27,7 @@ import {
   normalizeStoryboardComponentEntranceFamily,
   normalizeStoryboardComponents,
   parseComponentPlan,
+  reconcileMetricComponentKinds,
   retimeLateLoadBearingEntrances,
   resolveComponentPlan,
   trimOverBudgetComponents,
@@ -77,6 +78,32 @@ describe("normalizeStoryboardComponents", () => {
     expect(components).toEqual([
       { version: 1, id: "search-bar", kind: "search", region: "hero", role: "hero" },
     ]);
+  });
+});
+
+describe("reconcileMetricComponentKinds", () => {
+  it("upgrades only a counted metric headline to a stat card", () => {
+    const components: SceneComponentSpecV1[] = [
+      { version: 1, id: "score", kind: "headline", entityId: "metric" },
+      { version: 1, id: "title", kind: "headline", entityId: "metric" },
+      { version: 1, id: "copy", kind: "headline" },
+    ];
+    const beats: ComponentBeatIntentV1[] = [{
+      version: 1,
+      id: "score-count",
+      sceneId: "proof",
+      component: "score",
+      kind: "count",
+      atSec: 1,
+      value: 66,
+    }];
+    const result = reconcileMetricComponentKinds(components, beats);
+    expect(result.components.map((component) => component.kind)).toEqual([
+      "stat-card",
+      "headline",
+      "headline",
+    ]);
+    expect(result.normalized).toHaveLength(1);
   });
 });
 

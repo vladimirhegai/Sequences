@@ -304,6 +304,35 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "Telemetry tag: early-swap-delay.",
   },
   {
+    id: "normalize.scene-id-prefix",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/storyboardNormalization.test.ts",
+    addedBecause:
+      "MetricThread LP-2 resume (2026-07-12): an otherwise-valid storyboard " +
+      "used digit-leading kebab scene ids and spent a retry on identifier syntax. " +
+      "The host now prefixes only that complete shape with scene-; malformed ids " +
+      "remain rejected. Telemetry tag: scene-id-prefix.",
+  },
+  {
+    id: "normalize.component-kind-reconcile",
+    group: "normalize",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: [],
+    promptCostChars: 0,
+    test: "test/componentContract.test.ts",
+    addedBecause:
+      "MetricThread LP-2 (2026-07-12): the planner declared a headline with " +
+      "entityId metric and then attached count beats, spending a storyboard retry " +
+      "on a mechanical kind mismatch. The exact conjunction now upgrades only that " +
+      "component to stat-card; ordinary headlines and metrics without count beats are " +
+      "unchanged. Telemetry tag: component-kind-reconcile.",
+  },
+  {
     id: "normalize.component-trim",
     group: "normalize",
     layer: "normalize",
@@ -1783,6 +1812,8 @@ export const SENTINEL_NORMALIZER_SCOPES: Readonly<
   "normalize.move-spacing": ["storyboard"],
   "normalize.early-swap-delay": ["storyboard"],
   "normalize.component-trim": ["storyboard"],
+  "normalize.component-kind-reconcile": ["storyboard"],
+  "normalize.scene-id-prefix": ["storyboard"],
   "normalize.framing-floor-topup": ["storyboard"],
   "normalize.camera-energy-lift": ["storyboard"],
   "normalize.rack-focus-topup": ["storyboard"],

@@ -783,6 +783,29 @@ export function normalizeStoryboardComponentBeats(
   }).sort((a, b) => a.atSec - b.atSec);
 }
 
+/** Repair the one unambiguous metric declaration mismatch without a paid retry. */
+export function reconcileMetricComponentKinds(
+  components: SceneComponentSpecV1[],
+  beats: ComponentBeatIntentV1[],
+): { components: SceneComponentSpecV1[]; normalized: string[] } {
+  const counted = new Set(
+    beats.filter((beat) => beat.kind === "count").map((beat) => beat.component),
+  );
+  const normalized: string[] = [];
+  const reconciled = components.map((component) => {
+    if (
+      component.kind !== "headline" || component.entityId !== "metric" ||
+      !counted.has(component.id)
+    ) return component;
+    normalized.push(
+      `component-kind-reconcile: ${component.id} headline -> stat-card ` +
+        `(metric entity owns a typed count beat)`,
+    );
+    return { ...component, kind: "stat-card" as const };
+  });
+  return { components: reconciled, normalized };
+}
+
 /* ------------------------------------------------------------- resolution */
 
 function beatDuration(beat: ComponentBeatIntentV1): number {

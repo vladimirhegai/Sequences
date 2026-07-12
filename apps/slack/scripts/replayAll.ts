@@ -33,7 +33,7 @@ const FIXTURES: Fixture[] = [
     id: "PulseForge",
     jobId: "architecture-stress-2-20260711",
     expectedRaw: {
-      "storyboard-1-rejected.raw.txt": { artifactSha256: "7f7633ca5c786dc18088681428f50cefbef46f6f2aa68e72ca314a181c3b0e26", replaySha256: "c8f5cc34e6a50b3d84c1bce17789abd27c2c464d15d5bb55c0d71a3db100c8c7", outcome: "rejected" },
+      "storyboard-1-rejected.raw.txt": { artifactSha256: "7f7633ca5c786dc18088681428f50cefbef46f6f2aa68e72ca314a181c3b0e26", replaySha256: "4d2b920fe4d557ce9e4e0c0909b0858884d79f22c7adbda5e129222204826222", outcome: "rejected" },
     },
     expectedSource: {},
   },

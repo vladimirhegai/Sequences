@@ -426,14 +426,24 @@ export function auditCameraIdeaBudgetPlan(
     // example, a contextual arrival followed by a closer read). Those
     // phrases should remain executable, but they are still one idea for this
     // gate. Preserve first-appearance order for deterministic diagnostics.
-    const seenIdeas = new Set<string>();
+    const seenIdeas: CameraPhraseV1[] = [];
     const routes = candidateRoutes.filter((phrase) => {
-      const key = `${phrase.target.kind}:${phrase.target.id}|` +
-        (phrase.framingTarget
-          ? `${phrase.framingTarget.kind}:${phrase.framingTarget.id}`
-          : "");
-      if (seenIdeas.has(key)) return false;
-      seenIdeas.add(key);
+      // A framing target is the semantic camera subject. Child evidence can
+      // change locally inside that stable product surface without becoming a
+      // second lens idea (for example, a metric followed by a button press in
+      // one app window). Phrases without contextual framing remain keyed by
+      // their directly addressed target.
+      const subject = phrase.framingTarget ?? phrase.target;
+      const alreadySeen = seenIdeas.some((seen) => {
+        const seenSubject = seen.framingTarget ?? seen.target;
+        return Boolean(
+          phrase.target.entityId && phrase.target.entityId === seen.target.entityId
+        ) || (
+          subject.kind === seenSubject.kind && subject.id === seenSubject.id
+        );
+      });
+      if (alreadySeen) return false;
+      seenIdeas.push(phrase);
       return true;
     });
     if (routes.length <= 1) continue;

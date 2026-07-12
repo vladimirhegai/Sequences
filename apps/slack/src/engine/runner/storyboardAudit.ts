@@ -52,6 +52,7 @@ import {
   normalizeStoryboardComponentBeats,
   normalizeStoryboardComponentEntranceFamily,
   normalizeStoryboardComponents,
+  reconcileMetricComponentKinds,
   resolveComponentPlan,
   retimeLateLoadBearingEntrances,
   trimOverBudgetComponents,
@@ -109,6 +110,36 @@ import {
   extractStoryboardSource,
   tagged,
 } from "./parse.ts";
+
+/** Detect new finding classes and quantitatively worsened dead-moment gaps. */
+export function normalizationIntroducedFindings(
+  normalized: string[],
+  original: string[],
+): string[] {
+  const classKey = (finding: string): string => finding.replace(/\d+(?:\.\d+)?/g, "#");
+  const momentGap = (finding: string): number | undefined => {
+    if (!finding.startsWith("storyboard/moments: no planned moment between")) return undefined;
+    const match = finding.match(/\((\d+(?:\.\d+)?)s\)\s*[—-]/);
+    return match ? Number(match[1]) : undefined;
+  };
+  const originalKeys = new Set(original.map(classKey));
+  const originalGapMax = Math.max(
+    ...original.map(momentGap).filter((value): value is number => value !== undefined),
+    -Infinity,
+  );
+  return normalized.filter((finding) =>
+    !originalKeys.has(classKey(finding)) ||
+    (momentGap(finding) ?? -Infinity) > originalGapMax + 0.01
+  );
+}
+
+/** Prefix an otherwise-valid digit-leading scene slug; reject all other junk. */
+export function normalizeStoryboardSceneId(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const id = value.trim();
+  if (/^[a-z][a-z0-9-]{0,63}$/.test(id)) return id;
+  return /^[0-9][a-z0-9-]{0,57}$/.test(id) ? `scene-${id}` : id;
+}
 
 /**
  * Normalize a scene's optional world-layout station map. Kept only when the
@@ -499,10 +530,17 @@ function parseStoryboard(raw: string): DirectScene[] {
   // clamped into the contract range — a model never spends a paid attempt on
   // addition the host can do.
   let rebasedCursor = 0;
+  let reconciledMetricKinds = 0;
+  let prefixedSceneIds = 0;
   const scenes = normalizedValue.map((item, index) => {
     if (!item || typeof item !== "object") throw new Error(`storyboard_json[${index}] must be an object`);
     const scene = item as Record<string, unknown>;
-    const id = typeof scene.id === "string" ? scene.id.trim() : "";
+    const rawId = typeof scene.id === "string" ? scene.id.trim() : "";
+    const id = normalizeStoryboardSceneId(rawId);
+    if (id !== rawId) {
+      prefixedSceneIds += 1;
+      process.stderr.write(`[storyboard] sentinel-normalized: scene-id-prefix: ${rawId} -> ${id}\n`);
+    }
     const title = typeof scene.title === "string" ? scene.title.trim() : "";
     const purpose = typeof scene.purpose === "string" ? scene.purpose.trim() : "";
     const authoredStart = Number(scene.startSec);
@@ -536,7 +574,7 @@ function parseStoryboard(raw: string): DirectScene[] {
     const gradeShift = normalizeStoryboardGradeShift(scene.gradeShift, authoredFrame);
     const camera = normalizeStoryboardCameraIntent(scene.camera, authoredFrame);
     const worldLayout = normalizeWorldLayout(scene.worldLayout, Boolean(camera?.path.length));
-    const components = normalizeStoryboardComponents(scene.components);
+    let components = normalizeStoryboardComponents(scene.components);
     const componentEntranceFamily = normalizeStoryboardComponentEntranceFamily(
       scene.componentEntranceFamily,
     );
@@ -564,6 +602,12 @@ function parseStoryboard(raw: string): DirectScene[] {
       { sceneId: id, ...authoredFrame },
       components,
     );
+    const metricKinds = reconcileMetricComponentKinds(components, beats);
+    components = metricKinds.components;
+    reconciledMetricKinds += metricKinds.normalized.length;
+    for (const note of metricKinds.normalized) {
+      process.stderr.write(`[storyboard] sentinel-normalized: ${note}\n`);
+    }
     const interactions = normalizeStoryboardInteractionIntents(scene.interactions, {
       sceneId: id,
       ...authoredFrame,
@@ -656,14 +700,25 @@ function parseStoryboard(raw: string): DirectScene[] {
       ...(spatialIntent ? { spatialIntent } : {}),
       ...(interactions.length ? { interactions } : {}),
       ...(moments.length ? { moments } : {}),
-      ...(Array.isArray(scene.sentinelNormalizations)
+      ...(Array.isArray(scene.sentinelNormalizations) || metricKinds.normalized.length
         ? {
-            sentinelNormalizations: scene.sentinelNormalizations
-              .filter((entry): entry is string => typeof entry === "string"),
+            sentinelNormalizations: [
+              ...(Array.isArray(scene.sentinelNormalizations)
+                ? scene.sentinelNormalizations
+                  .filter((entry): entry is string => typeof entry === "string")
+                : []),
+              ...metricKinds.normalized,
+            ],
           }
         : {}),
     };
   });
+  if (reconciledMetricKinds) {
+    recordSentinelNormalization("component-kind-reconcile", reconciledMetricKinds);
+  }
+  if (prefixedSceneIds) {
+    recordSentinelNormalization("scene-id-prefix", prefixedSceneIds);
+  }
   const usedInteractionIds = new Set<string>();
   const deduped = scenes.map((scene) => ({
     ...scene,
@@ -2198,15 +2253,13 @@ export function parseStoryboardResponse(
     // 2026-07-06 probe lesson: the old commit-only-if-fully-clean rule meant
     // normalizations never committed (every probe plan also carried a moments
     // deficit) and the model had to re-fix host-fixable arithmetic each retry.
-    const classKey = (finding: string): string => finding.replace(/\d+(?:\.\d+)?/g, "#");
     const originalPlan = topUpMoments(preNormalization);
     const originalErrors = resolveErrors(originalPlan);
-    const originalKeys = new Set(originalErrors.map(classKey));
-    const introduced = errors.filter((finding) => !originalKeys.has(classKey(finding)));
+    const introduced = normalizationIntroducedFindings(errors, originalErrors);
     if (introduced.length) {
       process.stderr.write(
-        `[storyboard] sentinel-normalization reverted (it would mint a new finding ` +
-          `class: ${introduced[0]})\n`,
+        `[storyboard] sentinel-normalization reverted (it would mint or worsen a ` +
+          `finding: ${introduced[0]})\n`,
       );
       storyboard = originalPlan;
       errors = originalErrors;

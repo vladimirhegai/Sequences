@@ -175,3 +175,44 @@ No fresh stress probe completed as a clean one-attempt motion-quality pass.
 Exact-artifact fixes converged, but the final production-shaped run demonstrated
 that camera/blocking/layout/repair ownership is too coupled for another local
 patch cycle. Continue with [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md).
+
+## 2026-07-12 Phase 4 LP-2 follow-up (fix-first sequence)
+
+Four cache-distinct metric-continuity probes were launched with OpenRouter,
+fallback disabled, continuity enabled, audit composition, MCP, render, and
+temporal requested. Every run was stopped as soon as persisted rejection
+artifacts became visible; none reached source authoring or runtime, so LP-2
+remains inconclusive.
+
+- `s4-lp2-state-20260712-b` (ProofRail, 31% -> 59% -> 88%): stopped after two
+  storyboard rejections. Both repeated `camera/idea-budget` for one continuity
+  metric represented as `score-meter` then `score-ring`; the same audit also
+  miscounted local button evidence inside an already-framed app surface. Fixed
+  at the semantic idea owner: phrases now share an idea when they share a
+  contextual framing surface or continuity `entityId`. Both exact artifacts
+  replay strictly clean.
+- `s4-lp2-state-20260712-c` (SignalLedger, 34% -> 63% -> 92%): stopped after
+  two storyboard rejections on genuine dead-moment gaps. Exact replay exposed
+  a deterministic secondary defect: an atomic camera retime worsened the
+  honest 3.0s gap to 5.5s but committed because both findings had the same
+  digit-stripped class. Atomic normalization now reverts quantitatively
+  worsened moment gaps. The exact artifact honestly replays to the original
+  3.0s creative finding; no motion was invented to hide it.
+- `s4-lp2-state-20260712-d` (MetricThread, 37% -> 66% -> 93%): stopped after
+  one storyboard rejection because two `entityId: metric` headlines carried
+  typed `count` beats. Added the bounded L2 conjunction
+  `headline + metric entity + count -> stat-card`; ordinary headlines and
+  metric headlines without count beats are negative controls. The exact
+  artifact now replays strictly clean.
+- `s4-lp2-state-20260712-d-resume`: a fresh provider response was returned
+  instead of reusing the accepted paid artifact. It was stopped after attempt
+  1 with digit-leading scene IDs, a genuine two-station camera idea, and a
+  reading-hold finding. The mechanical IDs now receive a bounded `scene-`
+  prefix; the lens choice and reading choreography require planner/Phase-8
+  decisions, so no deterministic content was invented for those findings.
+
+No fallback film, source attempt, MP4, or temporal strip was produced in this
+follow-up sequence. Verification after the fixes: Slack typecheck; focused
+camera/component/Sentinel/normalization tests; full Slack unit suite; exact
+replays 13/0/0. Root `npm test` had five parallel-Chrome timeouts; all five
+files passed serially (19/19), matching the documented contention class.
