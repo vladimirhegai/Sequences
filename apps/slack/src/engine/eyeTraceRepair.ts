@@ -6,7 +6,8 @@ import {
 } from "./eyeTrace.ts";
 import { resolveComponentPlan, type ComponentBeatKind } from "./componentContract.ts";
 import { EVIDENCE_AFTER_SEC, EVIDENCE_BEFORE_SEC } from "./storyboardMoments.ts";
-import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { resolveTimeRampPlan } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 
 /** A tiny shift may turn two related arrivals into one intentional ensemble. */
 const MAX_ENSEMBLE_SHIFT_SEC = 0.3;
@@ -129,7 +130,8 @@ export function correctEyeTracePingPong(
       new Map(scene.beats.map((beat) => [beat.id, beat])),
     ]),
   );
-  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
 
   for (const finding of evidence) {
     const sceneIndex = storyboard.findIndex((scene) => scene.id === finding.sceneId);

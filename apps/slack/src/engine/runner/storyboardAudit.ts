@@ -37,8 +37,8 @@ import {
   normalizeStoryboardTimeRamp,
   resolveTimeRampPlan,
   timeRampHoldWindow,
-  warpInverseOf,
 } from "../timeRamp.ts";
+import { sourceTime, timeConversionService } from "../time.ts";
 import {
   auditComponentComplexity,
   auditSurfaceExits,
@@ -864,7 +864,8 @@ export function deriveDiveWindows(
   if (!storyboard.some((scene) => scene.camera?.path.some((move) => move.move === "dive"))) {
     return { storyboard, normalized };
   }
-  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
   const resolvedBeats = new Map(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
@@ -1089,7 +1090,8 @@ export function autoStyleHeadlineReveals(
   const resolvedBeats = new Map(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );
-  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
 
   // First pass: the single strongest assemble candidate across the film — the
   // latest lock among headline type beats on a primary moment with a provable hold.

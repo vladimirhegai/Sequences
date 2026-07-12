@@ -29,7 +29,7 @@
  * count/progress/highlight beat satisfies both.
  *
  * All windows are judged in VIEWER (output) time: a timeRamp dip stretches
- * the content seconds it covers, so spans convert through `warpInverseOf`
+ * the content seconds it covers, so spans convert through the time service
  * before comparison, like the temporal judge and motion-density passes.
  */
 import {
@@ -45,9 +45,9 @@ import {
   EVIDENCE_BEFORE_SEC,
   FINAL_RESOLVE_ALLOWANCE_SEC,
 } from "./storyboardMoments.ts";
-import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { resolveTimeRampPlan } from "./timeRamp.ts";
 import type { DirectScene } from "./directComposition.ts";
-import { cascadeRetime, duration } from "./time.ts";
+import { cascadeRetime, duration, sourceTime, timeConversionService } from "./time.ts";
 
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
@@ -344,7 +344,8 @@ export function sceneIntroductionTimes(scene: DirectScene): number[] {
 export function auditPacing(storyboard: DirectScene[]): string[] {
   const findings: string[] = [];
   // Content seconds → viewer seconds (identity when no timeRamp is declared).
-  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
   const viewerSpan = (fromSec: number, toSec: number): number =>
     Math.max(0, toViewer(toSec) - toViewer(fromSec));
   const resolvedBeats = new Map<string, ResolvedComponentBeatV1[]>(
@@ -1571,7 +1572,8 @@ export function stretchMarginalPacingMisses(
   storyboard: DirectScene[],
 ): { storyboard: DirectScene[]; normalized: string[] } {
   const normalized: string[] = [];
-  const toViewer = warpInverseOf(resolveTimeRampPlan(storyboard));
+  const conversion = timeConversionService(resolveTimeRampPlan(storyboard));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
   const resolvedBeatsByScene = new Map<string, ResolvedComponentBeatV1[]>(
     resolveComponentPlan(storyboard).scenes.map((scene) => [scene.sceneId, scene.beats]),
   );

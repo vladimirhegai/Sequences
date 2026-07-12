@@ -15,7 +15,8 @@
  * follow motion-density applicability (3+ scenes, 10s+ films).
  */
 import { analyzeMotionDensity, type MotionActivity, type MotionDensityReport } from "./motionDensity.ts";
-import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { resolveTimeRampPlan } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import type { DirectScene } from "./directComposition.ts";
 
 export type MomentImportance = "primary" | "supporting";
@@ -223,7 +224,8 @@ export function validatePlannedMoments(
     // they run in output time: a speed-ramp dip stretches the seconds around
     // a moment. Moment atSec itself stays content time everywhere else
     // (evidence binding compares it against timeline activities).
-    const viewerTimeOf = warpInverseOf(resolveTimeRampPlan(scenes));
+    const conversion = timeConversionService(resolveTimeRampPlan(scenes));
+    const viewerTimeOf = (value: number): number => conversion.toViewer(sourceTime(value));
     errors.push(...intervalErrors(
       moments.map((moment) => viewerTimeOf(moment.atSec)).sort((a, b) => a - b),
       durationSec,
@@ -498,7 +500,8 @@ export function resolveMomentContract(
     if (allDeclared && bound.length >= 2) {
       // Viewer-time conversion, matching validatePlannedMoments: the dead-
       // interval contract is about watched seconds, not timeline seconds.
-      const viewerTimeOf = warpInverseOf(resolveTimeRampPlan(scenes));
+      const conversion = timeConversionService(resolveTimeRampPlan(scenes));
+      const viewerTimeOf = (value: number): number => conversion.toViewer(sourceTime(value));
       errors.push(...intervalErrors(
         bound
           .filter((moment) => moment.origin !== "synthesized")
@@ -703,7 +706,8 @@ export function topUpStoryboardMoments(
   // adding moments there would only *create* a floor obligation.
   if (!applies && !declared.length) return { storyboard: scenes, added: [] };
 
-  const viewerTimeOf = warpInverseOf(resolveTimeRampPlan(scenes));
+  const conversion = timeConversionService(resolveTimeRampPlan(scenes));
+  const viewerTimeOf = (value: number): number => conversion.toViewer(sourceTime(value));
   const anchors = collectMomentAnchors(scenes, viewerTimeOf, fullCameraMoves);
   const used = new Set<MomentAnchor>();
   const declaredViewerTimes = declared

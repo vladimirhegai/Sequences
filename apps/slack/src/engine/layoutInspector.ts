@@ -61,8 +61,8 @@ import {
   TIME_RUNTIME_FILE,
   parseTimeRampPlan,
   timeRampRuntimeSource,
-  warpInverseOf,
 } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import { FX_RUNTIME_FILE, fxRuntimeSource } from "./fxContract.ts";
 import { ASSET_RUNTIME_FILE, assetRuntimeSource } from "./assetRuntime.ts";
 import { GRADE_SHIFT_DURATION_SEC } from "./gradeShift.ts";
@@ -3977,7 +3977,8 @@ export async function inspectDirectComposition(
     // times, and suppression windows. When the film ramps, the registered
     // timeline is the warped master (output time), so every PHYSICAL seek
     // converts through warpInverse here and nowhere else.
-    const toOutputTime = warpInverseOf(parseTimeRampPlan(draft.html).plan);
+    const conversion = timeConversionService(parseTimeRampPlan(draft.html).plan);
+    const toOutputTime = (value: number): number => conversion.toViewer(sourceTime(value));
     const seekContent = (time: number): Promise<void> => seekTo(page, toOutputTime(time));
     await page.addScriptTag({ content: loadBrowserAudit("layout-audit.browser.js") });
 

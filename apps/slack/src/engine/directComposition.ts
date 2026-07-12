@@ -53,9 +53,9 @@ import {
 import {
   parseTimeRampPlan,
   resolveTimeRampPlan,
-  warpInverseOf,
   type SceneTimeRampIntentV1,
 } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import type { SceneGradeShiftV1 } from "./gradeShift.ts";
 import {
   resolveComponentPlan,
@@ -1442,7 +1442,8 @@ export async function generateDirectThumbnails(
     // convert before the physical seek. The scene-visibility toggle below is
     // safe with the converted time: the warp maps each scene window onto
     // itself monotonically, so the output time stays inside the same scene.
-    const toOutputTime = warpInverseOf(parseTimeRampPlan(current.html).plan);
+    const conversion = timeConversionService(parseTimeRampPlan(current.html).plan);
+    const toOutputTime = (value: number): number => conversion.toViewer(sourceTime(value));
     const compositionId = current.manifest.compositionId;
     const seekTo = (contentTime: number): Promise<void> =>
       page.evaluate(

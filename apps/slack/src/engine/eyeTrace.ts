@@ -23,7 +23,8 @@
  * thresholds are unit-testable without a browser.
  */
 import { canonicalCutStyle } from "./cutContract.ts";
-import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { resolveTimeRampPlan } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import type { DirectScene } from "./directComposition.ts";
 import type {
   BoundaryPartMeasurement,
@@ -235,7 +236,8 @@ export interface PingPongCandidate {
  */
 export function pingPongCandidates(scenes: DirectScene[]): PingPongCandidate[] {
   const candidates: PingPongCandidate[] = [];
-  const toViewer = warpInverseOf(resolveTimeRampPlan(scenes));
+  const conversion = timeConversionService(resolveTimeRampPlan(scenes));
+  const toViewer = (value: number): number => conversion.toViewer(sourceTime(value));
   for (const scene of scenes) {
     const beats = [...(scene.beats ?? [])].sort((a, b) => a.atSec - b.atSec);
     const sceneEnd = scene.startSec + scene.durationSec;

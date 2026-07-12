@@ -359,7 +359,7 @@ Goal (handoff §3): branded `SourceTime` / `ViewerTime` / `Duration` /
 - Verify: 82 pacing tests + RelayGuard/PulseForge exact replays byte-stable.
 
 ### S2.3 Migrate audits off ad-hoc arithmetic
-- [ ] `pacingAudit.ts`, interaction audit, and motionDensity read through the
+- [x] `pacingAudit.ts`, interaction audit, and motionDensity read through the
   time service only (grep-clean: no raw ramp math outside `time.ts`).
 - Verify: full unit suite; replay:all.
 
@@ -855,3 +855,20 @@ time-ramp browser test; `replay:all` (13/0/0), including RelayGuard and
 PulseForge byte-stable; deterministic `film:demo` render and 100-frame temporal
 strip inspected with all four cuts intact and no eligible dead-frame window.
 No paid probe, publish, or deploy.
+
+## S2.3 — 2026-07-11 — DONE
+Migrated every source-to-viewer conversion consumer onto the branded
+`timeConversionService`: pacing and interaction/eye-trace audits, eye-trace
+repair, motion density, storyboard moments and normalization, direct capture,
+layout sampling, and temporal inspection. Low-level `warpOf`/`warpInverseOf`
+usage is now grep-clean outside the numerical kernel in `timeRamp.ts` and its
+single adapter in `time.ts`; ramp solving/parsing remains with the existing
+contract owner. Files: `pacingAudit.ts`, `eyeTrace.ts`, `eyeTraceRepair.ts`,
+`motionDensity.ts`, `storyboardMoments.ts`, `runner/storyboardAudit.ts`,
+`directComposition.ts`, `layoutInspector.ts`, `temporalInspector.ts`, this
+plan. Verification: Slack typecheck; focused audit/time/direct suites (7 files,
+319 tests); full Slack unit suite (76 files / 1,293 tests); `replay:all`
+(13/0/0); time-ramp seek and rendered temporal-judge browser tests (2/2).
+No paid probe, publish, or deploy. One initial browser command was invoked from
+the repository root and found no matching project; rerunning from `apps/slack`
+passed, so this was an operator command-location error, not a test failure.

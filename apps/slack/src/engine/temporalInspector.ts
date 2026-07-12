@@ -22,7 +22,8 @@ import { findBrowserExecutable } from "./render.ts";
 import { launchHeadlessBrowser } from "./browserLifecycle.ts";
 import { loadDirectComposition } from "./directComposition.ts";
 import { resolveCutPlan, type CutIntentV1 } from "./cutContract.ts";
-import { parseTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { parseTimeRampPlan } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import {
   analyzeRenderedDeadFrames,
   captureContinuousMotionEvidence,
@@ -273,7 +274,8 @@ export async function reportTemporalEvidence(
   // the warped master (output time) when the film ramps, so the physical
   // seek converts. Strip labels carry both bases when they differ.
   const timeRampPlan = parseTimeRampPlan(current.html).plan;
-  const toOutputTime = warpInverseOf(timeRampPlan);
+  const conversion = timeConversionService(timeRampPlan);
+  const toOutputTime = (value: number): number => conversion.toViewer(sourceTime(value));
   const frameLabel = (time: number): string => {
     const viewer = toOutputTime(time);
     return Math.abs(viewer - time) > 0.01

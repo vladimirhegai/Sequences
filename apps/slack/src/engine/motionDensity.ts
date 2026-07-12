@@ -1,7 +1,8 @@
 import { resolveCutPlan } from "./cutContract.ts";
 import { CAMERA_FULL_MOVES, resolveCameraPlan } from "./cameraContract.ts";
 import { resolveComponentPlan } from "./componentContract.ts";
-import { resolveTimeRampPlan, warpInverseOf } from "./timeRamp.ts";
+import { resolveTimeRampPlan } from "./timeRamp.ts";
+import { sourceTime, timeConversionService } from "./time.ts";
 import type { DirectScene } from "./directComposition.ts";
 
 export type MotionActivityKind = "major" | "medium" | "small";
@@ -541,7 +542,8 @@ export function analyzeMotionDensity(
   // `activities` on the report stays content time (moment binding compares
   // declared atSec against timeline evidence); only the gap math converts.
   // Scene boundaries are warp fixed points, so scene windows need no change.
-  const viewerTimeOf = warpInverseOf(resolveTimeRampPlan(scenes));
+  const conversion = timeConversionService(resolveTimeRampPlan(scenes));
+  const viewerTimeOf = (value: number): number => conversion.toViewer(sourceTime(value));
   const viewerActivities = activities.map((activity) => ({
     ...activity,
     startSec: round(viewerTimeOf(activity.startSec)),
