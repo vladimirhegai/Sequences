@@ -41,10 +41,13 @@ import {
 } from "./continuityGraph.ts";
 import {
   buildCameraBlockingEvidence,
-  parseCameraBlockingPlan,
   type CameraBlockingEvidenceV1,
-  type CameraBlockingPlanV1,
 } from "./cameraBlocking.ts";
+import {
+  cameraPhraseTolerances,
+  parseCameraPhrasePlan,
+  type CameraPhrasePlanV1,
+} from "./cameraPhrase.ts";
 import {
   ENVIRONMENT_RUNTIME_FILE,
   environmentKitSource,
@@ -1900,7 +1903,7 @@ async function captureVisionCriticEvidence(
   browser: import("puppeteer-core").Browser,
   page: import("puppeteer-core").Page,
   storyboard: DirectScene[],
-  blockingPlan: CameraBlockingPlanV1 | undefined,
+  blockingPlan: CameraPhrasePlanV1 | undefined,
   seekContent: (time: number) => Promise<void>,
   publishVisualReview: boolean,
 ): Promise<VisionCriticEvidenceV1 | undefined> {
@@ -2348,8 +2351,9 @@ export async function auditCameraBlockingLandings(
   draft: DirectCompositionDraft,
   seekContent: (time: number) => Promise<void>,
 ): Promise<DirectLayoutIssue[]> {
-  const plan = parseCameraBlockingPlan(draft.html);
+  const plan = parseCameraPhrasePlan(draft.html);
   if (!plan?.enabled) return [];
+  const tolerances = cameraPhraseTolerances(plan);
   const sceneEndById = new Map(draft.storyboard.map((scene) => [
     scene.id,
     scene.startSec + scene.durationSec,
@@ -2372,8 +2376,11 @@ export async function auditCameraBlockingLandings(
     // the declared dwell. A target that never becomes readable still fails at
     // the end of that same bounded window.
     const sampleAt = Math.min(
-      sceneEnd - 0.08,
-      Math.max(block.arrivalSec + 0.08, block.dwell.endSec - 0.08),
+      sceneEnd - tolerances.landingSampleInsetSec,
+      Math.max(
+        block.arrivalSec + tolerances.landingSampleInsetSec,
+        block.dwell.endSec - tolerances.landingSampleInsetSec,
+      ),
     );
     if (sampleAt <= 0) continue;
     await seekContent(sampleAt);
@@ -2517,14 +2524,17 @@ export async function auditCameraBlockingLandings(
       part: block.target.id,
       framing: block.framingTarget ?? null,
     });
-    const visible = !measured.missing && measured.opacity >= 0.35 && measured.visibleFraction >= 0.85;
+    const visible = !measured.missing && measured.opacity >= tolerances.opacityMin &&
+      measured.visibleFraction >= tolerances.visibleFractionMin;
     // Browser geometry is fractional and the runtime solver intentionally
     // accepts a 10% landing band. Mirror that contract here so a 1.4% measured
     // tile does not fail a 1.5% semantic floor while the runtime reports the
     // same landing as in-range. Upper bounds stay exact: oversize framing is a
     // genuine hierarchy defect, not sub-pixel noise.
-    const subjectInRange = measured.occupancyFraction >= block.occupancy.min * 0.9 - 1e-6 &&
-      measured.occupancyFraction <= block.occupancy.max + 1e-6;
+    const subjectInRange = measured.occupancyFraction >=
+        block.occupancy.min * tolerances.occupancyMinFactor - 1e-6 &&
+      measured.occupancyFraction <=
+        block.occupancy.max * tolerances.occupancyMaxFactor + 1e-6;
     // An ensemble phrase (declared framingTarget) is satisfied when the camera
     // frames the contextual station inside ITS occupancy contract and the
     // subject stays fully readable. The runtime deliberately caps zoom so the
@@ -2534,8 +2544,10 @@ export async function auditCameraBlockingLandings(
     const ensembleInRange = Boolean(
       block.framingTarget && block.framingOccupancy &&
       measured.framingOccupancyFraction >= 0 && !measured.framingCollapsed &&
-      measured.framingOccupancyFraction >= block.framingOccupancy.min * 0.9 - 1e-6 &&
-      measured.framingOccupancyFraction <= block.framingOccupancy.max + 1e-6,
+      measured.framingOccupancyFraction >=
+        block.framingOccupancy.min * tolerances.occupancyMinFactor - 1e-6 &&
+      measured.framingOccupancyFraction <=
+        block.framingOccupancy.max * tolerances.occupancyMaxFactor + 1e-6,
     );
     const inRange = subjectInRange || ensembleInRange;
     if (visible && inRange) continue;
@@ -4369,6 +4381,7 @@ export async function inspectDirectComposition(
       ]),
     );
     const boundaryInventories: DirectBoundaryInventory[] = [];
+    const cameraPhrasePlan = parseCameraPhrasePlan(draft.html);
     for (let index = 0; index < draft.storyboard.length - 1; index += 1) {
       const from = draft.storyboard[index]!;
       const to = draft.storyboard[index + 1]!;
@@ -4387,7 +4400,7 @@ export async function inspectDirectComposition(
       // The declared attention/focal endpoints must survive the measurement
       // cap: they are what cut degradation diagnostics and the eye-trace
       // audit are ABOUT.
-      const attention = resolveBoundaryAttention(from, to);
+      const attention = resolveBoundaryAttention(from, to, cameraPhrasePlan);
       await seekContent(outgoingAt);
       const outgoing = await measureBoundaryParts(page, from.id, [
         ...new Set([
@@ -4484,6 +4497,7 @@ export async function inspectDirectComposition(
     if (eyeTrace !== "off") {
       for (const jump of scoreEyeTraceBoundaries({
         scenes: draft.storyboard,
+        cameraPhrases: cameraPhrasePlan,
         boundaries: boundaryInventories,
         frameWidth: width,
         frameHeight: height,
@@ -4944,7 +4958,7 @@ export async function inspectDirectComposition(
           )
         ),
       );
-    const blockingPlan = parseCameraBlockingPlan(draft.html);
+    const blockingPlan = parseCameraPhrasePlan(draft.html);
     const graphOwnedCamera = blockingPlan?.enabled === true;
     if (!graphOwnedCamera) {
       for (const scenePlan of parseCameraPlan(draft.html).plan?.scenes ?? []) {
@@ -5513,7 +5527,7 @@ export async function inspectDirectComposition(
           warnings.push(formatIssue(issue));
         }
 
-        const blockingPlan = parseCameraBlockingPlan(draft.html);
+        const blockingPlan = parseCameraPhrasePlan(draft.html);
         const continuityGraph = parseContinuityGraph(draft.html);
         if (blockingPlan && continuityGraph) {
           cameraBlockingEvidence = buildCameraBlockingEvidence(
@@ -5633,7 +5647,7 @@ export async function inspectDirectComposition(
           browser,
           page,
           draft.storyboard,
-          parseCameraBlockingPlan(draft.html),
+          parseCameraPhrasePlan(draft.html),
           seekContent,
           options.publishVisualReview !== false,
         );

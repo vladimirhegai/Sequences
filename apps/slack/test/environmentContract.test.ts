@@ -71,6 +71,17 @@ describe("environment plan", () => {
         maxNormalizedAcceleration: 1,
         maxNormalizedJerk: 1,
       },
+      tolerances: {
+        opacityMin: 0.35,
+        visibleFractionMin: 0.85,
+        occupancyMinFactor: 0.9,
+        occupancyMaxFactor: 1.1,
+        anchorErrorMax: 0.14,
+        restSpeedMax: 0.018,
+        readableDwellMinSec: 0.35,
+        landingSampleInsetSec: 0.08,
+        segmentMatchSec: 0.02,
+      },
       scenes: [{
         sceneId: "desktop",
         phrases: [

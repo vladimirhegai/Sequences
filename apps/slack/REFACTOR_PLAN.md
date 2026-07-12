@@ -386,7 +386,7 @@ collapse zero-distance/same-target phrases; budget visual ideas.
   regression on exact replays.
 
 ### S3.3 QA consumes phrases, not re-derived geometry
-- [ ] layoutInspector's camera-arrival/occupancy checks and eyeTrace read the
+- [x] layoutInspector's camera-arrival/occupancy checks and eyeTrace read the
   same compiled phrases and tolerances the runtime executes (kill the
   QA/runtime occupancy mismatch class from GatePilot).
 - Verify: targeted browser tests + one exact-artifact replay per seed fixture.
@@ -903,4 +903,25 @@ Verification: Slack typecheck; focused phrase/blocking/normalizer/Sentinel
 tests (34/34); exact `replay:all` (13/0/0), with expected hashes intentionally
 refrozen because the canonical camera island gained typed fields and collapsed
 routes. No QA finding class was added or loosened; no paid probe, publish, or
+deploy.
+
+## S3.3 — 2026-07-11 — DONE
+Made `cameraPhrase.ts` own parsing plus the frozen landing tolerances, and
+migrated layout arrival/occupancy and eye-trace attention to the canonical
+phrase plan. The two QA paths now share visibility, occupancy slack, anchor,
+rest-speed, dwell, sample-inset, and segment-match values; this removes the
+former exact-upper-bound vs 1.1x evidence mismatch. Eye trace uses the last/
+first executed phrase targets at boundaries (typed cut focal parts still win),
+not raw authored camera path guesses. The browser runtime now executes the
+compiler's phrase list directly and no longer filters/merges routes again.
+Browser fixtures were migrated through the same collapse pass. Files:
+`cameraPhrase.ts`, `cameraBlocking.ts`, `layoutInspector.ts`, `eyeTrace.ts`,
+camera/continuity runtime template, focused unit/browser tests, replay
+expectations, `PHASE_3.md`, and this plan. Verification: Slack typecheck; 129
+focused unit/layout tests; GatePilot-shaped continuity, blocking-landing, and
+eye-trace browser tests (10/10); exact `replay:all` (13/0/0). An initial browser
+run exposed a legacy fixture that depended on runtime-side compilation and an
+over-zoom from applying QA slack to runtime targeting; the fixture now enters
+through canonical collapse and runtime again targets nominal occupancy while
+QA alone applies the shared measurement band. No paid probe, publish, or
 deploy.

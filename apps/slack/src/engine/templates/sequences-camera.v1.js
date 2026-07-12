@@ -881,78 +881,10 @@
           return target && (target.element === world || world.contains(target.element));
         })
       : [];
-    // Camera reframes serve PRIMARY phrases. Supporting phrases remain explicit
-    // in the blocking/previs artifact but do not yank the lens away from the
-    // product to satisfy a connective cue. A supporting phrase is promoted to
-    // the route only when the authored camera plan independently commits a
-    // full move to that exact part/region during the phrase. This preserves the
-    // host's explicit cross-station landing (notably a final CTA) while keeping
-    // incidental annotations local. Consecutive blocks on the same target
-    // collapse into one landing with the longest readable dwell.
-    var primaryBlocks = allDirectedBlocks.filter(function (block) {
-      return block.importance === "primary";
-    });
-    function segmentCommitsToBlock(segment, block) {
-      if (!segment || !block ||
-          segment.move === "hold" || segment.move === "drift" || segment.move === "dive") {
-        return false;
-      }
-      var target = block.target || {};
-      var framing = block.framingTarget || {};
-      var exactTarget =
-        (segment.toPart && target.kind === "part" && segment.toPart === target.id) ||
-        (segment.toRegion && framing.kind === "region" && segment.toRegion === framing.id) ||
-        (segment.toRegion && target.kind === "region" && segment.toRegion === target.id);
-      if (!exactTarget) return false;
-      var blockStart = Number(block.startSec);
-      var blockEnd = Number(block.endSec);
-      return (!isFinite(blockEnd) || segment.startSec <= blockEnd + 0.05) &&
-        (!isFinite(blockStart) || segment.endSec >= blockStart - 0.25);
-    }
-    function sharesPrimaryDestination(block) {
-      return primaryBlocks.some(function (primary) {
-        var blockTarget = block.target || block.framingTarget || {};
-        var primaryTarget = primary.target || primary.framingTarget || {};
-        var blockFraming = block.framingTarget || {};
-        var primaryFraming = primary.framingTarget || {};
-        return (blockTarget.kind === primaryTarget.kind && blockTarget.id === primaryTarget.id) ||
-          (blockFraming.kind === "region" && primaryFraming.kind === "region" &&
-            blockFraming.id === primaryFraming.id);
-      });
-    }
-    var authoredSupportingBlocks = allDirectedBlocks.filter(function (block) {
-      if (block.importance === "primary" || sharesPrimaryDestination(block)) return false;
-      return segments.some(function (segment) {
-        return segmentCommitsToBlock(segment, block);
-      });
-    });
-    // Once a scene declares primary blocks, those blocks own the camera for
-    // the full scene. Late supporting annotations can still animate locally,
-    // but they must not manufacture an epilogue zoom/orbit after the payoff.
-    // A scene with no primary remains backwards compatible and may route its
-    // supporting blocks so sparse/legacy storyboards still receive framing.
-    var routeSource = primaryBlocks.length
-      ? primaryBlocks.concat(authoredSupportingBlocks).sort(function (a, b) {
-          return Number(a.arrivalSec) - Number(b.arrivalSec);
-        })
-      : allDirectedBlocks;
-    var directedBlocks = [];
-    for (var db = 0; db < routeSource.length; db += 1) {
-      var candidate = routeSource[db];
-      var previousBlock = directedBlocks[directedBlocks.length - 1];
-      if (previousBlock && previousBlock.target && candidate.target &&
-          previousBlock.target.kind === candidate.target.kind &&
-          previousBlock.target.id === candidate.target.id &&
-          (Number(candidate.arrivalSec) || 0) - (Number(previousBlock.arrivalSec) || 0) < 1) {
-        previousBlock.dwell = {
-          startSec: Math.min(previousBlock.dwell.startSec, candidate.dwell.startSec),
-          endSec: Math.max(previousBlock.dwell.endSec, candidate.dwell.endSec),
-          readableSec: Math.max(previousBlock.dwell.readableSec, candidate.dwell.readableSec),
-        };
-      } else {
-        directedBlocks.push(candidate);
-      }
-    }
+    // The host compiler has already selected primary/authored routes and
+    // collapsed degenerate phrases. Runtime executes that exact list; it does
+    // not re-derive route ownership or mutate dwell semantics in the browser.
+    var directedBlocks = allDirectedBlocks;
     function routeKey(block) {
       // Two primary parts can share one station while asking for different eye
       // ownership (metric -> CTA, headline -> subtitle). The contextual region

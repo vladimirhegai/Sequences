@@ -13,6 +13,11 @@ import {
   resolveContinuityGraph,
 } from "../src/engine/continuityGraph.ts";
 import { resolveCameraBlockingPlan } from "../src/engine/cameraBlocking.ts";
+import {
+  CAMERA_PHRASE_TOLERANCES,
+  collapseCameraPhrases,
+  type CameraPhraseV1,
+} from "../src/engine/cameraPhrase.ts";
 import { findBrowserExecutable } from "../src/engine/render.ts";
 
 const roots: string[] = [];
@@ -98,11 +103,12 @@ function film(options: { authoredLateSupport?: boolean; dimSecondTarget?: boolea
   const graph = resolveContinuityGraph(scenes);
   const blocking = resolveCameraBlockingPlan(scenes, graph);
   const firstPrimary = blocking.scenes[0]!.phrases.find((phrase) => phrase.importance === "primary")!;
-  blocking.scenes[0]!.phrases.push({
+  const augmentedPhrases: CameraPhraseV1[] = [...blocking.scenes[0]!.phrases, {
     ...firstPrimary,
     id: "scene-1:late-support:blocking",
     phraseId: "late-support",
     importance: "supporting",
+    routeOwnership: options.authoredLateSupport ? "authored" : "host-derived",
     startSec: 2.1,
     arrivalSec: 2.4,
     endSec: 2.9,
@@ -112,8 +118,7 @@ function film(options: { authoredLateSupport?: boolean; dimSecondTarget?: boolea
     occupancy: { min: 0.04, preferred: 0.16, max: 0.3 },
     dwell: { startSec: 2.4, endSec: 2.9, readableSec: 0.5 },
     nextHandoff: undefined,
-  });
-  blocking.scenes[0]!.phrases.push({
+  }, {
     ...firstPrimary,
     id: "scene-1:same-target-read:blocking",
     phraseId: "same-target-read",
@@ -123,7 +128,13 @@ function film(options: { authoredLateSupport?: boolean; dimSecondTarget?: boolea
     endSec: 2.9,
     dwell: { startSec: 2.15, endSec: 2.9, readableSec: 0.75 },
     nextHandoff: undefined,
-  });
+  }];
+  const recollapsed = collapseCameraPhrases(augmentedPhrases);
+  blocking.scenes[0]!.phrases = recollapsed.phrases;
+  blocking.summary.phraseCount = blocking.scenes.reduce(
+    (count, scene) => count + scene.phrases.length,
+    0,
+  );
   const camera = resolveCameraPlan(scenes);
   const section = scenes.map((scene, index) => `
 <section id="${scene.id}" class="scene" data-scene="${scene.id}">
@@ -465,7 +476,7 @@ function probeBlockingRegressionFilm(): string {
       }],
     }],
   };
-  const center = { x: 0.5, y: 0.5, name: "center" };
+  const center = { x: 0.5, y: 0.5, name: "center" as const };
   const blocking = {
     version: 1,
     enabled: true,
@@ -560,7 +571,7 @@ window.__timelines["probe-blocking"]=tl;tl.seek(0,false);</script></body></html>
  * but the same ensemble fit; without the compact authored opening approach
  * the graph route is pixel-static through the claimed camera moment. */
 function cutEntryImpactFilm(): string {
-  const center = { x: 0.5, y: 0.5, name: "center" };
+  const center = { x: 0.5, y: 0.5, name: "center" as const };
   const camera = {
     version: 1,
     scenes: [{
@@ -576,12 +587,48 @@ function cutEntryImpactFilm(): string {
   };
   const phrase = {
     sceneId: "gate",
-    target: { kind: "part", id: "approve", entityKind: "cta" },
-    framingTarget: { kind: "region", id: "gate-station" },
+    target: { kind: "part" as const, id: "approve", entityKind: "cta" as const },
+    framingTarget: { kind: "region" as const, id: "gate-station" },
     framingOccupancy: { min: 0.1, preferred: 0.22, max: 0.42 },
-    arrivalPose: { anchor: center, lens: "detail", zoom: 1 },
+    arrivalPose: { anchor: center, lens: "detail" as const, zoom: 1 },
     corridor: { from: center, to: center, padding: 0.08 },
   };
+  const rawPhrases: CameraPhraseV1[] = [{
+    ...phrase,
+    id: "gate:entry",
+    phraseId: "gate:01",
+    role: "entry",
+    importance: "supporting",
+    routeOwnership: "host-derived",
+    evidenceOwner: { kind: "direction-phrase", id: "gate:01" },
+    startSec: 1,
+    arrivalSec: 1,
+    endSec: 1.35,
+    occupancy: { min: 0.008, preferred: 0.025, max: 0.08 },
+    sourcePose: { target: { kind: "part", id: "approve" }, anchor: center, lens: "detail", zoom: 1 },
+    travel: { startSec: 1, endSec: 1 },
+    settle: { startSec: 1, endSec: 1.1 },
+    dwell: { startSec: 1, endSec: 1.38, readableSec: 0.38 },
+    departure: { startSec: 1.38, endSec: 1.38 },
+  }, {
+    ...phrase,
+    id: "gate:whip",
+    phraseId: "gate:02",
+    role: "payoff",
+    importance: "primary",
+    routeOwnership: "authored",
+    evidenceOwner: { kind: "camera-segment", id: "gate:whip@1.9" },
+    startSec: 1.35,
+    arrivalSec: 2.35,
+    endSec: 2.35,
+    occupancy: { min: 0.018, preferred: 0.055, max: 0.14 },
+    sourcePose: { target: { kind: "part", id: "approve" }, anchor: center, lens: "detail", zoom: 1 },
+    travel: { startSec: 1.9, endSec: 2.35 },
+    settle: { startSec: 2.35, endSec: 2.47 },
+    dwell: { startSec: 2.35, endSec: 2.97, readableSec: 0.62 },
+    departure: { startSec: 2.97, endSec: 2.97 },
+  }];
+  const phrases = collapseCameraPhrases(rawPhrases).phrases;
   const blocking = {
     version: 1,
     enabled: true,
@@ -592,31 +639,10 @@ function cutEntryImpactFilm(): string {
       maxNormalizedAcceleration: 5.8,
       maxNormalizedJerk: 60,
     },
+    tolerances: CAMERA_PHRASE_TOLERANCES,
     scenes: [{
       sceneId: "gate",
-      phrases: [{
-        ...phrase,
-        id: "gate:entry",
-        phraseId: "gate:01",
-        role: "entry",
-        importance: "supporting",
-        startSec: 1,
-        arrivalSec: 1,
-        endSec: 1.35,
-        occupancy: { min: 0.008, preferred: 0.025, max: 0.08 },
-        dwell: { startSec: 1, endSec: 1.38, readableSec: 0.38 },
-      }, {
-        ...phrase,
-        id: "gate:whip",
-        phraseId: "gate:02",
-        role: "payoff",
-        importance: "primary",
-        startSec: 1.35,
-        arrivalSec: 2.35,
-        endSec: 2.35,
-        occupancy: { min: 0.018, preferred: 0.055, max: 0.14 },
-        dwell: { startSec: 2.35, endSec: 2.97, readableSec: 0.62 },
-      }],
+      phrases,
     }],
   };
   const continuity = {

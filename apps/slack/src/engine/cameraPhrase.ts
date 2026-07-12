@@ -77,6 +77,7 @@ export interface CameraPhrasePlanV1 {
     maxNormalizedAcceleration: number;
     maxNormalizedJerk: number;
   };
+  tolerances: CameraPhraseTolerancesV1;
   scenes: Array<{ sceneId: string; phrases: CameraPhraseV1[] }>;
   summary: {
     phraseCount: number;
@@ -89,6 +90,37 @@ export interface CameraPhrasePlanV1 {
     continuityRouteCount: number;
     hostDerivedRouteCount: number;
   };
+}
+
+export interface CameraPhraseTolerancesV1 {
+  opacityMin: number;
+  visibleFractionMin: number;
+  occupancyMinFactor: number;
+  occupancyMaxFactor: number;
+  anchorErrorMax: number;
+  restSpeedMax: number;
+  readableDwellMinSec: number;
+  landingSampleInsetSec: number;
+  segmentMatchSec: number;
+}
+
+export const CAMERA_PHRASE_TOLERANCES: CameraPhraseTolerancesV1 = Object.freeze({
+  opacityMin: 0.35,
+  visibleFractionMin: 0.85,
+  occupancyMinFactor: 0.9,
+  occupancyMaxFactor: 1.1,
+  anchorErrorMax: 0.14,
+  restSpeedMax: 0.018,
+  readableDwellMinSec: 0.35,
+  landingSampleInsetSec: 0.08,
+  segmentMatchSec: 0.02,
+});
+
+/** Legacy persisted plans predate the explicit tolerance block. */
+export function cameraPhraseTolerances(
+  plan: Pick<CameraPhrasePlanV1, "tolerances"> | { tolerances?: Partial<CameraPhraseTolerancesV1> },
+): CameraPhraseTolerancesV1 {
+  return { ...CAMERA_PHRASE_TOLERANCES, ...(plan.tolerances ?? {}) };
 }
 
 /** Blocking resolver output before authored-route ownership is joined. */
@@ -327,6 +359,7 @@ export function compileCameraPhrasePlan(args: {
     version: 1,
     enabled: true,
     solver: args.solver,
+    tolerances: CAMERA_PHRASE_TOLERANCES,
     scenes,
     summary: {
       phraseCount: phrases.length,
@@ -340,4 +373,19 @@ export function compileCameraPhrasePlan(args: {
       hostDerivedRouteCount: phrases.filter((phrase) => phrase.routeOwnership === "host-derived").length,
     },
   };
+}
+
+export function parseCameraPhrasePlan(html: string): CameraPhrasePlanV1 | undefined {
+  const match = html.match(
+    /<script\b[^>]*\bid\s*=\s*(["'])sequences-camera-blocking\1[^>]*>([\s\S]*?)<\/script>/i,
+  );
+  if (!match?.[2]) return undefined;
+  try {
+    const value = JSON.parse(match[2]) as Partial<CameraPhrasePlanV1>;
+    return value.version === 1 && value.enabled === true && Array.isArray(value.scenes)
+      ? value as CameraPhrasePlanV1
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }

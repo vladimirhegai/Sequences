@@ -16,6 +16,8 @@ import type { ContinuityEntityKind, ContinuityGraphV1 } from "./continuityGraph.
 import type { ContinuousMotionEvidenceV1 } from "./continuousMotion.ts";
 import {
   compileCameraPhrasePlan,
+  cameraPhraseTolerances,
+  parseCameraPhrasePlan,
   type CameraPhraseAnchorV1,
   type CameraPhrasePlanV1,
   type CameraPhraseSeedV1,
@@ -43,15 +45,6 @@ const ANCHORS: Record<ScreenAnchorV1["name"], ScreenAnchorV1> = {
   // inside the 7.2% delivery-safe inset after content-fit scaling.
   "bottom-right": { x: 0.58, y: 0.64, name: "bottom-right" },
 };
-
-const PRIMARY_ANCHOR_TOLERANCE = 0.14;
-/**
- * `continuousMotion.ts` measures focal speed in normalized frame diagonals
- * per second (including its weighted apparent-scale term) and treats 0.018 as
- * settled. Blocking evidence uses the same rest threshold so the direction
- * and camera reports cannot disagree about whether the lens has stopped.
- */
-const PRIMARY_REST_SPEED = 0.018;
 
 function round(value: number, places = 3): number {
   const factor = 10 ** places;
@@ -488,6 +481,7 @@ export function buildCameraBlockingEvidence(
   graph: ContinuityGraphV1,
   motion: ContinuousMotionEvidenceV1,
 ): CameraBlockingEvidenceV1 {
+  const tolerances = cameraPhraseTolerances(plan);
   const blocks = plan.scenes.flatMap((scene) => scene.phrases);
   const landings = blocks.map((block): CameraBlockingLandingEvidenceV1 => {
     const samples = motion.samples.filter((sample) => sample.sceneId === block.sceneId);
@@ -538,7 +532,8 @@ export function buildCameraBlockingEvidence(
       occupancyInRange: measured &&
         (block.framingTarget
           ? true
-          : occupancy >= block.occupancy.min * 0.9 && occupancy <= block.occupancy.max * 1.1),
+          : occupancy >= block.occupancy.min * tolerances.occupancyMinFactor &&
+            occupancy <= block.occupancy.max * tolerances.occupancyMaxFactor),
       anchorError: round(anchorError, 4),
       // Camera blocking judges the lens at rest, not the target's own entrance,
       // count reflow, or highlight motion. Fresh continuous evidence exposes
@@ -563,13 +558,17 @@ export function buildCameraBlockingEvidence(
   const summary = {
     landingCount: landings.length,
     measuredLandingCount: landings.filter((landing) => landing.measured).length,
-    visibleLandingCount: landings.filter((landing) => landing.visibleFraction >= 0.85).length,
+    visibleLandingCount: landings.filter((landing) =>
+      landing.visibleFraction >= tolerances.visibleFractionMin
+    ).length,
     occupancyInRangeCount: landings.filter((landing) => landing.occupancyInRange).length,
     primaryLandingCount: primary.length,
     primaryReadableCount: primary.filter((landing) =>
-      landing.measured && landing.visibleFraction >= 0.85 && landing.occupancyInRange &&
-      (landing.framingTarget || landing.anchorError <= PRIMARY_ANCHOR_TOLERANCE) &&
-      landing.speed <= PRIMARY_REST_SPEED && landing.dwellSec >= 0.35
+      landing.measured && landing.visibleFraction >= tolerances.visibleFractionMin &&
+      landing.occupancyInRange &&
+      (landing.framingTarget || landing.anchorError <= tolerances.anchorErrorMax) &&
+      landing.speed <= tolerances.restSpeedMax &&
+      landing.dwellSec >= tolerances.readableDwellMinSec
     ).length,
     threeShotEntityCount: graph.summary.threeShotEntityCount,
     peakSpeed: motion.summary.peakSpeed,
@@ -586,15 +585,15 @@ export function buildCameraBlockingEvidence(
     );
   }
   const anchorMisses = landings.filter((landing) =>
-    landing.measured && !landing.framingTarget && landing.anchorError > PRIMARY_ANCHOR_TOLERANCE
+    landing.measured && !landing.framingTarget && landing.anchorError > tolerances.anchorErrorMax
   ).length;
   if (anchorMisses) advisories.push(`${anchorMisses} landing(s) missed their screen anchor by more than 14% of frame`);
   const movingLandings = landings.filter((landing) =>
-    landing.measured && landing.speed > PRIMARY_REST_SPEED
+    landing.measured && landing.speed > tolerances.restSpeedMax
   ).length;
   if (movingLandings) {
     advisories.push(
-      `${movingLandings} landing(s) were still moving above ${PRIMARY_REST_SPEED.toFixed(3)} normalized frame-diagonals/s`,
+      `${movingLandings} landing(s) were still moving above ${tolerances.restSpeedMax.toFixed(3)} normalized frame-diagonals/s`,
     );
   }
   return {
@@ -610,16 +609,5 @@ export function buildCameraBlockingEvidence(
 }
 
 export function parseCameraBlockingPlan(html: string): CameraBlockingPlanV1 | undefined {
-  const match = html.match(
-    /<script\b[^>]*\bid\s*=\s*(["'])sequences-camera-blocking\1[^>]*>([\s\S]*?)<\/script>/i,
-  );
-  if (!match?.[2]) return undefined;
-  try {
-    const value = JSON.parse(match[2]) as Partial<CameraBlockingPlanV1>;
-    return value.version === 1 && value.enabled === true && Array.isArray(value.scenes)
-      ? value as CameraBlockingPlanV1
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return parseCameraPhrasePlan(html);
 }

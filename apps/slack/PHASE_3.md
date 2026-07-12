@@ -105,3 +105,33 @@ S3.x commit is completed.
 - Verification: Slack typecheck; 34 focused phrase/blocking/normalizer/
   Sentinel tests; exact replay 13 passed, 0 skipped, 0 failed.
 - No gate was loosened, and no paid call, publish, or deploy occurred.
+
+### S3.3 — one runtime/QA interpretation
+
+- Moved phrase-island parsing and all landing acceptance tolerances into
+  `cameraPhrase.ts`. Legacy persisted islands remain readable through the
+  compatibility parser and receive the frozen defaults.
+- `layoutInspector` now samples at the phrase's declared settled dwell and
+  applies the phrase plan's opacity, visibility, occupancy, and sample-inset
+  values. Both layout landing findings and continuous blocking evidence use
+  the same 0.9x/1.1x occupancy measurement band, closing the GatePilot
+  disagreement where one QA path accepted a landing and the other rejected it.
+- Eye trace now chooses outgoing/incoming attention from the last/first
+  executed phrase route. Explicit cut focal endpoints remain authoritative;
+  raw authored camera paths are used only as a legacy fallback when no phrase
+  plan exists.
+- Deleted browser-side primary/supporting selection and repeated-target merge
+  from `sequences-camera.v1.js`. The runtime executes the compiler's phrase
+  array without deriving a second route model.
+- First browser run: 8/10 passed. Two continuity fixtures still injected raw,
+  uncollapsed phrase lists, and applying the QA maximum slack to runtime zoom
+  let a product shell grow to 60%. Resolution: route those fixtures through
+  `collapseCameraPhrases`; keep runtime targeting the nominal occupancy
+  contract and use tolerance only for measured QA acceptance. The next run
+  passed all 10/10.
+- Verification: Slack typecheck; 129 focused unit/layout tests; 10 targeted
+  camera-blocking/continuity/eye-trace browser tests; exact artifact replay
+  13 passed, 0 skipped, 0 failed. Source hashes were refrozen only for the new
+  canonical tolerance block/runtime bytes; storyboard and artifact hashes did
+  not change.
+- No new finding class, paid call, publish, or deploy.
