@@ -55,6 +55,10 @@ import {
   autoDeclareHighConfidenceRecipes,
   loadRecipeLibrary,
 } from "../recipeContract.ts";
+import {
+  autoDeclareHighConfidenceAssets,
+  recordStudioCatalogConversions,
+} from "../studioLibrary.ts";
 import { pluginPlanningVocabulary } from "../pluginContract.ts";
 import {
   assembleSlotComposition,
@@ -1575,27 +1579,46 @@ export async function requestStoryboardPlan(
     args.targetDurationSec,
   );
   const recipeLibrary = recipesEnabled() ? loadRecipeLibrary() : undefined;
-  const offeredRecipes = (args.skills.recipeIds ?? [])
-    .map((id) => recipeLibrary?.recipes.get(id))
-    .filter((recipe): recipe is NonNullable<typeof recipe> => Boolean(recipe));
+  // The planner-facing skill context stays retrieval-bounded, but host
+  // adoption must not depend on the model declaring an offered recipe first.
+  // Match the complete typed library here; stale/required-param recipes are
+  // still rejected by autoDeclareHighConfidenceRecipes.
+  const offeredRecipes = recipeLibrary ? [...recipeLibrary.recipes.values()] : [];
   const autoDeclareRecipes = (storyboard: DirectScene[]): DirectScene[] => {
-    if (!offeredRecipes.length) return storyboard;
-    const result = autoDeclareHighConfidenceRecipes(storyboard, offeredRecipes, args.brief);
-    if (result.declared.length) {
-      recordSentinelNormalization("recipe-auto-declare", result.declared.length);
-      process.stderr.write(
-        `[storyboard] host auto-declared high-confidence recipe(s): ` +
-          `${result.declared.map((entry) => `${entry.recipeId}@${entry.sceneId}:${entry.score}`).join(", ")}\n`,
-      );
+    let resultScenes = storyboard;
+    if (offeredRecipes.length) {
+      const result = autoDeclareHighConfidenceRecipes(resultScenes, offeredRecipes, args.brief);
+      resultScenes = result.scenes;
+      if (result.declared.length) {
+        recordSentinelNormalization("recipe-auto-declare", result.declared.length);
+        process.stderr.write(
+          `[storyboard] host auto-declared high-confidence recipe(s): ` +
+            `${result.declared.map((entry) => `${entry.recipeId}@${entry.sceneId}:${entry.score}`).join(", ")}\n`,
+        );
+      }
+      if (result.absorbed.length) {
+        recordSentinelNormalization("recipe-primary-surface-absorb", result.absorbed.length);
+        process.stderr.write(
+          `[storyboard] host absorbed duplicate primary-surface recipe(s): ` +
+            `${result.absorbed.map((entry) => `${entry.recipeId}@${entry.sceneId}`).join(", ")}\n`,
+        );
+      }
     }
-    if (result.absorbed.length) {
-      recordSentinelNormalization("recipe-primary-surface-absorb", result.absorbed.length);
-      process.stderr.write(
-        `[storyboard] host absorbed duplicate primary-surface recipe(s): ` +
-          `${result.absorbed.map((entry) => `${entry.recipeId}@${entry.sceneId}`).join(", ")}\n`,
-      );
+    if (assetsEnabled()) {
+      const assets = autoDeclareHighConfidenceAssets(resultScenes, args.brief);
+      resultScenes = assets.scenes;
+      if (assets.declared.length) {
+        recordSentinelNormalization("asset-auto-declare", assets.declared.length);
+        process.stderr.write(
+          `[storyboard] host auto-declared matching asset(s): ` +
+            `${assets.declared.map((entry) => `${entry.assetId}@${entry.sceneId}:${entry.score}`).join(", ")}\n`,
+        );
+      }
     }
-    return result.scenes;
+    return resultScenes;
+  };
+  const recordConversions = (storyboard: DirectScene[]): void => {
+    recordStudioCatalogConversions(storyboard);
   };
   // GLM job #1: the concept pass. Its artifact is cached independently, so a
   // storyboard retry never re-spends the concept call. The light-model shape
@@ -1717,6 +1740,7 @@ export async function requestStoryboardPlan(
           key: cacheKey,
           storyboard,
           degradations: cached.degradations ?? [],
+          ...(cached.productionBasis ? { productionBasis: cached.productionBasis } : {}),
         };
         if (worldLayoutCompletion.completions.length || autoDeclared !== cached.storyboard) {
           writePlanningArtifact(candidate, payload);
@@ -1728,6 +1752,7 @@ export async function requestStoryboardPlan(
           );
           writePlanningArtifact(cacheFile, payload);
         }
+        recordConversions(storyboard);
         return storyboard;
       }
     }
@@ -1758,6 +1783,7 @@ export async function requestStoryboardPlan(
       `[storyboard] recovered already-paid rejected artifact under the current contract: ` +
         `${persistedRecovery.source}\n`,
     );
+    recordConversions(storyboard);
     return storyboard;
   }
   if (
@@ -2463,6 +2489,7 @@ export async function requestStoryboardPlan(
                 degradations: repairDegradations,
                 ...(expectedBasis ? { productionBasis: expectedBasis } : {}),
               });
+              recordConversions(repaired);
               return repaired;
             }
           }
@@ -2494,6 +2521,7 @@ export async function requestStoryboardPlan(
       writePlanningArtifact(cacheFile, payload);
       writePlanningArtifact(sharedFile, payload);
       endAttempt("accepted");
+      recordConversions(storyboard);
       return storyboard;
     }
   }

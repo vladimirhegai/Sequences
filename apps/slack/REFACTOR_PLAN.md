@@ -543,7 +543,7 @@ eliminating contradictory contracts).
   actionable message.
 
 ### S6.3 Studio library capsule: offer only what converts
-- [ ] `studioLibraryVocabulary()` currently advertises five catalogs on every
+- [x] `studioLibraryVocabulary()` currently advertises five catalogs on every
   run while conversion is near-zero for some (recipe-auto-declare: 3 in 157
   runs). Add per-catalog conversion counters to the ledger; keep offering
   only entries with a typed declaration path that has ever converted, and
@@ -1223,3 +1223,22 @@ Files: `src/engine/frameValidation.ts`, `src/engine/runner/storyboardAudit.ts`,
 `test/storyboardBasis.test.ts`, `test/runnerExtraction.test.ts`, and this plan.
 Verification: Slack typecheck; focused basis, runner-extraction, and direct
 composition tests green. No Live Probe, publish, or deploy.
+
+## S6.3 — 2026-07-12 — DONE (LP-3 pending authorization)
+Replaced the always-on Studio inventory with an evidence-backed capsule. Typed
+catalog conversions now append per-catalog/per-entry events to the attempt
+ledger; historical ledgers and pre-S6.3 typed artifacts seed the counts without
+double-counting new event-backed jobs. The shared planner/author context offers
+only catalog entries with conversion evidence, while host-side recipe adoption
+uses the complete typed recipe library and matching assets are auto-declared
+from the brief and target scene. Asset declarations are recorded before later
+UID reconciliation so the adoption path itself becomes evidence.
+
+Files: `src/engine/runner/attemptLedger.ts`, `src/engine/sentinelTelemetry.ts`,
+`src/engine/studioLibrary.ts`, `src/engine/runner/ladder.ts`,
+`src/orchestrator.ts`, `test/studioCatalogIntegration.test.ts`, and this plan.
+Verification: root typecheck; Slack typecheck; full root `npm test` including
+browser coverage; full Slack unit suite; exact `replay:all` (13/0/0); MCP demo;
+direct demo; and `sequence:check --demo --no-mcp --format both`. No Live Probe,
+publish, or deploy. LP-3 remains pending owner authorization. S7.1–S7.3 were
+intentionally left untouched per task scope.

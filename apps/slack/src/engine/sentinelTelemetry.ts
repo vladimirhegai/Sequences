@@ -34,6 +34,7 @@ import {
   type SentinelScaffoldRestorationSource,
   type SentinelSlotCallKind,
   type SentinelStageTiming,
+  type StudioCatalogName,
 } from "./runner/attemptLedger.ts";
 
 export type {
@@ -225,6 +226,22 @@ export function recordSentinelScaffoldRestoration(
 ): void {
   if (!Number.isFinite(count) || count <= 0) return;
   appendSentinelLedgerEvent({ kind: "scaffold-restoration", source, count });
+}
+
+/** Record one typed Studio catalog unit that made it into a plan. */
+export function recordSentinelCatalogConversion(
+  catalog: StudioCatalogName,
+  entry: string,
+  count = 1,
+): void {
+  const normalized = entry.trim();
+  if (!normalized || !Number.isFinite(count) || count <= 0) return;
+  appendSentinelLedgerEvent({
+    kind: "catalog-conversion",
+    catalog,
+    entry: normalized,
+    count: Math.floor(count),
+  });
 }
 
 /** Attach the orchestrator's per-stage timings/attempts to the run. */

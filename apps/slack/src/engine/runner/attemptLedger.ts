@@ -42,6 +42,13 @@ export type SentinelSlotCallKind =
   | "storyboard-scene-repair"
   | "critic-scene-repair";
 
+export type StudioCatalogName = "components" | "assets" | "looks" | "camera" | "plugins" | "recipes";
+
+export interface CatalogConversionView {
+  conversions: number;
+  entries: Record<string, number>;
+}
+
 export type SentinelScaffoldRestorationSource = "scene-repair" | "l2-normalize";
 
 export interface SentinelStageTiming {
@@ -100,6 +107,7 @@ export type AttemptLedgerEventBody =
   | { kind: "normalization"; tag: string; count: number }
   | { kind: "scaffold-coverage"; present: number; planned: number }
   | { kind: "scaffold-restoration"; source: SentinelScaffoldRestorationSource; count: number }
+  | { kind: "catalog-conversion"; catalog: StudioCatalogName; entry: string; count?: number }
   | { kind: "stage-timings"; stages: SentinelStageTiming[] }
   | { kind: "tier"; tier: "tier1" | "tier2"; ms: number }
   | { kind: "finalize"; disposition: SentinelDisposition };
@@ -168,6 +176,7 @@ export interface SentinelRunView {
   scaffoldRestorationEvents: Record<SentinelScaffoldRestorationSource, number>;
   normalizations: Record<string, number>;
   at: string;
+  catalogConversions?: Record<StudioCatalogName, CatalogConversionView>;
 }
 
 /** Status derived exclusively from the append-only event stream. */
@@ -209,6 +218,17 @@ function emptySlotCalls(): Record<SentinelSlotCallKind, { calls: number; scenes:
     "validation-repair": { calls: 0, scenes: 0 },
     "storyboard-scene-repair": { calls: 0, scenes: 0 },
     "critic-scene-repair": { calls: 0, scenes: 0 },
+  };
+}
+
+function emptyCatalogConversions(): Record<StudioCatalogName, CatalogConversionView> {
+  return {
+    components: { conversions: 0, entries: {} },
+    assets: { conversions: 0, entries: {} },
+    looks: { conversions: 0, entries: {} },
+    camera: { conversions: 0, entries: {} },
+    plugins: { conversions: 0, entries: {} },
+    recipes: { conversions: 0, entries: {} },
   };
 }
 
@@ -367,6 +387,8 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
   let totalPromptChars = 0;
   let totalCompletionChars = 0;
   let maxAuthorPromptChars = 0;
+  const catalogConversions = emptyCatalogConversions();
+  let hasCatalogConversions = false;
 
   for (const event of events) {
     switch (event.kind) {
@@ -416,6 +438,14 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
       case "scaffold-restoration":
         scaffoldRestorationEvents[event.source] += Math.floor(event.count);
         break;
+      case "catalog-conversion": {
+        hasCatalogConversions = true;
+        const count = Math.max(1, Math.floor(event.count ?? 1));
+        catalogConversions[event.catalog].conversions += count;
+        catalogConversions[event.catalog].entries[event.entry] =
+          (catalogConversions[event.catalog].entries[event.entry] ?? 0) + count;
+        break;
+      }
       case "stage-timings":
         {
           const attempts = stageAttemptCounts(events);
@@ -483,6 +513,7 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
     scaffoldRestorationEvents,
     normalizations,
     at: new Date(end).toISOString(),
+    ...(hasCatalogConversions ? { catalogConversions } : {}),
   };
 }
 

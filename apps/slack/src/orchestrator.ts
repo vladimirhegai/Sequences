@@ -64,6 +64,7 @@ import {
   beginSentinelRun,
   finalizeSentinelRun,
   recordSentinelFallback,
+  recordSentinelCatalogConversion,
   recordSentinelQualityStatus,
   recordSentinelStages,
   recordSentinelTierFromRunStart,
@@ -831,6 +832,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       throw new Error(report);
     }
     const frame = framed.value;
+    recordSentinelCatalogConversion("looks", frame.dialectId);
     let authoredDraft: DirectCompositionDraft | undefined;
     let fallbackInfo: VideoResult["fallback"];
     const planned = await runStage("storyboard-plan", () =>
