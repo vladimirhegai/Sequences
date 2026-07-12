@@ -458,6 +458,18 @@ collapse zero-distance/same-target phrases; budget visual ideas.
   exact CurrentProof D source loses both `camera_blocking_landing` findings;
   continuity runtime, camera unit suites, typecheck, and `replay:all` green.
 
+### S3.7 Solo hero-metric framing contract
+- [x] CurrentProof D's opening ring shared a station only with a subordinate
+  one-pixel progress rail. Treating that rail as ensemble context forced the
+  lens to preserve the whole width, so camera sparse correction could raise
+  painted area only from 2% to 3%. Let a hero progress-ring own the lens when
+  every same-station peer is a support `progress`; real product/non-progress
+  context still binds. Give that solo primary a 12% preferred occupancy so
+  its typed landing and the existing whole-frame sparse floor agree.
+- Verify: minimized rail-only and product-context controls pass; exact
+  CurrentProof D source reaches browser `strictOk: true` with no sparse or
+  camera-landing findings; camera tests, typecheck, and `replay:all` green.
+
 ---
 
 # Phase 4 — State continuity (kills the 0% reset class)
@@ -1449,3 +1461,22 @@ new SVG-only metric lands at 8%; the full continuity runtime browser file
 browser replay (both blocking warnings cleared), and `replay:all` (17/0/0)
 are green. The genuine sparse opening and deterministic contrast repairs remain
 separate; no paid probe, publish, deploy, or S7 work.
+
+## S3.7 — 2026-07-12 — DONE (LP-2/LP-3 rerun pending)
+After SVG geometry parity, CurrentProof D's opening still failed the whole-frame
+sparse floor: its hero progress-ring shared `metric-hero` only with the
+subordinate `hairline-rule`, but contextual framing preserved that full-width
+one-pixel rail and prevented the camera from enlarging the actual subject.
+Camera blocking now treats exactly `hero progress-ring + support progress`
+peers as one solo close-up; adding any product/non-progress peer restores the
+region ensemble. The solo primary uses a 3%/12%/26% occupancy range, aligned
+with the already-calibrated whole-frame composition floor.
+
+Files: `src/engine/cameraBlocking.ts`, `test/cameraBlocking.test.ts`,
+`scripts/replayAll.ts`, and this plan. Verification: minimized
+solo/real-context controls (18/18); Slack
+typecheck; exact CurrentProof D source with continuity enabled reaches
+`runtime ok: true`, browser `strictOk: true`, 15.9% opening occupancy, and no
+`camera_framed_sparse`/`camera_blocking_landing`; exact `replay:all` (17/0/0).
+The two remaining contrast rows are advisory and already owned by the bounded
+contrast repair. No paid probe, publish, deploy, or S7 work.

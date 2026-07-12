@@ -285,7 +285,7 @@ export function resolveCameraBlockingPlan(
         : moment?.importance ??
           (phrase.role === "payoff" || phrase.role === "resolve" ? "primary" : "supporting");
       const anchor = anchorFor(scene, target);
-      const occupancy = occupancyFor(target, scene, importance);
+      const baseOccupancy = occupancyFor(target, scene, importance);
       const contextualKind = Boolean(
         component?.region && target.id === scene.spatialIntent?.focalPart
       ) || target.entityKind === "trace" || target.entityKind === "cta" ||
@@ -307,7 +307,31 @@ export function resolveCameraBlockingPlan(
             entry.kind === "headline" && entry.entityId === component.entityId
           )
         : undefined;
-      const framingTarget = target.kind === "part" && component?.region && contextualKind
+      // A hero ring plus a subordinate hairline/progress rail is one close-up,
+      // not an ensemble. Framing the region preserves the full-width 1px rail
+      // and prevents the lens from enlarging the actual hero (CurrentProof D:
+      // a valid 2% ring remained a 5%-grid sparse composition even after the
+      // bounded zoom correction). A real product surface or any non-progress
+      // peer still owns contextual framing below.
+      const regionPeers = component?.region
+        ? (scene.components ?? []).filter((entry) =>
+            entry.id !== component.id && entry.region === component.region
+          )
+        : [];
+      const heroMetricOwnsFraming = Boolean(
+        component?.role === "hero" && component.kind === "progress-ring" &&
+        regionPeers.length && regionPeers.every((entry) =>
+          entry.role === "support" && entry.kind === "progress"
+        ),
+      );
+      // A solo ring is the whole composition, so its preferred size must be
+      // compatible with the whole-frame sparse floor. The smaller generic
+      // ring range remains correct inside real contextual product surfaces.
+      const occupancy = heroMetricOwnsFraming && importance === "primary"
+        ? { min: 0.03, preferred: 0.12, max: 0.26 }
+        : baseOccupancy;
+      const framingTarget = target.kind === "part" && component?.region && contextualKind &&
+          !heroMetricOwnsFraming
         ? { kind: "region" as const, id: component.region }
         : target.kind === "part" && contextualKind && soleProductSurface.length === 1 &&
             soleProductSurface[0]!.id !== target.id

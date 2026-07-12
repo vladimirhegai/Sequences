@@ -150,6 +150,96 @@ describe("camera blocking director", () => {
     expect(auditCameraIdeaBudget(storyboard)).toEqual([]);
   });
 
+  it("frames a hero progress ring directly when its only station peer is a support rail", () => {
+    const scene: DirectScene = {
+      id: "metric-opener",
+      title: "Release readiness at 41%",
+      purpose: "Establish one carried metric",
+      startSec: 0,
+      durationSec: 3.6,
+      components: [
+        {
+          version: 1,
+          id: "continuity-metric",
+          kind: "progress-ring",
+          region: "metric-hero",
+          role: "hero",
+          entityId: "metric",
+        },
+        {
+          version: 1,
+          id: "hairline-rule",
+          kind: "progress",
+          region: "metric-hero",
+          role: "support",
+          entityId: "rule",
+        },
+      ],
+      beats: [{
+        version: 1,
+        id: "rule-draw",
+        sceneId: "metric-opener",
+        component: "hairline-rule",
+        kind: "progress",
+        atSec: 2,
+        durationSec: 1,
+        value: 1,
+      }],
+      moments: [{
+        version: 1,
+        id: "metric-lands",
+        sceneId: "metric-opener",
+        atSec: 0.5,
+        title: "Metric lands",
+        visualState: "The 41% ring is readable",
+        change: "The carried metric appears",
+        motionIntent: "reveal",
+        importance: "primary",
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "continuity-metric",
+        composition: "layout-center-stack",
+        relationships: ["hairline-rule tracks the metric as subordinate evidence"],
+      },
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          fromPart: "continuity-metric",
+          toPart: "continuity-metric",
+          startSec: 0,
+          durationSec: 1,
+          zoom: 1.15,
+        }],
+      },
+    };
+    const direct = resolveCameraBlockingPlan([scene], resolveContinuityGraph([scene]))
+      .scenes[0]!.phrases.find((phrase) => phrase.target.id === "continuity-metric")!;
+    expect(direct.framingTarget).toBeUndefined();
+    expect(direct.occupancy).toEqual({ min: 0.03, preferred: 0.12, max: 0.26 });
+
+    const withProductContext: DirectScene = {
+      ...scene,
+      components: [
+        ...(scene.components ?? []),
+        {
+          version: 1,
+          id: "approval-shell",
+          kind: "app-window",
+          region: "metric-hero",
+          role: "support",
+        },
+      ],
+    };
+    const contextual = resolveCameraBlockingPlan(
+      [withProductContext],
+      resolveContinuityGraph([withProductContext]),
+    ).scenes[0]!.phrases.find((phrase) => phrase.target.id === "continuity-metric")!;
+    expect(contextual.framingTarget).toEqual({ kind: "region", id: "metric-hero" });
+  });
+
   it("frames a metric and confirmation inside one hero modal as one lens idea", () => {
     const storyboard: DirectScene[] = [{
       id: "approval-surface",
