@@ -131,6 +131,8 @@ describe("environment plan", () => {
         explicitTargetCount: 2,
         primaryPhraseCount: 1,
         primaryWithReadableLandingCount: 1,
+        inputPhraseCount: 2,
+        collapsedPhraseCount: 0,
         authoredRouteCount: 0,
         continuityRouteCount: 0,
         hostDerivedRouteCount: 2,

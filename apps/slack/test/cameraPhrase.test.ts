@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compileCameraPhrasePlan, type CameraPhraseSeedV1 } from "../src/engine/cameraPhrase.ts";
+import {
+  collapseCameraPhrases,
+  compileCameraPhrasePlan,
+  type CameraPhraseSeedV1,
+  type CameraPhraseV1,
+} from "../src/engine/cameraPhrase.ts";
 import type { CameraPlanV1 } from "../src/engine/cameraContract.ts";
 
 const anchor = { x: 0.5, y: 0.5, name: "center" as const };
@@ -93,5 +98,65 @@ describe("CameraPhrase compiler", () => {
       "host-derived",
     ]);
     expect(plan.summary).toMatchObject({ continuityRouteCount: 1, hostDerivedRouteCount: 1 });
+  });
+
+  it("collapses SignalDock-shaped direction paperwork from 14 phrases to 7 routes", () => {
+    const phrase = (
+      sceneId: string,
+      id: string,
+      importance: "primary" | "supporting",
+      routeOwnership: CameraPhraseV1["routeOwnership"],
+      target: string,
+      framing?: string,
+    ): CameraPhraseV1 => ({
+      id: `${sceneId}:${id}:blocking`,
+      sceneId,
+      phraseId: `${sceneId}:${id}`,
+      role: "develop",
+      importance,
+      routeOwnership,
+      evidenceOwner: { kind: "direction-phrase", id },
+      startSec: 0,
+      arrivalSec: 0.5,
+      endSec: 2,
+      target: { kind: "part", id: target },
+      ...(framing ? { framingTarget: { kind: "region" as const, id: framing } } : {}),
+      occupancy: { min: 0.04, preferred: 0.2, max: 0.4 },
+      sourcePose: { anchor, lens: "detail", zoom: 1 },
+      arrivalPose: { target: { kind: "part", id: target }, anchor, lens: "detail", zoom: 1 },
+      corridor: { from: anchor, to: anchor, padding: 0.08 },
+      travel: { startSec: 0, endSec: 0.5 },
+      settle: { startSec: 0.5, endSec: 0.7 },
+      dwell: { startSec: 0.5, endSec: 1.5, readableSec: 1 },
+      departure: { startSec: 1.5, endSec: 2 },
+    });
+    const scenes = [
+      [
+        phrase("scattered", "01", "primary", "continuity", "metric-38", "metric-anchor"),
+        phrase("scattered", "02", "supporting", "host-derived", "trace"),
+      ],
+      [
+        phrase("gather", "01", "supporting", "continuity", "metric-52", "metric"),
+        phrase("gather", "02", "primary", "continuity", "workspace"),
+        phrase("gather", "03", "primary", "authored", "metric-52", "metric"),
+        phrase("gather", "04", "supporting", "host-derived", "owners"),
+      ],
+      [
+        phrase("approval", "01", "supporting", "continuity", "table", "table"),
+        phrase("approval", "02", "primary", "continuity", "metric-71", "confidence"),
+        phrase("approval", "03", "supporting", "authored", "approve", "table"),
+        phrase("approval", "04", "primary", "host-derived", "approve", "table"),
+        phrase("approval", "05", "primary", "host-derived", "approve", "table"),
+      ],
+      [
+        phrase("resolve", "01", "primary", "continuity", "metric-94", "confidence"),
+        phrase("resolve", "02", "primary", "continuity", "restore", "cta"),
+        phrase("resolve", "03", "supporting", "continuity", "restore", "cta"),
+      ],
+    ];
+    const results = scenes.map((scene) => collapseCameraPhrases(scene));
+    expect(results.reduce((count, result) => count + result.phrases.length, 0)).toBe(7);
+    expect(results.reduce((count, result) => count + result.collapsed, 0)).toBe(7);
+    expect(results[2]!.phrases[1]!.collapsedPhraseIds).toEqual(["approval:05"]);
   });
 });

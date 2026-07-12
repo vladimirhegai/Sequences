@@ -62,6 +62,8 @@ export interface CameraPhraseV1 {
   settle: { startSec: number; endSec: number };
   dwell: { startSec: number; endSec: number; readableSec: number };
   departure: { startSec: number; endSec: number };
+  /** Phrase ids deterministically folded into this executed route. */
+  collapsedPhraseIds?: string[];
   nextHandoff?: { entityId: string; toScene: string; toPart: string; atSec: number };
 }
 
@@ -81,6 +83,8 @@ export interface CameraPhrasePlanV1 {
     explicitTargetCount: number;
     primaryPhraseCount: number;
     primaryWithReadableLandingCount: number;
+    inputPhraseCount: number;
+    collapsedPhraseCount: number;
     authoredRouteCount: number;
     continuityRouteCount: number;
     hostDerivedRouteCount: number;
@@ -163,6 +167,102 @@ function evidenceOwner(
   return { kind: "direction-phrase", id: phrase.phraseId };
 }
 
+const SUB_THRESHOLD_ROUTE_DISTANCE = 0.025;
+
+function targetKey(target: CameraPhraseTargetV1 | { kind: "part" | "region"; id: string }): string {
+  return `${target.kind}:${target.id}`;
+}
+
+function destinationKeys(phrase: CameraPhraseV1): Set<string> {
+  return new Set([
+    targetKey(phrase.target),
+    ...(phrase.framingTarget ? [targetKey(phrase.framingTarget)] : []),
+  ]);
+}
+
+function sharesDestination(a: CameraPhraseV1, b: CameraPhraseV1): boolean {
+  const aKeys = destinationKeys(a);
+  return [...destinationKeys(b)].some((key) => aKeys.has(key));
+}
+
+function sameRoute(a: CameraPhraseV1, b: CameraPhraseV1): boolean {
+  return targetKey(a.target) === targetKey(b.target) &&
+    (a.framingTarget ? targetKey(a.framingTarget) : "") ===
+      (b.framingTarget ? targetKey(b.framingTarget) : "");
+}
+
+function semanticRouteDistance(a: CameraPhraseV1, b: CameraPhraseV1): number {
+  if (a.arrivalPose.lens !== b.arrivalPose.lens) return Infinity;
+  const anchorDistance = Math.hypot(
+    a.arrivalPose.anchor.x - b.arrivalPose.anchor.x,
+    a.arrivalPose.anchor.y - b.arrivalPose.anchor.y,
+  );
+  const zoomDistance = Math.abs(Math.log(
+    Math.max(0.001, a.arrivalPose.zoom) / Math.max(0.001, b.arrivalPose.zoom),
+  )) * 0.25;
+  return Math.hypot(anchorDistance, zoomDistance);
+}
+
+function mergePhrases(a: CameraPhraseV1, b: CameraPhraseV1): CameraPhraseV1 {
+  const dwellEnd = Math.max(a.dwell.endSec, b.dwell.endSec);
+  return {
+    ...a,
+    importance: a.importance === "primary" || b.importance === "primary" ? "primary" : "supporting",
+    endSec: Math.max(a.endSec, b.endSec),
+    settle: {
+      startSec: Math.min(a.settle.startSec, b.settle.startSec),
+      endSec: Math.max(a.settle.endSec, b.settle.endSec),
+    },
+    dwell: {
+      startSec: Math.min(a.dwell.startSec, b.dwell.startSec),
+      endSec: dwellEnd,
+      readableSec: round(Math.max(a.dwell.readableSec, b.dwell.readableSec, dwellEnd - a.arrivalSec)),
+    },
+    departure: {
+      startSec: dwellEnd,
+      endSec: Math.max(a.departure.endSec, b.departure.endSec),
+    },
+    collapsedPhraseIds: [
+      ...(a.collapsedPhraseIds ?? []),
+      b.phraseId,
+      ...(b.collapsedPhraseIds ?? []),
+    ],
+    ...(a.nextHandoff || b.nextHandoff ? { nextHandoff: b.nextHandoff ?? a.nextHandoff } : {}),
+  };
+}
+
+/**
+ * Reduce direction paperwork to routes the runtime can actually execute.
+ * Supporting evidence remains local when a primary route exists, except for
+ * an independently authored destination. Same-target poses below the semantic
+ * movement threshold fold into one longer readable phrase.
+ */
+export function collapseCameraPhrases(
+  phrases: readonly CameraPhraseV1[],
+): { phrases: CameraPhraseV1[]; collapsed: number } {
+  const primary = phrases.filter((phrase) => phrase.importance === "primary");
+  const routed = primary.length
+    ? phrases.filter((phrase) =>
+        phrase.importance === "primary" ||
+        phrase.routeOwnership === "authored" &&
+          !primary.some((candidate) => sharesDestination(phrase, candidate))
+      )
+    : [...phrases];
+  const collapsed: CameraPhraseV1[] = [];
+  for (const phrase of routed) {
+    const previous = collapsed[collapsed.length - 1];
+    if (
+      previous && sameRoute(previous, phrase) &&
+      semanticRouteDistance(previous, phrase) <= SUB_THRESHOLD_ROUTE_DISTANCE
+    ) {
+      collapsed[collapsed.length - 1] = mergePhrases(previous, phrase);
+    } else {
+      collapsed.push(phrase);
+    }
+  }
+  return { phrases: collapsed, collapsed: phrases.length - collapsed.length };
+}
+
 /**
  * Join authored camera routes and direction/continuity blocking seeds into the
  * single semantic artifact injected for runtime and QA.
@@ -173,9 +273,9 @@ export function compileCameraPhrasePlan(args: {
   scenes: Array<{ sceneId: string; phrases: CameraPhraseSeedV1[] }>;
 }): CameraPhrasePlanV1 {
   let previousPose: CameraPhrasePoseV1 | undefined;
-  const scenes = args.scenes.map((scene) => ({
-    sceneId: scene.sceneId,
-    phrases: scene.phrases.map((seed): CameraPhraseV1 => {
+  let collapsedPhraseCount = 0;
+  const scenes = args.scenes.map((scene) => {
+    const compiled = scene.phrases.map((seed): CameraPhraseV1 => {
       const segment = authoredSegmentFor(args.cameraPlan, seed);
       const arrivalPose: CameraPhrasePoseV1 = {
         target: seed.framingTarget ??
@@ -215,9 +315,13 @@ export function compileCameraPhrasePlan(args: {
       delete (phrase as CameraPhraseV1 & { settleUntilSec?: number }).settleUntilSec;
       previousPose = arrivalPose;
       return phrase;
-    }),
-  }));
+    });
+    const collapsed = collapseCameraPhrases(compiled);
+    collapsedPhraseCount += collapsed.collapsed;
+    return { sceneId: scene.sceneId, phrases: collapsed.phrases };
+  });
   const phrases = scenes.flatMap((scene) => scene.phrases);
+  const inputPhraseCount = args.scenes.reduce((count, scene) => count + scene.phrases.length, 0);
   const primary = phrases.filter((phrase) => phrase.importance === "primary");
   return {
     version: 1,
@@ -229,6 +333,8 @@ export function compileCameraPhrasePlan(args: {
       explicitTargetCount: phrases.filter((phrase) => Boolean(phrase.target.id)).length,
       primaryPhraseCount: primary.length,
       primaryWithReadableLandingCount: primary.filter((phrase) => phrase.dwell.readableSec >= 0.35).length,
+      inputPhraseCount,
+      collapsedPhraseCount,
       authoredRouteCount: phrases.filter((phrase) => phrase.routeOwnership === "authored").length,
       continuityRouteCount: phrases.filter((phrase) => phrase.routeOwnership === "continuity").length,
       hostDerivedRouteCount: phrases.filter((phrase) => phrase.routeOwnership === "host-derived").length,

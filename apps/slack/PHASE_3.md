@@ -1,6 +1,6 @@
 # Phase 3 implementation and audit log
 
-Date: 2026-07-11  
+Date: 2026-07-11
 Scope requested: Phase 3 camera phrase work and LP-1 validation.
 
 ## Specification reconciliation
@@ -80,3 +80,28 @@ S3.x commit is completed.
   four cuts, reported zero eligible dead-frame windows, and completed without
   changing the runtime route.
 - No paid calls, publish, or deploy.
+
+### S3.2 — deterministic collapse before runtime
+
+- Added a pure collapse pass to the phrase compiler. Once a scene declares a
+  primary route, supporting direction evidence stays local unless it owns an
+  independently authored destination. Consecutive phrases with the same
+  target/context and a sub-threshold semantic pose are merged, extending the
+  readable dwell and retaining `collapsedPhraseIds` provenance.
+- The canonical summary now distinguishes input phrases, executed phrases,
+  and collapsed phrases. The source normalizer emits
+  `camera-phrase-collapse` only when it changes the host island, preserving
+  idempotent replay telemetry.
+- Exact SignalDock evidence from
+  `.data/projects/architecture-stress-5-20260711/composition/manifest.json`:
+  14 input phrases became 7 routes — `scattered-signals=1`,
+  `gather-workspace=2`, `dependency-approval=2`, `resolve-94=2`.
+- Added a minimized 14-phrase regression encoding the same ownership and
+  repeated-target shape.
+- `replay:all` initially failed all seven source hashes, as expected: the
+  canonical camera island intentionally gained new fields and fewer routes.
+  Artifact hashes and all storyboard hashes were unchanged. Refroze only the
+  seven deterministic source replay hashes, then reran 13/13 successfully.
+- Verification: Slack typecheck; 34 focused phrase/blocking/normalizer/
+  Sentinel tests; exact replay 13 passed, 0 skipped, 0 failed.
+- No gate was loosened, and no paid call, publish, or deploy occurred.

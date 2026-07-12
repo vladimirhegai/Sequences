@@ -148,7 +148,10 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "sequences-{interactions,cuts,camera,components,time} island unconditionally " +
       "(stripAllHostPlanIslands) and re-injects the canonical island from the " +
       "locked storyboard, so island syntax can never reach validation. Emits no " +
-      "finding — it prevents the interactions/cuts/camera contract-parse errors.",
+      "finding — it prevents the interactions/cuts/camera contract-parse errors. " +
+      "Phase 3 also compiles and atomically injects the canonical camera phrase " +
+      "plan here; same-target and non-routing supporting phrases collapse before " +
+      "runtime with telemetry tag camera-phrase-collapse.",
   },
   {
     id: "normalize.source-bindings",

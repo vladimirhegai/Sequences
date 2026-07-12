@@ -4482,10 +4482,11 @@ export const NORMALIZERS = [
   },
   {
     id: "normalize.host-plan-islands.continuity",
-    telemetryTag: "continuity-inject",
+    telemetryTag: "camera-phrase-collapse",
     run: (html: string, { draft, lockedStoryboard }: SourceNormalizerContext) => {
       const source = html;
       let repairedContinuity = 0;
+      let collapsedPhraseTelemetry = 0;
       const diagnostics: string[] = [];
       if (continuityGraphEnabled()) {
         const continuityContract = hostContract("continuity");
@@ -4509,7 +4510,9 @@ export const NORMALIZERS = [
         };
         repairedContinuity = bindings.stamped;
         repairedContinuity += upsertIsland("sequences-continuity", JSON.stringify(graph));
-        repairedContinuity += upsertIsland("sequences-camera-blocking", JSON.stringify(blocking));
+        const blockingRepairs = upsertIsland("sequences-camera-blocking", JSON.stringify(blocking));
+        repairedContinuity += blockingRepairs;
+        if (blockingRepairs) collapsedPhraseTelemetry = blocking.summary.collapsedPhraseCount;
         const withRuntime = continuityContract.inject(html);
         if (withRuntime !== html) {
           html = withRuntime;
@@ -4551,7 +4554,7 @@ export const NORMALIZERS = [
       return {
         state: html,
         repairCount: repairedContinuity || (html === source ? 0 : 1),
-        telemetryCount: 0,
+        telemetryCount: collapsedPhraseTelemetry,
         diagnostics,
       };
     },

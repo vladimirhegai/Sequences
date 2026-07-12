@@ -379,7 +379,7 @@ collapse zero-distance/same-target phrases; budget visual ideas.
 - Verify: camera browser tests; golden `film:demo` render unchanged.
 
 ### S3.2 Collapse degenerate phrases before runtime
-- [ ] Same-target/zero-distance/sub-threshold phrases merge or drop
+- [x] Same-target/zero-distance/sub-threshold phrases merge or drop
   deterministically (L2, atomic, telemetry tag `camera-phrase-collapse`).
   SignalDock's 14 phrases / 4 scenes must collapse to ≤ 7.
 - Verify: SignalDock storyboard replay shows the collapsed count; no QA
@@ -886,4 +886,21 @@ Verification: Slack typecheck; focused camera/blocking/environment unit tests
 (87/87); camera depth, blocking landing, and continuity runtime browser tests
 (14/14); deterministic `film:demo` completed with all four cuts, 0 eligible
 dead-frame windows, and unchanged runtime routing. No paid probe, publish, or
+deploy.
+
+## S3.2 — 2026-07-11 — DONE
+Moved runtime-route selection and degenerate collapse into the typed camera
+phrase compiler. When a scene has primary phrases, non-routing support stays
+local; only a distinct authored supporting destination can join the lens
+route. Consecutive same-target/context poses below the semantic distance floor
+merge into one phrase with a combined dwell/departure and provenance. The
+canonical island reports input/collapsed counts, and the source normalizer
+emits `camera-phrase-collapse` only when that island changes (replay remains
+idempotent). SignalDock's exact accepted storyboard now compiles 14 phrases to
+7 routes (1/2/2/2). Files: `cameraPhrase.ts`, `runner/repairs.ts`, `sentinel.ts`,
+focused tests/fixture, replay expectations, `PHASE_3.md`, and this plan.
+Verification: Slack typecheck; focused phrase/blocking/normalizer/Sentinel
+tests (34/34); exact `replay:all` (13/0/0), with expected hashes intentionally
+refrozen because the canonical camera island gained typed fields and collapsed
+routes. No QA finding class was added or loosened; no paid probe, publish, or
 deploy.
