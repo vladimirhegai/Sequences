@@ -444,6 +444,19 @@ handoff; morphs ship only with proven structure + state transfer.
   (metric-continuity brief) shows no reset flicker and honest morphs on real
   output. Combine with a deferred LP-1 if applicable.
 
+### S4.3 Close state-proof gaps found in S4.1/S4.2 review
+- [x] Carry the last resolved state through compatible hold appearances with
+  no new beat; require the continuity proof island at every runtime morph;
+  and make cut clone capture delegate to the component runtime's single state
+  initializer so metric/button/progress/selection/shell channels cannot drift.
+  Classify proof-related degradation as the existing `cut_degraded`
+  `state-proof` reason.
+- Verify: hold-appearance unit regressions; forward/reverse state browser
+  regression; absent-proof degradation; selection-class morph-clone capture;
+  full unit/browser/root suites; replay:all; model-free demos; golden film and
+  temporal strip. LP-2 remains open until an authorized paid run reaches the
+  state runtime.
+
 ---
 
 # Phase 5 — Split the two megafiles by responsibility
@@ -1027,3 +1040,34 @@ degradation/fallback, and no QA findings. All five raw storyboard artifacts
 reproduce the same rejection without a model call. LP-2 remains outstanding
 because the state handoff and morph runtime were never reached. See
 `PROBE_LOG.md` for the job evidence and the fix-first deferral.
+
+## S4.3 — 2026-07-12 — DONE
+Reviewed the committed S4.1/S4.2 implementation against the Phase-4 contract
+and fixed three deterministic gaps. Compatible appearances with no new beat
+now inherit the prior resolved state, so a hold scene cannot break a later
+metric baseline. Runtime morphs now require an actual continuity proof island
+and degrade when the proof or shared initializer is absent. Cut clone capture
+delegates to the component runtime's one state initializer, preserving the
+authored selection channel (`.active`, `data-state`, or `data-active`) before
+geometry/structure audit and clone capture. Proof failures are classified as
+the existing `cut_degraded` `state-proof` reason. LaunchRelay's two strict
+source replay hashes were intentionally refrozen because its held selection
+now initializes the next compatible table; artifact bytes and all other
+replays stayed frozen. Geometry-only morph fixtures gained explicit host proof
+so they still exercise paint/aspect/structure policy. The component runtime
+browser test kept every assertion and received a 60s orchestration timeout
+because it passes in ~18s alone but repeatedly exceeded 30s under the full
+parallel Chrome suite.
+
+Files: `src/engine/continuityGraph.ts`, `cutDiscovery.ts`, component/cut
+runtimes, `scripts/replayAll.ts`, focused unit/browser fixtures, and this plan.
+Verification: root and Slack typechecks; focused S4/cut tests; full Slack unit
+suite (78 files / 1,310 tests); full Slack browser suite (23 files / 55 tests);
+root `npm test`; `replay:all` (13/0/0); model-free demo, MCP demo, direct demo,
+and `sequence:check --demo --no-mcp --format both`; deterministic `film:demo`
+with 100-frame temporal strip (all four cuts move/settle, 0 eligible dead-frame
+windows), strip and representative thread/film/lockup frames inspected. One
+initial full-unit timeout and two full-browser timeouts were reproduced as
+parallel Chrome contention; the tests passed alone, the unit suite passed
+sequentially, and the browser suite passed after the orchestration-only timeout
+correction. No paid probe, publish, or deploy. LP-2 remains open.

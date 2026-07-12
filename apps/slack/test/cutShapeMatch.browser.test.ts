@@ -13,8 +13,38 @@ import {
   validateCutContract,
 } from "../src/engine/cutContract.ts";
 import { CAMERA_RUNTIME_FILE } from "../src/engine/cameraContract.ts";
+import { COMPONENT_RUNTIME_FILE } from "../src/engine/componentContract.ts";
 
 const roots: string[] = [];
+
+function provenStateIsland(storyboard: DirectScene[]): string {
+  const cuts = resolveCutPlan(storyboard).cuts.filter((cut) => cut.style === "morph");
+  return JSON.stringify({
+    version: 1,
+    enabled: true,
+    entities: [],
+    edges: cuts.map((cut, index) => ({
+      id: `fixture-state-${index}`,
+      entityId: `fixture-state-${index}`,
+      fromScene: cut.fromScene,
+      fromPart: cut.focalPartOut,
+      toScene: cut.toScene,
+      toPart: cut.focalPartIn,
+      atSec: cut.atSec,
+      durationSec: cut.entrySec,
+      mode: "cut-owned",
+      cutStyle: "morph",
+      state: { kind: "shell", value: "ready" },
+      stateTransfer: true,
+    })),
+    summary: {
+      entityCount: cuts.length,
+      multiShotEntityCount: cuts.length,
+      threeShotEntityCount: 0,
+      sharedElementHandoffCount: 0,
+    },
+  });
+}
 
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -78,7 +108,7 @@ function shapeMatchFilm(): { storyboard: DirectScene[]; html: string } {
 <html lang="en"><head><meta charset="UTF-8">
 <title>Shape-match runtime smoke</title><script src="gsap.min.js"></script>
 <script src="${CAMERA_RUNTIME_FILE}"></script>
-<script src="${CUT_RUNTIME_FILE}"></script><style>
+<script src="${CUT_RUNTIME_FILE}"></script><script src="${COMPONENT_RUNTIME_FILE}"></script><style>
 *{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#101622}
 body{color:#eef2f8;font-family:Arial,sans-serif}
 #root{position:relative;width:1920px;height:1080px;overflow:hidden}
@@ -111,6 +141,7 @@ body{color:#eef2f8;font-family:Arial,sans-serif}
 </section>
 </main>
 <script type="application/json" id="sequences-cuts">${island}</script>
+<script type="application/json" id="sequences-continuity">${provenStateIsland(storyboard)}</script>
 <script>
 window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
 tl.set("#one",{opacity:1},0).set("#one",{opacity:0},2.999);
@@ -227,7 +258,7 @@ describe("shape-match cut runtime browser contract", () => {
 <html lang="en"><head><meta charset="UTF-8">
 <title>Structure-mismatch morph smoke</title><script src="gsap.min.js"></script>
 <script src="${CAMERA_RUNTIME_FILE}"></script>
-<script src="${CUT_RUNTIME_FILE}"></script><style>
+<script src="${CUT_RUNTIME_FILE}"></script><script src="${COMPONENT_RUNTIME_FILE}"></script><style>
 *{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#0b0f16}
 body{color:#eef2f8;font-family:Arial,sans-serif}
 #root{position:relative;width:1920px;height:1080px;overflow:hidden}
@@ -264,6 +295,7 @@ ${trow("10:02", "Cannot deploy — staging down", "blocked")}
 </section>
 </main>
 <script type="application/json" id="sequences-cuts">${island}</script>
+<script type="application/json" id="sequences-continuity">${provenStateIsland(storyboard)}</script>
 <script>
 window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
 tl.set("#list",{opacity:1},0).set("#list",{opacity:0},2.999);
@@ -316,7 +348,7 @@ window.__timelines["structure-smoke"]=tl;tl.seek(0);
     const island = JSON.stringify(resolveCutPlan(storyboard));
     const html = `<!doctype html><html><head><meta charset="UTF-8">
 <title>Focal ink morph smoke</title><script src="gsap.min.js"></script>
-<script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CUT_RUNTIME_FILE}"></script><style>
+<script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CUT_RUNTIME_FILE}"></script><script src="${COMPONENT_RUNTIME_FILE}"></script><style>
 *{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#fff;color:#1e1e24;font-family:Arial,sans-serif}
 #root{position:relative;width:1920px;height:1080px;overflow:hidden}.scene{position:absolute;inset:0;display:grid;place-items:center;opacity:0}
 .pill{width:300px;height:88px;border-radius:999px;background:#ff385c;color:#fff;display:grid;place-items:center;font-size:28px}
@@ -326,7 +358,8 @@ window.__timelines["structure-smoke"]=tl;tl.seek(0);
 <section class="scene clip" data-scene="action" data-start="0" data-duration="3" data-track-index="1"><div class="pill" data-component="button" data-part="action-pill">Confirm change</div></section>
 <section class="scene clip" data-scene="list" data-start="3" data-duration="3" data-track-index="1"><div style="display:grid;gap:80px;justify-items:center"><div class="ghost" data-part="ghost-pill"><div class="pill" style="opacity:0">Saved</div></div><div class="list" data-component="list" data-part="confirmed-list"><div>BK-241 confirmed</div><div>BK-245 confirmed</div></div></div></section>
 <section class="scene clip" data-scene="close" data-start="6" data-duration="3" data-track-index="1"><div class="seq-plugin-lockup" data-part="closing-lockup"><h1>Book with Roamly</h1><p>One calm click for every change.</p></div></section>
-</main><script type="application/json" id="sequences-cuts">${island}</script><script>
+</main><script type="application/json" id="sequences-cuts">${island}</script>
+<script type="application/json" id="sequences-continuity">${provenStateIsland(storyboard)}</script><script>
 window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
 tl.set('[data-scene="action"]',{opacity:1},0).set('[data-scene="action"]',{opacity:0},2.999);
 tl.set('[data-scene="list"]',{opacity:1},3).set('[data-scene="list"]',{opacity:0},5.999);

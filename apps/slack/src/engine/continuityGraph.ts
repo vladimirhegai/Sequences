@@ -350,14 +350,32 @@ export function resolveContinuityGraph(scenes: DirectScene[]): ContinuityGraphV1
   const entities: ContinuityEntityV1[] = [...appearancesByEntity]
     .map(([id, appearances]) => {
       const ordered = appearances.sort((a, b) => a.sceneIndex - b.sceneIndex || a.part.localeCompare(b.part));
-      const explicitKind = ordered.find((appearance) => appearance.kind)?.kind;
+      let carriedState: ContinuityStateV1 | undefined;
+      const resolvedAppearances = ordered.map((appearance): ContinuityAppearanceV1 => {
+        const inheritedState = appearanceAcceptsState(
+          scenes[appearance.sceneIndex],
+          appearance,
+          carriedState,
+        )
+          ? carriedState
+          : undefined;
+        const resolvedState = appearance.state ?? inheritedState;
+        // An incompatible representation breaks the proof chain. A later
+        // authored beat may establish a new exact state, but the host must not
+        // carry an older value through pixels it cannot initialize.
+        carriedState = resolvedState;
+        return resolvedState && !appearance.state
+          ? { ...appearance, state: resolvedState }
+          : appearance;
+      });
+      const explicitKind = resolvedAppearances.find((appearance) => appearance.kind)?.kind;
       return {
         id,
-        kind: explicitKind ?? classifyEntity(id, ordered[0]?.componentKind),
-        appearances: ordered,
-        traceableAcrossShots: new Set(ordered.map((appearance) => appearance.sceneId)).size,
+        kind: explicitKind ?? classifyEntity(id, resolvedAppearances[0]?.componentKind),
+        appearances: resolvedAppearances,
+        traceableAcrossShots: new Set(resolvedAppearances.map((appearance) => appearance.sceneId)).size,
         ...(() => {
-          const state = [...ordered].reverse().find((appearance) => appearance.state)?.state;
+          const state = [...resolvedAppearances].reverse().find((appearance) => appearance.state)?.state;
           return state ? { state } : {};
         })(),
       };

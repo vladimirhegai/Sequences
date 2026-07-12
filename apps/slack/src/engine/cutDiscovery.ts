@@ -197,6 +197,7 @@ export const CUT_DEGRADATION_REASONS = [
   "subtree-complexity",
   "off-frame",
   "missing-endpoint",
+  "state-proof",
   "unknown",
 ] as const;
 
@@ -251,6 +252,7 @@ export function classifyCutDegradationReason(
     return "off-frame";
   }
   if (/part .* (?:is absent|was not found)/i.test(text)) return "missing-endpoint";
+  if (/continuity state transfer/i.test(text)) return "state-proof";
   return "unknown";
 }
 

@@ -256,6 +256,8 @@ describe("cut degradation reason evidence (WS-D2)", () => {
       ["a focal part subtree exceeds 60 nodes", "subtree-complexity"],
       ["incoming focal part is mostly outside the frame at bind time", "off-frame"],
       ['incoming part "hero" is absent', "missing-endpoint"],
+      ["continuity state transfer proof is absent", "state-proof"],
+      ["continuity state transfer runtime is unavailable", "state-proof"],
     ] as const;
     for (const [detail, reason] of samples) {
       const warning = `cut_degraded: morph opener->proof compiled as swipe-left: ${detail}`;

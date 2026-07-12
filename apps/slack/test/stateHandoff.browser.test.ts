@@ -47,7 +47,7 @@ function metricScene(
   };
 }
 
-function stateFilm(): string {
+function stateFilm(includeContinuity = true): string {
   const scenes: DirectScene[] = [
     { ...metricScene("signal", 0, "score-38", 38), cut: { version: 1, style: "swipe", axis: "left" } },
     { ...metricScene("proof", 3, "score-71", 71), cut: { version: 1, style: "swipe", axis: "left" } },
@@ -86,7 +86,9 @@ function stateFilm(): string {
     `</head><body><main id="root" data-composition-id="state-handoff" data-duration="12">${sections}</main>` +
     `<script type="application/json" id="sequences-cuts">${JSON.stringify(cuts)}</script>` +
     `<script type="application/json" id="sequences-components">${JSON.stringify(components)}</script>` +
-    `<script type="application/json" id="sequences-continuity">${JSON.stringify(continuity)}</script>` +
+    (includeContinuity
+      ? `<script type="application/json" id="sequences-continuity">${JSON.stringify(continuity)}</script>`
+      : "") +
     `<script>window.__timelines={};const tl=gsap.timeline({paused:true});` +
     scenes.map((scene) =>
       `tl.set('[data-scene="${scene.id}"]',{opacity:1},${scene.startSec})` +
@@ -95,6 +97,52 @@ function stateFilm(): string {
     `SequencesCuts.compile(tl,document.getElementById('root'));` +
     `SequencesComponents.compile(tl,document.getElementById('root'));` +
     `window.__timelines['state-handoff']=tl;tl.seek(0,false);</script></body></html>`;
+}
+
+function selectionFilm(): string {
+  const scenes: DirectScene[] = [
+    {
+      id: "choose", title: "Choose", purpose: "select the owner", startSec: 0, durationSec: 3,
+      components: [{ version: 1, id: "owner-list-a", kind: "sidebar", entityId: "owner-list" }],
+      beats: [{
+        version: 1, id: "choose-owner", sceneId: "choose", component: "owner-list-a",
+        kind: "select", atSec: 0.5, durationSec: 0.6, item: 2,
+      }],
+      cut: {
+        version: 1, style: "morph", focalPartOut: "owner-list-a", focalPartIn: "owner-list-b",
+      },
+    },
+    {
+      id: "confirm", title: "Confirm", purpose: "confirm the owner", startSec: 3, durationSec: 3,
+      components: [{ version: 1, id: "owner-list-b", kind: "sidebar", entityId: "owner-list" }],
+      beats: [{
+        version: 1, id: "confirm-owner", sceneId: "confirm", component: "owner-list-b",
+        kind: "select", atSec: 3.5, durationSec: 0.6, item: 3,
+      }],
+    },
+  ];
+  const rows = `<div class="cmp-row active">Ari</div><div class="cmp-row">Bo</div><div class="cmp-row">Cam</div>`;
+  const sections = scenes.map((scene) =>
+    `<section class="scene" data-scene="${scene.id}" data-start="${scene.startSec}" data-duration="3">` +
+    `<div class="cmp-list" data-component="sidebar" data-part="${scene.components![0]!.id}">${rows}</div>` +
+    `</section>`
+  ).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><script src="gsap.min.js"></script>` +
+    `<script src="${CUT_RUNTIME_FILE}"></script><script src="${COMPONENT_RUNTIME_FILE}"></script>` +
+    `<style>*{box-sizing:border-box}html,body,#root,.scene{margin:0;width:1920px;height:1080px;overflow:hidden}` +
+    `#root,.scene{position:absolute;inset:0}.scene{opacity:0;display:grid;place-items:center;background:#fff}` +
+    `.cmp-list{width:520px;padding:24px;background:#172033;color:#fff}.cmp-row{padding:24px}` +
+    `.cmp-row.active{background:#5b7cfa}</style></head><body>` +
+    `<main id="root" data-composition-id="selection-handoff" data-duration="6">${sections}</main>` +
+    `<script type="application/json" id="sequences-cuts">${JSON.stringify(resolveCutPlan(scenes))}</script>` +
+    `<script type="application/json" id="sequences-components">${JSON.stringify(resolveComponentPlan(scenes))}</script>` +
+    `<script type="application/json" id="sequences-continuity">${JSON.stringify(resolveContinuityGraph(scenes))}</script>` +
+    `<script>window.__timelines={};const tl=gsap.timeline({paused:true});` +
+    `tl.set('[data-scene="choose"]',{opacity:1},0).set('[data-scene="choose"]',{opacity:0},2.999);` +
+    `tl.set('[data-scene="confirm"]',{opacity:1},3).set('[data-scene="confirm"]',{opacity:0},5.999);` +
+    `SequencesCuts.compile(tl,document.getElementById('root'));` +
+    `SequencesComponents.compile(tl,document.getElementById('root'));` +
+    `window.__timelines['selection-handoff']=tl;tl.seek(0,false);</script></body></html>`;
 }
 
 function serve(dir: string): Promise<{ url: string; close: () => Promise<void> }> {
@@ -172,6 +220,77 @@ describe("typed continuity state handoff browser contract", () => {
       expect(binding?.target).toMatch(/^swipe-/);
       expect(binding?.reason).toContain("different semantic families");
       expect(errors).toEqual([]);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 30_000);
+
+  it("degrades a morph when continuity state proof is absent", async () => {
+    const executablePath = findBrowserExecutable();
+    expect(executablePath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-state-proof-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), stateFilm(false), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CUT_RUNTIME_FILE), cutRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, COMPONENT_RUNTIME_FILE), componentRuntimeSource(), "utf8");
+    const server = await serve(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: executablePath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const binding = await page.evaluate(() => {
+        const bindings = (window as unknown as {
+          __sequencesCutBindings: Array<{ cut: { fromScene: string }; degraded?: boolean; reason?: string }>;
+        }).__sequencesCutBindings;
+        const found = bindings.find((entry) => entry.cut.fromScene === "resolve");
+        return found ? { degraded: found.degraded, reason: found.reason } : null;
+      });
+      expect(binding).toMatchObject({
+        degraded: true,
+        reason: "continuity state transfer proof is absent",
+      });
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  }, 30_000);
+
+  it("captures the transferred selection in the incoming morph clone", async () => {
+    const executablePath = findBrowserExecutable();
+    expect(executablePath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-selection-proof-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), selectionFilm(), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CUT_RUNTIME_FILE), cutRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, COMPONENT_RUNTIME_FILE), componentRuntimeSource(), "utf8");
+    const server = await serve(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: executablePath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const activeRows = await page.evaluate(() => {
+        const bridges = document.querySelectorAll<HTMLElement>(
+          '[data-sequences-runtime-cut="bridge"][data-sequences-cut-from="choose"]',
+        );
+        return Array.from(bridges[1]!.querySelectorAll<HTMLElement>(".cmp-row"))
+          .map((row) => row.classList.contains("active"));
+      });
+      expect(activeRows).toEqual([false, true, false]);
     } finally {
       await browser.close();
       await server.close();

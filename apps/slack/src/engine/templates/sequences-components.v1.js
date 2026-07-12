@@ -1118,6 +1118,62 @@
     return compiled;
   }
 
+  // Apply one host-proven continuity state before any incoming-scene beat or
+  // cut clone is captured. Cuts delegate here so every state kind uses the
+  // same markup channel as the component runtime.
+  function initializeState(element, state) {
+    if (!element || !state) return false;
+    var value = state.value;
+    if (state.kind === "metric" && typeof value === "number") {
+      var valueSlot = firstMatch(element, ["[data-cmp-value]", ".cmp-value"]) || element;
+      var authored = valueSlot.textContent || "";
+      var number = authored.match(/-?\d[\d,]*(?:\.\d+)?/);
+      valueSlot.textContent = number
+        ? authored.slice(0, number.index) + String(value) + authored.slice(number.index + number[0].length)
+        : String(value);
+      return true;
+    }
+    if ((state.kind === "button" || state.kind === "shell") &&
+        (typeof value === "string" || typeof value === "boolean")) {
+      element.setAttribute("data-state", String(value));
+      return true;
+    }
+    if (state.kind === "progress" && typeof value === "number") {
+      var progress = clamp(value, 0, 1);
+      var ring = element.querySelector(".cmp-ring-fg");
+      if (ring && typeof ring.getTotalLength === "function") {
+        var length = ring.getTotalLength();
+        ring.style.strokeDasharray = String(length);
+        ring.style.strokeDashoffset = String(length * (1 - progress));
+        return true;
+      }
+      var fill = firstMatch(element, ["[data-cmp-fill]", ":scope > i"]);
+      if (!fill) return false;
+      fill.style.transform = "scaleX(" + progress + ")";
+      return true;
+    }
+    if (state.kind === "selection" && typeof value === "number") {
+      var items = childItems(element);
+      if (!items.length) return false;
+      var activeIndex = clamp(Math.round(value) - 1, 0, items.length - 1);
+      var mechanism = activeMechanismOf(items);
+      for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+        if (mechanism === "class") {
+          items[itemIndex].classList.toggle("active", itemIndex === activeIndex);
+        } else {
+          items[itemIndex].setAttribute(
+            mechanism === "data-state" ? "data-state" : "data-active",
+            mechanism === "data-state"
+              ? (itemIndex === activeIndex ? "active" : "inactive")
+              : (itemIndex === activeIndex ? "true" : "false"),
+          );
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
   function compileScene(timeline, root, scenePlan) {
     var scene = root.querySelector('[data-scene="' + CSS.escape(scenePlan.sceneId) + '"]');
     if (!scene) {
@@ -1128,47 +1184,7 @@
       var initial = initialStates[initialIndex];
       var initialEl = scene.querySelector('[data-part="' + CSS.escape(initial.component) + '"]');
       if (!initialEl || !initial.state) continue;
-      var initialValue = initial.state.value;
-      if (initial.state.kind === "metric" && typeof initialValue === "number") {
-        var valueSlot = firstMatch(initialEl, ["[data-cmp-value]", ".cmp-value"]) || initialEl;
-        var authored = valueSlot.textContent || "";
-        var number = authored.match(/-?\d[\d,]*(?:\.\d+)?/);
-        valueSlot.textContent = number
-          ? authored.slice(0, number.index) + String(initialValue) + authored.slice(number.index + number[0].length)
-          : String(initialValue);
-      } else if ((initial.state.kind === "button" || initial.state.kind === "shell") &&
-          (typeof initialValue === "string" || typeof initialValue === "boolean")) {
-        initialEl.setAttribute("data-state", String(initialValue));
-      } else if (initial.state.kind === "progress" && typeof initialValue === "number") {
-        var initialProgress = clamp(initialValue, 0, 1);
-        var initialRing = initialEl.querySelector(".cmp-ring-fg");
-        if (initialRing && typeof initialRing.getTotalLength === "function") {
-          var initialLength = initialRing.getTotalLength();
-          initialRing.style.strokeDasharray = String(initialLength);
-          initialRing.style.strokeDashoffset = String(initialLength * (1 - initialProgress));
-        } else {
-          var initialFill = firstMatch(initialEl, ["[data-cmp-fill]", ":scope > i"]);
-          if (initialFill) initialFill.style.transform = "scaleX(" + initialProgress + ")";
-        }
-      } else if (initial.state.kind === "selection" && typeof initialValue === "number") {
-        var initialItems = childItems(initialEl);
-        if (initialItems.length) {
-          var activeIndex = clamp(Math.round(initialValue) - 1, 0, initialItems.length - 1);
-          var mechanism = activeMechanismOf(initialItems);
-          for (var itemIndex = 0; itemIndex < initialItems.length; itemIndex += 1) {
-            if (mechanism === "class") {
-              initialItems[itemIndex].classList.toggle("active", itemIndex === activeIndex);
-            } else {
-              initialItems[itemIndex].setAttribute(
-                mechanism === "data-state" ? "data-state" : "data-active",
-                mechanism === "data-state"
-                  ? (itemIndex === activeIndex ? "active" : "inactive")
-                  : (itemIndex === activeIndex ? "true" : "false"),
-              );
-            }
-          }
-        }
-      }
+      initializeState(initialEl, initial.state);
     }
     var entrances = compileSceneEntrances(timeline, scene, scenePlan);
     var bound = 0;
@@ -1225,5 +1241,6 @@
     version: VERSION,
     compile: compile,
     activateExclusiveItem: activateExclusiveItem,
+    initializeState: initializeState,
   });
 })(window);

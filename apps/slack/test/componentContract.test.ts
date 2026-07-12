@@ -330,6 +330,46 @@ describe("resolveComponentPlan", () => {
       `<script type="application/json" id="sequences-components">${JSON.stringify(plan)}</script>`,
     )).toEqual({ plan, errors: [] });
   });
+
+  it("initializes a metric after an intervening continuity hold", () => {
+    const metric = (
+      id: string,
+      startSec: number,
+      part: string,
+      value?: number,
+    ): DirectScene => ({
+      id,
+      title: id,
+      purpose: "hold one persistent score",
+      startSec,
+      durationSec: 3,
+      components: [{ version: 1, id: part, kind: "stat-card", entityId: "score" }],
+      ...(value === undefined
+        ? {}
+        : {
+            beats: [{
+              version: 1 as const,
+              id: `${part}-count`,
+              sceneId: id,
+              component: part,
+              kind: "count" as const,
+              atSec: startSec + 0.5,
+              durationSec: 1,
+              value,
+            }],
+          }),
+    });
+    const plan = resolveComponentPlan([
+      metric("one", 0, "score-a", 38),
+      metric("hold", 3, "score-b"),
+      metric("three", 6, "score-c", 94),
+    ]);
+
+    expect(plan.scenes.find((scene) => scene.sceneId === "hold")?.initialStates)
+      .toEqual([{ component: "score-b", state: { kind: "metric", value: 38 } }]);
+    expect(plan.scenes.find((scene) => scene.sceneId === "three")?.beats[0])
+      .toMatchObject({ value: 94, fromValue: 38 });
+  });
   function planScene(beats: ComponentBeatIntentV1[], components?: SceneComponentSpecV1[]): DirectScene {
     return scene({
       id: "s1",

@@ -502,9 +502,7 @@
 
   function stateTransferProof(cut) {
     var island = document.getElementById("sequences-continuity");
-    // Cached/standalone cut fixtures without the continuity contract retain
-    // their legacy behavior. Production source always carries this island.
-    if (!island) return { reason: "", state: null };
+    if (!island) return { reason: "continuity state transfer proof is absent", state: null };
     var graph;
     try {
       graph = JSON.parse(island.textContent || "{}");
@@ -527,41 +525,11 @@
   }
 
   function applyHandoffState(element, state) {
-    if (!element || !state) return;
-    if (state.kind === "metric" && typeof state.value === "number") {
-      var slot = element.querySelector("[data-cmp-value],.cmp-value") || element;
-      var authored = slot.textContent || "";
-      var number = authored.match(/-?\d[\d,]*(?:\.\d+)?/);
-      slot.textContent = number
-        ? authored.slice(0, number.index) + String(state.value) + authored.slice(number.index + number[0].length)
-        : String(state.value);
-    } else if (state.kind === "button" || state.kind === "shell") {
-      element.setAttribute("data-state", String(state.value));
-    } else if (state.kind === "selection" && typeof state.value === "number") {
-      element.setAttribute("data-selected-index", String(state.value));
-      var items = element.querySelectorAll(
-        ":scope > .cmp-row,:scope > .cmp-item,:scope > .cmp-card,:scope > .cmp-msg," +
-        ":scope > [data-cmp-item],:scope > i",
-      );
-      for (var itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
-        items[itemIndex].setAttribute(
-          "data-active",
-          itemIndex === Math.max(0, Math.round(state.value) - 1) ? "true" : "false",
-        );
-      }
-    } else if (state.kind === "progress" && typeof state.value === "number") {
-      element.setAttribute("data-progress", String(state.value));
-      var progress = Math.max(0, Math.min(1, state.value));
-      var ring = element.querySelector(".cmp-ring-fg");
-      if (ring && typeof ring.getTotalLength === "function") {
-        var length = ring.getTotalLength();
-        ring.style.strokeDasharray = String(length);
-        ring.style.strokeDashoffset = String(length * (1 - progress));
-      } else {
-        var fill = element.querySelector("[data-cmp-fill],:scope > i");
-        if (fill) fill.style.transform = "scaleX(" + progress + ")";
-      }
-    }
+    return Boolean(
+      element && state && global.SequencesComponents &&
+      typeof global.SequencesComponents.initializeState === "function" &&
+      global.SequencesComponents.initializeState(element, state)
+    );
   }
 
   function shapeMatchAudit(root, fromPart, toPart) {
@@ -645,8 +613,10 @@
     if (!fromPart) fail(cut, 'outgoing part "' + cut.focalPartOut + '" is absent');
     if (!toPart) fail(cut, 'incoming part "' + cut.focalPartIn + '" is absent');
     var proof = stateTransferProof(cut);
-    if (proof.state) applyHandoffState(toPart, proof.state);
-    var reason = proof.reason || shapeMatchAudit(root, fromPart, toPart);
+    var stateApplied = proof.state ? applyHandoffState(toPart, proof.state) : false;
+    var reason = proof.reason || (!stateApplied
+      ? "continuity state transfer runtime is unavailable"
+      : "") || shapeMatchAudit(root, fromPart, toPart);
     if (reason) {
       // Enhancement-never-veto (MD1 retarget): a degraded morph becomes a
       // swipe along the axis from the outgoing focal center to the incoming

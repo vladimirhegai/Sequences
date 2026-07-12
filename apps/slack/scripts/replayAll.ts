@@ -25,8 +25,8 @@ const FIXTURES: Fixture[] = [
       "storyboard-2-rejected.raw.txt": { artifactSha256: "4f3beae48ac8344686959464ce2aa18c980965a03bb75140803d00d6c275da24", replaySha256: "eeb67ad53cf6937380641d507f9273c3f332bb6eed935581f145c55616c14a10", outcome: "parsed" },
     },
     expectedSource: {
-      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "0bec5a67b4294f36931b2baa1cae6ab217fbc42bbd1e6946e71ae66a48ce66fc" },
-      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "f8729811abac1e7308170b55240c786ef88c7cd7eb256111a79ea775063d229e" },
+      "author-1-browser-rejected.html": { artifactSha256: "338d796da8e298d77f385d651de0ff9e111f76228813ffd7cf75afd3bba8f8be", replaySha256: "f2cba805ec7b6a9285856e948f9d71361ab6f61de648afd31e550e92246c8d4c" },
+      "author-2-browser-rejected.html": { artifactSha256: "b25236859cfe1258141963b46e9fff5b9b8ca23bb0caf1f3e4a2bbf7e193f15d", replaySha256: "b28d0903d994423b4963769520f78daa0429630800f02c74824e948886641fbd" },
     },
   },
   {

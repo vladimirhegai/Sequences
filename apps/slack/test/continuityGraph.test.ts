@@ -171,6 +171,46 @@ describe("continuity graph", () => {
     expect(impossible.edges[0]?.state).toBeUndefined();
   });
 
+  it("carries the last resolved state through an appearance with no new beat", () => {
+    const metric = (
+      id: string,
+      startSec: number,
+      part: string,
+      value?: number,
+    ): DirectScene => ({
+      id,
+      title: id,
+      purpose: "hold one persistent metric",
+      startSec,
+      durationSec: 3,
+      components: [{ version: 1, id: part, kind: "stat-card", entityId: "release-score" }],
+      ...(value === undefined
+        ? {}
+        : {
+            beats: [{
+              version: 1 as const,
+              id: `${part}-count`,
+              sceneId: id,
+              component: part,
+              kind: "count" as const,
+              atSec: startSec + 0.5,
+              durationSec: 0.8,
+              value,
+            }],
+          }),
+    });
+    const graph = resolveContinuityGraph([
+      metric("one", 0, "score-a", 38),
+      metric("hold", 3, "score-b"),
+      metric("three", 6, "score-c", 94),
+    ]);
+
+    expect(graph.entities[0]?.appearances.map((appearance) => appearance.state?.value))
+      .toEqual([38, 38, 94]);
+    expect(graph.edges.map((edge) => ({ value: edge.state?.value, proof: edge.stateTransfer })))
+      .toEqual([{ value: 38, proof: true }, { value: 38, proof: true }]);
+  });
+
   it("chooses one canonical representation per shot and never emits self-edges", () => {
     const middle = scene("middle", 3, "shell-middle", {
       components: [

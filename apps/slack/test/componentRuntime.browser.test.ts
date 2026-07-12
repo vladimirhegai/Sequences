@@ -214,5 +214,8 @@ describe("component runtime browser contract", () => {
       expect(bloom.endOpacity, bloom.beatId).toBeLessThan(0.01);
       expect(bloom.endSec - bloom.startSec, bloom.beatId).toBeLessThanOrEqual(1);
     }
-  }, 30_000);
+  // The full browser project runs several Chrome-heavy inspectors in parallel.
+  // This fixture completes in ~18s alone but can queue behind those processes;
+  // keep every runtime/QA assertion intact while allowing orchestration slack.
+  }, 60_000);
 });
