@@ -1635,6 +1635,31 @@ export function reconcileAndLowerPlugins(scenes: DirectScene[]): PluginReconcile
       const replay = lowerPlugin(spec,
         lowerContext(scene, { ...declaration, params, uid: `${scene.id}-${declaration.id}` }),
       );
+      // A team-strip is exactly one generated avatar-stack. If the planner
+      // already supplied a load-bearing avatar stack in that station (camera,
+      // spatial intent, continuity, interaction, or moments address it), the
+      // typed component is the stronger owner. Keeping both creates duplicate
+      // people and, after collision renaming, a second camera phrase for the
+      // generated unit. Retire the optional plugin and any child carried by an
+      // idempotent findings-retry artifact.
+      if (declaration.kind === "team-strip" && replay.components.length === 1) {
+        const generated = replay.components[0]!;
+        const typedRoster = (scene.components ?? []).find((component) =>
+          !component.pluginUid &&
+          component.kind === generated.kind &&
+          (!declaration.region || component.region === declaration.region) &&
+          isLoadBearingComponent(component.id, scene, scenes)
+        );
+        if (typedRoster) {
+          for (const child of replay.components) retiredPluginChildren.add(child.id);
+          sceneNotes.push(
+            `plugin "team-strip" retired because load-bearing avatar stack ` +
+              `"${typedRoster.id}" already owns` +
+              (declaration.region ? ` region "${declaration.region}"` : " the scene"),
+          );
+          continue;
+        }
+      }
       const existingIds = new Set(
         (scene.components ?? [])
           .filter((entry) => !retiredPluginChildren.has(entry.id))

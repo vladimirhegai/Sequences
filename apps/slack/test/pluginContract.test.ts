@@ -196,6 +196,48 @@ describe("plugin reconciliation + lowering (Sentinel L2, degrade-never-veto)", (
     expect((lowered.components ?? []).map((entry) => entry.id)).toContain("hero-toast");
   });
 
+  it("retires a team-strip when a typed load-bearing avatar stack owns the station", () => {
+    const result = reconcileAndLowerPlugins([
+      scene({
+        components: [{
+          version: 1,
+          id: "owner-avatar",
+          kind: "avatar-stack",
+          region: "team-strip",
+          role: "support",
+        }],
+        camera: {
+          version: 1,
+          path: [{
+            version: 1,
+            move: "track-to-anchor",
+            startSec: 1,
+            durationSec: 1,
+            toPart: "owner-avatar",
+          }],
+        },
+        spatialIntent: {
+          version: 1,
+          focalPart: "owner-avatar",
+          composition: "owner led",
+          relationships: [],
+        },
+        plugins: normalizeStoryboardPluginDeclarations([{
+          kind: "team-strip",
+          id: "owner-strip",
+          region: "team-strip",
+          params: { people: 3, more: 2 },
+        }]),
+      }),
+    ]);
+    const lowered = result.scenes[0]!;
+    expect(lowered.plugins).toBeUndefined();
+    expect((lowered.components ?? []).map((entry) => entry.id)).toEqual(["owner-avatar"]);
+    expect(result.notes.join(" ")).toContain(
+      'team-strip" retired because load-bearing avatar stack "owner-avatar"',
+    );
+  });
+
   it("lets a load-bearing station CTA complete a lockup without generating a second button", () => {
     const raw = scene({
       components: [{

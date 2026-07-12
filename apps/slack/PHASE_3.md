@@ -260,3 +260,28 @@ S3.x commit is completed.
   two-framing deficit while retaining their original `toPart` destinations.
   Focused pacing/phrase tests passed 87/87 and typecheck passed. The complete
   unit project then passed 78 files / 1,304 tests, and replay remained green.
+
+### LP-1 attempt C — failed loudly; plugin ownership defect found
+
+- Ran cache-distinct seven-scene retry `phase3-lp1-camera-20260711-c` after
+  the framing fix. The seven scenes cleared the film-wide framing floor and
+  all camera idea checks except one. The primary model timed out; the rescue
+  model produced two storyboard attempts. Triage recorded 4 logical / 8
+  physical calls, three failed physical requests, one hedge, no fallback or
+  degradation, and no browser QA because the plan never reached authoring.
+- The sole final finding was `owner-avatar in team-strip` versus
+  `owner-strip-2`. Plugin reconciliation had renamed a declared `team-strip`
+  after a part collision, then generated a second avatar stack beside the
+  typed, load-bearing `owner-avatar`. Direction correctly treated the plugin
+  unit as its own camera target, making the reconciliation artifact block the
+  otherwise one-idea scene.
+- Fix: when a team-strip's single generated avatar stack duplicates a typed,
+  load-bearing avatar stack in the same station, plugin reconciliation now
+  retires the optional plugin (and any stale lowered child) in favor of the
+  typed component that already owns camera/spatial/continuity evidence.
+  Notification stacks retain their existing behavior; this rule is specific
+  to the one-child team-strip form.
+- Exact strict replay of attempt C's final rejected artifact then parsed
+  successfully without editing its bytes. Focused plugin/camera tests passed
+  73/73; typecheck passed; the complete unit project passed 78 files / 1,305
+  tests; and frozen replay remained green.
