@@ -130,6 +130,14 @@ never into more prompt adjectives.
   the single quality residue) → S8.4; edge-cropped count-up numerals,
   near-black owner scene, loud wallpaper swipe covers → S8.1/S8.6. Full
   entry in PROBE_LOG.md and PHASE_3.md.
+- LP-2 (`s4-lp2-state-20260712`): **inconclusive** — the paid metric-
+  continuity run failed before authoring at the existing Phase-3
+  `camera/idea-budget` gate (`shot-4-owner-verifies` declared two lens ideas).
+  Five exact storyboard replays reproduce that rejection; no source, render,
+  temporal, or state-handoff evidence was produced. Full entry in
+  PROBE_LOG.md. The checkpoint remains outstanding; no second paid attempt was
+  launched because the fix-first rule blocks retries on the repeated planning
+  class.
 
 ## Staffing guide — which agent runs which steps
 
@@ -1002,6 +1010,20 @@ Files: `cutDiscovery.ts`, cuts runtime, cut-discovery unit/browser fixtures,
 focused cut-discovery/state-handoff/component/continuity tests; full unit suite;
 full browser suite (initial parallel component-runtime timeout passed focused
 and on full rerun); `replay:all` 13/0/0; deterministic `film:demo` and temporal
-strip inspected. No LP-2 paid probe was run because owner authorization was not
-provided, so the Phase 4 live checkpoint remains outstanding. No publish or
-deploy.
+strip inspected. At the implementation commit, no LP-2 paid probe had yet
+been run because owner authorization was not provided, so the Phase 4 live
+checkpoint remained outstanding. The later authorized probe is recorded below;
+it failed before state runtime. No publish or deploy.
+
+## LP-2 — 2026-07-12 — INCONCLUSIVE (pre-state planning rejection)
+Paid probe `s4-lp2-state-20260712` was explicitly authorized and ran with
+OpenRouter, fallback disabled, continuity enabled, audit composition, MCP,
+render, and temporal requested. Frame design succeeded (2 logical / 2
+physical); storyboard planning failed after 6 logical / 7 physical calls (one
+hedge), at 14m35s total. Every rejected attempt named the same existing
+`camera/idea-budget` class in `shot-4-owner-verifies`; no authoring or render
+stage ran. `probe:triage` reports fail-loud, `runtimeValid=false`, no
+degradation/fallback, and no QA findings. All five raw storyboard artifacts
+reproduce the same rejection without a model call. LP-2 remains outstanding
+because the state handoff and morph runtime were never reached. See
+`PROBE_LOG.md` for the job evidence and the fix-first deferral.

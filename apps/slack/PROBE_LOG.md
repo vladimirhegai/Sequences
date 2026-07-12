@@ -148,6 +148,27 @@ inspection also shows Phase-8 staging classes (edge-cropped count-up
 numerals, a near-black owner scene, loud wallpaper swipe covers) → S8.1/S8.6.
 No camera-semantic defect remains; Phase 4 (state continuity) is next.
 
+## 2026-07-12 Phase 4 LP-2 checkpoint (StateRelay)
+
+### StateRelay — `s4-lp2-state-20260712` (inconclusive; failed before state runtime)
+
+Explicitly authorized metric-continuity probe using a cache-distinct five-scene
+brief (`28% → 54% → 86%`), OpenRouter, fallback disabled, continuity graph on,
+audit composition, MCP, render, and temporal evidence requested. The run
+terminated fail-loud after 14m35s: frame design succeeded (2 logical / 2
+physical); storyboard planning made 6 logical / 7 physical calls with one hedge,
+then exhausted the primary/rescue ladder. No fallback, source authoring, MP4,
+or temporal strip was produced.
+
+Every terminal attempt failed on the same pre-existing Phase-3
+`camera/idea-budget` finding: scene `shot-4-owner-verifies` asked the lens to
+tell both `window-score` and `last-check` in `relay-surface`. `probe:triage`
+reports `fail-loud`, `runtimeValid=false`, `qualityResidue=0`, no QA findings,
+and no degradation. The five raw storyboard artifacts were replayed without a
+model call and reproduced the exact finding. This is not evidence for or
+against S4.1/S4.2 state handoff; LP-2 remains open. Fix-first policy blocks a
+second paid run until the repeated planning owner is fixed and replayed.
+
 ## Session conclusion
 
 No fresh stress probe completed as a clean one-attempt motion-quality pass.
