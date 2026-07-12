@@ -667,7 +667,7 @@ plan. Verification: triage for `architecture-stress-5-20260711` reproduced
 `refactor-review-normal-1-20260711` reproduced 10 / 14 and 8; Slack
 typecheck passed. No paid probe was run.
 
-## S0.4 â€” 2026-07-11 â€” DONE
+## S0.4 — 2026-07-11 — DONE
 Added the mechanical TypeScript AST census at `scripts/deadExports.ts`, its
 `dead-exports` command, and the committed report at
 `.reports/dead-exports.md`. It scans 243 Slack source/studio/script/test files,
@@ -676,7 +676,7 @@ deletions were made. Verification: `npm run dead-exports --workspace
 @sequences/slack` and Slack typecheck passed. Namespace imports are treated
 conservatively as references; S7.x must confirm candidates before deletion.
 
-## S0.2 â€” 2026-07-11 â€” DONE
+## S0.2 — 2026-07-11 — DONE
 Added `replay:all` plus the strict model-free `source:replay` path. The replay
 manifest references (without copying) the available LaunchRelay, PulseForge,
 GatePilot, RelayGuard, SignalDock, and Briefly artifacts under
@@ -688,13 +688,13 @@ Verification: `npm run replay:all --workspace @sequences/slack` passed 13
 replays with 0 skips and 0 failures; Slack typecheck passed. No paid probe was
 run.
 
-## S0.3 â€” 2026-07-11 â€” DONE
+## S0.3 — 2026-07-11 — DONE
 Deleted the confirmed-unreferenced `apps/slack/src/engine/planRunner.ts`;
 the active demo path already uses `@sequences/core` directly. No orphaned
 tests or importers were present. Verification: Slack typecheck, Slack unit
 tests, and the model-free Slack demo passed.
 
-## SP.1 â€” 2026-07-11 â€” DONE
+## SP.1 — 2026-07-11 — DONE
 Deleted the retired `apps/forge`, `apps/sequences`, `examples/forge`,
 `examples/sequences`, and `fixtures/sequences` trees plus the listed Forge,
 golden-render, performance, and UI-smoke scripts. Removed the retired root
@@ -706,7 +706,7 @@ typecheck and full root `npm test` passed; the purge-sensitive core/Studio
 tests passed 12/12; Slack typecheck, unit suite (75 files / 1,275 tests), and
 model-free demo passed. No paid probe was run.
 
-## SP.2 â€” 2026-07-11 â€” DONE
+## SP.2 — 2026-07-11 — DONE
 Deleted `docs/paused/` and moved the three Slack studio plans into
 `apps/slack/docs/history/`. Rewrote the local Slack bug-hunt and verification
 guides, updated the workspace orientation and launch config, and removed stale
@@ -714,20 +714,20 @@ retired-path guidance from the tracked agent docs. Verification: the required
 guidance scan has no `docs/paused` or retired-app references. The updated local
 ignored `.claude` files are intentionally not tracked. No paid probe was run.
 
-## SP.3 â€” 2026-07-11 â€” DONE
+## SP.3 — 2026-07-11 — DONE
 Confirmed there were no root `references/` consumers in packages, Slack source,
 scripts, Docker, or Railway configuration outside documentation/skill links;
 deleted the vendored `references/` snapshots and README. Verification: the
 consumer scan is empty. No runtime code changed and no paid probe was run.
 
-## SP.4 â€” 2026-07-11 â€” DONE
+## SP.4 — 2026-07-11 — DONE
 Moved the consumed `phase1-briefs.json` fixture to
 `packages/core/test/fixtures/phase1-briefs.json`, updated
 `agent-evals.test.ts`, and deleted the unused `evals/relay-launch-film.json`.
 Verification: the core agent-evals test passed and root typecheck passed. No
 paid probe was run.
 
-## SP.5 â€” 2026-07-11 â€” DONE
+## SP.5 — 2026-07-11 — DONE
 Rechecked the public mirror and container surfaces. `scripts/publish-public.sh`
 now archives only `apps/slack`, `packages/core`, and `packages/platform` plus
 the required root configuration; its generated docs no longer mention removed
