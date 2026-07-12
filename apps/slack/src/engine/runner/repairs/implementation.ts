@@ -1049,6 +1049,52 @@ function injectIntoComponentRoots(
   return { html, repaired };
 }
 
+interface SceneComponentBinding {
+  sceneId: string;
+  component: string;
+}
+
+/**
+ * Scene-scoped counterpart to `injectIntoComponentRoots`. Continuity contracts
+ * intentionally reuse one component id in consecutive scenes, so global
+ * uniqueness is the wrong safety boundary for those roots. Recompute scene
+ * locations after every injection, require exactly one root inside the named
+ * scene, and retain the old fragment behavior only when the input has no scene
+ * wrappers at all. A duplicated root inside one scene remains ambiguous.
+ */
+function injectIntoSceneComponentRoots<T extends SceneComponentBinding>(
+  html: string,
+  bindings: Iterable<T>,
+  build: (binding: T, content: string) => string | null,
+): { html: string; repaired: string[] } {
+  const repaired: string[] = [];
+  const unique = [...new Map([...bindings].map((binding) => [
+    `${binding.sceneId}\u0000${binding.component}`,
+    binding,
+  ])).values()];
+  for (const binding of unique) {
+    const scenes = sceneScopeLocations(html);
+    const matchingScenes = scenes.filter((scene) => scene.id === binding.sceneId);
+    const scope = matchingScenes.length === 1
+      ? {
+          start: matchingScenes[0]!.openStart,
+          html: html.slice(matchingScenes[0]!.openStart, matchingScenes[0]!.closeEnd),
+        }
+      : scenes.length === 0
+        ? { start: 0, html }
+        : undefined;
+    if (!scope) continue;
+    const located = locateSoleComponentContent(scope.html, binding.component);
+    if (!located) continue;
+    const markup = build(binding, located.content);
+    if (markup == null) continue;
+    const contentEnd = scope.start + located.contentEnd;
+    html = `${html.slice(0, contentEnd)}${markup}${html.slice(contentEnd)}`;
+    repaired.push(binding.component);
+  }
+  return { html, repaired };
+}
+
 /**
  * Deterministic rows-markup top-up (fallback-elimination lever): a `rows`
  * beat whose target root exists but has NO revealable children was the
@@ -1202,11 +1248,13 @@ const PROGRESS_FILL_MARKUP = /\b(?:cmp-ring-fg|data-cmp-fill)\b/i;
 
 /**
  * Deterministic progress-markup top-up (kit_markup_incomplete absorption): a
- * `progress` beat whose sole target root has no `.cmp-ring-fg`,
+ * `progress` beat whose sole scene-scoped target root has no `.cmp-ring-fg`,
  * `[data-cmp-fill]`, or direct `<i>` fill aborts the compile. The kit exemplar
  * defines the structure — a horizontal bar wants one `<i data-cmp-fill>`, a
  * ring wants an svg arc — so inject it host-side (neutral, recorded on ship via
- * `progress-neutral-fill-shipped`, like the chart top-up). A ring is completed
+ * `progress-neutral-fill-shipped`, like the chart top-up). Repeated ids across
+ * continuity scenes are independent roots; duplicate roots inside one scene
+ * remain ambiguous. A ring is completed
  * ONLY when the root has no `<svg>` at all: a partial svg (a background track
  * but no fg arc) is ambiguous and stays a finding for markup-audit.
  */
@@ -1214,16 +1262,22 @@ export function topUpProgressMarkup(
   html: string,
   scenes: DirectScene[],
 ): { html: string; repaired: string[] } {
-  const kindByTarget = new Map<string, string | undefined>();
+  const bindings: Array<SceneComponentBinding & { kind?: string }> = [];
   for (const scene of scenes) {
     const kinds = new Map((scene.components ?? []).map((entry) => [entry.id, entry.kind]));
     for (const beat of scene.beats ?? []) {
-      if (beat.kind === "progress") kindByTarget.set(beat.component, kinds.get(beat.component));
+      if (beat.kind === "progress") {
+        bindings.push({
+          sceneId: scene.id,
+          component: beat.component,
+          kind: kinds.get(beat.component),
+        });
+      }
     }
   }
-  return injectIntoComponentRoots(html, kindByTarget.keys(), (component, content) => {
+  return injectIntoSceneComponentRoots(html, bindings, (binding, content) => {
     if (PROGRESS_FILL_MARKUP.test(content) || ANY_ITALIC.test(content)) return null;
-    if (/ring/i.test(kindByTarget.get(component) ?? "")) {
+    if (/ring/i.test(binding.kind ?? "")) {
       return /<svg\b/i.test(content) ? null : NEUTRAL_PROGRESS_RING;
     }
     return NEUTRAL_PROGRESS_FILL;

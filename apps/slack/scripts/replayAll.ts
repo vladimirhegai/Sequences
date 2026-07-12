@@ -78,6 +78,15 @@ const FIXTURES: Fixture[] = [
       "author-2-browser-rejected.html": { artifactSha256: "67c3fc17b64348c49a38da5aee1798306f4d1aa63377139843c2e2809b48e64d", replaySha256: "ef699e6fcfbc679ab0547b3097da99535a6867970a0bec629ea589ead9d9f360", outcome: "rejected" },
     },
   },
+  {
+    id: "CurrentProof D",
+    jobId: "lp3-state-capsule-20260712-d",
+    expectedRaw: {},
+    expectedSource: {
+      "author-1-static-rejected.html": { artifactSha256: "c58162278b6a34fa61da8672b3ab0b98a422b830e9436fffbae02f3cf4079347", replaySha256: "6d564ae828418b149d65139661967b56b9939db62cdfc9e63c2f79a0839c481d", outcome: "accepted" },
+      "author-2-static-rejected.html": { artifactSha256: "e617d4ac161742073bf29796a369951677e2c643aa788523cfb53a28dfdfa794", replaySha256: "6d564ae828418b149d65139661967b56b9939db62cdfc9e63c2f79a0839c481d", outcome: "accepted" },
+    },
+  },
 ];
 
 const appDir = path.resolve(import.meta.dirname, "..");

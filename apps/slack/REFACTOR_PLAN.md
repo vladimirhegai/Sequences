@@ -570,6 +570,27 @@ eliminating contradictory contracts).
 - Verify: the exact persisted LP-3 plan composes below 45,000 chars; prompt
   budget regression, typecheck, and `replay:all` green.
 
+### S6.5 Scene-scoped typed progress completion
+- [x] CurrentProof D reused `hairline-rule` as one typed `progress` component
+  across three continuity scenes. The existing L2 fill top-up required global
+  component-id uniqueness, declined all three otherwise unambiguous roots, and
+  spent two source attempts on the same `kit_markup_incomplete` class. Complete
+  a repeated id independently inside each named scene while keeping duplicate
+  roots inside one scene ambiguous and blocking.
+- Verify: both exact rejected sources pass strict replay; minimized repeated-id,
+  idempotence, and same-scene ambiguity controls pass; Sentinel registry,
+  typecheck, and `replay:all` green.
+
+### S6.6 Full re-author prompt headroom
+- [ ] CurrentProof D's non-optional full re-author context was 49,040 chars
+  after optional skills reached zero. Compact only planner prose already
+  compiled into the locked scaffold/host contracts, dedupe repeated finding
+  feedback, and reserve 512 chars for findings on both initial slot and full
+  recovery prompts without dropping any scene, timing, visible moment, frame
+  capsule, or scaffold.
+- Verify: the exact persisted initial and full-re-author prompts compose at or
+  below 44,488 chars; prompt-budget suite and Slack typecheck green.
+
 ---
 
 # Phase 7 — Retire old systems and shrink the flag surface
@@ -1306,3 +1327,18 @@ fill, plus non-skill compaction for full re-author prompts. S7.1-S7.3 were not
 started because LP-2/LP-3 never reached state/runtime evidence. See PROBE_LOG
 CurrentProof D and the persisted project for exact artifacts. No publish or
 deploy.
+
+## S6.5 — 2026-07-12 — DONE
+Exact replay showed the progress top-up already owned the mechanical fill but
+looked for one globally unique `data-part`; continuity intentionally reused
+`hairline-rule` in three named scenes, so all three safe roots were skipped.
+The L2 owner now resolves the sole root inside each scene, injects the canonical
+neutral fill independently, remains idempotent, and declines two roots inside
+one scene. Both CurrentProof D rejected sources now pass strict replay and are
+frozen as accepted exact fixtures.
+
+Files: `src/engine/runner/repairs/implementation.ts`, `src/engine/sentinel.ts`,
+`scripts/replayAll.ts`, `test/authorReliability.test.ts`, and this plan.
+Verification: both exact `source:replay` artifacts pass; focused author/Sentinel
+tests (118/118); Slack typecheck; exact `replay:all` (15 replayed / 2 skipped /
+0 failed), all green. S6.6 is next; no paid probe, publish, deploy, or S7 work.

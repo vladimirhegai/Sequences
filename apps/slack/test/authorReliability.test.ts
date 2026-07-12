@@ -805,6 +805,44 @@ describe("deterministic progress-markup top-up (kit_markup_incomplete absorption
     expect(topUpProgressMarkup(html, progressScene("progress")).repaired).toEqual([]);
   });
 
+  it("fills one repeated continuity component independently in every scene", () => {
+    const scenes = ["metric-41", "metric-68", "metric-91"].map((id, index) =>
+      scene(id, index * 3, {
+        components: [{ version: 1, id: "hairline-rule", kind: "progress" }],
+        beats: [{
+          version: 1,
+          id: `rule-progress-${index + 1}`,
+          sceneId: id,
+          component: "hairline-rule",
+          kind: "progress",
+          atSec: index * 3 + 0.5,
+        }],
+      })
+    );
+    const before = compositionDoc(scenes.map((entry) =>
+      `<section data-scene="${entry.id}" data-start="${entry.startSec}" ` +
+      `data-duration="3"><div data-part="hairline-rule" ` +
+      `data-component="progress"></div></section>`
+    ).join(""));
+    const result = topUpProgressMarkup(before, scenes);
+    expect(result.repaired).toEqual(["hairline-rule", "hairline-rule", "hairline-rule"]);
+    expect(result.html.match(/data-sequences-neutral="progress"/g)).toHaveLength(3);
+    expect(auditKitMarkupCompleteness(result.html, scenes).errors).toEqual([]);
+    expect(topUpProgressMarkup(result.html, scenes).repaired).toEqual([]);
+  });
+
+  it("declines duplicate progress roots inside the same scene", () => {
+    const scenes = progressScene("progress");
+    const html = compositionDoc(
+      '<section data-scene="deploy" data-start="0" data-duration="4">' +
+      '<div data-part="build" data-component="progress"></div>' +
+      '<div data-part="build" data-component="progress"></div></section>',
+    );
+    const result = topUpProgressMarkup(html, scenes);
+    expect(result.repaired).toEqual([]);
+    expect(result.html).toBe(html);
+  });
+
   it("clears the exact kit_markup_incomplete finding it targets (round-trip vs the audit)", () => {
     const scenes = progressScene("progress");
     const before = compositionDoc(
