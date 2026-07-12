@@ -655,6 +655,202 @@ eliminating contradictory contracts).
 
 ---
 
+# Hackathon stabilization override -- finish before Phase 7
+
+This is the active next-agent work order. Its purpose is not to prove that the
+pipeline can produce zero residue on arbitrary adversarial briefs. Its purpose
+is to produce one judge-ready video promptly while preserving authorial range.
+S7.1 and everything after it are frozen until this section is complete. Do not
+publish or deploy without the owner's explicit authorization. Work locally with
+one primary agent; if delegation is genuinely useful, use only LUNA at high or
+xhigh and give it a narrow read-only or test-analysis task.
+
+## Starting evidence and scope boundary
+
+- Start from verified commit `00dfedb` (`fix(slack): converge ProofGrid first
+  attempt`). Do not revive uncommitted post-ProofLane experiments.
+- ProofGrid I (`lp3-state-capsule-20260712-i`) published a valid non-fallback
+  MP4. Its first storyboard and first full source response were accepted, but
+  deterministic scene repair plus critic/patch activity made the accounting
+  report more than one attempt. The exact replay and full suites passed after
+  the fixes in `00dfedb`.
+- ProofLane J (`lp3-state-capsule-20260712-j`) was stopped at the first source
+  browser result. The focal headline itself was fully visible and occupied
+  about 12% of the frame. The three findings were a parent/child stale-surface
+  overlap, a station-level occupancy preference, and motion still settling at
+  the landing frame. Treat these as the guardrail-reduction audit's primary
+  advisory controls, not as proof that the author failed.
+- Do not investigate a novel or obscure finding merely because a probe exposed
+  it. It enters this sprint only if it is a hard failure below, causes a visible
+  judge-facing break, or is responsible for another paid author call.
+
+## Hackathon acceptance contract
+
+A run is successful when all of the following are true:
+
+- it produces a real MP4 without probe fallback, the runtime completes, and no
+  hard finding survives;
+- a human can follow the before/after story, the intended focal content is
+  visible and readable, state does not obviously reset, and the ending lands;
+- storyboard authoring uses no more than two logical attempts and source
+  authoring uses no more than two logical attempts, with a goal of one each;
+- the full job uses no more than six logical model calls and eight physical
+  provider calls, including hedges; and
+- advisory findings may truthfully leave the automated result at `warn`. They
+  do not invalidate an otherwise judge-ready MP4.
+
+Target preview latency is eight minutes and target MP4 latency is fifteen
+minutes. Provider latency is environmental, so missing either target is an
+operational observation rather than permission to add a new creative
+guardrail. Production fallback remains a launch-safety mechanism; it is
+disabled only during the evidence probe so authorship failures remain visible.
+
+## Guardrail policy
+
+Every finding that can influence a retry must belong to exactly one tier:
+
+1. **Hard gate -- author repair only as a last resort.** Parse/schema/contract
+   failure; browser or runtime exception; missing/invalid timeline; a blank or
+   effectively blank load-bearing scene; missing or zero-area load-bearing
+   component; contradictory/reset state; missing render/MP4; or a load-bearing
+   component that remains out of frame after the deterministic repair below.
+2. **Deterministic same-attempt repair -- no paid call.** Canonical markup,
+   binding, or host script order; world/station geometry; typed load-bearing
+   content outside the viewport/safe area; and bounded station/camera fit. A
+   repair is adopted only after reinspection proves that exact hard condition
+   improved without introducing another hard condition. It may alter wrapper
+   position/scale or camera fit, but never copy, story order, component choice,
+   beat timing, palette, typography, or motion style.
+3. **Advisory -- report for human review, never retry.** Washout preferences;
+   occupancy preferences when the focal target is already visible; camera
+   settling/taste; motion reversal or jerk heuristics; static supporting
+   moments; parent/child or supporting-surface overlap; camera-idea counts;
+   density taste; and non-catastrophic pacing or readability. Advisory findings
+   must not enter storyboard/source retry feedback, slot repair, rescue, or
+   critic patch prompts.
+
+When evidence is ambiguous, default to advisory unless the rendered output is
+clearly broken. The audit removes model veto power from taste heuristics; it
+does not remove their diagnostic visibility.
+
+### S6.9 Hackathon guardrail and retry map
+- [ ] Produce `.reports/hackathon-guardrails.md`. Enumerate every finding path
+  that can influence `validateStoryboardPlan`, browser-QA retry feedback,
+  `repairSlotDraftForFindings`, quality penalties, critic/patch work,
+  `sequenceCheckStatus`, and normalizer/repair registries. For each row record
+  its deterministic owner, current tier, paid-call cost, whether it can block
+  publish, and its target tier under the policy above.
+- [ ] Explicitly trace the three ProofLane J findings and all current
+  out-of-frame/visibility findings from detector to retry decision. Identify
+  duplicate detectors that charge separately for the same rendered symptom.
+- [ ] This is an inventory step only: do not change production behavior, run a
+  paid probe, or expand the audit into a new quality taxonomy.
+- Verify: focused registry/status tests, Slack typecheck, exact artifact
+  replays, and `replay:all` remain green. Commit the report and plan/journal
+  update as one S6.9 commit.
+
+### S6.10 Deterministic load-bearing frame containment
+- [ ] At the lowest geometry owner, implement one bounded same-attempt repair
+  for a typed load-bearing component whose measured bounds prove it is partly
+  or wholly outside the viewport/safe area. Prefer wrapper translation/scale or
+  station/camera fit using measured bounds; keep the authored component, copy,
+  scene order, timing, and style intact.
+- [ ] Reinspect after the one repair and adopt it only when the exact component
+  is measurably more visible, satisfies the hard visibility floor, and creates
+  no new hard diagnostic. If deterministic containment cannot satisfy those
+  conditions, preserve the original candidate and permit at most one author
+  repair for that source stage.
+- [ ] Add negative controls proving that decorative/support content may remain
+  intentionally cropped, visible focal content is not mutated merely for being
+  sparse/large, and ProofLane J's fully visible headline does not trigger this
+  repair.
+- Verify: exact failing artifact or a minimized typed fixture, idempotence,
+  improvement/adoption/rollback controls, browser runtime, Slack typecheck,
+  and `replay:all`. No paid probe in this step.
+
+### S6.11 Attempt economy and advisory demotion
+- [ ] Route only hard findings into paid storyboard/source repair. Advisory
+  findings stay in QA artifacts and human-facing warnings but cannot generate
+  retry feedback, scene repair, rescue, or a critic patch on the hackathon
+  create path.
+- [ ] Enforce a maximum of two logical storyboard attempts and two logical
+  source attempts, including scene repair/full re-author paths. Once a
+  runtime-valid source candidate is banked, do not spend a rescue or critic
+  call trying to clear advisory residue. Allow at most one physical hedge for
+  each expensive stage and enforce the acceptance contract's global call cap.
+- [ ] Preserve fail-loud behavior for unresolved hard failures. Preserve an
+  honest `warn` result when a runtime-valid MP4 contains advisory residue; do
+  not relabel warnings as clean and do not use fallback inside the probe.
+- [ ] Add a ProofLane J-shaped test proving its three advisory findings cause
+  one provider source response and zero model repairs. Add controls proving an
+  unresolved hard off-frame focal receives at most one author repair, while a
+  runtime exception or missing timeline still fails.
+- Verify: focused attempt-ledger/QA/repair/status tests, exact ProofGrid I and
+  ProofLane J artifact replays where persisted, all Slack unit/browser suites,
+  Slack and root typechecks, and `replay:all`. No paid probe in this step.
+
+### S6.12 One bounded judge-representative live probe
+- [ ] Before spending a provider call, append honest ProofGrid I and ProofLane
+  J entries to `PROBE_LOG.md`, including J's early stop and the fact that no MP4
+  was produced. Run all Slack unit/browser suites, Slack/root typechecks, and
+  `replay:all`; begin the probe only when they are green.
+- [ ] Use one normal 14--18 second launch brief, not a five-scene component and
+  camera stress specification. Supply trusted product facts, audience, tone,
+  desired before/after story, and CTA; let the planner choose scene count,
+  composition, components, transitions, and camera language. Use the same
+  semantic brief for any allowed rerun and change only the job/cache marker.
+- [ ] Run the documented live-probe environment with fallback disabled,
+  continuity enabled, composition audit enabled, `format both`, and no deploy.
+  Poll at intervals of at least 60 seconds. Preserve job, author-run, QA,
+  runtime, render, MP4, and triage evidence.
+- [ ] Stop immediately when probe A produces a runtime-valid, human-acceptable
+  MP4 under the acceptance contract. Do not fix advisory-only residue, chase
+  `qualityResidue=0`, chase `oneAttemptSuccess=true`, or run another style
+  variation.
+- [ ] Probe B is allowed only if A has an unresolved hard failure or an obvious
+  judge-visible break. First replay A exactly, fix the lowest deterministic
+  owner, run the full verification surface, then rerun the same semantic brief.
+  There is no probe C in this sprint. A provider timeout gets at most one
+  operational rerun and must not be converted into a new guardrail.
+- Verify: `sequence:check` reports a real MP4 and valid runtime; triage stays
+  within the call caps; human strip/MP4 review confirms story, focal visibility,
+  continuity, and ending. Advisory-only `warn` is acceptable. Append the final
+  evidence to `PROBE_LOG.md` and the journal, then freeze product code.
+
+Suggested brief shape (facts must be replaced with the real demo facts):
+
+> Create a 15-second launch video for [product/feature] for [audience]. Show the
+> old friction, the new action, and the measurable result, then close on [CTA].
+> Tone: confident, polished, and concise. Use only these trusted facts: [facts].
+> Preserve visible state across scenes. Choose the visual structure, components,
+> transitions, and camera treatment creatively.
+
+### S6.13 Hackathon rehearsal and freeze
+- [ ] Keep the first acceptable authored MP4 as the primary demo artifact and
+  confirm a model-free known-good backup is locally accessible. Rehearse the
+  exact Slack command, progress/receipt path, output link/file, and fallback
+  behavior that will be used in front of judges.
+- [ ] For the launch environment, restore normal production fallback policy and
+  check `/healthz`. Publishing/deployment still requires explicit owner
+  authorization; this step does not grant it.
+- [ ] After an acceptable MP4 exists, reopen product code only for P0 launch
+  failures: no output, runtime/render failure, an obviously broken focal, state
+  reset, or repeated hard retry. Log everything else as post-hackathon work.
+- Verify: one timed local rehearsal plus the known-good backup path. Document
+  exact commands and artifacts in `OPERATIONS.md`/`PROBE_LOG.md`; do not begin
+  S7 or any broad cleanup.
+
+## Non-negotiable stop rules
+
+- First acceptable MP4 means done.
+- Advisory-only findings mean report and stop, not fix and rerun.
+- A novel edge case that judges will not see goes to the backlog.
+- Never broaden a mechanical repair into a rewrite of authorial choices.
+- Maximum two paid live probes in this section; no probe K/L/M chain.
+- No S7, Phase 8, publish, deploy, or unrelated refactor work.
+
+---
+
 # Phase 7 — Retire old systems and shrink the flag surface
 
 ### S7.1 Feature-flag audit
@@ -1526,3 +1722,19 @@ tests (139/139), contrast tests (4/4), Slack typecheck, and exact `replay:all`
 (18/0/0). Exact browser replay is runtime `ok: true`, `strictOk: true`, no
 overlap/static-moment findings, and 6.574% arrival change; a second bounded
 contrast pass reaches zero warnings. No publish, deploy, or S7 work.
+
+## HACKATHON-GUARDRAIL-PLAN — 2026-07-12 — READY (docs only)
+Added the active pre-S7 work order for the next agent. The new acceptance
+contract deliberately targets a judge-ready, runtime-valid MP4 with bounded
+cost rather than one-attempt/zero-residue purity: at most two logical attempts
+per authoring stage, six logical/eight physical calls per job, and two paid
+probes for the entire sprint. Hard runtime/contract failures remain blocking;
+measured load-bearing frame containment moves to one deterministic same-attempt
+repair; and taste/quality heuristics remain visible but cannot trigger paid
+repair. The first human-acceptable MP4 freezes product code.
+
+The plan starts from verified commit `00dfedb`, records the honest ProofGrid I
+and early-stopped ProofLane J evidence, restricts any delegation to LUNA
+high/xhigh, and forbids S7+, publish, deploy, and unrelated edge-case work. No
+production code, paid provider call, probe, publish, or deployment was performed
+for this documentation step.
