@@ -18,6 +18,7 @@
     "source:replay": "tsx scripts/sourceReplay.ts",
     "replay:all": "tsx scripts/replayAll.ts",
     "probe:triage": "tsx scripts/probeTriage.ts",
+    "dead-exports": "tsx scripts/deadExports.ts",
     "temporal:replay": "tsx scripts/replayTemporal.ts",
     "continuity:replay": "tsx scripts/replayContinuity.ts",
     "model:smoke": "tsx scripts/modelAuthoringSmoke.ts",

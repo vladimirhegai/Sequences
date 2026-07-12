@@ -201,7 +201,7 @@ and leave it for a HEAVY agent — that is cheaper than a wrong guess.
 - Verify: typecheck + `npm run test:unit` + `npm run demo` (model-free).
 
 ### S0.4 Unused-export census (mechanical, no deletions yet)
-- [ ] Add `scripts/deadExports.ts` (or wire `ts-prune`) listing exports with
+- [x] Add `scripts/deadExports.ts` (or wire `ts-prune`) listing exports with
   zero external references across src/studio/scripts/test. Commit the report
   to `.reports/dead-exports.md`. Mark candidates; actual deletions happen in
   S7.x after the moves settle.
@@ -666,6 +666,15 @@ plan. Verification: triage for `architecture-stress-5-20260711` reproduced
 10 logical / 14 physical calls and 8 QA warnings; triage for
 `refactor-review-normal-1-20260711` reproduced 10 / 14 and 8; Slack
 typecheck passed. No paid probe was run.
+
+## S0.4 â€” 2026-07-11 â€” DONE
+Added the mechanical TypeScript AST census at `scripts/deadExports.ts`, its
+`dead-exports` command, and the committed report at
+`.reports/dead-exports.md`. It scans 243 Slack source/studio/script/test files,
+found 1,377 named exports, and marks 314 zero-reference candidates; no
+deletions were made. Verification: `npm run dead-exports --workspace
+@sequences/slack` and Slack typecheck passed. Namespace imports are treated
+conservatively as references; S7.x must confirm candidates before deletion.
 
 ## S0.2 â€” 2026-07-11 â€” DONE
 Added `replay:all` plus the strict model-free `source:replay` path. The replay
