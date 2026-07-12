@@ -1291,3 +1291,18 @@ second loses the false camera class and retains its genuine moment gap. Files:
 Verification: Slack typecheck; focused camera phrase/blocking tests (23/23);
 exact attempt-1 strict replay; full Slack unit and browser suites; exact
 `replay:all` (13/0/0), all green. No source call, runtime, publish, or deploy.
+
+## LP-3 follow-up — 2026-07-12 — FAILED / HANDOFF
+CurrentProof D proved S3.5 (no repeated modal camera class) and S6.4's initial
+author budget fit (44,829 chars), but failed before runtime. Three typed
+`progress` beats reached source with a `hairline-rule` root missing its
+canonical fill child; attempt 1 and compact repair attempt 2 repeat the exact
+`kit_markup_incomplete` findings under strict `source:replay`. Full re-author
+attempt 3 then measured 49,040 chars even after removing the optional skill
+overflow and stopped at the typed preflight. Triage: fail-loud, 9 logical / 12
+physical calls, one storyboard time-ramp degradation, no fallback, no runtime
+or render. Next owner: L1 scaffold or bounded L2 kit markup for the progress
+fill, plus non-skill compaction for full re-author prompts. S7.1-S7.3 were not
+started because LP-2/LP-3 never reached state/runtime evidence. See PROBE_LOG
+CurrentProof D and the persisted project for exact artifacts. No publish or
+deploy.

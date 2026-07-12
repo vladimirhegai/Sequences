@@ -275,3 +275,29 @@ extends only that bounded surface predicate: one hero modal groups its local
 metric/CTA phrases; multiple or non-hero modals remain separate. Attempt 1 now
 passes strict replay. Attempt 2 no longer reports the camera class and honestly
 retains only its moment gap. LP-2/LP-3 remain open pending a fresh probe.
+
+### CurrentProof — `lp3-state-capsule-20260712-d` (fail-loud in source authoring)
+
+The post-S3.5 probe did not repeat the modal camera class and finally reached
+source authoring. Planning still required three storyboard attempts: the first
+two had genuine approval-surface reading/hold density findings; attempt 3 was
+accepted with one dropped time ramp degradation and auto-declared
+`asset-glass-metric`. The initial author prompt fit at 44,829 chars, proving
+S6.4's dynamic preflight path live.
+
+Author attempt 1 plus its scene-scoped slot repair produced a 28,451-char
+source, but three typed `progress` beats targeting `hairline-rule` had no
+`.cmp-ring-fg`, `[data-cmp-fill]`, or direct `<i>` fill element. The L3
+`kit_markup_incomplete` gate rejected it. Attempt 2's compact patch repeated
+all three exact findings. Attempt 3 switched to full re-authoring but its
+non-optional locked context still measured 49,040 chars after the skill fit,
+so the typed prompt-budget preflight stopped it without a provider call. No
+runtime, MP4, or temporal evidence was produced.
+
+`probe:triage`: fail-loud, runtime invalid, 9 logical / 12 physical calls, one
+storyboard time-ramp degradation, no fallback. Exact `source:replay` reproduces
+the three progress-fill findings. Required next fix: the L1 component scaffold
+or bounded L2 kit-markup completion must emit the canonical fill child for a
+typed `progress` root before author repair; separately, compact full-re-author
+locked context below 45k without dropping the plan/scaffold/frame contract.
+No further paid probe was launched.
