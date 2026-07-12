@@ -345,7 +345,7 @@ Goal (handoff §3): branded `SourceTime` / `ViewerTime` / `Duration` /
 `SceneLocalTime`; one ramp-aware conversion service; one cascade transform.
 
 ### S2.1 Introduce branded time types + conversion service
-- [ ] New `src/engine/time.ts` with branded types, constructors, arithmetic,
+- [x] New `src/engine/time.ts` with branded types, constructors, arithmetic,
   and ramp-aware `toViewer`/`toSource`. Property tests: monotonicity, boundary
   identity, round-trip, cascade preservation.
 - Verify: new unit tests green; no call-site changes yet.
@@ -821,3 +821,18 @@ unit suite (after correcting the obsolete out-parameter assertion);
 `sequence:check --demo --no-mcp --format both` plus `probe:triage`, both green.
 No paid probe, publish, or deploy. SignalDock status replay asserts
 `runtimeValid: true, qualityResidue: 8`.
+
+## S2.1 — 2026-07-11 — DONE
+Added `src/engine/time.ts` as the typed boundary for `SourceTime`, `ViewerTime`,
+`Duration`, and `SceneLocalTime`, including validated constructors, domain-safe
+arithmetic, scene-local conversion, and a ramp-aware conversion service backed
+by the existing authoritative time-ramp knot mapping. Added property tests for
+monotonicity, ramp-boundary identity, round trips in both domains, and cascade
+translation preservation. No call sites changed. Audited S1.2–S1.3 against the
+ledger/status consumers and recorded SignalDock assertions; the checked status
+derivation remains consistent with the plan (`runtimeValid: true`,
+`qualityResidue: 8`, degraded axis `qualityResidue`). Files:
+`src/engine/time.ts`, `test/time.test.ts`, this plan. Verification: focused
+time/ledger/status/telemetry tests (32/32), Slack typecheck, full Slack unit
+suite (76 files / 1,291 tests), and model-free `sequence:check --demo --no-mcp
+--format both`, all green. No paid probe, publish, or deploy.
