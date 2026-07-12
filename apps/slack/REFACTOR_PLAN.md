@@ -124,6 +124,12 @@ never into more prompt adjectives.
     copy, 1.2s empty opening → S8.1 and a new step S8.6 below.
 - SignalDock (`architecture-stress-5-20260711`, previous session) agrees on
   every class from the stress side; see PROBE_LOG.md.
+- LP-1 (`phase3-lp1-camera-20260711-a…e`, 2026-07-11/12): Phase 3 checkpoint
+  **passed** — landings 7/7, occupancy 7/7, ≤1 route/scene, no new QA class.
+  Residue: `motion_jerk_excess` (repeated across source attempts, shipped as
+  the single quality residue) → S8.4; edge-cropped count-up numerals,
+  near-black owner scene, loud wallpaper swipe covers → S8.1/S8.6. Full
+  entry in PROBE_LOG.md and PHASE_3.md.
 
 ## Staffing guide — which agent runs which steps
 
@@ -177,7 +183,7 @@ mechanical class blocks further probes until it is fixed and replayed.
 | --- | --- | --- |
 | **LP-0 baseline** | DONE (SignalDock + `refactor-review-normal-1`) | The defect classes this plan targets. Compare every later probe's triage against these two. |
 | **(no probes)** | Phases 0, P, 1, 2, 5, 7 | Behavior-preserving phases. The referee is `replay:all` + suites + the golden render. If a step here changes replay output unexpectedly, STOP and fix — do not "check with a probe". |
-| **LP-1 camera** | After S3.4 (Phase 3 complete) | One stress-shaped probe (SignalDock-style brief). Triage vs LP-0: phrase count collapsed (≤1 primary route/scene), landings readable/in-range, occupancy in range, no new QA class. |
+| **LP-1 camera** | DONE 2026-07-12 (`phase3-lp1-camera-20260711-e`; see PROBE_LOG.md) | One stress-shaped probe (SignalDock-style brief). Triage vs LP-0: phrase count collapsed (≤1 primary route/scene), landings readable/in-range, occupancy in range, no new QA class. **PASSED on all four criteria** after four fail-loud runs each fixed a deterministic Phase 3 integration defect. |
 | **LP-2 state** | After S4.2 (Phase 4 complete) | One metric-continuity brief (value develops across ≥3 scenes). No reset flicker, morphs honest, reverse-seek clean. May combine with LP-1 into one probe if Phases 3+4 land together. |
 | **LP-3 prompt diet** | After S6.1 (and S6.3's capsule probe folds in here) | One normal probe. Prompt changes alter MODEL behavior — replays prove nothing here. Watch: attempts, parse failures, findings-retry classes vs LP-0; acceptance quality must not drop. |
 | **LP-4 per motion gate** | Tail of each S8.x that says so | One probe each: the new gate fires on real output without false-positives on the golden film. |
@@ -943,3 +949,26 @@ pacing/camera/Sentinel tests (175/175); exact `replay:all` (13/0/0). Four old
 storyboard artifacts (two LaunchRelay, PulseForge, SignalDock) intentionally
 changed from parsed to expected findings-retry rejection; artifact/source
 bytes remained frozen. No paid probe, publish, or deploy.
+
+## LP-1 — 2026-07-12 — DONE (Phase 3 checkpoint passed)
+Five paid runs (`phase3-lp1-camera-20260711-a…e`), fix-first between each:
+attempts A–D failed loudly at storyboard planning and each yielded one
+deterministic fix with an exact-artifact replay + minimized regression
+(commits `22b9086`, `bbbfb80`, `14e86c7`, `6f7064c` — semantic idea
+de-duplication, framing-floor neutral-chassis upgrade, duplicate team-strip
+retirement, region-as-context for spatial focals). Attempt E accepted the
+storyboard on the first logical attempt and published: `published-degraded`,
+`runtimeValid=true`, `qualityResidue=1`, 9 logical / 13 physical, 20.2s MP4.
+Triage vs LP-0 passed all four LP-1 criteria (routes ≤1/scene, landings 7/7,
+occupancy 7/7, no new QA class). Ledger: PROBE_LOG.md "Phase 3 LP-1
+checkpoint"; narratives: PHASE_3.md. Residue filed, not hidden:
+`motion_jerk_excess` repeated across both source attempts and shipped as the
+single quality residue — its fix is S8.4's gesture-settle contract (browser
+class; the artifact replays statically clean); staging residue (edge-cropped
+count-up numerals, near-black owner scene, loud swipe covers) → S8.1/S8.6.
+Attempt E's launcher session died mid-probe; this session picked the live
+process up, let it finish, and ran `probe:triage`. Post-probe verification at
+HEAD: typecheck, 78 files / 1,306 unit tests, `replay:all` 13/0/0 all green.
+Note: this commit also carries the previously uncommitted Briefly
+(`refactor-review-normal-1-20260711`) PROBE_LOG entry that the committed docs
+already referenced. Next agent: Phase 4, S4.1.

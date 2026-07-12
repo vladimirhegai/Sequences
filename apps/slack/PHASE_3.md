@@ -315,3 +315,49 @@ S3.x commit is completed.
 - Focused phrase/blocking tests passed 20/20. Typecheck passed; the complete
   unit project passed 78 files / 1,306 tests; exact replay passed 13 with zero
   skips/failures after the intentional LaunchRelay refreeze.
+
+### LP-1 attempt E — PASSED (checkpoint met)
+
+- Ran cache-distinct seven-scene retry `phase3-lp1-camera-20260711-e`
+  (fallback off, continuity on, audit composition, MCP, render, temporal)
+  after the attempt-D contextual-framing fix. The launching session ended
+  while the probe ran; the next session picked it up live and let it finish.
+  Total wall clock 12:23–12:47 AM (~24 min).
+- Storyboard: **accepted on the first logical attempt** (1 logical / 4
+  physical — two transient request failures and one hedge were environmental).
+  The accepted plan is exactly the brief's shape: 7 scenes, one focal subject
+  each, ≤1 lens route per scene, one plugin in scene 2 only. Two L2
+  degradations (time-ramp drop + redundant-beat drop on `approval-button`)
+  were bounded and correct.
+- Source: attempt 1 browser-rejected with exactly one finding
+  (`motion_jerk_excess`, `gathered-workspace` t=3.60s, 4 high-jerk focal
+  gestures / 0.18 per second); attempt 2 patch re-reported the identical
+  signature and the ladder early-shipped with `stagnant-polish-early-ship`
+  penalty 5. Disposition `published-degraded`, `runtimeValid=true`,
+  `qualityResidue=1`, 9 logical / 13 physical calls, 20.2s MP4 rendered.
+- **LP-1 triage vs LP-0 (SignalDock), all four gate criteria pass:**
+  - Phrase collapse: 2 full camera moves across 7 scenes, ≤1 primary route
+    per scene (LP-0: 14 phrases / 4 scenes). Blocking overlay shows one
+    phrase banner per scene with on-target landing crosshairs.
+  - Primary readable landings **7/7** (LP-0: 4/8).
+  - Occupancy in range **7/7**, per-scene 7.1–19.8% (LP-0: 9/14).
+  - QA classes: one warning, `motion_jerk_excess` — registry-known, no new
+    class (LP-0: 8 warnings). Peak speed 0.776 diag/s (LP-0: 2.798), 3 jerk
+    markers (LP-0: 30), 0% dead eligible runtime (LP-0: 26.7%).
+- Sentinel follow-through on the repeated finding: the exact rejected
+  artifact replays clean through the strict static path
+  (`source:replay` — statically valid, 9 known `overlapping_gsap_tweens`
+  advisories); the jerk signature is a browser continuous-motion class whose
+  prescribed fix ("remove the corrective camera move or competing transform,
+  keep one minimum-jerk route") is precisely S8.4's gesture-settle contract.
+  Logged as known residue feeding S8.4; artifacts preserved under
+  `planning/attempts/` and `qa-cache/`.
+- Motion pass residue (Phase 8 material, NOT camera classes): count-up
+  numerals render at the frame edge outside their cards in `signal-45` and
+  `resolved-89`; `owner-verification` is near-black with small low-contrast
+  rows; swipe covers show loud full-frame wallpaper tiling → S8.1/S8.6.
+  No reset flicker regressions; state work remains Phase 4.
+- Post-probe verification at HEAD: typecheck, full unit suite (78 files /
+  1,306 tests), and exact `replay:all` (13/0/0) all green.
+- **Phase 3 is complete.** PROBE_LOG.md carries the LP-1 ledger entry; the
+  REFACTOR_PLAN.md Step Journal has the checkpoint pointer.
