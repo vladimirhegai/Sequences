@@ -20,6 +20,7 @@ export {
   parseStoryboardResponse,
   reconcileUndeclaredMorphTargets,
   retimeUnmotivatedTimeRamps,
+  storyboardFindingDecision,
   validateStoryboardPlan,
 } from "./runner/storyboardAudit.ts";
 export type {
@@ -120,10 +121,12 @@ export {
 } from "./runner/findingSignatures.ts";
 export {
   browserQualityPenalty,
+  browserQaHasUnresolvedHardFailure,
   criticSkippableCleanDraft,
   earlyLeastBadPublishReason,
   measuredArtSignalPenalty,
   sourceRetryFeedbackForBrowserQa,
   stagnantPolishShipReason,
   stagnantPolishSignature,
+  unresolvedHardBrowserFindings,
 } from "./runner/browserQuality.ts";

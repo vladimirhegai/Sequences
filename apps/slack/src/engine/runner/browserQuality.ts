@@ -258,38 +258,73 @@ function sentinelBlockingForFinding(finding: string): SentinelBlocking | undefin
   )?.blocking;
 }
 
-function isMomentStaticFrameFinding(finding: string): boolean {
-  return finding.trim().startsWith("moment_static_frame");
-}
+const LOAD_BEARING_READABILITY_CODES = new Set([
+  "clipped_text",
+  "text_box_overflow",
+  "text_occluded",
+]);
 
-function isPrimaryStaticFrameFinding(
-  finding: string,
-  browserQa: DirectBrowserQaResult,
-): boolean {
-  if (!isMomentStaticFrameFinding(finding)) return false;
-  return (browserQa.temporalJudge ?? []).some((entry) =>
-    entry.verdict === "static" &&
-    entry.importance === "primary" &&
-    finding.includes(`moment:${entry.momentId}`)
-  );
-}
-
-function hasHardLivenessOrBlankIssue(browserQa: DirectBrowserQaResult): boolean {
-  return (browserQa.errors ?? []).some((entry) =>
-    entry.startsWith("near_blank_film:") ||
-    entry.startsWith("motion/liveness") ||
-    entry.includes("motion/liveness")
-  );
+function failedLoadBearingKeys(browserQa: DirectBrowserQaResult): Set<string> {
+  return new Set((browserQa.loadBearingContainment ?? [])
+    .filter((entry) =>
+      !entry.found || entry.opacity < 0.35 ||
+      entry.visibleFraction + 1e-6 < entry.requiredVisibleFraction
+    )
+    .map((entry) => `${entry.sceneId}\u0000${entry.part}`));
 }
 
 /**
- * Browser-only art-direction findings that remain useful for draft ranking and
- * the continuity critic, but cannot be repaired safely by another paid source
- * pass. Washout is discovered after authored surfaces exist; changing the
- * frame/dialect belongs to the cheap planning rung, not the source retry loop.
+ * The only browser findings allowed to buy another source call. Raw QA keeps
+ * every advisory; this list collapses retry ownership to runtime/blankness,
+ * broken typed interactions, and unresolved load-bearing containment/read.
  */
-function isExcludedFromPaidSourceRetry(finding: string): boolean {
-  return finding.trim().startsWith("composition_washed_out");
+export function unresolvedHardBrowserFindings(
+  browserQa: DirectBrowserQaResult,
+): string[] {
+  const hard: string[] = [...(browserQa.errors ?? [])];
+  const failedKeys = failedLoadBearingKeys(browserQa);
+  const loadBearingKeys = new Set((browserQa.loadBearingContainment ?? [])
+    .map((entry) => `${entry.sceneId}\u0000${entry.part}`));
+  for (const entry of browserQa.loadBearingContainment ?? []) {
+    if (!failedKeys.has(`${entry.sceneId}\u0000${entry.part}`)) continue;
+    const state = !entry.found
+      ? "missing"
+      : entry.opacity < 0.35
+        ? "invisible"
+        : `${(entry.visibleFraction * 100).toFixed(1)}% visible; requires ` +
+          `${(entry.requiredVisibleFraction * 100).toFixed(1)}%`;
+    hard.push(
+      `load_bearing_containment: scene "${entry.sceneId}" part "${entry.part}" remains ${state}`,
+    );
+  }
+  for (const issue of browserQa.issues ?? []) {
+    const issuePart = issue.part ?? issue.componentRootPart;
+    const key = issue.sceneId && issuePart ? `${issue.sceneId}\u0000${issuePart}` : undefined;
+    const unresolvedPrimary = Boolean(key && failedKeys.has(key));
+    const hardIssue =
+      issue.code === "near_blank_scene" ||
+      issue.code === "camera_framed_clipped" ||
+      (issue.code.startsWith("interaction_") && issue.severity === "error") ||
+      (LOAD_BEARING_READABILITY_CODES.has(issue.code) && Boolean(key && loadBearingKeys.has(key))) ||
+      ((issue.code === "spatial_focal_missing" ||
+        issue.code === "spatial_focal_invisible" ||
+        issue.code === "spatial_focal_offframe") &&
+        ((browserQa.loadBearingContainment ?? []).length === 0 || unresolvedPrimary));
+    if (hardIssue) {
+      hard.push(`${issue.code}: ${issue.message}`);
+    }
+  }
+  return dedupeFeedbackBySignature(hard);
+}
+
+export function browserQaHasUnresolvedHardFailure(
+  browserQa: DirectBrowserQaResult | undefined,
+): boolean {
+  return Boolean(
+    browserQa &&
+    !browserQa.infraError &&
+    (!browserQa.ok || unresolvedHardBrowserFindings(browserQa).length > 0),
+  );
 }
 
 /**
@@ -299,18 +334,9 @@ function isExcludedFromPaidSourceRetry(finding: string): boolean {
  */
 export function sourceRetryFeedbackForBrowserQa(
   browserQa: DirectBrowserQaResult,
-  staticRepairWarnings: string[] = [],
+  _staticRepairWarnings: string[] = [],
 ): string[] {
-  const keepMomentStatic = hasHardLivenessOrBlankIssue(browserQa);
-  return dedupeFeedbackBySignature([
-    ...staticRepairWarnings,
-    ...(browserQa.errors ?? []),
-    ...(browserQa.warnings ?? []).filter((warning) =>
-      keepMomentStatic ||
-      !isMomentStaticFrameFinding(warning) ||
-      isPrimaryStaticFrameFinding(warning, browserQa)
-    ),
-  ].filter((finding) => !isExcludedFromPaidSourceRetry(finding)));
+  return unresolvedHardBrowserFindings(browserQa);
 }
 
 function staticWarningBlocksEarlyLeastBad(warning: string): boolean {
@@ -439,5 +465,6 @@ export function criticSkippableCleanDraft(
   if (browserQa.strictOk && browserQualityPenalty(browserQa, staticRepairWarnings) === 0) {
     return true;
   }
-  return shipReason?.startsWith("stagnant-polish-early-ship") ?? false;
+  return shipReason?.startsWith("stagnant-polish-early-ship") ||
+    shipReason?.startsWith("runtime-valid-no-hard-bank") || false;
 }

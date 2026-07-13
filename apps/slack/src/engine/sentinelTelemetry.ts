@@ -87,6 +87,22 @@ export function beginSentinelRun(
   storage.enterWith({ projectDir, ledger });
 }
 
+/** Scoped Sentinel context for tests and contained helper workflows. */
+export function runInSentinelContext<T>(
+  projectDir: string,
+  run: () => T,
+  flags?: { skeleton?: boolean; slots?: boolean },
+): T {
+  const ledger = new AttemptLedger();
+  ledger.append({
+    kind: "run-start",
+    projectDir,
+    ...(flags?.skeleton === undefined ? {} : { skeletonEnabled: flags.skeleton }),
+    ...(flags?.slots === undefined ? {} : { slotsEnabled: flags.slots }),
+  });
+  return storage.run({ projectDir, ledger }, run);
+}
+
 /**
  * Append one raw ledger event from the runner (attempt start/end, hedge win,
  * stream timeout, …). No-op outside a run context, like every emitter here.
@@ -98,6 +114,71 @@ export function appendSentinelLedgerEvent(body: AttemptLedgerEventBody): void {
 /** The active run's events, for derived predicates. Undefined outside a run. */
 export function activeSentinelLedgerEvents(): readonly AttemptLedgerEvent[] | undefined {
   return active()?.ledger.events;
+}
+
+/** The normal create path has an active ledger; isolated helpers/demos do not. */
+export function boundedCreatePolicyActive(): boolean {
+  return Boolean(active());
+}
+
+export const MAX_LOGICAL_MODEL_CALLS = 6;
+export const MAX_PHYSICAL_PROVIDER_REQUESTS = 8;
+export const MAX_STORYBOARD_MODEL_CALLS = 2;
+export const MAX_SOURCE_MODEL_CALLS = 2;
+
+export class SentinelModelCallBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SentinelModelCallBudgetError";
+  }
+}
+
+function modelStageFamily(stage: string): string {
+  if (/^storyboard(?:\s|$)/i.test(stage)) return "storyboard";
+  if (/^author(?:\s|$)|source-author/i.test(stage)) return "source-author";
+  return stage.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function reservedModelRequests(events: readonly AttemptLedgerEvent[]): AttemptLedgerEvent[] {
+  return events.filter((event) => event.kind === "model-request");
+}
+
+/**
+ * Atomically reserve one primary provider request before launch. The append is
+ * synchronous, so parallel concept/shape work cannot both observe stale cap
+ * state. Outcome events settle telemetry later without charging a second time.
+ */
+export function reserveSentinelModelCall(stage: string): void {
+  const context = active();
+  if (!context) return;
+  const requests = reservedModelRequests(context.ledger.events);
+  const hedges = context.ledger.events.filter((event) => event.kind === "hedge-launch").length;
+  const family = modelStageFamily(stage);
+  const familyCalls = requests.filter((event) =>
+    event.kind === "model-request" && modelStageFamily(event.stage) === family
+  ).length;
+  const familyCap = family === "storyboard"
+    ? MAX_STORYBOARD_MODEL_CALLS
+    : family === "source-author"
+      ? MAX_SOURCE_MODEL_CALLS
+      : undefined;
+  if (requests.length >= MAX_LOGICAL_MODEL_CALLS) {
+    throw new SentinelModelCallBudgetError(
+      `model-call budget exhausted before ${stage}: ${MAX_LOGICAL_MODEL_CALLS} logical calls`,
+    );
+  }
+  if (requests.length + hedges >= MAX_PHYSICAL_PROVIDER_REQUESTS) {
+    throw new SentinelModelCallBudgetError(
+      `provider-request budget exhausted before ${stage}: ` +
+        `${MAX_PHYSICAL_PROVIDER_REQUESTS} physical requests`,
+    );
+  }
+  if (familyCap !== undefined && familyCalls >= familyCap) {
+    throw new SentinelModelCallBudgetError(
+      `${family} budget exhausted before ${stage}: ${familyCap} logical calls`,
+    );
+  }
+  context.ledger.append({ kind: "model-request", stage });
 }
 
 /** Record one logical model call (already de-hedged by the retry wrappers). */
@@ -139,6 +220,12 @@ export function claimSentinelHedge(stage: string, maxPerRun: number): boolean {
   if (!context) return true;
   const launches = countHedgeLaunches(context.ledger.events, isSourceAuthorHedgeStage);
   if (launches.total >= maxPerRun) return false;
+  const stageFamily = modelStageFamily(stage);
+  if (context.ledger.events.some((event) =>
+    event.kind === "hedge-launch" && modelStageFamily(event.stage) === stageFamily
+  )) return false;
+  const requests = reservedModelRequests(context.ledger.events).length;
+  if (requests + launches.total >= MAX_PHYSICAL_PROVIDER_REQUESTS) return false;
   const authorReserve = Math.min(hedgeReserveForSourceAuthor(), maxPerRun);
   if (authorReserve > 0 && !isSourceAuthorHedgeStage(stage)) {
     const missingAuthorReserve = Math.max(0, authorReserve - launches.author);

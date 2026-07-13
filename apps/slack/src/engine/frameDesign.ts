@@ -47,6 +47,11 @@ import {
 } from "./modelPolicy.ts";
 import { slackSequencesEnvRawValue } from "./featureFlags.ts";
 import {
+  recordSentinelModelCall,
+  recordSentinelModelCallFailure,
+  reserveSentinelModelCall,
+} from "./sentinelTelemetry.ts";
+import {
   TYPE_SYSTEMS,
   pickTypeSystems,
   typeSystemById,
@@ -364,11 +369,15 @@ async function chooseFrame(
     "defines instead of forcing every job into tinted dark SaaS chrome.",
   ].filter(Boolean).join("\n");
 
+  let frameRequestReserved = false;
+  let frameRequestCompleted = false;
   try {
     process.stderr.write(
       `[frame] creative direction · ${model ? `model ${model}` : "provider primary model"} · ` +
         `reasoning ${thinkingMode}\n`,
     );
+    reserveSentinelModelCall("frame-design");
+    frameRequestReserved = true;
     const raw = await provider.complete(prompt, {
       ...options,
       timeoutMs: 180_000,
@@ -378,6 +387,12 @@ async function chooseFrame(
         ? { responseFormat: frameChoiceResponseFormat() }
         : {}),
       ...(model ? { model } : {}),
+    });
+    frameRequestCompleted = true;
+    recordSentinelModelCall({
+      stage: "frame-design",
+      promptChars: prompt.length,
+      completionChars: raw.length,
     });
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
@@ -426,6 +441,9 @@ async function chooseFrame(
       exceptions,
     };
   } catch (error) {
+    if (frameRequestReserved && !frameRequestCompleted) {
+      recordSentinelModelCallFailure("frame-design");
+    }
     process.stderr.write(`[frame] art-direction decision fell back to deterministic: ${String(error)}\n`);
     return null;
   }

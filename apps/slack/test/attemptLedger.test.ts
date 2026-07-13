@@ -270,6 +270,22 @@ describe("AttemptLedger", () => {
     expect(view.disposition).toBe("fallback");
   });
 
+  it("uses launch reservations for physical cost without double-counting outcomes", () => {
+    const ledger = new AttemptLedger();
+    ledger.append({ kind: "run-start", projectDir: "/x" });
+    ledger.append({ kind: "model-request", stage: "frame-design" });
+    ledger.append({ kind: "model-call", stage: "frame-design", promptChars: 10, completionChars: 5 });
+    ledger.append({ kind: "model-request", stage: "storyboard" });
+    ledger.append({ kind: "model-call-failure", stage: "storyboard" });
+    ledger.append({ kind: "hedge-launch", stage: "storyboard" });
+    ledger.append({ kind: "finalize", disposition: "fail-loud" });
+    const view = deriveSentinelRunView(ledger.events);
+    expect(view.modelCalls.total).toBe(1);
+    expect(view.modelCalls.failedTotal).toBe(1);
+    expect(view.modelCalls.hedgedTotal).toBe(1);
+    expect(view.modelCalls.physicalRequestTotal).toBe(3);
+  });
+
   it("derives the honest axes and repeated QA classes from events", () => {
     const ledger = new AttemptLedger();
     ledger.append({ kind: "run-start", projectDir: "/x" });

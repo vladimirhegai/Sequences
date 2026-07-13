@@ -66,6 +66,9 @@ export type LedgerAttemptStage = "storyboard-plan" | "source-author";
  * order, and never mutated; `seq`/`at` are stamped by the writer.
  *
  * - `attempt-start`/`attempt-end`: one LOGICAL attempt of a ladder stage.
+ * - `model-request`: one logical/physical primary request reserved atomically
+ *   before launch. New bounded creates use this for cap enforcement; legacy
+ *   replays without reservations continue to derive request cost from outcomes.
  * - `model-call`: one successful logical completion (already de-hedged).
  * - `model-call-failure`: a spent logical call that returned nothing usable
  *   (transport fault, truncation, stall) — cost with no artifact.
@@ -88,6 +91,7 @@ export type AttemptLedgerEventBody =
     }
   | { kind: "attempt-start"; stage: LedgerAttemptStage; number: number; mode?: string }
   | { kind: "attempt-end"; stage: LedgerAttemptStage; number: number; outcome: string }
+  | { kind: "model-request"; stage: string }
   | { kind: "model-call"; stage: string; promptChars: number; completionChars: number }
   | { kind: "model-call-failure"; stage: string }
   | { kind: "hedge-launch"; stage: string }
@@ -384,6 +388,7 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
   let successfulCalls = 0;
   let failedTotal = 0;
   let hedgedTotal = 0;
+  let reservedLogicalTotal = 0;
   let totalPromptChars = 0;
   let totalCompletionChars = 0;
   let maxAuthorPromptChars = 0;
@@ -405,6 +410,9 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
         if (/author/i.test(event.stage)) {
           maxAuthorPromptChars = Math.max(maxAuthorPromptChars, event.promptChars);
         }
+        break;
+      case "model-request":
+        reservedLogicalTotal += 1;
         break;
       case "model-call-failure":
         failed[event.stage] = (failed[event.stage] ?? 0) + 1;
@@ -499,7 +507,8 @@ export function deriveSentinelRunView(events: readonly AttemptLedgerEvent[]): Se
       failedTotal,
       hedged,
       hedgedTotal,
-      physicalRequestTotal: successfulCalls + failedTotal + hedgedTotal,
+      physicalRequestTotal:
+        (reservedLogicalTotal || successfulCalls + failedTotal) + hedgedTotal,
     },
     slotCalls,
     degradations,

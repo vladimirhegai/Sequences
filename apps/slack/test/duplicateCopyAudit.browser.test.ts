@@ -135,7 +135,7 @@ async function withoutUnrelatedPolish<T>(run: () => Promise<T>): Promise<T> {
 }
 
 describe("same-scene repeated visible copy audit", () => {
-  it("requests strict polish for one substantial fact rendered on two surfaces", async () => {
+  it("keeps one repeated substantial fact visible as advisory QA only", async () => {
     expect(REPEATED_VISIBLE_COPY_MIN_CHARS).toBe(30);
     expect(REPEATED_VISIBLE_COPY_MIN_WORDS).toBe(5);
     const qa = await withoutUnrelatedPolish(() => inspect("positive", positiveFilm()));
@@ -153,7 +153,7 @@ describe("same-scene repeated visible copy audit", () => {
     });
     const warning = qa.warnings.find((entry) => entry.startsWith("repeated_visible_copy"));
     expect(warning).toBeDefined();
-    expect(sourceRetryFeedbackForBrowserQa(qa)).toContain(warning);
+    expect(sourceRetryFeedbackForBrowserQa(qa)).not.toContain(warning);
   }, 45_000);
 
   it("ignores host/plugin and ARIA mirrors, CTA/brand tokens, split spans, same-owner repeats, and cross-scene reuse", async () => {

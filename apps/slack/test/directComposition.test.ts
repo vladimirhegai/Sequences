@@ -35,6 +35,8 @@ import {
   correctSparseFraming,
   evaluateLoadBearingContainmentAdoption,
   sourceRetryFeedbackForBrowserQa,
+  storyboardFindingDecision,
+  unresolvedHardBrowserFindings,
   repairStationPositioning,
   injectBrandBase,
   brandBaseStyleBlock,
@@ -71,6 +73,7 @@ import {
   type DirectLayoutIssue,
 } from "../src/engine/layoutInspector.ts";
 import { applyContinuityCritique } from "../src/engine/runner/ladder.ts";
+import { runInSentinelContext } from "../src/engine/sentinelTelemetry.ts";
 import { OPENROUTER_VISION_CRITIC_MODEL } from "../src/engine/modelPolicy.ts";
 import type { DirectScene } from "../src/engine/directComposition.ts";
 import { initializeProject } from "../src/engine/projectTemplates.ts";
@@ -176,6 +179,235 @@ vi.mock("../src/engine/layoutInspector.ts", async (importOriginal) => {
     warnings: [],
     })),
   };
+});
+
+const defaultInspectImplementation = vi.mocked(inspectDirectComposition).getMockImplementation()!;
+
+describe("S6.11 bounded live-create attempt economy", () => {
+  afterEach(() => {
+    vi.mocked(inspectDirectComposition)
+      .mockReset()
+      .mockImplementation(defaultInspectImplementation);
+  });
+  it("banks the ProofLane J advisory shape after one source response and skips the critic", async () => {
+    const dir = projectDir();
+    const value = draft();
+    const qa: DirectBrowserQaResult = {
+      ok: true,
+      strictOk: false,
+      samples: [0.6, 12.8, 18.2],
+      issues: [{
+        code: "stale_asset_lingers",
+        severity: "warning",
+        time: 12.8,
+        selector: "#approval-shell",
+        sceneId: "proof",
+        part: "approval-shell",
+        message: "parent shell remains behind its child readiness stat",
+        source: "sequences",
+      }, {
+        code: "camera_blocking_landing",
+        severity: "warning",
+        time: 18.2,
+        selector: "#ready-headline",
+        sceneId: "payoff",
+        part: "ready-headline",
+        message: "ensemble station occupancy is above its preferred range",
+        source: "sequences",
+      }, {
+        code: "camera_blocking_unsettled",
+        severity: "warning",
+        time: 0.6,
+        selector: "#hook-title",
+        sceneId: "hook",
+        part: "hook-title",
+        message: "opener is still settling at the sampled landing",
+        source: "sequences",
+      }],
+      loadBearingContainment: [{
+        sceneId: "payoff",
+        part: "ready-headline",
+        detector: "camera-blocking",
+        time: 18.2,
+        found: true,
+        opacity: 1,
+        visibleFraction: 1,
+        requiredVisibleFraction: 0.85,
+      }],
+      errors: [],
+      warnings: [
+        "stale_asset_lingers #approval-shell: parent shell remains behind child stat",
+        "camera_blocking_landing #ready-headline: ensemble occupancy preference",
+        "camera_blocking_unsettled #hook-title: opener still settling",
+      ],
+    };
+    expect(unresolvedHardBrowserFindings(qa)).toEqual([]);
+    expect(sourceRetryFeedbackForBrowserQa(qa)).toEqual([]);
+    vi.mocked(inspectDirectComposition).mockReset().mockResolvedValue(qa);
+    const complete = vi.fn().mockResolvedValue(response(value));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "ProofLane bounded author",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+
+    const result = await runInSentinelContext(dir, () => requestDirectComposition(provider, {
+      brief: "Launch Relay",
+      projectDir: dir,
+      skills: skills(),
+      lockedStoryboard: value.storyboard,
+    }));
+
+    expect(result.attempts).toBe(1);
+    expect(result.earlyShipReason).toBe("runtime-valid-no-hard-bank");
+    expect(result.browserQa?.warnings).toEqual(qa.warnings);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("permits at most one paid repair for a still-off-frame typed focal", async () => {
+    const dir = projectDir();
+    const value = draft();
+    const hardQa: DirectBrowserQaResult = {
+      ok: true,
+      strictOk: false,
+      samples: [2],
+      issues: [{
+        code: "spatial_focal_offframe",
+        severity: "error",
+        time: 2,
+        selector: "#sell-btn-el",
+        sceneId: "hook",
+        part: "sell-btn",
+        message: "typed primary remains partly outside the frame",
+        source: "sequences",
+      }],
+      loadBearingContainment: [{
+        sceneId: "hook",
+        part: "sell-btn",
+        detector: "primary-moment",
+        time: 2,
+        found: true,
+        opacity: 1,
+        visibleFraction: 0.4,
+        requiredVisibleFraction: 0.85,
+      }],
+      errors: [],
+      warnings: ["spatial_focal_offframe #sell-btn-el: typed primary is off frame"],
+    };
+    vi.mocked(inspectDirectComposition).mockReset().mockResolvedValue(hardQa);
+    const complete = vi.fn()
+      .mockResolvedValueOnce(response(value))
+      .mockResolvedValueOnce(patchResponse("Ship with nerve.", "Ship with resolve."));
+    const provider: AgentProvider = {
+      id: "openrouter-api",
+      label: "bounded hard repair",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    };
+
+    await expect(runInSentinelContext(dir, () => requestDirectComposition(provider, {
+      brief: "Launch Relay",
+      projectDir: dir,
+      skills: skills(),
+      lockedStoryboard: value.storyboard,
+    }))).rejects.toThrow(/failed after 2 source attempt/);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps runtime exceptions and missing timelines fail-loud within two calls", async () => {
+    const value = draft();
+    const runtimeDir = projectDir();
+    vi.mocked(inspectDirectComposition).mockReset().mockResolvedValue({
+      ok: false,
+      strictOk: false,
+      samples: [],
+      issues: [],
+      errors: ["runtime_bind_exception: composition never registered its timeline"],
+      warnings: [],
+    });
+    const runtimeComplete = vi.fn()
+      .mockResolvedValueOnce(response(value))
+      .mockResolvedValueOnce(response(value));
+    const provider = (complete: typeof runtimeComplete): AgentProvider => ({
+      id: "openrouter-api",
+      label: "bounded hard runtime",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    });
+    await expect(runInSentinelContext(runtimeDir, () => requestDirectComposition(provider(runtimeComplete), {
+      brief: "Launch Relay",
+      projectDir: runtimeDir,
+      skills: skills(),
+      lockedStoryboard: value.storyboard,
+    }))).rejects.toThrow(/runtime_bind_exception/);
+    expect(runtimeComplete).toHaveBeenCalledTimes(2);
+
+    const timelineDir = projectDir();
+    const noTimeline = draft();
+    noTimeline.html = noTimeline.html.replace(
+      'window.__timelines["relay-launch"] = tl;',
+      "// missing registered timeline",
+    );
+    const timelineComplete = vi.fn()
+      .mockResolvedValueOnce(response(noTimeline))
+      .mockResolvedValueOnce(patchResponse("Ship with nerve.", "Ship with resolve."));
+    await expect(runInSentinelContext(timelineDir, () => requestDirectComposition(provider(timelineComplete), {
+      brief: "Launch Relay",
+      projectDir: timelineDir,
+      skills: skills(),
+      lockedStoryboard: noTimeline.storyboard,
+    }))).rejects.toThrow(/failed after 2 source attempt/);
+    expect(timelineComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts storyboard taste residue on the first response and caps hard replans at two", async () => {
+    vi.stubEnv("SLACK_SEQUENCES_CONCEPT_PASS", "0");
+    vi.stubEnv("SLACK_SEQUENCES_SHAPE_HINT", "0");
+    vi.stubEnv("SLACK_SEQUENCES_SHARED_PLANNING_CACHE", "0");
+    const advisoryDir = projectDir();
+    const advisoryPlan = storyboard().map((scene) => ({
+      ...scene,
+      foreground: "the same deliberately coherent foreground",
+      cameraIntent: "one restrained framing language",
+    }));
+    const advisoryComplete = vi.fn().mockResolvedValue(
+      `<storyboard_json>${JSON.stringify(advisoryPlan)}</storyboard_json>`,
+    );
+    const provider = (complete: typeof advisoryComplete): AgentProvider => ({
+      id: "openrouter-api",
+      label: "bounded storyboard",
+      kind: "api",
+      detect: async () => ({ available: true, detail: "test" }),
+      complete,
+    });
+    const accepted = await runInSentinelContext(advisoryDir, () => requestStoryboardPlan(
+      provider(advisoryComplete),
+      {
+        brief: "Launch Relay",
+        projectDir: advisoryDir,
+        skills: skills(),
+      },
+    ));
+    expect(accepted).toHaveLength(advisoryPlan.length);
+    expect(advisoryComplete).toHaveBeenCalledTimes(1);
+
+    const hardDir = projectDir();
+    const invalid = `<storyboard_json>${JSON.stringify([storyboard()[0]])}</storyboard_json>`;
+    const hardComplete = vi.fn().mockResolvedValue(invalid);
+    await expect(runInSentinelContext(hardDir, () => requestStoryboardPlan(
+      provider(hardComplete),
+      {
+        brief: "Launch Relay",
+        projectDir: hardDir,
+        skills: skills(),
+      },
+    ))).rejects.toThrow(/storyboard must contain 3-10 distinct shots/);
+    expect(hardComplete).toHaveBeenCalledTimes(2);
+  });
 });
 
 const roots: string[] = [];
@@ -1871,7 +2103,7 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
     })).toBeUndefined();
   });
 
-  it("retries static primary moments but keeps static supporting moments diagnostic", () => {
+  it("keeps static moments and layout paperwork advisory for paid source retries", () => {
     const qa: DirectBrowserQaResult = {
       ...base,
       strictOk: false,
@@ -1892,17 +2124,59 @@ describe("Sentinel Phase 3 — criticSkippableCleanDraft (critic gating predicat
         verdict: "static",
       }],
     };
-    expect(sourceRetryFeedbackForBrowserQa(qa)).toEqual([
-      "layout_intent_missing #scene (t=2.00s): Visible scene declares no relational layout intent.",
-    ]);
+    expect(sourceRetryFeedbackForBrowserQa(qa)).toEqual([]);
     expect(sourceRetryFeedbackForBrowserQa({
       ...qa,
       temporalJudge: qa.temporalJudge?.map((entry) => ({ ...entry, importance: "primary" })),
-    })).toContain("moment_static_frame moment:m-ghost (t=6.00s): invisible change");
-    expect(sourceRetryFeedbackForBrowserQa({
+    })).toEqual([]);
+    const blank = sourceRetryFeedbackForBrowserQa({
       ...qa,
       errors: ["near_blank_film: 1 scene renders as blank frames"],
-    })).toContain("moment_static_frame moment:m-ghost (t=6.00s): invisible change");
+    });
+    expect(blank).toContain("near_blank_film: 1 scene renders as blank frames");
+    expect(blank).not.toContain("moment_static_frame moment:m-ghost (t=6.00s): invisible change");
+    const unreadablePrimary = sourceRetryFeedbackForBrowserQa({
+      ...qa,
+      issues: [{
+        code: "text_occluded",
+        severity: "error",
+        time: 2,
+        selector: "#primary-copy",
+        sceneId: "proof",
+        part: "primary-copy",
+        message: "primary copy is covered",
+        source: "sequences",
+      }],
+      loadBearingContainment: [{
+        sceneId: "proof",
+        part: "primary-copy",
+        detector: "primary-moment",
+        time: 2,
+        found: true,
+        opacity: 1,
+        visibleFraction: 1,
+        requiredVisibleFraction: 0.85,
+      }],
+    });
+    expect(unreadablePrimary).toContain("text_occluded: primary copy is covered");
+  });
+
+  it("routes only malformed or unexecutable storyboard findings into paid repair", () => {
+    expect(storyboardFindingDecision(
+      'camera/idea-budget: scene "proof" asks the lens to tell competing ideas',
+    )).toBe("advisory");
+    expect(storyboardFindingDecision(
+      'pacing/outcome: scene "proof" needs a longer hold',
+    )).toBe("advisory");
+    expect(storyboardFindingDecision(
+      'storyboard/moments: scene "proof" clusters all its moments at the entrance',
+    )).toBe("advisory");
+    expect(storyboardFindingDecision(
+      'interaction "approve" timing escapes shot "proof"',
+    )).toBe("hard");
+    expect(storyboardFindingDecision(
+      'shot "proof" duration must be 1.5-15 seconds',
+    )).toBe("hard");
   });
 
   it("injects deterministic selector-scoped contrast repairs from browser QA metadata", () => {

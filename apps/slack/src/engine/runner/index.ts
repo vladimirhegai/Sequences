@@ -103,11 +103,13 @@ export {
   parseStoryboardResponse,
   reconcileUndeclaredMorphTargets,
   retimeUnmotivatedTimeRamps,
+  storyboardFindingDecision,
   validateStoryboardPlan,
 } from "./storyboardAudit.ts";
 export type {
   CompletedStoryboardWorldLayouts,
   StoryboardPlanRequirements,
+  StoryboardFindingDecision,
   WorldLayoutCompletion,
 } from "./storyboardAudit.ts";
 export * from "./storyboardResponseFormat.ts";

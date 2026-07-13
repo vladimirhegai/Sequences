@@ -792,19 +792,19 @@ does not remove their diagnostic visibility.
   and `replay:all`. No paid probe in this step.
 
 ### S6.11 Attempt economy and advisory demotion
-- [ ] Route only hard findings into paid storyboard/source repair. Advisory
+- [x] Route only hard findings into paid storyboard/source repair. Advisory
   findings stay in QA artifacts and human-facing warnings but cannot generate
   retry feedback, scene repair, rescue, or a critic patch on the hackathon
   create path.
-- [ ] Enforce a maximum of two logical storyboard attempts and two logical
+- [x] Enforce a maximum of two logical storyboard attempts and two logical
   source attempts, including scene repair/full re-author paths. Once a
   runtime-valid source candidate is banked, do not spend a rescue or critic
   call trying to clear advisory residue. Allow at most one physical hedge for
   each expensive stage and enforce the acceptance contract's global call cap.
-- [ ] Preserve fail-loud behavior for unresolved hard failures. Preserve an
+- [x] Preserve fail-loud behavior for unresolved hard failures. Preserve an
   honest `warn` result when a runtime-valid MP4 contains advisory residue; do
   not relabel warnings as clean and do not use fallback inside the probe.
-- [ ] Add a ProofLane J-shaped test proving its three advisory findings cause
+- [x] Add a ProofLane J-shaped test proving its three advisory findings cause
   one provider source response and zero model repairs. Add controls proving an
   unresolved hard off-frame focal receives at most one author repair, while a
   runtime exception or missing timeline still fails.
@@ -1835,3 +1835,45 @@ browser suite (24 files / 59 tests); exact ProofLane J `source:replay`;
 `replay:all` (25 replayed / 0 skipped / 0 failed); deterministic `film:demo`
 render, preview, and temporal proof; and `git diff --check`, all green. No paid
 probe, publish, deployment, feature work, or S7+ work. S6.11 is next.
+
+## S6.11 — 2026-07-12 — DONE
+The normal ledger-backed create path now separates retry eligibility from QA
+visibility. Storyboard taste findings (camera/idea and energy, framing density,
+pacing, transition/component coherence, and supporting moment preferences) are
+accepted as explicit advisory degradations from the first response; malformed
+schema, invalid timing, broken typed interactions, and explicit executable
+brief contracts remain hard. Browser retry feedback is now only runtime errors,
+blank scenes/films, broken typed interactions, unreadable typed primaries, and
+load-bearing containment that remains below its measured floor after S6.10.
+Every other finding remains in QA and final `qualityResidue`, so an advisory
+film is still honestly `warn` without buying a repair.
+
+Ledger-backed creates stop at two storyboard and two source calls, disable the
+extra scene-planning and rescue rungs, and bank a runtime-valid no-hard source
+immediately before any taste repair or critic. The call budget is reserved
+atomically before provider launch, including the formerly uncounted frame
+decision, so parallel concept/shape work cannot overrun six logical or eight
+physical requests. Storyboard/source families each cap at two and each
+expensive stage can hedge once. Reservation-aware folding counts the primary
+request once while legacy ledgers without reservations replay unchanged.
+
+ProofLane J's exact one- and three-warning QA caches both report `ok:true` and
+zero hard retry findings. Its typed three-advisory replica consumes one source
+response, retains all warnings, and skips both repair and critic calls. Controls
+prove a persistent 40%-visible typed focal gets only one paid repair, while a
+runtime bind exception and a missing registered timeline fail loud after two.
+A live-policy storyboard fixture accepts advisory foreground/camera repetition
+on response one and caps a malformed-plan retry at response two.
+
+Files: `src/engine/{compositionRunner.ts,frameDesign.ts,sentinelTelemetry.ts}`,
+`src/engine/runner/{attemptLedger.ts,browserQuality.ts,index.ts,ladder.ts,
+storyboardAudit.ts}`, `test/{attemptLedger.test.ts,directComposition.test.ts,
+duplicateCopyAudit.browser.test.ts,framingCoverage.browser.test.ts,
+runnerExtraction.test.ts,sentinelTelemetry.test.ts}`, and this plan.
+Verification: root and Slack typechecks; complete Slack unit suite; complete
+Slack browser suite (24 files / 59 tests); exact ProofGrid I and ProofLane J
+`source:replay`; both persisted ProofLane QA caches through the hard-finding
+classifier; `replay:all` (25 replayed / 0 skipped / 0 failed); deterministic
+`film:demo` preview/temporal proof; and `git diff --check`, all green. No paid
+probe, fallback evidence run, publish, deployment, feature work, or S7+ work.
+S6.12 is next.

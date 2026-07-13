@@ -196,7 +196,7 @@ window.__timelines["composition-floor-smoke"]=tl;tl.seek(0);
 }
 
 describe("framing coverage browser audit (camera_framed_sparse)", () => {
-  it("keeps the composition floor advisory in audit and retryable in block mode", async () => {
+  it("keeps the composition floor advisory visible in audit and block modes", async () => {
     const priorComposition = process.env.SLACK_SEQUENCES_COMPOSITION;
     const priorContinuous = process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION;
     process.env.SLACK_SEQUENCES_CONTINUOUS_MOTION = "0";
@@ -243,7 +243,7 @@ describe("framing coverage browser audit (camera_framed_sparse)", () => {
         warning.startsWith("composition_frame_underfilled")
       );
       expect(blockWarning).toBeDefined();
-      expect(sourceRetryFeedbackForBrowserQa(block)).toContain(blockWarning!);
+      expect(sourceRetryFeedbackForBrowserQa(block)).not.toContain(blockWarning!);
     } finally {
       if (priorComposition === undefined) delete process.env.SLACK_SEQUENCES_COMPOSITION;
       else process.env.SLACK_SEQUENCES_COMPOSITION = priorComposition;

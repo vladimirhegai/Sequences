@@ -2188,6 +2188,40 @@ export class StoryboardValidationError extends Error {
 
 export const acceptedStoryboardDegradations = new WeakMap<DirectScene[], string[]>();
 
+export type StoryboardFindingDecision = "hard" | "advisory";
+
+/** Paid storyboard retries are reserved for malformed or unexecutable plans. */
+export function storyboardFindingDecision(
+  finding: string,
+  requirements: StoryboardPlanRequirements = {},
+): StoryboardFindingDecision {
+  const line = finding.trim();
+  if (
+    line.startsWith("display_type_budget_exceeded") ||
+    line.startsWith("camera/energy:") ||
+    line.startsWith("camera/idea-budget:") ||
+    line.startsWith("cuts/coherence:") ||
+    line.startsWith("components/complexity:") ||
+    line.startsWith("components/exit:") ||
+    line.startsWith("pacing/") ||
+    /^a \d+s film needs at least \d+ distinct framings\b/.test(line) ||
+    line === "storyboard repeats the same foreground composition across shots" ||
+    line === "storyboard needs at least two distinct camera/framing intentions" ||
+    line.startsWith("shot 1 must open at native speed") ||
+    /^at most \d+ timeRamp dips per film\b/.test(line) ||
+    /timeRamp dip must be motivated:/.test(line)
+  ) return "advisory";
+  if (line.startsWith("storyboard/moments:")) {
+    return /moment id .* is duplicated|moment .* escapes scene/.test(line)
+      ? "hard"
+      : "advisory";
+  }
+  if (/^morph .* declares silhouette hints .* cannot rhyme/.test(line)) {
+    return requirements.requireShapeMatch ? "hard" : "advisory";
+  }
+  return "hard";
+}
+
 export function parseStoryboardResponse(
   raw: string,
   requirements: StoryboardPlanRequirements = {},
@@ -2197,6 +2231,8 @@ export function parseStoryboardResponse(
     degradeShapeHintMismatches?: boolean;
     /** Accept pacing/* findings as advisories instead of vetoes (late attempts). */
     degradePacingFindings?: boolean;
+    /** Hackathon create policy: all non-execution findings are advisory from attempt one. */
+    degradeAdvisoryFindings?: boolean;
   } = {},
 ): DirectScene[] {
   const degradations: string[] = [];
@@ -2405,24 +2441,32 @@ export function parseStoryboardResponse(
   // with the findings logged as advisories.
   const resolveErrors = (plan: DirectScene[]): string[] => {
     let errors = validateStoryboardPlan(plan, requirements);
-    if (options.degradePacingFindings) {
+    if (options.degradePacingFindings || options.degradeAdvisoryFindings) {
       // Exit-discipline (WS4) and cut-coherence (WS6) findings are polish-grade
       // in exactly the same sense as pacing — a stacked overlay or a style zoo
       // never aborts a compile or ships a dead film — so they ride the same
       // late-attempt demotion to keep a plan clean except for polish from
       // triggering the far worse fallback.
       const isPolish = (finding: string): boolean =>
-        finding.startsWith("pacing/") ||
-        finding.startsWith("components/exit:") ||
-        finding.startsWith("cuts/coherence:");
+        options.degradeAdvisoryFindings
+          ? storyboardFindingDecision(finding, requirements) === "advisory"
+          : finding.startsWith("pacing/") ||
+            finding.startsWith("components/exit:") ||
+            finding.startsWith("cuts/coherence:");
       const polish = errors.filter(isPolish);
       if (polish.length) {
         errors = errors.filter((finding) => !isPolish(finding));
         for (const line of polish) {
           process.stderr.write(
-            `[storyboard] polish finding accepted as advisory on a final attempt: ${line}\n`,
+            `[storyboard] finding accepted as advisory${
+              options.degradeAdvisoryFindings ? " without a paid retry" : " on the final attempt"
+            }: ${line}\n`,
           );
-          degradations.push(`storyboard-polish-advisory:${findingSignature(line)}`);
+          degradations.push(
+            `${options.degradeAdvisoryFindings
+              ? "storyboard-advisory"
+              : "storyboard-polish-advisory"}:${findingSignature(line)}`,
+          );
         }
       }
     }

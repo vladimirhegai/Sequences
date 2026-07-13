@@ -15,6 +15,7 @@ import {
   recordSentinelScaffoldRestoration,
   recordSentinelSlotCall,
   recordSentinelTierFromRunStart,
+  reserveSentinelModelCall,
 } from "../src/engine/sentinelTelemetry.ts";
 
 const roots: string[] = [];
@@ -89,6 +90,43 @@ describe("sentinel telemetry — disposition honesty", () => {
 });
 
 describe("sentinel telemetry — cost honesty", () => {
+  it("atomically caps global and stage logical requests before launch", () => {
+    const dir = tempDir();
+    beginSentinelRun(dir);
+    reserveSentinelModelCall("storyboard");
+    reserveSentinelModelCall("storyboard");
+    expect(() => reserveSentinelModelCall("storyboard rescue")).toThrow(
+      /storyboard budget exhausted/,
+    );
+
+    const second = tempDir();
+    beginSentinelRun(second);
+    for (const stage of ["frame-design", "concept", "shape", "critic", "asset", "delivery"]) {
+      reserveSentinelModelCall(stage);
+    }
+    expect(() => reserveSentinelModelCall("seventh")).toThrow(/6 logical calls/);
+  });
+
+  it("counts launch reservations once and holds physical requests at eight", () => {
+    const dir = tempDir();
+    beginSentinelRun(dir);
+    for (const stage of ["frame-design", "concept", "shape", "critic", "asset", "delivery"]) {
+      reserveSentinelModelCall(stage);
+    }
+    recordSentinelModelCall({ stage: "frame-design", promptChars: 100, completionChars: 50 });
+    recordSentinelModelCallFailure("concept");
+    expect(claimSentinelHedge("shape", 10)).toBe(true);
+    expect(claimSentinelHedge("critic", 10)).toBe(true);
+    expect(claimSentinelHedge("asset", 10)).toBe(false);
+    expect(claimSentinelHedge("shape retry", 10)).toBe(false);
+    finalizeSentinelRun("published");
+    const calls = readRun(dir).modelCalls as Record<string, unknown>;
+    expect(calls.total).toBe(1);
+    expect(calls.failedTotal).toBe(1);
+    expect(calls.hedgedTotal).toBe(2);
+    expect(calls.physicalRequestTotal).toBe(8);
+  });
+
   it("records failed and hedged model calls beside the success ledger", () => {
     const dir = tempDir();
     beginSentinelRun(dir);

@@ -50,6 +50,7 @@ describe("runner extraction parity (WS-F2)", () => {
       "autoStyleHeadlineReveals",
       "autoStyleSemanticHighlights",
       "brandBaseStyleBlock",
+      "browserQaHasUnresolvedHardFailure",
       "browserQualityPenalty",
       "buildSceneSkeletons",
       "buildSceneSlotInteriors",
@@ -117,6 +118,7 @@ describe("runner extraction parity (WS-F2)", () => {
       "sourceRetryFeedbackForBrowserQa",
       "stagnantPolishShipReason",
       "stagnantPolishSignature",
+      "storyboardFindingDecision",
       "storyboardResponseFormat",
       "storyboardShapeScaffold",
       "stripAllHostPlanIslands",
@@ -128,6 +130,7 @@ describe("runner extraction parity (WS-F2)", () => {
       "topUpProgressMarkup",
       "topUpRowsMarkup",
       "topUpUnderlineMarkup",
+      "unresolvedHardBrowserFindings",
       "validateStoryboardPlan",
       "volunteeredCutBoundaries",
     ]);

@@ -33,6 +33,7 @@ import { parseFrameBasis } from "../frameValidation.ts";
 import {
   activeSentinelLedgerEvents,
   appendSentinelLedgerEvent,
+  boundedCreatePolicyActive,
   claimSentinelHedge,
   recordSentinelDegradation,
   recordSentinelLayerFinding,
@@ -41,6 +42,7 @@ import {
   recordSentinelNormalization,
   recordSentinelScaffoldRestoration,
   recordSentinelSlotCall,
+  reserveSentinelModelCall,
   type SentinelSlotCallKind,
 } from "../sentinelTelemetry.ts";
 import {
@@ -125,6 +127,7 @@ import {
 import {
   browserQualityPenalty,
   browserQualityNonRegression,
+  browserQaHasUnresolvedHardFailure,
   criticSkippableCleanDraft,
   earlyLeastBadPublishReason,
   hasNoNewDiagnostics,
@@ -134,6 +137,7 @@ import {
   sourceRetryFeedbackForBrowserQa,
   stagnantPolishShipReason,
   stagnantPolishSignature,
+  unresolvedHardBrowserFindings,
 } from "./browserQuality.ts";
 import {
   creativeModel,
@@ -581,6 +585,7 @@ async function completeWithRetry(
   assertAuthorPromptBudget(prompt, label);
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    reserveSentinelModelCall(label);
     try {
       const output = await hedgedCompletion(provider, label, async (raceSignal) => {
         const controller = new AbortController();
@@ -636,6 +641,7 @@ async function completeReasoningWithRetry(
   }
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    reserveSentinelModelCall(label);
     try {
       const output = await hedgedCompletion(provider, label, (raceSignal) =>
         streamOnceWithWatchdog(provider, prompt, options, label, raceSignal));
@@ -1575,6 +1581,7 @@ export async function requestStoryboardPlan(
     attempts?: { count: number };
   },
 ): Promise<DirectScene[]> {
+  const boundedCreate = boundedCreatePolicyActive();
   const structuredOutput = supportsStructuredOutputs(provider);
   const model = storyboardModel(provider);
   const thinkingMode = storyboardThinkingMode(provider, model);
@@ -2244,8 +2251,13 @@ export async function requestStoryboardPlan(
     thinkingMode: CompleteOptions["thinkingMode"];
     maxAttempts: number;
   }> = [
-    { label: "primary", ...(model ? { model } : {}), thinkingMode, maxAttempts: 3 },
-    ...(rescue
+    {
+      label: "primary",
+      ...(model ? { model } : {}),
+      thinkingMode,
+      maxAttempts: boundedCreate ? 2 : 3,
+    },
+    ...(!boundedCreate && rescue
       ? [{
           label: "rescue",
           model: rescue,
@@ -2414,13 +2426,15 @@ export async function requestStoryboardPlan(
           // (which might re-point the cut at rhyming endpoints and save the
           // premium morph) would never be consulted.
           degradeShapeHintMismatches:
+            !boundedCreate &&
             rung === rungs[rungs.length - 1] && attempt === rung.maxAttempts,
           // Pacing pressure stays blocking for the first two primary
           // attempts, then degrades to advisory: from the primary rung's
           // final attempt onward (including every rescue attempt), a plan
           // clean except for pacing ships instead of falling back.
           degradePacingFindings:
-            rung !== rungs[0] || attempt === rung.maxAttempts,
+            !boundedCreate && (rung !== rungs[0] || attempt === rung.maxAttempts),
+          degradeAdvisoryFindings: boundedCreate,
         });
       } catch (error) {
         if (error instanceof Error && isOutputTruncation(error)) {
@@ -2449,6 +2463,7 @@ export async function requestStoryboardPlan(
           // run instead of letting a formatting fault consume a rung's final
           // slot; the previous findings (if any) stay in the prompt untouched.
           if (
+            !boundedCreate &&
             !artifactGraceUsed &&
             /missing <storyboard_json>/.test(error.message)
           ) {
@@ -2491,7 +2506,7 @@ export async function requestStoryboardPlan(
           // remainder in one bounded low-reasoning call instead of gambling the
           // whole ~6-min re-plan. On convergence, adopt + cache and return; on
           // any miss it returns undefined and the full ladder continues below.
-          if (!sceneRepairUsed && lastRejectedPlan) {
+          if (!boundedCreate && !sceneRepairUsed && lastRejectedPlan) {
             sceneRepairUsed = true;
             let repaired = await repairStoryboardScenesForFindings(
               provider,
@@ -3008,6 +3023,8 @@ async function authorCompositionLoop(
   summary: AuthorRunSummary,
 ): Promise<CompositionRunResult> {
   if (!args.brief.trim()) throw new Error("brief is empty");
+  const boundedCreate = boundedCreatePolicyActive();
+  const maxSourceAttempts = boundedCreate ? 2 : 3;
   let validationFeedback: string[] | undefined;
   let scratch: DirectCompositionDraft | undefined;
   let compact = false;
@@ -3042,7 +3059,8 @@ async function authorCompositionLoop(
     reason: string,
   ): CompositionRunResult => {
     process.stderr.write(
-      `[author] ${reason}; publishing runtime-valid attempt ${candidate.attempts}/3 ` +
+      `[author] ${reason}; publishing runtime-valid attempt ` +
+        `${candidate.attempts}/${maxSourceAttempts} ` +
         `after ${attempts} attempt(s)\n`,
     );
     summary.strategyChanges.push(reason);
@@ -3064,8 +3082,9 @@ async function authorCompositionLoop(
   const structuredPatches = supportsStructuredOutputs(provider);
   const productionTier = productionModel(provider);
   let reasoningFloor: CompleteOptions["thinkingMode"] | undefined;
-  // One initial authoring pass plus at most two bounded repairs.
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  // The normal create path spends one initial pass plus at most one paid
+  // repair. Isolated legacy helpers retain their historical third rung.
+  for (let attempt = 1; attempt <= maxSourceAttempts; attempt += 1) {
     // Never spend the FINAL attempt on a compact patch when nothing
     // publishable is banked: a patch that misapplies or breaks syntax there
     // guarantees the deterministic fallback (both recorded 2026-07-04
@@ -3073,7 +3092,7 @@ async function authorCompositionLoop(
     // least rolls new dice with the complete findings list. When an earlier
     // attempt already produced a runtime-valid draft, a final patch stays
     // cheap and safe — its failure still publishes the banked draft.
-    if (attempt === 3 && scratch && !lastRuntimeValid) {
+    if (!boundedCreate && attempt === 3 && scratch && !lastRuntimeValid) {
       process.stderr.write(
         `[author] final attempt with no runtime-valid draft banked; ` +
           `forcing a full-context re-author instead of a compact patch\n`,
@@ -3112,7 +3131,7 @@ async function authorCompositionLoop(
       slots: useSlots,
     });
     process.stderr.write(
-      `[author] attempt ${attempt}/3 · prompt ${prompt.length} chars · ` +
+      `[author] attempt ${attempt}/${maxSourceAttempts} · prompt ${prompt.length} chars · ` +
       `${patchMode ? "compact repair" : useSlots ? "scene slots" : compact ? "full re-author (compact context)" : "full context"} · ` +
       `${repairTier ? "explicit repair tier" : selectedTier ?? "provider primary tier"} · ` +
       `reasoning ${attemptThinking}\n`,
@@ -3161,7 +3180,7 @@ async function authorCompositionLoop(
             draftFromSlots = true;
             summary.strategyChanges.push(`slot-retry:${sceneRepair.sceneIds.join(",")}`);
             process.stderr.write(
-              `[author] attempt ${attempt}/3 scene-slot retry re-authored only: ` +
+              `[author] attempt ${attempt}/${maxSourceAttempts} scene-slot retry re-authored only: ` +
                 `${sceneRepair.sceneIds.join(", ")}\n`,
             );
           }
@@ -3195,7 +3214,9 @@ async function authorCompositionLoop(
         }
       }
       attemptRaw = raw;
-      process.stderr.write(`[author] attempt ${attempt}/3 response ${raw.length} chars\n`);
+      process.stderr.write(
+        `[author] attempt ${attempt}/${maxSourceAttempts} response ${raw.length} chars\n`,
+      );
       let draft = applyDeterministicSourceRepairs(
         parsedDraft,
         args.projectDir,
@@ -3210,7 +3231,7 @@ async function authorCompositionLoop(
         }
       }
       let validation = await validateDirectComposition(args.projectDir, draft);
-      if (!validation.ok) {
+      if (!boundedCreate && !validation.ok) {
         const recovered = quarantineStaticInteractionErrors(draft, validation.errors);
         if (recovered?.removedIds.length) {
           process.stderr.write(
@@ -3273,7 +3294,7 @@ async function authorCompositionLoop(
       // a fully valid degraded draft is accepted (atomic, like every other
       // recovery); attempt 1 never degrades so the author always gets one
       // real chance to bind the declared focal parts.
-      if (!validation.ok && (patchMode || attempt === 3)) {
+      if (!boundedCreate && !validation.ok && (patchMode || attempt === 3)) {
         const degradation = degradeVolunteeredBridgedCuts({
           draft,
           errors: validation.errors,
@@ -3312,7 +3333,7 @@ async function authorCompositionLoop(
       }
       if (!validation.ok) {
         process.stderr.write(
-          `[author] attempt ${attempt}/3 static validation rejected: ` +
+          `[author] attempt ${attempt}/${maxSourceAttempts} static validation rejected: ` +
             `${validation.errors.slice(0, 8).join(" | ").slice(0, 1_500)}\n`,
         );
         if (useSlots && args.lockedStoryboard) {
@@ -3412,6 +3433,7 @@ async function authorCompositionLoop(
         return { draft, raw, attempts: attempt, browserQa };
       }
       if (
+        !boundedCreate &&
         !browserQa.strictOk &&
         draftFromSlots &&
         activeSlots &&
@@ -3547,6 +3569,72 @@ async function authorCompositionLoop(
             );
           }
         }
+      }
+      if (boundedCreate) {
+        const hardBrowserFindings = unresolvedHardBrowserFindings(browserQa).slice(0, 20);
+        if (browserQa.ok && hardBrowserFindings.length === 0) {
+          const advisoryResidue =
+            !browserQa.strictOk ||
+            browserQa.warnings.length > 0 ||
+            staticRepairWarnings.length > 0;
+          const earlyShipReason = advisoryResidue
+            ? "runtime-valid-no-hard-bank"
+            : undefined;
+          if (earlyShipReason) {
+            summary.strategyChanges.push(earlyShipReason);
+            process.stderr.write(
+              `[author] runtime-valid candidate has no unresolved hard finding; ` +
+                `banking attempt ${attempt} with advisory QA intact\n`,
+            );
+          }
+          return {
+            draft,
+            raw,
+            attempts: attempt,
+            browserQa,
+            staticRepairWarnings,
+            slots: draftFromSlots ? activeSlots : undefined,
+            ...(earlyShipReason ? { earlyShipReason } : {}),
+          };
+        }
+
+        validationFeedback = hardBrowserFindings.length
+          ? hardBrowserFindings
+          : ["browser runtime invalid without a classified diagnostic"];
+        process.stderr.write(
+          `[author] attempt ${attempt}/${maxSourceAttempts} has unresolved hard browser QA: ` +
+            `${validationFeedback.slice(0, 8).join(" | ").slice(0, 1_500)}\n`,
+        );
+        persistAuthorAttempt(args.projectDir, attempt, "browser-rejected", {
+          mode: patchMode ? "patch" : "full",
+          findings: validationFeedback,
+          html: draft.html,
+        });
+        recordAuthorAttempt(summary, {
+          number: attempt,
+          mode: patchMode ? "patch" : "full",
+          outcome: "browser-rejected",
+          findingSignatures: validationFeedback.map(findingSignature).slice(0, 24),
+        });
+        const structuralBrowserFailure = browserQa.errors.find((entry) =>
+          entry.includes("runtime_bind_exception") || entry.startsWith("near_blank_film:")
+        );
+        if (structuralBrowserFailure) {
+          summary.strategyChanges.push(
+            structuralBrowserFailure.startsWith("near_blank_film:")
+              ? "full-reauthor-after-blank-scene"
+              : "full-reauthor-after-runtime-bind-exception",
+          );
+          scratch = undefined;
+          persistedSlots = undefined;
+          compact = false;
+        } else {
+          scratch = draft;
+          persistedSlots = draftFromSlots ? activeSlots : undefined;
+          compact = true;
+        }
+        lastError = new Error(validationFeedback.join("; "));
+        continue;
       }
       // Contrast is sampled across stateful moments. Repairing the first
       // measured state can expose the same label against a later background,
@@ -3955,7 +4043,7 @@ async function authorCompositionLoop(
         ...validation.motionWarnings,
       ]).slice(0, 20);
       process.stderr.write(
-        `[author] attempt ${attempt}/3 browser QA requested repair: ` +
+        `[author] attempt ${attempt}/${maxSourceAttempts} browser QA requested repair: ` +
           `${validationFeedback.slice(0, 8).join(" | ").slice(0, 1_500)}\n`,
       );
       persistAuthorAttempt(args.projectDir, attempt, "browser-rejected", {
@@ -4014,7 +4102,9 @@ async function authorCompositionLoop(
     } catch (error) {
       const truncated = isOutputTruncation(error);
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[author] attempt ${attempt}/3 failed: ${message}\n`);
+      process.stderr.write(
+        `[author] attempt ${attempt}/${maxSourceAttempts} failed: ${message}\n`,
+      );
       persistAuthorAttempt(args.projectDir, attempt, "exception", {
         mode: patchMode ? "patch" : "full",
         findings: [message],
@@ -4075,6 +4165,12 @@ async function authorCompositionLoop(
         }
       }
     }
+  }
+  if (boundedCreate) {
+    throw new Error(
+      `direct HyperFrames authoring failed after ${maxSourceAttempts} source attempt(s): ` +
+        `${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    );
   }
   if (lastRuntimeValid) {
     process.stderr.write(
@@ -4604,6 +4700,15 @@ export async function applyContinuityCritique(
   const durationSec = last.startSec + last.durationSec;
   if (durationSec < 10) return result;
   const runVisionCritic = visionCriticEnabled();
+  if (
+    result.earlyShipReason?.startsWith("runtime-valid-no-hard-bank") &&
+    !browserQaHasUnresolvedHardFailure(result.browserQa)
+  ) {
+    process.stderr.write(
+      "[critic] skipped: runtime-valid bank has advisory-only residue\n",
+    );
+    return result;
+  }
   // Sentinel Phase 3 + critic-economy (2026-07-08): skip the critic when it
   // can't help (kill switch `SLACK_SEQUENCES_CRITIC_SKIP_CLEAN=0` restores
   // always-run) — a pristine draft (nothing to repair) OR a run that shipped
