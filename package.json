@@ -12,7 +12,8 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && npm run test:worker",
+    "test:worker": "npm test --prefix apps/slack/codex-worker",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:ci": "npm run typecheck && npm test"
