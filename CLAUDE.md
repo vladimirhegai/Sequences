@@ -21,6 +21,10 @@ and structural revisions use the private Railway Codex worker with
 is preserved only as the explicit `legacy-provider` rollback route and is never
 an automatic fallback. The S6.9-S6.13 probe history remains useful evidence;
 do not restart its paid-probe loop or turn advisory taste findings into blockers.
+Railway Luna turns use a tool-less, schema-constrained artifact exchange: the
+worker embeds verified inputs, rejects any tool event, validates the final
+bundle independently, and atomically materializes it. Never bypass the Codex
+namespace sandbox to give the model direct filesystem access.
 
 ## GitHub destination — do not get this wrong
 

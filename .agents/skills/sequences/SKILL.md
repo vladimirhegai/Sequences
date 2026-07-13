@@ -42,6 +42,10 @@ restart that probe loop merely to clear advisory findings.
 2. **Authoring bot** — `src/engine/lunaRoute.ts` plus the private
    `apps/slack/codex-worker`: one persisted Codex CLI thread runs
    `gpt-5.6-luna`/high from treatment through source, self-review, and revision.
+   Railway turns are tool-less: verified inputs are embedded/attached, any tool
+   event is hard failure, filesystem/network scopes are denied, the persisted
+   rollout is audited, and the trusted worker validates then atomically
+   materializes the complete schema-constrained bundle.
    `src/engine/runner/` is the unchanged explicit `legacy-provider` rollback,
    never an automatic fallback. Execution (mutation, preview, render, undo)
    goes through the internal stdio Sequences MCP (`src/engine/mcp*.ts`) — a
@@ -53,8 +57,9 @@ restart that probe loop merely to clear advisory findings.
   fast, MP4 after). `src/orchestrator.ts` — engine seam
   (create/revise/undo/render, provider resolution, progress receipts).
 - `src/engine/lunaRoute.ts` + `lunaWorkerClient.ts` — default fact/asset
-  envelope, exact-thread create/review/revise, raw-byte evidence, and private
-  worker transport. `codex-worker/` is the isolated Railway CLI service.
+  envelope, exact-thread create/review/revise, accepted-bundle evidence, and
+  private worker transport. `codex-worker/` owns schema binding, tool-event
+  rejection, raw/materialized hashes, and atomic artifact materialization.
 - `src/engine/runner/` — the authoring pipeline: `orchestration.ts` (stage
   flow) · `ladder.ts` (attempts, hedging, models, publication decisions) ·
   `storyboardAudit.ts` (plan parse + normalize) · `scaffold.ts` (skeletons +
@@ -93,7 +98,8 @@ restart that probe loop merely to clear advisory findings.
    a regression, and log it in PROBE_LOG.md. Never loosen a hard gate or add
    prompt prose to hide a mechanical failure.
 2. **Motion goes through the engine gate, never hand-tuned by the host.** Luna
-   declares its own motion intent and HTML; the host preserves the raw bytes,
+   declares its own motion intent and HTML in a complete artifact envelope; the
+   worker preserves the raw envelope and exact materialized bytes, and the host
    validates runtime/seek/bindings in a real browser, and checkpoints accepted
    source. The host must not rewrite story, timing, palette, transition, or
    camera choices to satisfy taste heuristics. The legacy route retains its
