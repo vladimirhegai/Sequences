@@ -849,14 +849,14 @@ Suggested brief shape (facts must be replaced with the real demo facts):
 > transitions, and camera treatment creatively.
 
 ### S6.13 Hackathon rehearsal and freeze
-- [ ] Keep the first acceptable authored MP4 as the primary demo artifact and
+- [x] Keep the first acceptable authored MP4 as the primary demo artifact and
   confirm a model-free known-good backup is locally accessible. Rehearse the
   exact Slack command, progress/receipt path, output link/file, and fallback
   behavior that will be used in front of judges.
-- [ ] For the launch environment, restore normal production fallback policy and
+- [x] For the launch environment, restore normal production fallback policy and
   check `/healthz`. Publishing/deployment still requires explicit owner
   authorization; this step does not grant it.
-- [ ] After an acceptable MP4 exists, reopen product code only for P0 launch
+- [x] After an acceptable MP4 exists, reopen product code only for P0 launch
   failures: no output, runtime/render failure, an obviously broken focal, state
   reset, or repeated hard retry. Log everything else as post-hackathon work.
 - Verify: one timed local rehearsal plus the known-good backup path. Document
@@ -1932,3 +1932,37 @@ exact ProofGrid I, ProofLane J, Probe A, and Probe B source replays;
 human strip/thumbnail review; and `git diff --check`. No fallback evidence,
 Probe C, publish, deploy, feature work, Studio expansion, or S7+ work. Product
 code is frozen. S6.13 is next.
+
+## S6.13 — 2026-07-13 — DONE
+
+Product code remained frozen at S6.12 commit `9aa6aa6`. The corrected 16.0s
+OpenRouter-authored Probe B MP4 remains the primary demo. The exact Slack
+presentation path was checked from the handlers and documented in
+`OPERATIONS.md`: enable argument-free debug receipts; capture UI screenshots
+through `/sequences assets`; wait for the deterministic brand receipt/preview;
+submit the ordinary launch modal through `/sequences`; verify the one building
+message advances through frame/storyboard/source and submit/preview/render;
+then confirm thumbnails, `frame.md`, rendering status, ready receipt, and MP4
+upload. Normal fallback stays opt-out (unset/on) and must visibly label the
+failed model stage; no fallback film may masquerade as authored output.
+
+The timed model-free `/sequences demo` equivalent completed in 30.6s with
+`sequence:check` status `pass`, clean lint, five thumbnails, and no model/MCP
+request. Its backup is
+`.data/projects/s6-13-hackathon-rehearsal-20260713/renders/relay-20260713-021028.mp4`
+(H.264, 1920x1080, 30fps, 525 frames, 17.5s, 1,391,378 bytes); JSON/Markdown
+receipts live in that project's `build/qa`. Contact-sheet review confirms a
+readable hook, product proof, stat, social proof, and held CTA. Production
+`/healthz` returned `200 ready` in 296ms. This checked process readiness only;
+the evidence-only fallback variable was staged from explicit-off to explicit-on
+with deploys skipped, then applied only through the owner-authorized deployment
+of the committed S6.13 tree. Publish remained separate and unauthorized.
+
+Files: `OPERATIONS.md`, `PROBE_LOG.md`, and this plan. Verification: the timed
+model-free `sequence:check --demo --no-mcp --render --temporal --format both`
+rehearsal; report/thumbnail/MP4 existence; `ffprobe`; contact-sheet review;
+focused Slack result/fallback receipt tests; health check; Markdown command and
+artifact path review; and `git diff --check`. No product code, provider call,
+Probe C, publish, feature, Studio/catalog, broad audit, S7, or later work. The
+only external mutation is the explicitly authorized production fallback
+restore/deploy after the S6.13 commit. S6.9-S6.13 are complete; stop.

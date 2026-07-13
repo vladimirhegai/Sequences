@@ -116,6 +116,36 @@ historical evidence totals 11 logical / 15 physical requests; B itself was
 within the per-job caps. The accepted B path is 9m15s of live authoring plus
 1m25s of model-free recovery/render after the fix, about 10m40s end to end.
 
+### S6.13 freeze and rehearsal — `s6-13-hackathon-rehearsal-20260713`
+
+Product code was frozen at S6.12 commit `9aa6aa6`; no provider call, fallback
+probe, or publish followed. The corrected Probe B MP4 above remains the primary
+artifact. After rehearsal the owner authorized a production deploy from the
+committed S6.13 tree; publish remains separate and was not authorized.
+
+The exact judge runbook was checked against the Slack handlers: `/sequences
+debug on`; `/sequences assets` (the `asset` alias is equivalent) with UI
+screenshots and optional notes; wait for the deterministic captured-brand
+receipt/preview; then `/sequences` and the ordinary launch modal. The building
+message exposes honest frame/storyboard/source phases and submit/preview/render
+receipts, posts storyboard thumbnails plus `frame.md`, changes to rendering,
+then lands on the ready message and MP4 upload. With normal production fallback
+enabled, any safe proof film is explicitly labeled with the failed model stage
+and is never represented as authored output.
+
+The timed local `/sequences demo` equivalent used the documented model-free
+`sequence:check --demo --no-mcp --render --temporal --format both` command. It
+completed in 30.6s with status `pass`, clean lint, five thumbnails, and no
+model/MCP request. The backup MP4 is H.264, 1920x1080, 30fps, 525 frames, 17.5s,
+1,391,378 bytes:
+`.data/projects/s6-13-hackathon-rehearsal-20260713/renders/relay-20260713-021028.mp4`.
+Its JSON/Markdown receipts are under the same project's `build/qa`. Contact-
+sheet review confirms readable hook, product proof, stat, social proof, and
+held CTA. Production `/healthz` returned `200 ready` in 296ms. The evidence-only
+fallback variable was staged from explicit-off to explicit-on with deploys
+skipped, ready for the single owner-authorized committed-tree deployment. No
+publish or provider call was made.
+
 ## 2026-07-11 audit sequence
 
 ### LaunchRelay — `architecture-audit-live-1-20260711`

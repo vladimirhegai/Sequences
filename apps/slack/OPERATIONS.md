@@ -99,6 +99,77 @@ npm run storyboard:replay --workspace @sequences/slack -- `
   .data/projects/<job>/planning/attempts/storyboard-1-rejected.raw.txt --strict
 ```
 
+### Frozen hackathon presentation runbook (S6.13)
+
+Product code is frozen at S6.12 commit `9aa6aa6`. Do not reopen it for an
+advisory preference. The primary demo is the exact OpenRouter-authored Probe B
+source after bounded model-free normalization and render:
+
+```text
+apps/slack/.data/projects/s6-12-sequences-slack-b-20260712-2113/renders/sequences-for-slack-recovered-probe-b-20260713-015938.mp4
+```
+
+It is the first accepted artifact: 16.0s H.264, 1920x1080, 30fps, runtime
+valid, no hard finding, human disposition `accept with warn`. Keep the MP4,
+project ledger/source/revisions, `build/qa/temporal`, and `build/thumbs`
+together. The live Probe B command failed before render; do not describe the
+local exact-source recovery as a terminal live `sequence:check` success.
+
+Judge-facing Slack rehearsal:
+
+1. Run `/sequences debug on` so the result carries stage attempts/durations
+   without exposing prompts or model output.
+2. Run `/sequences assets` (`asset` and `assets` are aliases), upload 1-5 UI
+   screenshots, and add optional brand notes. The intake extracts/stores the
+   palette deterministically; GLM uses that committed brand brief during the
+   subsequent frame/story decision. Wait for the `Captured your brand...`
+   receipt and optional asset-kit preview.
+3. Run `/sequences`, submit the ordinary launch brief in the modal, and do not
+   prescribe scenes/components/camera moves. The one building message should
+   advance through frame design, storyboard, source authoring, composition
+   submission, storyboard preview, and render.
+4. Confirm the channel/thread receives storyboard thumbnails plus `frame.md`,
+   then a rendering receipt, then `"<title>" is ready - draft below` and the
+   uploaded MP4. The build trace must show the actual submit/preview/render
+   receipts; `warn` is acceptable when the ledger is runtime-valid with only
+   advisory residue.
+5. If a model stage is unavailable and production fallback is enabled, the
+   result must visibly say `Safe fallback` and name the failed stage. It must
+   never be presented as a model-authored cut. If the live path cannot be used,
+   run `/sequences demo` or play the model-free backup below.
+
+The production fallback flag is opt-out: leave
+`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK` unset/on for judging; only probe
+evidence sets it to `0`. A publish or deploy still requires explicit owner
+authorization; the S6.13 owner-authorized deploy uses the committed tree only.
+
+Timed model-free backup rehearsal (2026-07-13):
+
+```powershell
+Remove-Item Env:SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK -ErrorAction SilentlyContinue
+npm run sequence:check --workspace @sequences/slack -- `
+  --demo --no-mcp --render --temporal `
+  --job-id s6-13-hackathon-rehearsal-20260713 `
+  --format both
+```
+
+This completed in 30.6s with status `pass`, clean lint, five thumbnails, and a
+real 17.5s H.264 MP4 (1920x1080, 30fps, 525 frames). Artifacts:
+
+```text
+apps/slack/.data/projects/s6-13-hackathon-rehearsal-20260713/build/qa/sequence-check.json
+apps/slack/.data/projects/s6-13-hackathon-rehearsal-20260713/build/qa/sequence-check.md
+apps/slack/.data/projects/s6-13-hackathon-rehearsal-20260713/renders/relay-20260713-021028.mp4
+```
+
+The backup is the curated `/sequences demo` preset and makes no model/MCP
+request. On 2026-07-13 the production `/healthz` endpoint returned `200 ready`
+in 296ms. Before the owner-authorized S6.13 deploy, the production fallback
+variable was restored from evidence-only `0` to explicit-on `1` using
+`railway variable set ... --skip-deploys`, so it could be applied once with the
+verified commit. The health check confirms process readiness only; it does not
+prove Slack OAuth/provider access.
+
 ## Required Railway variables
 
 Use `.env.railway.example` as the operational template. The essential groups
