@@ -1,10 +1,11 @@
 /**
  * Agent-friendly local simulator for a Slack `/sequences` create.
  *
- * It runs the same orchestrator path Slack uses after modal/thread fields are
- * collected: brief -> frame.md -> storyboard/source authoring -> validation /
- * checkpoint -> thumbnails -> optional MP4. It does not post to Slack and does
- * not require Slack tokens.
+ * It runs the same orchestrator seam Slack uses after modal/thread fields are
+ * collected. By default that is the Luna director -> direct composition ->
+ * mechanical gate -> rendered self-review -> optional MP4 route. `--provider`
+ * explicitly selects the preserved legacy provider committee. The script does
+ * not post to Slack and does not require Slack tokens.
  */
 // Load apps/slack/.env like the bot (src/index.ts) does, so `--provider
 // openrouter-api` (and any model/thinking overrides) resolve their keys. Without
@@ -93,7 +94,7 @@ function usage(): string {
     "  --length <seconds>         Target length.",
     "  --context <text>           Extra trusted context.",
     "  --context-file <path>      Append file contents to context.",
-    "  --provider <id>            Provider override, e.g. openrouter-api.",
+    "  --provider <id>            Explicit legacy-route provider, e.g. openrouter-api.",
     "  --mcp / --no-mcp           Prefer internal Sequences MCP transport (default: app setting).",
     "  --render                   Also render draft MP4.",
     "  --temporal                 Capture temporal evidence after create (Chrome required).",

@@ -390,7 +390,7 @@ export interface ResultView {
   slackMcpTools?: string[];
   /** Non-blocking note shown when hosted-MCP context was skipped. */
   slackMcpNote?: string;
-  /** True when the plan came from the curated demo preset (no planning brain). */
+  /** True when the plan came from the curated demo preset (no creative author). */
   usedPreset?: boolean;
   /**
    * Present when this result is the deterministic safe fallback because a

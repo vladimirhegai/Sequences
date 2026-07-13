@@ -51,7 +51,12 @@ function briefsFile(): string {
 }
 
 function refsDir(channel: string): string {
-  return path.join(dataDir(), "asset-briefs", channel.replace(/[^\w-]/g, "_"));
+  return path.join(assetBriefReferencesRoot(), channel.replace(/[^\w-]/g, "_"));
+}
+
+/** The only host filesystem root whose regular files may enter a Luna job. */
+export function assetBriefReferencesRoot(): string {
+  return path.join(dataDir(), "asset-briefs");
 }
 
 function readAll(): Record<string, ChannelAssetBrief> {

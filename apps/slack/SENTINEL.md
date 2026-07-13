@@ -16,6 +16,13 @@ explains how to change them.
 | L4 browser gate | Rendered evidence | Measure geometry, visibility, interaction, framing, and motion. |
 | L5 model retry | Bounded ladder | Repair only an unresolved hard authoring failure after lower layers are exhausted. |
 
+The table describes the full engine and the explicit legacy-provider route.
+The default Luna route currently uses L0, L3, L4, transactional commit, and
+render/encoding mechanics; it bypasses the legacy L1 scaffold, creative L2
+rewrites, critic/rescue ladder, and L5 repair committee. Luna declares creative
+intent itself. A later authored-hard-defect repair may resume the same exact
+thread, but must not silently restore the committee.
+
 Decision rule: if the host can know the answer, the host owns it. A normalizer
 must be bounded, idempotent, visible in telemetry, and committed only after the
 whole plan revalidates. If it introduces a new finding class, revert the atomic
@@ -31,20 +38,21 @@ group audit over repeated L2 churn across overlapping fields.
 Do not loosen a gate, increase attempts, or add prompt prose to compensate for
 a mechanical defect.
 
-## Current hackathon guardrail policy
+## Current Luna guardrail policy
 
-The active S6.9-S6.13 work order narrows which evidence may veto an authored
-film. It preserves visibility into all QA findings while separating them into
-three decisions:
+S6.9-S6.13 established the classification below. It now governs the objective
+host gate around Luna and preserves visibility into all QA findings while
+separating them into three decisions:
 
 1. **Hard:** parse/schema/contract failure, runtime exception, missing or
    invalid timeline, blank/load-bearing content failure, state reset, missing
-   render, or a load-bearing focal that remains out of frame after one bounded
-   deterministic repair. These may block publication and, as a last resort,
-   buy one author repair.
+   render, or a load-bearing focal that remains out of frame. These block
+   publication. The current route fails visibly; a future repair turn
+   must resume the same Luna thread with exact evidence.
 2. **Deterministic:** canonical markup/binding/script order and measured
-   wrapper/station/camera containment. Repair once in the same source attempt,
-   remeasure, and adopt only on strict improvement with no new hard finding.
+   wrapper/station/camera containment. Legacy may repair once in the same source
+   attempt, remeasure, and adopt only on strict improvement with no new hard
+   finding. Luna host code must not rewrite creative bytes merely to clear it.
    Never change copy, story order, component choice, timing, palette,
    typography, or motion style.
 3. **Advisory:** washout/contrast preference, occupancy preference when the
@@ -57,23 +65,24 @@ When classification is ambiguous, default to advisory unless the rendered
 output is clearly broken. A runtime-valid film may therefore ship as `warn`
 and still satisfy the current hackathon acceptance contract.
 
-This is the target policy, not a claim that every legacy path already follows
-it. S6.9 inventories current routing and S6.11 implements/enforces the attempt
-economy. Until those steps land, operators must not interpret an advisory-only
-retry as necessary or launch another probe to clear it.
+This is the target policy, not a claim that every historical gate is already
+route-aware. Audit taste-heavy direct-composition findings later from real Luna
+artifacts. Until then, do not launch another model turn merely to clear an
+advisory.
 
 ## Fallback and degradation
 
 A fallback replaces or materially degrades the authored film. Receipt-level MCP
 recovery and exact host normalization are resilience, not visual fallback.
 
-`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK=0` means fail loud: no replacement
-film, a Slack diagnostic, and project `FAILURE.md`. Use this for paid probes.
-Production uses the explicitly approved fallback setting so an outage can ship
-the labeled proof film.
+`SLACK_SEQUENCES_ALLOW_DETERMINISTIC_FALLBACK` governs only the explicit legacy
+provider route. Luna does not fall through to OpenRouter or a disguised creative
+result; a failed initial Luna turn/gate fails visibly. Its optional self-review
+may fail without discarding the already accepted first cut.
 
-Every degradation must appear in `planning/sentinel-run.json` and in the final
-status. Important dispositions are:
+Legacy degradation must appear in `planning/sentinel-run.json` and final status.
+Luna instead preserves per-turn worker receipts, raw deliverables, and session
+hashes under `planning/luna/`. Important legacy dispositions are:
 
 - `published`: accepted source, no material degradation;
 - `published-degraded`: an authored film shipped with explicit degradations;
@@ -84,7 +93,7 @@ Never report `published-degraded` as a clean pass.
 
 ## Attempt discipline
 
-When a paid stage burns an attempt:
+When a model turn burns an attempt:
 
 1. Stop further paid retries when practical.
 2. Preserve the exact raw response and rejected HTML/JSON.
@@ -93,17 +102,11 @@ When a paid stage burns an attempt:
 5. Fix the lowest shared owner and rerun the exact artifact first.
 6. Log the result in [PROBE_LOG.md](PROBE_LOG.md).
 
-Scene-scoped repair may replace a whole-plan retry, but it remains a paid model
-call and must be counted. Physical hedges and provider timeouts are recorded
-separately from logical attempts. Environmental faults are not product fixes,
-but they must not be described as a one-call success.
-
-The current bounded ladders remain implementation details in the runner. Do not
-raise them as a quality strategy. The active target is at most two logical
-storyboard attempts, two logical source attempts, six logical calls, and eight
-physical requests per job. Stop once a runtime-valid candidate has no hard
-failure; do not spend rescue or critic calls to manufacture zero advisory
-residue. S6.11 owns code-level enforcement of these limits.
+Default Luna create has one director turn and one rendered self-review turn;
+self-review chooses zero or one polish. Revisions resume that same thread. There
+are no hedges, rescue models, critic patches, or OpenRouter retries. The bounded
+legacy ladders remain implementation details of the rollback route and must not
+be raised as a Luna quality strategy.
 
 ## Executable registries
 

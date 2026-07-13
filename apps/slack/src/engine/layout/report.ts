@@ -3809,17 +3809,15 @@ async function judgeRenderedMoments(
   const diffFrames = (aB64: string, bB64: string) =>
     page.evaluate(
       async (aB64: string, bB64: string, tolerance: number) => {
-        const load = (base64: string): Promise<HTMLImageElement> =>
-          new Promise((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve(image);
-            image.onerror = () => reject(new Error("temporal judge frame decode failed"));
-            image.src = "data:image/png;base64," + base64;
-          });
+        const load = async (base64: string): Promise<ImageBitmap> => {
+          const binary = atob(base64);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          return createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        };
         const [imageA, imageB] = await Promise.all([load(aB64), load(bB64)]);
-        const width = Math.min(imageA.naturalWidth, imageB.naturalWidth);
-        const height = Math.min(imageA.naturalHeight, imageB.naturalHeight);
-        const read = (image: HTMLImageElement): Uint8ClampedArray => {
+        const width = Math.min(imageA.width, imageB.width);
+        const height = Math.min(imageA.height, imageB.height);
+        const read = (image: ImageBitmap): Uint8ClampedArray => {
           const canvas = document.createElement("canvas");
           canvas.width = width;
           canvas.height = height;
@@ -3829,6 +3827,8 @@ async function judgeRenderedMoments(
         };
         const dataA = read(imageA);
         const dataB = read(imageB);
+        imageA.close();
+        imageB.close();
         let changed = 0;
         let total = 0;
         let sum = 0;
@@ -4304,20 +4304,21 @@ export async function inspectDirectComposition(
             `[data-part="${CSS.escape(payload.focalPart)}"]`,
           );
           if (!root || !focal) return null;
-          const image = new Image();
-          await new Promise<void>((resolve, reject) => {
-            image.onload = () => resolve();
-            image.onerror = () => reject(new Error("washout screenshot decode failed"));
-            image.src = "data:image/png;base64," + payload.image;
-          });
+          const binary = atob(payload.image);
+          const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+          const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
           const width = 192;
-          const height = Math.max(1, Math.round(width * image.naturalHeight / image.naturalWidth));
+          const height = Math.max(1, Math.round(width * image.height / image.width));
           const canvas = document.createElement("canvas");
           canvas.width = width;
           canvas.height = height;
           const context = canvas.getContext("2d", { willReadFrequently: true });
-          if (!context) return null;
+          if (!context) {
+            image.close();
+            return null;
+          }
           context.drawImage(image, 0, 0, width, height);
+          image.close();
           const rootRect = root.getBoundingClientRect();
           const focalRect = focal.getBoundingClientRect();
           if (rootRect.width < 1 || rootRect.height < 1 || focalRect.width < 1 || focalRect.height < 1) {

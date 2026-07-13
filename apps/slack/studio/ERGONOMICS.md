@@ -5,12 +5,14 @@ new components/assets/recipes/looks/camera/plugins are frozen during the active
 S6.9-S6.13 hackathon stabilization work. Do not use this backlog to expand the
 current sprint or delay the first judge-ready MP4.
 
-**Owner mandate (2026-07-10).** The Studio catalogs — Components, Assets,
-Recipes, Looks, Camera patterns, Plugins — are the product's **library**: the
-place where capable coding agents make proven, parameterized craft that the
-cheaper runtime models (GLM planner, DeepSeek author) can consume without
-taste of their own. Two requirements, both product requirements, not
-nice-to-haves:
+**Owner mandate (updated 2026-07-13).** The Studio catalogs — Components,
+Assets, Recipes, Looks, Camera patterns, Plugins — are the product's **library**:
+the place where capable coding agents make proven, parameterized craft that
+the deterministic host and the explicit legacy-provider route can consume.
+Luna may choose compatible host contracts, but the Luna-direct route does not
+currently receive the legacy catalog inventory. Exposing selected primitives
+without turning them into a creative template is later integration work. Two
+requirements remain product requirements, not nice-to-haves:
 
 1. **Agent-authorable, always.** Every catalog must stay trivially editable by
    a coding agent — and specifically by a **clean-context subagent**: the
@@ -76,10 +78,11 @@ Recipe sources are created directly in `recipes/`; other skeletons go to the
 gitignored `.data/studio/scaffolds/` workspace so an agent must apply each
 central-catalog edit deliberately. Generators refuse to overwrite work.
 
-`src/engine/studioLibrary.ts` generates a compact inventory from the five
-typed catalogs. `skillContext.ts` includes it in the reference shared by both
-OpenRouter planning and source-authoring calls; proven recipes retain their
-separate scored retrieval path. `test/studioCatalogIntegration.test.ts`
-mechanically proves catalog → OpenRouter vocabulary → Studio discovery, while
-each catalog skill identifies the schema/injection/QA tests that complete its
-chain. The detailed seam matrix remains in `studio/INTEGRATION.md`.
+`src/engine/studioLibrary.ts` generates a compact inventory from the five typed
+catalogs. `skillContext.ts` includes it in the reference shared by the legacy
+planning and source-authoring calls; proven recipes retain their separate
+scored retrieval path. `test/studioCatalogIntegration.test.ts` mechanically
+proves catalog → legacy-provider vocabulary → Studio discovery. It deliberately
+does not claim Luna integration. Each catalog skill identifies the
+schema/injection/QA tests that complete its chain. The detailed seam matrix
+remains in `studio/INTEGRATION.md`.

@@ -216,6 +216,14 @@ describe("shape-match cut runtime browser contract", () => {
     const temporal = await reportTemporalEvidence(dir, {
       framesPerShot: 3,
       curveStepSec: 2,
+      declaredCameraMoves: [{
+        sceneId: "one",
+        targetSelector: '[data-part="query-pill"]',
+        startSec: 0.2,
+        arrivalSec: 0.6,
+        settleEndSec: 1,
+        holdEndSec: 1.4,
+      }],
     });
     const first = temporal.cuts.find((cut) =>
       cut.fromScene === "one" && cut.toScene === "two"
@@ -225,6 +233,15 @@ describe("shape-match cut runtime browser contract", () => {
     );
     expect(first?.outgoingMoved).toBe(true);
     expect(second?.outgoingMoved).toBe(true);
+    expect(temporal.cameraPaths).toHaveLength(1);
+    expect(fs.existsSync(temporal.cameraPaths[0]!)).toBe(true);
+    const temporalJson = JSON.parse(fs.readFileSync(temporal.jsonPath, "utf8")) as {
+      declaredCameraMoves?: Array<{ samples?: Array<{ phase?: string; found?: boolean }> }>;
+    };
+    expect(temporalJson.declaredCameraMoves?.[0]?.samples?.map((sample) => sample.phase))
+      .toEqual(["start", "arrival", "settled", "hold"]);
+    expect(temporalJson.declaredCameraMoves?.[0]?.samples?.every((sample) => sample.found))
+      .toBe(true);
   }, 90_000);
 
   it("degrades a row list → windowed table morph on semantic-family mismatch (probe-audit-03 T8)", async () => {

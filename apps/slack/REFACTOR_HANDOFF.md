@@ -1,10 +1,15 @@
 # Refactor handoff — architecture, reliability, and motion quality
 
-Status: **historical architecture rationale**. `REFACTOR_PLAN.md` is the active
-work order and supersedes this file whenever the two differ. As of 2026-07-12,
-the first unchecked work is the pre-Phase-7 hackathon stabilization section at
-S6.9. Do not resume this document's broad refactor sequence, S7+, or its old
+Status: **historical architecture rationale**. `LUNA_WORKFLOW.md` is the live
+authoring contract and `REFACTOR_PLAN.md` preserves the engine/refactor journal.
+As of 2026-07-13, the S6.9-S6.13 OpenRouter stabilization run is historical;
+do not resume this document's broad refactor sequence, S7+, or its old
 open-ended probe acceptance loop.
+
+The official route now uses one private Railway Codex worker and one persistent
+`gpt-5.6-luna`/high thread from treatment through rendered self-review and user
+revision. The old provider committee remains unchanged behind the explicit
+`legacy-provider` rollback route and is never an automatic Luna fallback.
 
 ## Mission
 
@@ -26,12 +31,10 @@ Success means:
 - live probes are part of the refactor loop, with fallback disabled and honest
   logical/physical attempt accounting.
 
-For the current hackathon sprint, success is intentionally narrower: one real,
-runtime-valid, human-acceptable MP4 with no surviving hard failure and bounded
-model calls. Advisory taste residue may remain a truthful `warn`. Mechanical
-frame/contract problems belong to deterministic repair; advisory findings do
-not buy another author call or probe. The first acceptable MP4 freezes product
-code.
+For Luna, reuse the objective mechanics and evidence but bypass the committee
+that motivated this refactor: no frame planner, scaffold/slots, critic, rescue,
+or source replay. Luna owns creative intent; the host owns facts, permissions,
+exact bytes, deterministic seeking, browser/runtime health, and encoding.
 
 ## Current assessment
 

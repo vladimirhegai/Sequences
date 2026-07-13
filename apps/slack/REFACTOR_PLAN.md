@@ -5,12 +5,17 @@ It supersedes the narrative in [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md)
 (keep that file — it is the architecture rationale; this file is the work
 order).
 
-Current boundary (2026-07-12): the first unchecked work is S6.9 in
-"Hackathon stabilization override -- finish before Phase 7." That section
-supersedes the older LP checkpoint budgets and zero-residue/one-attempt
-acceptance language for the current sprint. S7+ is frozen. The immediate goal
-is the first runtime-valid, human-acceptable MP4 within the bounded call/probe
-budget; advisory-only `warn` is acceptable.
+Current boundary (2026-07-13): S6.9-S6.13 are complete and preserved below as
+the final OpenRouter-era stabilization record. The live authoring contract is
+now [LUNA_WORKFLOW.md](LUNA_WORKFLOW.md): one private Railway Codex worker, one
+persistent `gpt-5.6-luna`/high director thread, and the deterministic direct-
+composition gate. The old provider committee remains unchanged only as an
+explicit rollback. S7+ in this historical plan stays frozen unless the owner
+opens a new scoped engine step.
+
+Do not interpret the first unchecked S7 checkbox as active work. For Luna,
+audit existing taste-heavy gates and repair policy later from real artifacts;
+do not pre-emptively weaken objective mechanics or rebuild the committee.
 
 ## Agent protocol — read this first, follow it exactly
 

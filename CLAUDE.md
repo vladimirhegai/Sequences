@@ -14,12 +14,13 @@ protocol), `SENTINEL.md` (correctness/fallback discipline), `OPERATIONS.md`
 (probes/publish/deploy), `PROBE_LOG.md` (live-probe ledger),
 `REFACTOR_HANDOFF.md` (architecture rationale).
 
-Current operating state (2026-07-12): the first unchecked work is the
-pre-Phase-7 hackathon stabilization section at S6.9. The short-term acceptance
-target is one runtime-valid, human-acceptable MP4 with bounded model calls, not
-zero advisory residue. S7 and later work are frozen; advisory taste findings do
-not justify another paid probe. See the active override in `REFACTOR_PLAN.md`
-before changing gates, retries, or probe behavior.
+Current operating state (2026-07-13): the official creative route is the
+single-session Luna workflow in `apps/slack/LUNA_WORKFLOW.md`. Ordinary creates
+and structural revisions use the private Railway Codex worker with
+`gpt-5.6-luna` at high reasoning. The former OpenRouter planner/author committee
+is preserved only as the explicit `legacy-provider` rollback route and is never
+an automatic fallback. The S6.9-S6.13 probe history remains useful evidence;
+do not restart its paid-probe loop or turn advisory taste findings into blockers.
 
 ## GitHub destination — do not get this wrong
 
@@ -29,8 +30,8 @@ All Slack Sequences code publishes to:
 
 This monorepo is the local development workspace, not the delivery
 destination. After committing, `bash scripts/publish-public.sh "<message>"`
-pushes the standalone public repo. **Deploying is separate:** `railway up`
-from the repo root (GitHub autodeploy is OFF) — see
+pushes the standalone public repo. **Deploying is separate:** use `railway up`
+against the exact clean `.publish` snapshot (GitHub autodeploy is OFF) — see
 [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md). Never publish or deploy
 without explicit authorization.
 

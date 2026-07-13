@@ -1,14 +1,14 @@
 # Hackathon implementation handoff
 
-Updated 2026-07-12. The active branch is
+Updated 2026-07-13. The active branch is
 `slack/spatial-world-camera-rig`. Start from the committed repository state and
 follow `REFACTOR_PLAN.md`; do not resume an older chat's Studio or motion-
 quality plan.
 
-The first unchecked step is S6.9, the pre-Phase-7 hackathon guardrail/retry
-inventory. S7 and later phases are frozen. The immediate target is one real,
-runtime-valid, human-acceptable MP4 in bounded time, not one-attempt plus zero
-advisory residue.
+S6.9-S6.13 are preserved as the final OpenRouter-era evidence. The live route
+is now `LUNA_WORKFLOW.md`: one private Railway Codex worker and one persistent
+`gpt-5.6-luna`/high director thread. S7 and later historical phases remain
+frozen.
 
 Operating rules:
 
@@ -17,13 +17,11 @@ Operating rules:
   deterministically, without rewriting copy/story/timing/style;
 - keep taste findings visible as advisories, but do not send them to author
   repair, rescue, critic patch, or another probe;
-- target at most two logical storyboard attempts, two logical source attempts,
-  six logical calls, and eight physical requests per job;
-- use one ordinary 14-18 second launch brief and stop at the first acceptable
-  MP4. A second paid probe is allowed only after a hard or judge-visible failure
-  is replayed and fixed; there is no third probe; and
-- do not publish or deploy without explicit owner authorization. Use only LUNA
-  high/xhigh for any genuinely necessary, narrow delegation.
+- preserve exact Luna raw bytes and the exact thread ID;
+- validate hard facts/mechanics in the host, while leaving story, art direction,
+  camera, transitions, pacing, and rendered polish to the one Luna session;
+- never fall through to OpenRouter automatically; and
+- do not publish or deploy without explicit owner authorization.
 
 Current evidence is in `PROBE_LOG.md` through ProofLane J. ProofGrid I produced
 a real non-fallback MP4; ProofLane J was early-stopped on advisory browser QA

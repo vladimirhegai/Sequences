@@ -8,11 +8,15 @@ engine change can silently break the studio or the shipped recipe library.
 **Rule: touching a seam in the left column requires updating the right column
 — or recording a TODO here in this file.**
 
-**Current status (2026-07-12):** catalog expansion is frozen during the active
-S6.9-S6.13 hackathon stabilization work. The exported recipe library contains
-seven recipes; `last-word-roulette` is currently revision 13. Historical
-revision notes below record the revision proven at that moment and should not
-be read as the current library version.
+**Current status (2026-07-13):** the live Slack author route is Luna direct.
+Studio remains the deterministic catalog cockpit and the complete typed-catalog
+pipeline below remains available to the explicit `legacy-provider` rollback
+route. Luna currently authors its own DOM/CSS/SVG and local asset bundle; the
+host does not silently inject this legacy planner vocabulary into Luna's
+creative session. Catalog expansion is still frozen during stabilization. The
+exported recipe library contains seven recipes; `last-word-roulette` is
+currently revision 13. Historical revision notes below record the revision
+proven at that moment and should not be read as the current library version.
 
 **2026-07-10 pivot:** recipes are now **agent-authored source files** —
 `recipes/<id>.recipe.html` (one file per recipe, committed; format +
@@ -35,8 +39,9 @@ coding agent writes recipes/<id>.recipe.html (meta + doc + fragment, one file)
     skills/sequences-recipes/<id>/ (recipe.json + recipe.md + fragment.html +
     demo.html + preview/) with engine version fences + hash, then retrieval
     sanity + live-retrieval surface check
-  → live create: skillContext retrieval offers ≤2 matching recipes (Level 0)
-  → GLM storyboard declares recipes:[{id,params}] per scene (schema field)
+  → legacy-provider create: skillContext retrieval offers ≤2 matching recipes
+    (Level 0)
+  → legacy storyboard declares recipes:[{id,params}] per scene (schema field)
   → parseStoryboard normalizes + reconcileRecipeDeclarations (Sentinel L2:
     drop/default/clamp, degrade-never-veto)
   → applyDeterministicSourceRepairs strips + re-injects the fragment VERBATIM
@@ -72,7 +77,7 @@ and a `npm run catalog -- new <catalog> <id>` scaffold (`recipes` uses
 routes closed-world. This table is the entry → runtime chain audit required by
 `studio/ERGONOMICS.md`; add a row before introducing another hand-wired seam.
 
-| catalog | committed source of truth | planner / OpenRouter discovery | schema → host execution | QA / proof | Studio consumer |
+| catalog | committed source of truth | legacy-provider discovery | schema → host execution | QA / proof | Studio consumer |
 |---|---|---|---|---|---|
 | Components | `componentContract.ts` `ComponentKind` + `COMPONENT_CATALOG` + kit CSS/markup | `componentPlanningVocabulary`; compact inventory in `studioLibraryVocabulary` reaches planner and author | catalog-derived component kind enum → component island/runtime | `componentContract.test.ts`, `componentRuntime.browser.test.ts`, Sentinel registry | `/api/state` maps `COMPONENT_CATALOG` |
 | Assets | `src/engine/assets/<id>.ts` + `assets/index.ts` `ASSET_LIBRARY` | asset plugin vocabulary + storyboard cache key + compact inventory | asset plugin declaration → lowering → asset island/kit + compiled springs | `assetContract.test.ts`, plugin tests, Asset Lab visual proof | `/api/state` maps and renders `ASSET_LIBRARY` |
@@ -82,10 +87,11 @@ routes closed-world. This table is the entry → runtime chain audit required by
 | Plugins | `pluginContract.ts` `PLUGIN_CATALOG` | catalog-derived planning vocabulary/schema enum + compact inventory | scene `plugins` → reconcile/lower → component beats + one host markup unit | `pluginContract.test.ts`, `pluginRuntime.browser.test.ts`, module-load lowering probe | `/api/plugins` maps catalog metadata + copy-ready examples |
 
 `test/studioCatalogIntegration.test.ts` proves that each current catalog entry
-appears in the shared OpenRouter inventory and that Studio imports the same
-five typed sources. Recipe end-to-end consumption remains independently proven
-by the recipe gate/export and retrieval tests because recipes are filesystem
-artifacts rather than a TypeScript catalog.
+appears in the shared legacy-provider inventory and that Studio imports the
+same five typed sources. It does not prove Luna receives or selects that
+inventory. Recipe end-to-end consumption remains independently proven by the
+recipe gate/export and retrieval tests because recipes are filesystem artifacts
+rather than a TypeScript catalog.
 
 ### 2026-07-09 motion-polish re-proof
 

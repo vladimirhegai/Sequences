@@ -1,6 +1,6 @@
 ---
 name: sequences
-description: Orientation map + rules for Sequences (apps/slack) — the Slack launch-video agent and the only active product in this repo. The two bots (OpenAI context retrieval + OpenRouter HyperFrames authoring), the staged runner pipeline, Sentinel failure discipline, the live-probe loop, the refactor plan, publish-vs-deploy, and Slack-native gotchas. Use at the start of ANY task in this repo ("add a command", "fix a gate", "run a probe", "change the result message", "render/upload", "prompts", "publish/deploy", "refactor step").
+description: Orientation map + rules for Sequences (apps/slack) — the Slack launch-video agent and the only active product in this repo. Covers the OpenAI context bot, default single-session Luna/Codex author route, explicit legacy-provider rollback, deterministic engine, Railway worker, verification, publish-vs-deploy, and Slack-native gotchas. Use at the start of ANY task in this repo.
 ---
 
 # Sequences — go straight to the right file (and don't break the rules)
@@ -22,34 +22,39 @@ Canonical docs — small set, read only what the task needs:
   any gate, normalizer, or repair.
 - [apps/slack/OPERATIONS.md](../../../apps/slack/OPERATIONS.md) — probes,
   Railway, publish/deploy, recovery.
+- [apps/slack/LUNA_WORKFLOW.md](../../../apps/slack/LUNA_WORKFLOW.md) — default
+  authoring session, artifacts, worker security, and rollback.
 - [apps/slack/PROBE_LOG.md](../../../apps/slack/PROBE_LOG.md) — live-probe
   ledger. Every paid attempt/fallback gets an entry.
 - [apps/slack/REFACTOR_HANDOFF.md](../../../apps/slack/REFACTOR_HANDOFF.md) —
   historical architecture rationale behind the plan (background reading, not
   the current work order).
 
-Current state (2026-07-12): the first unchecked work is S6.9 in the pre-Phase-7
-hackathon stabilization override. S7+ is frozen. Success for this sprint is the
-first runtime-valid, human-acceptable MP4 within the bounded call/probe budget;
-advisory-only `warn` is acceptable and does not justify another probe.
+Current state (2026-07-13): Luna direct is the production-default creative
+route. S6.9-S6.13 and their OpenRouter probes are preserved history; do not
+restart that probe loop merely to clear advisory findings.
 
 ## The two bots (don't conflate them)
 
 1. **Context bot** — `src/slackMcpContext.ts`: OpenAI Responses API +
    Slack hosted MCP with the invoking user's OAuth token. Needs
    `OPENAI_API_KEY`.
-2. **Authoring bot** — `src/engine/runner/` (ladder/orchestration): plans a
-   typed storyboard and authors HyperFrames HTML on
-   `SLACK_SEQUENCES_PROVIDER` (production: `openrouter-api`; GLM for
-   frame/storyboard, DeepSeek for source). Execution (mutation, preview,
-   render, undo) goes through the internal stdio Sequences MCP
-   (`src/engine/mcp*.ts`) — a different thing from Slack's hosted MCP.
+2. **Authoring bot** — `src/engine/lunaRoute.ts` plus the private
+   `apps/slack/codex-worker`: one persisted Codex CLI thread runs
+   `gpt-5.6-luna`/high from treatment through source, self-review, and revision.
+   `src/engine/runner/` is the unchanged explicit `legacy-provider` rollback,
+   never an automatic fallback. Execution (mutation, preview, render, undo)
+   goes through the internal stdio Sequences MCP (`src/engine/mcp*.ts`) — a
+   different thing from Slack's hosted MCP.
 
 ## Where things live
 
 - `src/index.ts` — Bolt app, all Slack I/O, two-tier delivery (thumbnails
   fast, MP4 after). `src/orchestrator.ts` — engine seam
   (create/revise/undo/render, provider resolution, progress receipts).
+- `src/engine/lunaRoute.ts` + `lunaWorkerClient.ts` — default fact/asset
+  envelope, exact-thread create/review/revise, raw-byte evidence, and private
+  worker transport. `codex-worker/` is the isolated Railway CLI service.
 - `src/engine/runner/` — the authoring pipeline: `orchestration.ts` (stage
   flow) · `ladder.ts` (attempts, hedging, models, publication decisions) ·
   `storyboardAudit.ts` (plan parse + normalize) · `scaffold.ts` (skeletons +
@@ -66,8 +71,9 @@ advisory-only `warn` is acceptable and does not justify another probe.
   `eyeTrace.ts`, `motionDensity.ts`, `temporalInspector.ts`; registries in
   `sentinel.ts`, `hostContract.ts`,
   `featureFlags.ts` (EVERY `SLACK_SEQUENCES_*` read must be registered).
-- Editable general prompts: `prompts/*.md` (`planning-director.md`,
-  `context-retrieval.md`). Deterministic per-run context stays in code.
+- Editable general prompts: `prompts/luna-*.md` for the default route;
+  `planning-director.md` remains legacy; `context-retrieval.md` is the OpenAI
+  context bot. Deterministic per-run facts stay in files/code.
 - Operator Studio (never on Railway): `studio/` — `npm run studio`, the
   component/asset/recipe catalog viewer, recipe gate/export, and the Asset Lab
   alias (`npm run assets`). Coding agents author recipes in `recipes/`; the
@@ -86,11 +92,12 @@ advisory-only `warn` is acceptable and does not justify another probe.
    mechanical failure without a model call, fix the lowest SENTINEL layer, add
    a regression, and log it in PROBE_LOG.md. Never loosen a hard gate or add
    prompt prose to hide a mechanical failure.
-2. **Motion goes through the engine gate, never hand-tuned.** Authored HTML
-   passes lint → runtime invariants → typed contracts → layout/pacing/eye
-   QA → bounded repair. Never hand-write motion JSON or timing numbers into
-   a job. The host owns contracts, runtimes, compile order, scene windows,
-   seek semantics, and camera blocking; the author owns scene interiors.
+2. **Motion goes through the engine gate, never hand-tuned by the host.** Luna
+   declares its own motion intent and HTML; the host preserves the raw bytes,
+   validates runtime/seek/bindings in a real browser, and checkpoints accepted
+   source. The host must not rewrite story, timing, palette, transition, or
+   camera choices to satisfy taste heuristics. The legacy route retains its
+   bounded normalizer/repair policy unchanged.
 3. **Keep deterministic things deterministic.** `/sequences demo`, tweaks,
    undo, delivery plumbing are model-free; build new deterministic behavior
    in that layer.
@@ -130,8 +137,8 @@ clear advisory residue.
 - Publish source → GitHub: `bash scripts/publish-public.sh "<msg>"` →
   force-pushes the public subset to `vladimirhegai/Slack_Sequences`. Never
   treat a push to the private monorepo as publishing.
-- Deploy live bot → Railway: `railway up` from the repo root (GitHub
-  autodeploy is OFF). Verify `/healthz` → `ready`. Docs-only changes need a
-  publish but not a redeploy.
+- Deploy live services → Railway from the exact clean `.publish` snapshot,
+  worker first and then Slack (GitHub autodeploy is OFF). Verify worker health,
+  Slack's `worker ready` startup receipt, and `/healthz` → `ready`.
 - Railway owns the only live Socket Mode process; never run a second one
   with sandbox tokens.

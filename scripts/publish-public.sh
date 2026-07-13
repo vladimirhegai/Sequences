@@ -60,8 +60,9 @@ git -C "$ROOT" archive HEAD \
   | tar -xf - -C "$STAGE"
 
 # Strip secrets / local research / heavy / generated dirs from the copies.
-find "$STAGE/apps/slack" -maxdepth 1 -type f -name '.env*' \
-  ! -name '.env.example' ! -name '.env.railway.example' -delete
+find "$STAGE" -type f -name '.env*' \
+  ! -path "$STAGE/apps/slack/.env.example" \
+  ! -path "$STAGE/apps/slack/.env.railway.example" -delete
 rm -rf "$STAGE/apps/slack/node_modules" \
        "$STAGE/apps/slack/.data" \
        "$STAGE/apps/slack/vendor/brag" \
@@ -161,6 +162,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm test --prefix apps/slack/codex-worker
 EOF
 
 cat > "$STAGE/README.md" <<'EOF'
@@ -168,9 +170,9 @@ cat > "$STAGE/README.md" <<'EOF'
 
 An agentic Slack bot for the **Slack Agent Builder Challenge** that turns a
 product-launch brief — or a whole release thread — into a **revisable product
-demo video**, without leaving Slack. The authoring bot writes native HyperFrames
-HTML/CSS/GSAP, a deterministic gate validates it, and Slack receives the
-storyboard followed by the rendered video.
+demo video**, without leaving Slack. One persistent Luna/Codex CLI director
+thread writes native HyperFrames HTML/CSS/GSAP, a deterministic gate validates
+it, and Slack receives the storyboard followed by the rendered video.
 
 This is the canonical Slack app repository:
 **https://github.com/vladimirhegai/Slack_Sequences**.
@@ -191,7 +193,8 @@ This repo is the **published subset** of a larger workspace:
   shared engine tests.
 
 Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md),
-[apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md), and
+[apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md),
+[apps/slack/LUNA_WORKFLOW.md](apps/slack/LUNA_WORKFLOW.md), and
 [apps/slack/REFACTOR_HANDOFF.md](apps/slack/REFACTOR_HANDOFF.md).
 
 ## What works today
@@ -200,6 +203,12 @@ Read [apps/slack/CLAUDE.md](apps/slack/CLAUDE.md),
   model or API key.
 - `/sequences` and the **🎬 Make a launch video** message shortcut collect a
   launch brief; the shortcut reads the whole release **thread** for context.
+- The default author is `gpt-5.6-luna` at high reasoning in a private Railway
+  Codex worker. One exact thread owns treatment, local assets, motion intent,
+  source, rendered self-review, and structural revisions. OpenRouter is only an
+  explicit legacy rollback and is never an automatic fallback.
+- `/sequences assets` deterministically captures approved brand screenshots;
+  the host hashes/copies them into Luna's isolated workspace before authoring.
 - **Two-tier delivery**: storyboard thumbnails post in seconds (`files.uploadV2`),
   then the rendered MP4 replaces them inline when it's ready.
 - **Revise**, **Undo**, and **Approve & share** (repost the finished reel to
@@ -223,6 +232,10 @@ Create or update the Slack app from
 OAuth scopes change. The complete setup + deploy walkthrough is in
 [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
 
+Ordinary authoring also requires the private `apps/slack/codex-worker` with a
+persisted logged-in `CODEX_HOME`; see the Luna workflow. `/sequences demo`
+remains model-free.
+
 Node ≥ 22.18. Rendering previews additionally needs Chrome/Edge (and FFmpeg for
 MP4).
 
@@ -234,6 +247,7 @@ npm test
 npm run demo --workspace @sequences/slack
 npm run mcp:demo --workspace @sequences/slack
 npm run direct:demo --workspace @sequences/slack
+npm test --prefix apps/slack/codex-worker
 ```
 EOF
 
@@ -260,6 +274,7 @@ into `apps/slack/src/engine/`** and adapt it. The bot must never depend on code
 outside this repo.
 
 Current architecture handoff: [apps/slack/REFACTOR_HANDOFF.md](apps/slack/REFACTOR_HANDOFF.md).
+Default Luna route: [apps/slack/LUNA_WORKFLOW.md](apps/slack/LUNA_WORKFLOW.md).
 Operations: [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
 
 ## Commands
@@ -268,6 +283,7 @@ Operations: [apps/slack/OPERATIONS.md](apps/slack/OPERATIONS.md).
 npm run dev          # run the Slack bot (Socket Mode)
 npm run typecheck    # tsc --noEmit over packages + apps/slack
 npm test             # vitest (engine suite)
+npm test --prefix apps/slack/codex-worker # private worker contract suite
 ```
 EOF
 

@@ -21,7 +21,7 @@ import path from "node:path";
 import { findBrowserExecutable } from "./render.ts";
 import { launchHeadlessBrowser } from "./browserLifecycle.ts";
 import { loadDirectComposition } from "./directComposition.ts";
-import { resolveCutPlan, type CutIntentV1 } from "./cutContract.ts";
+import { resolveCutPlan } from "./cutContract.ts";
 import { parseTimeRampPlan } from "./timeRamp.ts";
 import { sourceTime, timeConversionService } from "./time.ts";
 import {
@@ -68,6 +68,7 @@ export interface TemporalReport {
   stripPath: string;
   jsonPath: string;
   cuts: TemporalCutEvidence[];
+  cameraPaths: string[];
   changeCurve: RenderedChangeCurvePointV1[];
   quietWindows: Array<{ start: number; end: number }>;
   renderedDeadFrames: RenderedDeadFrameEvidenceV1;
@@ -76,9 +77,34 @@ export interface TemporalReport {
   cameraBlocking?: CameraBlockingEvidenceV1;
 }
 
+export interface TemporalDeclaredBoundary {
+  fromScene: string;
+  toScene: string;
+  strategy: string;
+  atSec: number;
+}
+
+export interface TemporalDeclaredCameraMove {
+  sceneId: string;
+  targetSelector: string;
+  startSec: number;
+  arrivalSec: number;
+  settleEndSec: number;
+  holdEndSec: number;
+}
+
+interface TemporalBoundarySpec {
+  fromScene: string;
+  toScene: string;
+  style: string;
+  atSec: number;
+  exitSec: number;
+  entrySec: number;
+}
+
 /** DOM target whose visible state should change on the outgoing cut leg. */
 export function temporalOutgoingCutSelector(
-  cut: Pick<CutIntentV1, "style" | "fromScene" | "toScene">,
+  cut: Pick<TemporalBoundarySpec, "style" | "fromScene" | "toScene">,
 ): string {
   const attributeValue = (value: string): string =>
     value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -226,13 +252,39 @@ export function quietWindowsFromCurve(
 
 export async function reportTemporalEvidence(
   projectDir: string,
-  options: { framesPerShot?: number; curveStepSec?: number } = {},
+  options: {
+    framesPerShot?: number;
+    curveStepSec?: number;
+    declaredBoundaries?: readonly TemporalDeclaredBoundary[];
+    declaredCameraMoves?: readonly TemporalDeclaredCameraMove[];
+  } = {},
 ): Promise<TemporalReport> {
   const browserPath = findBrowserExecutable();
   if (!browserPath) throw new Error("no Chrome/Edge found for temporal evidence capture");
   const current = loadDirectComposition(projectDir);
   const { manifest } = current;
-  const cuts = resolveCutPlan(manifest.scenes).cuts;
+  const typedCuts: TemporalBoundarySpec[] = resolveCutPlan(manifest.scenes).cuts;
+  const cuts = [...typedCuts];
+  for (const declared of options.declaredBoundaries ?? []) {
+    const duplicate = cuts.find((cut) =>
+      cut.fromScene === declared.fromScene && cut.toScene === declared.toScene &&
+      Math.abs(cut.atSec - declared.atSec) < 0.05
+    );
+    if (duplicate) {
+      duplicate.style = declared.strategy;
+      continue;
+    }
+    const outgoing = manifest.scenes.find((scene) => scene.id === declared.fromScene);
+    const incoming = manifest.scenes.find((scene) => scene.id === declared.toScene);
+    cuts.push({
+      fromScene: declared.fromScene,
+      toScene: declared.toScene,
+      style: declared.strategy,
+      atSec: declared.atSec,
+      exitSec: Math.min(0.4, Math.max(0.08, (outgoing?.durationSec ?? 1) * 0.2)),
+      entrySec: Math.min(0.5, Math.max(0.08, (incoming?.durationSec ?? 1) * 0.2)),
+    });
+  }
   const blockingPlan = parseCameraBlockingPlan(current.html);
   const outDir = path.join(projectDir, "build", "qa", "temporal");
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -257,6 +309,11 @@ export async function reportTemporalEvidence(
       cut.atSec + cut.entrySec,
     ].map((time) => roundTime(Math.min(Math.max(time, 0), manifest.durationSec))),
   }));
+  const cameraFrames = (options.declaredCameraMoves ?? []).map((move) => ({
+    move,
+    times: [move.startSec, move.arrivalSec, move.settleEndSec, move.holdEndSec]
+      .map((time) => roundTime(Math.min(Math.max(time, 0), manifest.durationSec))),
+  }));
   const curveStep = Math.max(0.2, options.curveStepSec ?? manifest.durationSec / 56);
   const curveTimes: number[] = [];
   for (let time = 0; time <= manifest.durationSec + 0.001; time += curveStep) {
@@ -267,6 +324,7 @@ export async function reportTemporalEvidence(
   const allTimes = [...new Set([
     ...shotFrames.flatMap((entry) => entry.times),
     ...cutFrames.flatMap((entry) => entry.times),
+    ...cameraFrames.flatMap((entry) => entry.times),
     ...curveTimes,
   ])].sort((a, b) => a - b);
 
@@ -316,7 +374,11 @@ export async function reportTemporalEvidence(
 
     // Promised-versus-observed: measure each boundary's wrapper (or bridge)
     // state on both sides of its motion window before any screenshot pass.
-    const cutObservations: Array<{ cut: CutIntentV1; outgoingMoved: boolean; incomingMoved: boolean }> = [];
+    const cutObservations: Array<{
+      cut: TemporalBoundarySpec;
+      outgoingMoved: boolean;
+      incomingMoved: boolean;
+    }> = [];
     for (const cut of cuts) {
       const toSelector = `[data-scene="${cut.toScene}"]`;
       const outgoingSelector = temporalOutgoingCutSelector(cut);
@@ -332,6 +394,55 @@ export async function reportTemporalEvidence(
         cut,
         outgoingMoved: stateMoved(outgoingBefore, outgoingAfter),
         incomingMoved: stateMoved(incomingBefore, incomingAfter),
+      });
+    }
+
+    const cameraObservations: Array<{
+      sceneId: string;
+      targetSelector: string;
+      samples: Array<{
+        phase: string;
+        time: number;
+        found: boolean;
+        opacity?: number;
+        visibleFraction?: number;
+        rect?: { x: number; y: number; width: number; height: number };
+      }>;
+    }> = [];
+    for (const { move, times } of cameraFrames) {
+      const samples = [];
+      for (const [index, time] of times.entries()) {
+        await seekTo(page, toOutputTime(time));
+        const measured = await page.evaluate((selector: string) => {
+          const element = document.querySelector<HTMLElement>(selector);
+          if (!element) return { found: false };
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          const visibleWidth = Math.max(0, Math.min(innerWidth, rect.right) - Math.max(0, rect.left));
+          const visibleHeight = Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top));
+          const area = Math.max(1, rect.width * rect.height);
+          return {
+            found: true,
+            opacity: Number(style.opacity),
+            visibleFraction: Math.round((visibleWidth * visibleHeight / area) * 10_000) / 10_000,
+            rect: {
+              x: Math.round(rect.x * 100) / 100,
+              y: Math.round(rect.y * 100) / 100,
+              width: Math.round(rect.width * 100) / 100,
+              height: Math.round(rect.height * 100) / 100,
+            },
+          };
+        }, move.targetSelector);
+        samples.push({
+          phase: ["start", "arrival", "settled", "hold"][index]!,
+          time,
+          ...measured,
+        });
+      }
+      cameraObservations.push({
+        sceneId: move.sceneId,
+        targetSelector: move.targetSelector,
+        samples,
       });
     }
 
@@ -593,6 +704,22 @@ export async function reportTemporalEvidence(
       });
     }
 
+    const cameraPaths: string[] = [];
+    for (const [index, { move, times }] of cameraFrames.entries()) {
+      const safeScene = move.sceneId.replace(/[^A-Za-z0-9._-]/g, "_");
+      const file = `camera-${String(index + 1).padStart(2, "0")}-${safeScene}.png`;
+      cameraPaths.push(await composeSheet(
+        [{
+          title: `${move.sceneId} · camera target ${move.targetSelector}`,
+          frames: times.map((time, column) => ({
+            label: `${["start", "arrival", "settled", "hold"][column]} ${time.toFixed(2)}s`,
+            dataUrl: frames.get(time)!,
+          })),
+        }],
+        file,
+      ));
+    }
+
     const changeCurve: RenderedChangeCurvePointV1[] = [];
     for (let index = 1; index < curveTimes.length; index += 1) {
       const previous = curveTimes[index - 1]!;
@@ -628,6 +755,11 @@ export async function reportTemporalEvidence(
       revision: manifest.revision,
       durationSec: manifest.durationSec,
       cuts: cutEvidence.map(({ triptychPath: _path, ...cut }) => cut),
+      declaredCameraMoves: (options.declaredCameraMoves ?? []).map((move, index) => ({
+        ...move,
+        evidencePath: cameraPaths[index],
+        samples: cameraObservations[index]?.samples ?? [],
+      })),
       changeCurve,
       quietWindows,
       renderedDeadFrames,
@@ -713,6 +845,7 @@ export async function reportTemporalEvidence(
       stripPath,
       jsonPath,
       cuts: cutEvidence,
+      cameraPaths,
       changeCurve,
       quietWindows,
       renderedDeadFrames,

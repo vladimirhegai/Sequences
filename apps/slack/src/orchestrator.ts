@@ -4,10 +4,11 @@
  *   createVideo()  messy brief  → authored HyperFrames → thumbnails → MP4
  *   reviseVideo()  NL revision  → checkpointed source → thumbnails → MP4
  *
- * Live work routes through the Sequences MCP server (mcpClient) by default —
- * the bot acting as a real MCP client — and falls back to the copied in-process
- * glue if the subprocess can't start. Live jobs author HyperFrames directly;
- * the frozen Plan compiler remains only for the deterministic demo fallback.
+ * Luna owns live creative authoring in one exact Codex thread. Accepted bytes
+ * still route through the Sequences MCP server (mcpClient) for deterministic
+ * commit/render operations by default, with copied in-process glue as the
+ * mechanical fallback. The former provider committee is explicit rollback;
+ * the frozen Plan compiler remains only for the deterministic demo.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -58,6 +59,7 @@ import {
   type DirectCompositionDraft,
 } from "./engine/directComposition.ts";
 import { inspectDirectComposition } from "./engine/layoutInspector.ts";
+import { reportTemporalEvidence } from "./engine/temporalInspector.ts";
 import { tryDirectInteractionRevision } from "./engine/directRevisionRouter.ts";
 import {
   activeSentinelLedgerEvents,
@@ -76,10 +78,22 @@ import {
 } from "./engine/runner/attemptLedger.ts";
 import { sentinelSkeletonEnabled, sentinelSlotsEnabled } from "./engine/sentinelFlags.ts";
 import { slackSequencesEnvRawValue } from "./engine/featureFlags.ts";
+import {
+  activateLunaAssets,
+  authorLunaComposition,
+  confirmLunaComposition,
+  loadLunaSession,
+  reconcileLunaSessionAfterUndo,
+  resolveAuthorRoute,
+  reviseLunaComposition,
+  selfReviewLunaComposition,
+  type LunaFactEnvelope,
+  type LunaMotionIntentV1,
+} from "./engine/lunaRoute.ts";
 
 /* ----------------------------------------------------------- provider choice */
 
-/** Default planning brain: a key-free CLI login, else the Anthropic API. */
+/** Provider resolver for the explicit legacy-provider rollback route only. */
 export function resolveProvider(explicit?: ProviderId): ProviderId {
   if (explicit) return explicit;
   const env = slackSequencesEnvRawValue("SLACK_SEQUENCES_PROVIDER") as ProviderId | undefined;
@@ -191,6 +205,8 @@ export interface VideoResult {
   /** True when the plan came from a curated preset rather than a planning brain. */
   usedPreset: boolean;
   provider: ProviderId;
+  /** Creative orchestration seam; Luna-direct never enters the legacy committee. */
+  authorRoute?: "luna-direct" | "legacy-provider";
   /** Honest runtime/quality publication axes folded from the attempt ledger. */
   ledgerStatus?: LedgerStatus;
   /** The per-job frame.md design system chosen for this video, if any. */
@@ -209,7 +225,10 @@ export interface VideoResult {
 export type AuthoringStage =
   | "frame-design"
   | "storyboard-plan"
-  | "source-author";
+  | "source-author"
+  | "luna-director"
+  | "luna-self-review"
+  | "luna-revision";
 
 export interface StageReceipt {
   stage: AuthoringStage;
@@ -711,6 +730,12 @@ export interface CreateVideoOptions extends BriefFields {
   onProgress?: ProgressCallback;
   /** Pulse for the model-authoring stages; drives the Slack ETA countdown. */
   onStageProgress?: StageProgressCallback;
+  /** Approved `/sequences assets` files copied into the isolated Luna job. */
+  assetReferencePaths?: readonly string[];
+  /** Containment root for those host-owned references. Required when files exist. */
+  assetReferenceRoot?: string;
+  /** Context without legacy planner/asset offers; preserves Luna's creative ownership. */
+  lunaContext?: string;
   /**
    * Model-free proof film when creative authoring is exhausted. ON by default:
    * the result is explicitly labeled (`VideoResult.fallback` + the Slack
@@ -721,15 +746,230 @@ export interface CreateVideoOptions extends BriefFields {
    */
   allowDeterministicFallback?: boolean;
   /**
-   * Skip the planning brain and apply this plan directly. A function receives the
+   * Skip creative authoring and apply this plan directly. A function receives the
    * freshly-initialized project so it can reference seeded asset ids. This is the
    * deterministic `/sequences demo` path — instant, key-free, and known-good.
    */
   presetPlan?: Plan | ((project: Project) => Plan);
 }
 
+function pulseAuthorStage(
+  callback: StageProgressCallback | undefined,
+  stage: AuthoringStage,
+  phase: "started" | "completed",
+  durationMs?: number,
+): void {
+  try {
+    callback?.(stage, phase, durationMs);
+  } catch {
+    // Slack progress is advisory and must never disturb the authoring run.
+  }
+}
+
+async function captureLunaTemporalEvidence(
+  dir: string,
+  intent: LunaMotionIntentV1,
+): Promise<void> {
+  await reportTemporalEvidence(dir, {
+    framesPerShot: 5,
+    declaredBoundaries: intent.boundaries.map((boundary) => ({
+      fromScene: boundary.fromScene,
+      toScene: boundary.toScene,
+      strategy: boundary.strategy,
+      atSec: boundary.atSec,
+    })),
+    declaredCameraMoves: intent.cameraMoves.map((camera) => ({
+      sceneId: camera.sceneId,
+      targetSelector: camera.targetSelector,
+      startSec: camera.startSec,
+      arrivalSec: camera.arrivalSec,
+      settleEndSec: camera.settleEndSec,
+      holdEndSec: camera.holdEndSec,
+    })),
+  });
+}
+
+async function createVideoWithLuna(
+  options: CreateVideoOptions,
+  dir: string,
+): Promise<VideoResult> {
+  const stages: StageReceipt[] = [];
+  const directorStarted = performance.now();
+  pulseAuthorStage(options.onStageProgress, "luna-director", "started");
+  const facts: LunaFactEnvelope = {
+    version: 1,
+    product: options.product,
+    brandName: options.brandName ?? options.product,
+    whatShipped: options.whatShipped,
+    ...(options.audience ? { audience: options.audience } : {}),
+    ...(options.tone ? { tone: options.tone } : {}),
+    targetDurationSec: options.lengthSec ?? DEFAULT_TARGET_LENGTH_SEC,
+    ...((options.lunaContext ?? options.context)
+      ? { context: options.lunaContext ?? options.context }
+      : {}),
+    provenance: {
+      source: "slack-user-and-authorized-workspace-context",
+      unsupportedClaimsAllowed: false,
+    },
+  };
+
+  let authored;
+  try {
+    authored = await authorLunaComposition({
+      projectDir: dir,
+      jobId: options.jobId,
+      facts,
+      assetReferencePaths: options.assetReferencePaths,
+      assetReferenceRoot: options.assetReferenceRoot,
+    });
+    const durationMs = Math.round(performance.now() - directorStarted);
+    stages.push({ stage: "luna-director", status: "succeeded", durationMs, attempts: 1 });
+    pulseAuthorStage(options.onStageProgress, "luna-director", "completed", durationMs);
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - directorStarted);
+    stages.push({ stage: "luna-director", status: "failed", durationMs, attempts: 1 });
+    pulseAuthorStage(options.onStageProgress, "luna-director", "completed", durationMs);
+    throw error;
+  }
+
+  const initialAssets = activateLunaAssets(dir, authored.assetFiles);
+  let initialMutation: Awaited<ReturnType<typeof applyDirectMutation>>;
+  try {
+    initialMutation = await applyDirectMutation(
+      dir,
+      options.product,
+      authored.draft,
+      options.preferMcp,
+      options.onProgress,
+    );
+    confirmLunaComposition(dir, authored);
+    initialAssets.commit();
+  } catch (error) {
+    initialAssets.rollback();
+    throw error;
+  }
+
+  let previews = await buildPreviews(dir, {
+    render: false,
+    preferMcp: options.preferMcp,
+    onProgress: options.onProgress,
+  });
+  const toolCalls: ToolCallReceipt[] = [
+    ...(initialMutation.receipt ? [initialMutation.receipt] : []),
+    ...previews.toolCalls,
+  ];
+  let usedMcp = initialMutation.usedMcp || previews.usedMcp;
+
+  // Rendered self-review is one optional director turn. A failed polish pass
+  // cannot invalidate the already mechanically accepted first cut.
+  const reviewStarted = performance.now();
+  pulseAuthorStage(options.onStageProgress, "luna-self-review", "started");
+  try {
+    await captureLunaTemporalEvidence(dir, authored.intent);
+    const reviewed = await selfReviewLunaComposition({
+      projectDir: dir,
+      thumbnailPaths: previews.thumbnailPaths,
+    });
+    if (reviewed.artifactFingerprint !== authored.artifactFingerprint) {
+      const acceptedPreviewBytes = previews.thumbnailPaths.map((filePath) => ({
+        filePath,
+        bytes: fs.existsSync(filePath) ? fs.readFileSync(filePath) : undefined,
+      }));
+      const reviewAssets = activateLunaAssets(dir, reviewed.assetFiles);
+      let reviewCommitted = false;
+      try {
+        const reviewMutation = await applyDirectMutation(
+          dir,
+          options.product,
+          reviewed.draft,
+          options.preferMcp,
+          options.onProgress,
+        );
+        reviewCommitted = true;
+        const reviewPreviews = await buildPreviews(dir, {
+          render: false,
+          preferMcp: options.preferMcp,
+          onProgress: options.onProgress,
+        });
+        await captureLunaTemporalEvidence(dir, reviewed.intent);
+        confirmLunaComposition(dir, reviewed);
+        reviewAssets.commit();
+        if (reviewMutation.receipt) toolCalls.push(reviewMutation.receipt);
+        usedMcp ||= reviewMutation.usedMcp;
+        previews = reviewPreviews;
+        toolCalls.push(...previews.toolCalls);
+        usedMcp ||= previews.usedMcp;
+        authored = reviewed;
+      } catch (error) {
+        if (reviewCommitted) undoDirectComposition(dir);
+        reviewAssets.rollback();
+        for (const accepted of acceptedPreviewBytes) {
+          if (accepted.bytes) fs.writeFileSync(accepted.filePath, accepted.bytes);
+          else fs.rmSync(accepted.filePath, { force: true });
+        }
+        if (reviewCommitted) {
+          await captureLunaTemporalEvidence(dir, authored.intent).catch((restoreError) => {
+            process.stderr.write(
+              `[luna] could not restore first-cut temporal evidence: ${String(restoreError)}\n`,
+            );
+          });
+        }
+        throw error;
+      }
+    } else {
+      // The same thread explicitly chose to keep the accepted bytes.
+      confirmLunaComposition(dir, reviewed);
+      authored = reviewed;
+    }
+    const durationMs = Math.round(performance.now() - reviewStarted);
+    stages.push({ stage: "luna-self-review", status: "succeeded", durationMs, attempts: 1 });
+    pulseAuthorStage(options.onStageProgress, "luna-self-review", "completed", durationMs);
+  } catch (error) {
+    const durationMs = Math.round(performance.now() - reviewStarted);
+    stages.push({ stage: "luna-self-review", status: "failed", durationMs, attempts: 1 });
+    pulseAuthorStage(options.onStageProgress, "luna-self-review", "completed", durationMs);
+    process.stderr.write(
+      `[luna] optional rendered self-review failed; retaining accepted first cut: ${String(error)}\n`,
+    );
+  }
+
+  if (options.render ?? true) {
+    const rendered = await renderVideo(dir, {
+      preferMcp: options.preferMcp,
+      onProgress: options.onProgress,
+    });
+    previews = {
+      ...previews,
+      ...(rendered.mp4Path ? { mp4Path: rendered.mp4Path } : {}),
+      toolCalls: previews.toolCalls,
+      usedMcp: previews.usedMcp,
+    };
+    toolCalls.push(...rendered.toolCalls);
+    usedMcp ||= rendered.usedMcp;
+  }
+
+  const current = loadDirectComposition(dir);
+  return {
+    ...previews,
+    projectDir: dir,
+    outline: directOutline(current.manifest),
+    lint: await directLintText(dir),
+    usedMcp,
+    mcpRequested: mcpEnabled(options.preferMcp),
+    toolCalls,
+    skillsUsed: ["luna-single-director"],
+    usedPreset: false,
+    provider: "codex-cli",
+    authorRoute: "luna-direct",
+    stages,
+  };
+}
+
 export async function createVideo(options: CreateVideoOptions): Promise<VideoResult> {
-  const providerId = resolveProvider(options.provider);
+  const authorRoute = resolveAuthorRoute(options.provider);
+  const providerId = authorRoute === "luna-direct"
+    ? "codex-cli"
+    : resolveProvider(options.provider);
 
   const dir = projectDirFor(options.jobId);
   const resumedFailedProject = canResumeFailedProject(dir);
@@ -748,6 +988,9 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
   const project = loadProject(dir);
   const usedPreset = options.presetPlan !== undefined;
   let skillsUsed: string[] = [];
+  if (options.presetPlan === undefined && authorRoute === "luna-direct") {
+    return createVideoWithLuna(options, dir);
+  }
   if (options.presetPlan === undefined) {
     const provider = PROVIDERS[providerId];
     if (!provider) throw new Error(`unknown provider "${providerId}"`);
@@ -953,6 +1196,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
       skillsUsed,
       usedPreset: false,
       provider: providerId,
+      authorRoute: "legacy-provider",
       stages: ledgerStageReceipts(),
       ledgerStatus,
       ...(fallbackInfo ? { fallback: fallbackInfo } : {}),
@@ -1009,6 +1253,7 @@ export async function createVideo(options: CreateVideoOptions): Promise<VideoRes
     skillsUsed,
     usedPreset,
     provider: providerId,
+    authorRoute: "legacy-provider",
     ledgerStatus,
   };
 }
@@ -1022,11 +1267,107 @@ export interface ReviseVideoOptions {
   render?: boolean;
   preferMcp?: boolean;
   onProgress?: ProgressCallback;
+  onStageProgress?: StageProgressCallback;
 }
 
 export async function reviseVideo(options: ReviseVideoOptions): Promise<VideoResult & { mode: string }> {
   const dir = options.projectDir;
-  const providerId = resolveProvider(options.provider);
+  const authorRoute = resolveAuthorRoute(options.provider);
+  const providerId = authorRoute === "luna-direct"
+    ? "codex-cli"
+    : resolveProvider(options.provider);
+  if (hasDirectComposition(dir) && authorRoute === "luna-direct") {
+    const previousSession = loadLunaSession(dir);
+    if (!previousSession) {
+      throw new Error(
+        "This film predates the Luna session route. Recreate it with /sequences or use the explicit legacy-provider rollback route.",
+      );
+    }
+    const started = performance.now();
+    pulseAuthorStage(options.onStageProgress, "luna-revision", "started");
+    let revisionStageCompleted = false;
+    let revisionDurationMs = 0;
+    const completeRevisionStage = (): number => {
+      if (!revisionStageCompleted) {
+        revisionStageCompleted = true;
+        revisionDurationMs = Math.round(performance.now() - started);
+        pulseAuthorStage(
+          options.onStageProgress,
+          "luna-revision",
+          "completed",
+          revisionDurationMs,
+        );
+      }
+      return revisionDurationMs;
+    };
+    let authored;
+    try {
+      authored = await reviseLunaComposition({
+        projectDir: dir,
+        instruction: options.instruction,
+      });
+    } catch (error) {
+      completeRevisionStage();
+      throw error;
+    }
+
+    let mutation: Awaited<ReturnType<typeof applyDirectMutation>> = { usedMcp: false };
+    let mode = "luna-direct-noop";
+    let revisedAssets: ReturnType<typeof activateLunaAssets> | undefined;
+    let revisionCommitted = false;
+    if (
+      authored.artifactFingerprint !==
+      (previousSession.latestArtifactFingerprint ?? previousSession.latestRawSourceSha256)
+    ) {
+      revisedAssets = activateLunaAssets(dir, authored.assetFiles);
+      try {
+        mutation = await applyDirectMutation(
+          dir,
+          loadDirectComposition(dir).manifest.title,
+          authored.draft,
+          options.preferMcp,
+          options.onProgress,
+        );
+        revisionCommitted = true;
+        mode = "luna-direct-revision";
+      } catch (error) {
+        revisedAssets.rollback();
+        completeRevisionStage();
+        throw error;
+      }
+    }
+    try {
+      confirmLunaComposition(dir, authored);
+      revisedAssets?.commit();
+    } catch (error) {
+      if (revisionCommitted) undoDirectComposition(dir);
+      revisedAssets?.rollback();
+      completeRevisionStage();
+      throw error;
+    }
+    const durationMs = completeRevisionStage();
+    const previews = await buildPreviews(dir, {
+      render: options.render ?? true,
+      preferMcp: options.preferMcp,
+      onProgress: options.onProgress,
+    });
+    const applied = loadDirectComposition(dir);
+    return {
+      ...previews,
+      projectDir: dir,
+      outline: directOutline(applied.manifest),
+      lint: await directLintText(dir),
+      usedMcp: mutation.usedMcp || previews.usedMcp,
+      mcpRequested: mcpEnabled(options.preferMcp),
+      toolCalls: [...(mutation.receipt ? [mutation.receipt] : []), ...previews.toolCalls],
+      skillsUsed: ["luna-single-director"],
+      usedPreset: false,
+      provider: "codex-cli",
+      authorRoute: "luna-direct",
+      stages: [{ stage: "luna-revision", status: "succeeded", durationMs, attempts: 1 }],
+      mode,
+    };
+  }
   if (hasDirectComposition(dir)) {
     const provider = PROVIDERS[providerId];
     if (!provider) throw new Error(`unknown provider "${providerId}"`);
@@ -1090,6 +1431,7 @@ export async function reviseVideo(options: ReviseVideoOptions): Promise<VideoRes
       skillsUsed: skills.skillNames,
       usedPreset: false,
       provider: providerId,
+      authorRoute: "legacy-provider",
       mode: revisionMode,
       ...frameInfo(dir),
     };
@@ -1128,6 +1470,7 @@ export async function reviseVideo(options: ReviseVideoOptions): Promise<VideoRes
     skillsUsed: skills.skillNames,
     usedPreset: false,
     provider: providerId,
+    authorRoute: "legacy-provider",
     mode: tweak.mode,
   };
 }
@@ -1191,6 +1534,7 @@ export async function undoVideo(
     onProgress: options.onProgress,
   });
   if (direct) {
+    const restoredLunaSession = reconcileLunaSessionAfterUndo(dir);
     const applied = loadDirectComposition(dir);
     return {
       ...previews,
@@ -1202,7 +1546,8 @@ export async function undoVideo(
       toolCalls: [...toolCalls, ...previews.toolCalls],
       skillsUsed: [],
       usedPreset: false,
-      provider: providerId,
+      provider: restoredLunaSession ? "codex-cli" : providerId,
+      authorRoute: restoredLunaSession ? "luna-direct" : "legacy-provider",
       ...frameInfo(dir),
     };
   }

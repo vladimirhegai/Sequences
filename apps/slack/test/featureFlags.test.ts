@@ -36,6 +36,7 @@ function sourceReadFlagNames(): string[] {
   const names = new Set<string>();
   const patterns = [
     /slackSequencesEnvRawValue\(\s*["'](SLACK_SEQUENCES_[A-Z0-9_]+)["']/g,
+    /resolveFeatureFlag\(\s*["'](SLACK_SEQUENCES_[A-Z0-9_]+)["']/g,
     /process\.env\s*\.\s*(SLACK_SEQUENCES_[A-Z0-9_]+)/g,
     /process\.env\s*\[\s*["'](SLACK_SEQUENCES_[A-Z0-9_]+)["']\s*\]/g,
     /thinkingOverride\(\s*["'](SLACK_SEQUENCES_[A-Z0-9_]+)["']/g,
@@ -72,7 +73,7 @@ function rawSlackReadLocations(): string[] {
 describe("central SLACK_SEQUENCES feature-flag registry", () => {
   it("classifies every source-read variable and carries no stale registrations", () => {
     expect(sourceReadFlagNames()).toEqual([...REGISTERED_SLACK_SEQUENCES_ENV_NAMES]);
-    expect(sourceReadFlagNames()).toHaveLength(48);
+    expect(sourceReadFlagNames()).toHaveLength(52);
   });
 
   it("forbids raw Slack env reads outside the centralized flags module", () => {

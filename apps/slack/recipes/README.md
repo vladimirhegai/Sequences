@@ -1,12 +1,13 @@
-# Recipe sources — the agent-authored motion-pattern library
+# Recipe sources — legacy-route motion-pattern library
 
-This directory is the **source of truth for recipes**: proven, signature
-motion patterns (word roulettes, iris fills, choreographed payoffs) that live
-`/sequences` creates instantiate VERBATIM at Level 1 (see
-`src/engine/recipeContract.ts` and `studio/INTEGRATION.md`). Recipes exist
-because model authors cannot reliably re-derive intricate patterns from prose
-— a coding agent builds the pattern **once, here, as a file**, proves it
-through the full production gate, and the pipeline reuses it forever.
+This directory is the **source of truth for the explicit `legacy-provider`
+route's recipes**: proven, signature motion patterns (word roulettes, iris
+fills, choreographed payoffs) that the legacy planner may instantiate verbatim
+at Level 1 (see `src/engine/recipeContract.ts` and `studio/INTEGRATION.md`).
+The default Luna route does not receive this catalog or inject its fragments;
+Luna authors the film's local DOM/CSS/SVG asset system directly. Recipes remain
+available for Studio work, deterministic demos, and operator-controlled legacy
+rollback.
 
 **You (a coding agent) author recipes by writing files in this directory.**
 The operator does not build recipes; they review them in the studio viewer

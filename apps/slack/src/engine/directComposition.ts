@@ -1524,21 +1524,27 @@ export async function generateDirectThumbnails(
     // though its box is present the whole scene). Screenshot + canvas read.
     const paintedFraction = async (): Promise<number> => {
       const b64 = (await page.screenshot({ encoding: "base64", type: "png" })) as string;
-      return page.evaluate(async (dataUrl: string) => {
-        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.addEventListener("load", () => resolve(img));
-          img.addEventListener("error", () => reject(new Error("thumb probe decode failed")));
-          img.src = "data:image/png;base64," + dataUrl;
-        });
-        const w = image.naturalWidth;
-        const h = image.naturalHeight;
-        if (!w || !h) return 0;
+      return page.evaluate(async (encodedPng: string) => {
+        // Decode the host-owned screenshot without navigating an <img>. Luna
+        // compositions deliberately use `img-src 'self'`; a temporary data URL
+        // would violate that policy and turn an internal QA probe into a false
+        // browser-runtime failure. createImageBitmap decodes inert bytes
+        // directly and does not expand the authored page's CSP.
+        const binary = atob(encodedPng);
+        const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+        const image = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+        const w = image.width;
+        const h = image.height;
+        if (!w || !h) {
+          image.close();
+          return 0;
+        }
         const canvas = document.createElement("canvas");
         canvas.width = w;
         canvas.height = h;
         const context = canvas.getContext("2d", { willReadFrequently: true })!;
         context.drawImage(image, 0, 0);
+        image.close();
         const data = context.getImageData(0, 0, w, h).data;
         const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + (w - 1)) * 4];
         let br = 0;

@@ -8,15 +8,16 @@ Keep the active documentation set small:
 - [REFACTOR_PLAN.md](REFACTOR_PLAN.md): the ACTIVE step-by-step refactor work
   order — if you are here for refactor work, follow its agent protocol.
 - [OPERATIONS.md](OPERATIONS.md): local probes, publish, deploy, and recovery.
+- [LUNA_WORKFLOW.md](LUNA_WORKFLOW.md): default author route, worker security,
+  asset/session contract, and explicit legacy rollback.
 - [SENTINEL.md](SENTINEL.md): correctness ownership, retries, and fallback.
 - [PROBE_LOG.md](PROBE_LOG.md): current paid-probe evidence.
 - [REFACTOR_HANDOFF.md](REFACTOR_HANDOFF.md): architecture rationale behind
   the plan.
 
-Current work (2026-07-12) starts at S6.9 in the pre-Phase-7 hackathon
-stabilization override. Its acceptance target is a runtime-valid,
-human-acceptable MP4 within bounded model calls; advisory residue may remain a
-truthful `warn`. S7 and later work are frozen until that override is complete.
+Current state (2026-07-13): Luna direct is the default creative route. The
+S6.9-S6.13 OpenRouter stabilization work is historical evidence, not the live
+orchestration path. Do not restart its paid-probe loop.
 
 ## Delivery and scope
 
@@ -28,7 +29,8 @@ bash scripts/publish-public.sh "type(scope): concise message"
 ```
 
 Publishing and deploying are separate. The live sandbox changes only after
-`railway up`. Never publish or deploy unless the user explicitly asks.
+deploying the exact clean `.publish` snapshot with `railway up`. Never publish
+or deploy unless the user explicitly asks.
 
 Active work lives in `apps/slack`. It may use `@sequences/core`,
 `@sequences/platform`, and pinned HyperFrames packages. The retired app/studio
@@ -37,44 +39,51 @@ Treat `packages/*` as stable dependencies.
 
 ## Model boundaries
 
-There are two different bots:
+There are two different bots and one deterministic engine:
 
 1. `src/slackMcpContext.ts` uses the OpenAI Responses API and Slack hosted MCP
    with the invoking user's OAuth token. This path requires `OPENAI_API_KEY`.
-2. `src/engine/runner/` plans and authors through
-   `SLACK_SEQUENCES_PROVIDER` (production uses `openrouter-api`: GLM for frame
-   and storyboard direction, DeepSeek v4 Pro for full source). The internal
-   Sequences MCP owns mutation, preview, render, and undo.
+2. `src/engine/lunaRoute.ts` sends verified facts/assets to the private
+   `codex-worker`, where one persistent Codex CLI thread runs
+   `gpt-5.6-luna` with high reasoning. That thread owns treatment, assets,
+   motion intent, storyboard, source, rendered self-review, and structural
+   revisions. `src/engine/runner/` is frozen behind the explicit
+   `legacy-provider` rollback route; it is never an automatic fallback.
+3. The internal Sequences MCP owns deterministic mutation, preview, render,
+   and undo for accepted compositions.
 
-Editable general prompts belong in `prompts/*.md`. Runtime facts, typed
-contracts, frame tokens, and the locked storyboard belong in source.
+Editable Luna prompts belong in `prompts/luna-*.md`; the legacy planning prompt
+remains for rollback. Runtime facts and approved asset manifests are job-local
+files, while typed host contracts remain in source.
 
 ## Execution contract
 
-The pipeline is staged and transactional:
+The default Luna pipeline is staged and transactional:
 
 1. Collect the brief and permission-scoped Slack evidence.
-2. Build and validate `frame.md`.
-3. Plan a typed storyboard; deterministic normalizers may make only
-   non-creative, atomic, revalidated repairs.
-4. Emit scene skeletons and source slots. The author fills scene interiors;
-   the host retains the document chassis and all typed plan islands.
-5. Reinject canonical interaction, cut, camera, continuity, component,
-   time-ramp, FX, asset, and environment contracts.
-6. Run static and browser QA. The bounded vision critic is a conditional
-   quality observer and is skipped when rendered QA is pristine; the active
-   hackathon audit must prevent advisory residue from buying critic repair.
-7. Checkpoint accepted source, capture moment thumbnails, and render the MP4.
+2. Copy/hash approved `/sequences assets` files into an isolated worker job.
+3. The same Luna thread chooses treatment and assets, declares motion intent,
+   and authors storyboard plus complete seekable source.
+4. Preserve exact raw bytes, validate declared selectors and local assets, then
+   run the existing static and real-browser direct-composition gate.
+5. Checkpoint accepted source and return thumbnails/evidence to the exact Luna
+   thread for zero or one self-directed polish pass.
+6. Revalidate changed bytes, render the MP4, and preserve hashes/evidence.
+7. Resume the exact thread ID for structural revisions; never use `--last`.
+
+The legacy frame/storyboard/scaffold/repair pipeline stays unchanged behind
+`SLACK_SEQUENCES_AUTHOR_ROUTE=legacy-provider`.
 
 `SLACK_SEQUENCES_USE_MCP=0` is diagnostic only. Receipts never contain prompts,
 credentials, workspace content, plan data, or model output.
 
 ## Ownership and motion truths
 
-- The host owns typed contracts, runtimes, compile order, scene windows, seek
-  semantics, structural stage geometry, and camera blocking.
-- The author owns scene interiors, copy, and creative choreography not already
-  expressed by a typed contract.
+- The host owns verified facts, permissions, asset/source hashes, local-only
+  execution, runtimes, scene windows, seek semantics, browser/encoding health,
+  checkpointing, and delivery.
+- Luna owns concept, structure, art direction, screen copy within verified
+  facts, assets, layout, transition/camera choice, pacing, and choreography.
 - Plugins and assets lower into ordinary components and beats. Recipes are
   proven fragments; reconciliation is degrade-never-veto.
 - Continuity and camera blocking are default-on. Stable `entityId`s should
@@ -99,7 +108,9 @@ The authoritative environment-variable registry is
 
 ## Failure discipline
 
-Read [SENTINEL.md](SENTINEL.md) before adding a rule or repair. Put each
+Read [SENTINEL.md](SENTINEL.md) before adding a rule or repair. The existing
+Sentinel committee applies to the legacy route; Luna currently reuses only its
+objective direct-composition mechanics. Put each
 obligation at the lowest layer that can own it: schema, scaffold,
 deterministic normalize, static gate, browser gate, then paid retry. Register
 finding classes in `src/engine/sentinel.ts`.
@@ -116,8 +127,8 @@ Classify before acting: runtime/schema failures are hard; host-known mechanical
 defects belong to one bounded deterministic repair; taste preferences remain
 visible advisories and do not trigger another author call or probe. Never raise
 attempt counts, loosen a hard gate, or add prompt prose merely to hide a
-mechanical failure. During the active hackathon override, stop after the first
-judge-ready MP4 and never run more than the two explicitly budgeted probes.
+mechanical failure. A Luna-authored defect should eventually return to the same
+thread with exact evidence; do not rebuild the old repair committee around it.
 
 ## Safety and verification
 
