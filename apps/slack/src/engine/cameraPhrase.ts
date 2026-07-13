@@ -263,6 +263,53 @@ function mergePhrases(a: CameraPhraseV1, b: CameraPhraseV1): CameraPhraseV1 {
   };
 }
 
+export interface CameraPhraseCollapseOptions {
+  /** Typed scene subject that owns the lens when continuity routes collide. */
+  preferredTarget?: string;
+  /** Typed interaction targets that must remain visible through their action. */
+  interactionTargets?: readonly string[];
+}
+
+function phraseNamesTarget(phrase: CameraPhraseV1, target: string | undefined): boolean {
+  return Boolean(
+    target &&
+    (phrase.target.id === target || phrase.framingTarget?.id === target),
+  );
+}
+
+function competingPrimaryOverlap(a: CameraPhraseV1, b: CameraPhraseV1): boolean {
+  if (a.importance !== "primary" || b.importance !== "primary") return false;
+  if (sharesDestination(a, b)) return false;
+  if (a.routeOwnership === "authored" && b.routeOwnership === "authored") return false;
+  return Math.min(a.dwell.endSec, b.dwell.endSec) -
+    Math.max(a.dwell.startSec, b.dwell.startSec) >= 0.1;
+}
+
+function competingRoutePriority(
+  phrase: CameraPhraseV1,
+  options: CameraPhraseCollapseOptions,
+): number {
+  const interactionTargets = new Set(options.interactionTargets ?? []);
+  return (phrase.routeOwnership === "authored" ? 100 : 0) +
+    (phraseNamesTarget(phrase, options.preferredTarget) ? 20 : 0) +
+    ([phrase.target.id, phrase.framingTarget?.id]
+      .some((target) => Boolean(target && interactionTargets.has(target!))) ? 10 : 0);
+}
+
+function absorbCompetingPhrase(
+  winner: CameraPhraseV1,
+  suppressed: CameraPhraseV1,
+): CameraPhraseV1 {
+  return {
+    ...winner,
+    collapsedPhraseIds: [
+      ...(winner.collapsedPhraseIds ?? []),
+      suppressed.phraseId,
+      ...(suppressed.collapsedPhraseIds ?? []),
+    ],
+  };
+}
+
 /**
  * Reduce direction paperwork to routes the runtime can actually execute.
  * Supporting evidence remains local when a primary route exists, except for
@@ -271,6 +318,7 @@ function mergePhrases(a: CameraPhraseV1, b: CameraPhraseV1): CameraPhraseV1 {
  */
 export function collapseCameraPhrases(
   phrases: readonly CameraPhraseV1[],
+  options: CameraPhraseCollapseOptions = {},
 ): { phrases: CameraPhraseV1[]; collapsed: number } {
   const primary = phrases.filter((phrase) => phrase.importance === "primary");
   const routed = primary.length
@@ -282,6 +330,29 @@ export function collapseCameraPhrases(
     : [...phrases];
   const collapsed: CameraPhraseV1[] = [];
   for (const phrase of routed) {
+    let conflictIndex = -1;
+    if (options.preferredTarget || options.interactionTargets?.length) {
+      for (let index = collapsed.length - 1; index >= 0; index -= 1) {
+        if (competingPrimaryOverlap(collapsed[index]!, phrase)) {
+          conflictIndex = index;
+          break;
+        }
+      }
+    }
+    if (conflictIndex >= 0) {
+      const previous = collapsed[conflictIndex]!;
+      const previousPriority = competingRoutePriority(previous, options);
+      const phrasePriority = competingRoutePriority(phrase, options);
+      // Without typed or authored ownership, preserve both promises and let
+      // normal hard QA expose the ambiguity. A deterministic suppression is
+      // allowed only when the existing contract names the winner.
+      if (previousPriority !== phrasePriority && Math.max(previousPriority, phrasePriority) > 0) {
+        collapsed[conflictIndex] = previousPriority > phrasePriority
+          ? absorbCompetingPhrase(previous, phrase)
+          : absorbCompetingPhrase(phrase, previous);
+        continue;
+      }
+    }
     const previous = collapsed[collapsed.length - 1];
     if (
       previous && sameRoute(previous, phrase) &&
@@ -302,7 +373,12 @@ export function collapseCameraPhrases(
 export function compileCameraPhrasePlan(args: {
   cameraPlan: CameraPlanV1;
   solver: CameraPhrasePlanV1["solver"];
-  scenes: Array<{ sceneId: string; phrases: CameraPhraseSeedV1[] }>;
+  scenes: Array<{
+    sceneId: string;
+    phrases: CameraPhraseSeedV1[];
+    preferredTarget?: string;
+    interactionTargets?: readonly string[];
+  }>;
 }): CameraPhrasePlanV1 {
   let previousPose: CameraPhrasePoseV1 | undefined;
   let collapsedPhraseCount = 0;
@@ -348,7 +424,10 @@ export function compileCameraPhrasePlan(args: {
       previousPose = arrivalPose;
       return phrase;
     });
-    const collapsed = collapseCameraPhrases(compiled);
+    const collapsed = collapseCameraPhrases(compiled, {
+      preferredTarget: scene.preferredTarget,
+      interactionTargets: scene.interactionTargets,
+    });
     collapsedPhraseCount += collapsed.collapsed;
     return { sceneId: scene.sceneId, phrases: collapsed.phrases };
   });

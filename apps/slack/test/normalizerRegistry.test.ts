@@ -49,6 +49,7 @@ const FULL_ORDER = [
   "normalize.source-bindings.component-region-home",
   "normalize.source-bindings.component-alias",
   "normalize.source-bindings.rows-markup",
+  "normalize.source-bindings.chat-beat-targets",
   "normalize.source-bindings.underline-markup",
   "normalize.kit-chart-complete",
   "normalize.kit-progress-complete",

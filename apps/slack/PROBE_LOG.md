@@ -16,6 +16,106 @@ K. The active sprint permits at most two new paid probes total and stops after
 the first runtime-valid, human-acceptable MP4; advisory-only residue is not a
 reason to rerun.
 
+## 2026-07-12 Hackathon stabilization probe preflight
+
+The required negative-control evidence is already recorded below without
+revision: ProofGrid I published a real non-fallback MP4, while ProofLane J was
+stopped at its first runtime-valid browser QA and produced no MP4 or terminal
+call ledger. S6.9-S6.11 are locally committed. Root and Slack typechecks, the
+complete Slack unit and browser suites, `replay:all` (25/0/0), exact ProofGrid
+I and ProofLane J source replays, the persisted ProofLane hard-finding
+classifier checks, and the deterministic golden/render proof are green.
+
+Probe A will use the ordinary 15-second Sequences-for-Slack brief through the
+documented OpenRouter create path: fallback off, continuity and composition
+audit on, MCP/render/temporal evidence on, and `format both`. The create path
+persists GLM frame/asset direction before storyboard/source authoring, matching
+the Slack two-tier asset-then-result flow without inventing a second probe
+schema or provider call. Stop at the first human-acceptable MP4; advisory-only
+residue cannot authorize another run.
+
+### Sequences for Slack A — `s6-12-sequences-slack-a-20260712-1652` (fail-loud)
+
+Probe A ran for 6m26s. Its GLM frame/asset direction, concept, shape, first
+storyboard, and first full source response all completed; the storyboard kept
+one component-density advisory without retrying. The source's bounded scaffold
+repair restored two dropped scene contracts. The first browser inspection then
+hard-failed `interaction_not_visible` for `brief-cursor`: the cursor arrived at
+the Slack chat surface from 3.95–4.15s while that target was invisible. The
+six-logical-call ceiling correctly refused another author patch, so the run
+ended without runtime, render, QA report, temporal strip, or MP4. Triage: 6
+logical / 8 physical requests, one storyboard attempt, two source-family calls,
+two hedges, fallback off, `runtimeValid=false`, `qualityResidue=0`.
+
+Exact replay localized the defect to canonical component markup. The typed
+chat's later `swap` and `stream` beats had no kit-internal child markers, so the
+runtime fell back to the whole `slack-chat` root and pre-hid the interaction
+target. The bounded repair now marks only one descendant whose existing copy
+exactly matches the beat and whose id/part/class names the required input or
+response role. It changes no copy, timing, hierarchy, style, or story; a second
+pass is byte-stable, while canonical and ambiguous controls are unchanged. The
+minimized real-browser regression is green. Re-inspection of A's exact rejected
+HTML changes only `chat-input` / `ai-response` binding attributes: runtime
+`ok:true`, zero hard findings, and arrival/press/release all hit within 0.001px.
+Remaining `container_overflow`, washout, and contrast findings are advisory.
+Probe B is authorized after the full verification surface, using the same
+semantic brief and only a new job/cache marker.
+
+### Sequences for Slack B — `s6-12-sequences-slack-b-20260712-2113` (live fail-loud; exact source recovered)
+
+Probe B used the same semantic brief with only the cache-distinct job marker
+changed. The real OpenRouter run took 9m15s: one frame decision, one concept,
+one accepted storyboard, and two source-family calls, for 5 logical / 7
+physical requests with one storyboard hedge and one source hedge. Fallback was
+off. It stayed inside the six/eight request caps without a runaway retry. The
+live command nevertheless failed loud before render: `slack-chat` measured
+0% visible because two overlapping PRIMARY continuity routes sent the camera
+to disjoint Slack/context stations. The two-source ceiling correctly refused a
+third patch, so the live command itself produced no MP4 and has no
+`sequence-check.json`. Its complete ledger, rejected source, author record,
+Sentinel record, and triage remain in the project.
+
+Exact replay identified camera-phrase ownership as the lowest deterministic
+owner. When typed spatial/interaction evidence names one route, the compiler
+now executes that route and retains a simultaneous disjoint continuity route
+only as an advisory. Ambiguous and sequential routes remain unchanged. The
+minimized Chromium regression keeps the Slack focal on-frame and the click
+arrival/press/release on target. Replaying B's exact rejected HTML after this
+repair gives runtime `ok:true`, no hard finding, and nine executable blocking
+phrases instead of ten. The earlier A chat binding repair is also applied.
+
+Human review then found one source-specific judge-visible residue: the author
+had drawn a canvas-scale blue diagonal `accent-hairline` through the opener.
+The bounded source normalizer now retires only the paint of a non-host,
+non-component, simple two-point hairline spanning at least 50% of canvas width
+and 25% of height. It preserves the target element, camera/continuity geometry,
+copy, component choices, beats, timing, palette, and motion. Horizontal rules,
+short accents, charts, and host geometry are negative controls; a second pass
+is byte-stable. Consecutive encoded-frame inspection confirms the diagonal is
+gone and the suspected dark rectangles were contact-sheet tiling artifacts,
+not MP4 frames.
+
+No provider or Probe C call was used for recovery. The exact persisted
+OpenRouter-authored source was normalized, re-inspected, committed locally as
+revision 2, thumbnailed, temporally inspected, and rendered model-free in
+1m25s. Primary artifact:
+`renders/sequences-for-slack-recovered-probe-b-20260713-015938.mp4` (H.264,
+1920x1080, 30fps, 480 frames, 16.0s, 2,366,676 bytes). The strip, blocking
+overlay, cut sheets, temporal JSON, and ten thumbnails are under `build/qa`
+and `build/thumbs` in the same project.
+
+Human disposition: **accept with warn**. The film reads as one commercial:
+scattered release inputs → Slack brief and permission-scoped retrieval →
+storyboard/preview → MP4 returned → the requested CTA, which lands and holds.
+The click is visible, state does not reset, primary content remains on-frame,
+and no broken interaction or transition survives. Remaining advisories are
+washout/contrast preference, supporting copy size, one safe-area preference,
+degraded morph-to-swipe, camera occupancy taste, and quiet/static holds. None
+is a hard failure or authorizes another call. Across both authorized probes the
+historical evidence totals 11 logical / 15 physical requests; B itself was
+within the per-job caps. The accepted B path is 9m15s of live authoring plus
+1m25s of model-free recovery/render after the fix, about 10m40s end to end.
+
 ## 2026-07-11 audit sequence
 
 ### LaunchRelay — `architecture-audit-live-1-20260711`

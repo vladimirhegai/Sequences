@@ -813,24 +813,24 @@ does not remove their diagnostic visibility.
   Slack and root typechecks, and `replay:all`. No paid probe in this step.
 
 ### S6.12 One bounded judge-representative live probe
-- [ ] Before spending a provider call, append honest ProofGrid I and ProofLane
+- [x] Before spending a provider call, append honest ProofGrid I and ProofLane
   J entries to `PROBE_LOG.md`, including J's early stop and the fact that no MP4
   was produced. Run all Slack unit/browser suites, Slack/root typechecks, and
   `replay:all`; begin the probe only when they are green.
-- [ ] Use one normal 14--18 second launch brief, not a five-scene component and
+- [x] Use one normal 14--18 second launch brief, not a five-scene component and
   camera stress specification. Supply trusted product facts, audience, tone,
   desired before/after story, and CTA; let the planner choose scene count,
   composition, components, transitions, and camera language. Use the same
   semantic brief for any allowed rerun and change only the job/cache marker.
-- [ ] Run the documented live-probe environment with fallback disabled,
+- [x] Run the documented live-probe environment with fallback disabled,
   continuity enabled, composition audit enabled, `format both`, and no deploy.
   Poll at intervals of at least 60 seconds. Preserve job, author-run, QA,
   runtime, render, MP4, and triage evidence.
-- [ ] Stop immediately when probe A produces a runtime-valid, human-acceptable
+- [x] Stop immediately when probe A produces a runtime-valid, human-acceptable
   MP4 under the acceptance contract. Do not fix advisory-only residue, chase
   `qualityResidue=0`, chase `oneAttemptSuccess=true`, or run another style
   variation.
-- [ ] Probe B is allowed only if A has an unresolved hard failure or an obvious
+- [x] Probe B is allowed only if A has an unresolved hard failure or an obvious
   judge-visible break. First replay A exactly, fix the lowest deterministic
   owner, run the full verification surface, then rerun the same semantic brief.
   There is no probe C in this sprint. A provider timeout gets at most one
@@ -1877,3 +1877,58 @@ classifier; `replay:all` (25 replayed / 0 skipped / 0 failed); deterministic
 `film:demo` preview/temporal proof; and `git diff --check`, all green. No paid
 probe, fallback evidence run, publish, deployment, feature work, or S7+ work.
 S6.12 is next.
+
+## S6.12 — 2026-07-13 — DONE
+
+Two authorized cache-distinct probes used the same ordinary 16-second
+Sequences-for-Slack brief through real OpenRouter with fallback disabled,
+continuity/composition audit/MCP/render/temporal requested, and `format both`.
+Probe A failed loud in 6m26s (6 logical / 8 physical requests) when custom chat
+swap/stream fallbacks hid the whole interaction root. Exact-copy internal chat
+target reconciliation fixes that bounded markup owner idempotently; canonical
+and ambiguous chats are unchanged, and the real Chromium replay keeps the
+arrival/press/release on target.
+
+Probe B failed loud before render in 9m15s (5 logical / 7 physical requests)
+when overlapping disjoint PRIMARY continuity routes sent the camera away from
+the typed Slack focal. The phrase compiler now executes the route named by
+typed spatial/interaction ownership while retaining the competing route in
+the advisory audit. Ambiguous and sequential routes are preserved. Exact B
+Chromium replay is runtime-valid with no hard finding and a fully hit click.
+The live command itself produced no MP4; its missing sequence-check report is
+recorded honestly rather than reconstructed.
+
+No Probe C or additional provider request was made. The exact persisted
+OpenRouter-authored B source was recovered model-free. One final visible
+source residue—the author's canvas-scale blue diagonal hairline—was removed by
+an idempotent, measured source normalizer bounded to non-host/non-component
+simple hairlines spanning at least 50% of canvas width and 25% of height. It
+suppresses only path paint so camera/continuity geometry stays valid; short or
+horizontal rules, charts, and host geometry remain byte-identical. Revision 2
+reinspection has runtime `ok:true`, zero hard findings, and advisory-only QA.
+Consecutive encoded frames prove the diagonal is gone and cuts/interactions are
+intact.
+
+Primary demo:
+`.data/projects/s6-12-sequences-slack-b-20260712-2113/renders/sequences-for-slack-recovered-probe-b-20260713-015938.mp4`
+(H.264, 1920x1080, 30fps, 480 frames, 16.0s). Human disposition is **accept
+with warn**: coherent scattered-inputs → Slack action/retrieval → storyboard
+and preview → returned MP4 → held CTA; no state reset, off-frame primary,
+broken interaction, or broken transition. Remaining washout/contrast, safe-
+area, degraded-morph, occupancy, and quiet-hold findings are advisory and did
+not buy another call. B plus the final model-free recovery/render took about
+10m40s, inside the approximate 15-minute target; A+B historical totals are 11
+logical / 15 physical requests across the two separately capped probes.
+
+Files: `src/engine/{cameraBlocking.ts,cameraPhrase.ts}`, `src/engine/runner/
+repairs/implementation.ts`, `test/{cameraBlocking.test.ts,cameraPhrase.test.ts,
+componentRuntime.browser.test.ts,continuityRuntime.browser.test.ts,
+directComposition.test.ts,normalizerRegistry.test.ts}`, `PROBE_LOG.md`, and
+this plan. Verification: root and Slack typechecks; complete Slack unit suite
+(81 files / 1,386 tests); complete Slack browser suite (24 files / 61 tests);
+exact ProofGrid I, ProofLane J, Probe A, and Probe B source replays;
+`replay:all` (25/0/0); exact A/B Chromium reinspection; deterministic
+`film:demo` preview/temporal/render proof; MP4 `ffprobe`; consecutive-frame and
+human strip/thumbnail review; and `git diff --check`. No fallback evidence,
+Probe C, publish, deploy, feature work, Studio expansion, or S7+ work. Product
+code is frozen. S6.13 is next.

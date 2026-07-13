@@ -14,6 +14,7 @@ import { cinemaKitStyleTag } from "../src/engine/cinemaKit.ts";
 import { CAMERA_RUNTIME_FILE } from "../src/engine/cameraContract.ts";
 import { CUT_RUNTIME_FILE, resolveCutPlan } from "../src/engine/cutContract.ts";
 import { FX_RUNTIME_FILE, resolveFxPlan } from "../src/engine/fxContract.ts";
+import { applyDeterministicSourceRepairs } from "../src/engine/compositionRunner.ts";
 
 const roots: string[] = [];
 
@@ -182,7 +183,116 @@ window.__timelines["cmp-smoke"]=tl;tl.seek(0);
   return { storyboard, html };
 }
 
+function customChatInteractionFilm(): { storyboard: DirectScene[]; html: string } {
+  const storyboard: DirectScene[] = [{
+    id: "slack-brief-entry",
+    title: "Brief entered",
+    purpose: "Click the Slack brief and stream permission-scoped context",
+    startSec: 0,
+    durationSec: 3.5,
+    spatialIntent: {
+      version: 1,
+      focalPart: "slack-chat",
+      composition: "one readable Slack product surface",
+      relationships: [],
+    },
+    components: [{ version: 1, id: "slack-chat", kind: "chat", role: "hero" }],
+    beats: [
+      {
+        version: 1,
+        id: "brief-swap",
+        sceneId: "slack-brief-entry",
+        component: "slack-chat",
+        kind: "swap",
+        atSec: 1.2,
+        durationSec: 0.5,
+        text: "Draft the v2.0 launch story",
+      },
+      {
+        version: 1,
+        id: "response-stream",
+        sceneId: "slack-brief-entry",
+        component: "slack-chat",
+        kind: "stream",
+        atSec: 1.8,
+        durationSec: 0.8,
+        text: "Retrieving permission-scoped context…",
+      },
+    ],
+    interactions: [{
+      version: 1,
+      id: "brief-cursor",
+      sceneId: "slack-brief-entry",
+      cursorId: "cursor",
+      targetPart: "slack-chat",
+      action: "click",
+      startSec: 0.2,
+      arriveSec: 0.55,
+      pressSec: 0.65,
+      releaseSec: 0.78,
+      holdUntilSec: 0.9,
+      from: "frame:bottom-right",
+      path: "arc",
+      aimX: 0.5,
+      aimY: 0.82,
+      feedback: "press-ripple",
+      ripplePart: "slack-chat-ripple",
+    }],
+  }, {
+    id: "result-hold",
+    title: "Context ready",
+    purpose: "Hold the permission-scoped result",
+    startSec: 3.5,
+    durationSec: 2.5,
+  }];
+  return {
+    storyboard,
+    html: `<!doctype html><html><head><script src="gsap.min.js"></script><style>
+html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#111827;color:#111827}
+#root{position:relative;width:1920px;height:1080px;overflow:hidden;--accent:#4f46e5;--surface:#fff;--text:#111827;--muted:#64748b}
+.scene{position:absolute;inset:0;display:grid;place-items:center;background:#eef2ff;opacity:0}
+.slack-channel{width:1120px;min-height:520px;padding:54px;border-radius:28px;background:#fff;box-shadow:0 30px 80px #1e1b4b33}
+.slack-msg,.slack-input{padding:22px 26px;margin:18px 0;border-radius:16px;background:#f1f5f9;font:600 32px/1.25 Arial}
+.slack-msg.ai{background:#eef2ff;color:#312e81}
+</style></head><body><main id="root" data-composition-id="chat-binding-proof" data-width="1920" data-height="1080" data-duration="6">
+<section id="slack-brief-entry" class="scene" data-scene="slack-brief-entry" data-start="0" data-duration="3.5" data-track-index="1">
+<div data-camera-world><div class="slack-channel" data-part="slack-chat" data-component="chat" data-layout-important="1">
+<div class="slack-msg self">Draft the v2.0 launch story</div>
+<div class="slack-input" data-part="chat-input">Draft the v2.0 launch story</div>
+<div class="slack-msg ai" data-part="ai-response">Retrieving permission-scoped context…</div>
+</div></div></section>
+<section id="result-hold" class="scene" data-scene="result-hold" data-start="3.5" data-duration="2.5" data-track-index="1">
+<h1 data-layout-important="1">Permission-scoped context ready</h1>
+</section></main><script>
+window.__timelines=window.__timelines||{};const tl=gsap.timeline({paused:true});
+tl.set('[data-scene="slack-brief-entry"]',{opacity:1},0);
+tl.set('[data-scene="slack-brief-entry"]',{opacity:0},3.5);
+tl.set('[data-scene="result-hold"]',{opacity:1},3.5);
+window.__timelines["chat-binding-proof"]=tl;tl.seek(0);
+</script></body></html>`,
+  };
+}
+
 describe("component runtime browser contract", () => {
+  it("keeps a custom chat root visible while its internal swap and stream beats compile", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-chat-binding-"));
+    roots.push(dir);
+    initializeProject(dir, { name: "Chat binding", brandName: "Chat binding", seedScreenshot: false });
+    const raw = customChatInteractionFilm();
+    const draft = applyDeterministicSourceRepairs(raw, dir, raw.storyboard);
+    expect(draft.html).toContain('data-part="chat-input" data-cmp-text="1"');
+    expect(draft.html).toContain('data-part="ai-response" data-cmp-stream="1"');
+    const validation = await validateDirectComposition(dir, draft);
+    expect(validation.errors).toEqual([]);
+    const qa = await inspectDirectComposition(dir, draft, { captureGuide: false });
+    expect(qa.infraError).toBeUndefined();
+    expect(
+      qa.issues.filter((issue) => issue.code.startsWith("interaction_")),
+      JSON.stringify({ errors: qa.errors, issues: qa.issues, evidence: qa.interactions }),
+    ).toEqual([]);
+    expect(qa.interactions?.some((entry) => entry.phase === "arrival" && entry.hit)).toBe(true);
+  }, 60_000);
+
   it("compiles type/open/morph/count/chart/rows/press/progress beats seek-safely", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-component-smoke-"));
     roots.push(dir);

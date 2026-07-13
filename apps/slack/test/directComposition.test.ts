@@ -44,7 +44,11 @@ import {
   auditDisplayTypeBudget,
   injectDisplayTypeMoments,
 } from "../src/engine/compositionRunner.ts";
-import { repairCompositionWashoutIssues } from "../src/engine/runner/repairs.ts";
+import {
+  reconcileChatBeatTargets,
+  repairCompositionWashoutIssues,
+  retireOversizedDiagonalHairlines,
+} from "../src/engine/runner/repairs.ts";
 import { resolveTimeRampPlan, timeRampHoldWindow } from "../src/engine/timeRamp.ts";
 import {
   commitDirectComposition,
@@ -182,6 +186,117 @@ vi.mock("../src/engine/layoutInspector.ts", async (importOriginal) => {
 });
 
 const defaultInspectImplementation = vi.mocked(inspectDirectComposition).getMockImplementation()!;
+
+describe("chat beat target repair", () => {
+  const chatScene = (): DirectScene => ({
+    id: "slack-brief-entry",
+    title: "Brief entered",
+    purpose: "Enter the release brief and stream the response",
+    startSec: 3.5,
+    durationSec: 5,
+    components: [{ version: 1, id: "slack-chat", kind: "chat", role: "hero" }],
+    beats: [
+      {
+        version: 1,
+        id: "brief-swap",
+        sceneId: "slack-brief-entry",
+        component: "slack-chat",
+        kind: "swap",
+        atSec: 4.4,
+        text: "Draft the v2.0 launch story",
+      },
+      {
+        version: 1,
+        id: "response-stream",
+        sceneId: "slack-brief-entry",
+        component: "slack-chat",
+        kind: "stream",
+        atSec: 5.8,
+        text: "Retrieving permission-scoped context…",
+      },
+    ],
+  });
+  const customChat = `
+<section data-scene="slack-brief-entry">
+  <div data-part="slack-chat" data-component="chat">
+    <div class="slack-msg self">Draft the v2.0 launch story</div>
+    <div class="slack-input" data-part="chat-input">Draft the v2.0 launch story</div>
+    <div class="slack-msg ai" data-part="ai-response">Retrieving permission-scoped context…</div>
+  </div>
+</section>`;
+
+  it("binds exact authored chat input/response children once without hiding the root", () => {
+    const first = reconcileChatBeatTargets(customChat, [chatScene()]);
+    expect(first.repairs).toBe(2);
+    expect(first.html).toContain('data-part="chat-input" data-cmp-text="1"');
+    expect(first.html).toContain('data-part="ai-response" data-cmp-stream="1"');
+    expect(first.html).not.toMatch(/data-part="slack-chat"[^>]*data-cmp-(?:text|stream)/);
+    expect(reconcileChatBeatTargets(first.html, [chatScene()])).toEqual({
+      html: first.html,
+      repairs: 0,
+    });
+  });
+
+  it("leaves canonical and ambiguous chat internals byte-identical", () => {
+    const canonical = customChat
+      .replace('data-part="chat-input"', 'class="cmp-text" data-part="chat-input"')
+      .replace('data-part="ai-response"', 'class="cmp-msg cmp-ai" data-part="ai-response"');
+    expect(reconcileChatBeatTargets(canonical, [chatScene()])).toEqual({
+      html: canonical,
+      repairs: 0,
+    });
+
+    const streamOnly = chatScene();
+    streamOnly.beats = streamOnly.beats?.filter((beat) => beat.kind === "stream");
+    const ambiguous = customChat.replace(
+      '</div>\n</section>',
+      '<div data-part="assistant-response">Retrieving permission-scoped context…</div></div>\n</section>',
+    );
+    expect(reconcileChatBeatTargets(ambiguous, [streamOnly])).toEqual({
+      html: ambiguous,
+      repairs: 0,
+    });
+  });
+});
+
+describe("oversized diagonal hairline repair", () => {
+  const diagonal = [
+    '<svg class="hairline" data-part="accent-hairline" data-layout-important="1"',
+    ' style="position:absolute;left:0;top:0;width:1920px;height:1080px"',
+    ' viewBox="0 0 1920 1080">',
+    '  <path d="M 360 280 L 1560 800" />',
+    '</svg>',
+  ].join("\n");
+
+  it("retires only the paint of a canvas-scale diagonal while preserving its contract target", () => {
+    const first = retireOversizedDiagonalHairlines(diagonal);
+    expect(first.repairs).toBe(1);
+    expect(first.html).toContain('data-part="accent-hairline"');
+    expect(first.html).toContain('data-layout-important="1"');
+    expect(first.html).toContain('data-sequences-retired-diagonal-hairline="1"');
+    expect(first.html).toContain('style="stroke-opacity:0!important"');
+    expect(first.html).toContain('d="M 360 280 L 1560 800"');
+    expect(retireOversizedDiagonalHairlines(first.html)).toEqual({
+      html: first.html,
+      repairs: 0,
+    });
+  });
+
+  it("leaves bounded rules, component charts, and host geometry byte-identical", () => {
+    const fixtures = [
+      diagonal.replace('L 1560 800', 'L 860 300'),
+      diagonal.replace('M 360 280 L 1560 800', 'M 360 540 L 1560 540'),
+      diagonal.replace('<svg class="hairline"', '<svg class="hairline" data-component="chart"'),
+      diagonal.replace('<svg class="hairline"', '<svg class="hairline" data-sequences-host="1"'),
+    ];
+    for (const fixture of fixtures) {
+      expect(retireOversizedDiagonalHairlines(fixture)).toEqual({
+        html: fixture,
+        repairs: 0,
+      });
+    }
+  });
+});
 
 describe("S6.11 bounded live-create attempt economy", () => {
   afterEach(() => {

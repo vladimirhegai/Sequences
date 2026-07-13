@@ -16,6 +16,8 @@ import { resolveCameraBlockingPlan } from "../src/engine/cameraBlocking.ts";
 import {
   CAMERA_PHRASE_TOLERANCES,
   collapseCameraPhrases,
+  compileCameraPhrasePlan,
+  type CameraPhraseSeedV1,
   type CameraPhraseV1,
 } from "../src/engine/cameraPhrase.ts";
 import { findBrowserExecutable } from "../src/engine/render.ts";
@@ -258,6 +260,91 @@ function approachFilm(): string {
 SequencesCamera.compile(tl,document.getElementById("root"));
 SequencesContinuity.compile(tl,document.getElementById("root"));
 window.__timelines["approach-browser"]=tl;tl.seek(0,false);</script></body></html>`;
+}
+
+/** S6.12 Probe B minimized shape: two overlapping primary continuity routes
+ * demand opposite world stations while the typed focal and click both name
+ * the Slack surface. The compiler must keep that one route on-frame. */
+function competingStationFilm(): string {
+  const center = { x: 0.5, y: 0.5, name: "center" as const };
+  const camera = {
+    version: 1 as const,
+    scenes: [{
+      sceneId: "brief",
+      segments: [{
+        move: "hold" as const,
+        startSec: 0,
+        endSec: 4,
+        blend: 0 as const,
+        zoom: 1,
+        ease: "none",
+        toRegion: "slack-station",
+      }],
+    }],
+  };
+  const phrase = (
+    id: string,
+    target: string,
+    region: string,
+    arrivalSec: number,
+    dwellEnd: number,
+    entityId: string,
+  ): CameraPhraseSeedV1 => ({
+    id: `brief:${id}:blocking`,
+    sceneId: "brief",
+    phraseId: `brief:${id}`,
+    role: "payoff",
+    importance: "primary",
+    startSec: 0.2,
+    arrivalSec,
+    endSec: 1.5,
+    target: { kind: "part", id: target, entityId },
+    framingTarget: { kind: "region", id: region },
+    occupancy: { min: 0.08, preferred: 0.2, max: 0.5 },
+    framingOccupancy: { min: 0.16, preferred: 0.3, max: 0.56 },
+    arrivalPose: { target: { kind: "region", id: region }, anchor: center, lens: "fit", zoom: 1 },
+    corridor: { from: center, to: center, padding: 0.08 },
+    dwell: { startSec: arrivalSec, endSec: dwellEnd, readableSec: dwellEnd - arrivalSec },
+    settleUntilSec: arrivalSec + 0.2,
+    nextHandoff: { entityId, toScene: "next", toPart: target, atSec: 4 },
+  });
+  const blocking = compileCameraPhrasePlan({
+    cameraPlan: camera,
+    solver: {
+      curve: "minimum-jerk-quintic",
+      measuredDom: true,
+      maxNormalizedVelocity: 1.9,
+      maxNormalizedAcceleration: 5.8,
+      maxNormalizedJerk: 60,
+    },
+    scenes: [{
+      sceneId: "brief",
+      preferredTarget: "slack-chat",
+      interactionTargets: ["slack-chat"],
+      phrases: [
+        phrase("context", "context-feed", "context-station", 0.28, 1.28, "trace"),
+        phrase("chat", "slack-chat", "slack-station", 0.34, 1.05, "product-shell"),
+      ],
+    }],
+  });
+  const continuity = {
+    version: 1,
+    enabled: true,
+    entities: [],
+    edges: [],
+    summary: {
+      entityCount: 0,
+      multiShotEntityCount: 0,
+      threeShotEntityCount: 0,
+      sharedElementHandoffCount: 0,
+    },
+  };
+  return `<!doctype html><html><head><meta charset="utf-8">
+<script src="gsap.min.js"></script><script src="${CAMERA_RUNTIME_FILE}"></script><script src="${CONTINUITY_RUNTIME_FILE}"></script>
+<style>*{box-sizing:border-box}html,body{margin:0;width:1920px;height:1080px;overflow:hidden;background:#f5f6f8}#root,.scene{position:absolute;inset:0;overflow:hidden}.world{position:relative;width:3520px;height:1080px}.station{position:absolute;top:140px;width:1400px;height:800px;display:grid;place-items:center}.slack{left:260px}.context{left:1860px}.surface{width:680px;height:500px;border-radius:24px;background:#fff;border:2px solid #6840c6;color:#171717;display:grid;place-items:center;font:700 54px Arial}</style></head><body>
+<main id="root" data-composition-id="competing-stations" data-width="1920" data-height="1080" data-duration="4"><section class="scene" data-scene="brief"><div class="world" data-camera-world><div class="station slack" data-region="slack-station"><div class="surface" data-part="slack-chat">Release brief</div></div><div class="station context" data-region="context-station"><div class="surface" data-part="context-feed">Retrieved context</div></div></div></section></main>
+<script type="application/json" id="sequences-camera">${JSON.stringify(camera)}</script><script type="application/json" id="sequences-continuity">${JSON.stringify(continuity)}</script><script type="application/json" id="sequences-camera-blocking">${JSON.stringify(blocking)}</script>
+<script>window.__timelines={};const tl=gsap.timeline({paused:true});SequencesCamera.compile(tl,document.getElementById("root"));SequencesContinuity.compile(tl,document.getElementById("root"));window.__timelines["competing-stations"]=tl;tl.seek(0,false);</script></body></html>`;
 }
 
 function singleSubjectContextFilm(svgMetric = false): string {
@@ -669,6 +756,56 @@ function cutEntryImpactFilm(): string {
 }
 
 describe("continuity + camera blocking browser runtime", () => {
+  it("keeps the typed focal on-frame when competing continuity routes overlap", async () => {
+    const browserPath = findBrowserExecutable();
+    expect(browserPath).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sequences-competing-stations-"));
+    roots.push(dir);
+    fs.writeFileSync(path.join(dir, "index.html"), competingStationFilm(), "utf8");
+    const require = createRequire(import.meta.url);
+    fs.copyFileSync(require.resolve("gsap/dist/gsap.min.js"), path.join(dir, "gsap.min.js"));
+    fs.writeFileSync(path.join(dir, CAMERA_RUNTIME_FILE), cameraRuntimeSource(), "utf8");
+    fs.writeFileSync(path.join(dir, CONTINUITY_RUNTIME_FILE), continuityRuntimeSource(), "utf8");
+    const server = await serveDir(dir);
+    const browser = await launchHeadlessBrowser({
+      executablePath: browserPath!,
+      headless: true,
+      args: ["--hide-scrollbars", "--mute-audio", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
+      await page.goto(server.url, { waitUntil: "networkidle0", timeout: 30_000 });
+      const state = await page.evaluate(() => {
+        const timeline = (window as unknown as {
+          __timelines: Record<string, { seek: (time: number, suppress?: boolean) => void }>;
+        }).__timelines["competing-stations"]!;
+        timeline.seek(0.97, false);
+        const root = document.getElementById("root")!.getBoundingClientRect();
+        const chat = document.querySelector<HTMLElement>('[data-part="slack-chat"]')!
+          .getBoundingClientRect();
+        const plan = JSON.parse(document.getElementById("sequences-camera-blocking")!.textContent!);
+        const visibleWidth = Math.max(0, Math.min(root.right, chat.right) - Math.max(root.left, chat.left));
+        const visibleHeight = Math.max(0, Math.min(root.bottom, chat.bottom) - Math.max(root.top, chat.top));
+        return {
+          target: plan.scenes[0].phrases[0].target.id,
+          phraseCount: plan.scenes[0].phrases.length,
+          collapsed: plan.scenes[0].phrases[0].collapsedPhraseIds,
+          visibleFraction: visibleWidth * visibleHeight / (chat.width * chat.height),
+        };
+      });
+      expect(state).toMatchObject({
+        target: "slack-chat",
+        phraseCount: 1,
+        collapsed: ["brief:context"],
+      });
+      expect(state.visibleFraction).toBeGreaterThanOrEqual(0.85);
+    } finally {
+      await browser.close();
+      await server.close();
+    }
+  });
+
   it("preserves a visible compact whip after a same-pose cut entry settles", async () => {
     const browserPath = findBrowserExecutable();
     expect(browserPath).toBeTruthy();

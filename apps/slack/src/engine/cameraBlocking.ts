@@ -242,6 +242,7 @@ function nextHandoff(
 export function resolveCameraBlockingPlan(
   scenes: DirectScene[],
   graph: ContinuityGraphV1,
+  options: { retainAdvisoryCompetingRoutes?: boolean } = {},
 ): CameraBlockingPlanV1 {
   const score = resolveFilmDirectionScore(scenes);
   const readableUntilByScene = new Map(
@@ -422,7 +423,16 @@ export function resolveCameraBlockingPlan(
       previousAnchor = anchor;
       return block;
     });
-    return { sceneId: scene.id, phrases };
+    return {
+      sceneId: scene.id,
+      phrases,
+      ...(!options.retainAdvisoryCompetingRoutes && scene.spatialIntent?.focalPart
+        ? { preferredTarget: scene.spatialIntent.focalPart }
+        : {}),
+      ...(!options.retainAdvisoryCompetingRoutes && scene.interactions?.length
+        ? { interactionTargets: scene.interactions.map((interaction) => interaction.targetPart) }
+        : {}),
+    };
   });
   return compileCameraPhrasePlan({
     cameraPlan: resolveCameraPlan(scenes),
@@ -526,7 +536,9 @@ export function auditCameraIdeaBudget(scenes: DirectScene[]): string[] {
   if (scenes.length && scenes.every((scene) => scene.id.startsWith("fallback-"))) return [];
   return auditCameraIdeaBudgetPlan(
     scenes,
-    resolveCameraBlockingPlan(scenes, resolveContinuityGraph(scenes)),
+    resolveCameraBlockingPlan(scenes, resolveContinuityGraph(scenes), {
+      retainAdvisoryCompetingRoutes: true,
+    }),
   );
 }
 

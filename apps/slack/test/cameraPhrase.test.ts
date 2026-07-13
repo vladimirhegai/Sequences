@@ -102,6 +102,98 @@ describe("CameraPhrase compiler", () => {
     expect(plan.summary).toMatchObject({ continuityRouteCount: 1, hostDerivedRouteCount: 1 });
   });
 
+  it("keeps one typed owner when overlapping primary continuity routes demand different stations", () => {
+    const competing = [
+      seed({
+        id: "proof:context:blocking",
+        phraseId: "proof-context",
+        startSec: 1,
+        arrivalSec: 1.28,
+        endSec: 2.3,
+        target: { kind: "part", id: "context-feed", entityId: "trace", entityKind: "trace" },
+        framingTarget: { kind: "region", id: "context-station" },
+        dwell: { startSec: 1.28, endSec: 2.28, readableSec: 1 },
+        settleUntilSec: 1.5,
+      }),
+      seed({
+        id: "proof:chat:blocking",
+        phraseId: "proof-chat",
+        startSec: 1.1,
+        arrivalSec: 1.34,
+        endSec: 2.3,
+        target: {
+          kind: "part",
+          id: "slack-chat",
+          entityId: "product-shell",
+          entityKind: "product-shell",
+        },
+        framingTarget: { kind: "region", id: "slack-station" },
+        dwell: { startSec: 1.34, endSec: 2.05, readableSec: 0.71 },
+        settleUntilSec: 1.55,
+      }),
+    ];
+    const plan = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{
+        sceneId: "proof",
+        phrases: competing,
+        preferredTarget: "slack-chat",
+        interactionTargets: ["slack-chat"],
+      }],
+    });
+    expect(plan.scenes[0]!.phrases).toHaveLength(1);
+    expect(plan.scenes[0]!.phrases[0]).toMatchObject({
+      target: { id: "slack-chat" },
+      collapsedPhraseIds: ["proof-context"],
+    });
+
+    const advisoryPlan = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{ sceneId: "proof", phrases: competing }],
+    });
+    expect(advisoryPlan.scenes[0]!.phrases).toHaveLength(2);
+    expect(auditCameraIdeaBudgetPlan([{
+      id: "proof",
+      title: "Slack action",
+      purpose: "Show the brief and its permission-scoped context",
+      startSec: 0,
+      durationSec: 3,
+      spatialIntent: {
+        version: 1,
+        focalPart: "slack-chat",
+        composition: "chat first, context second",
+        relationships: ["slack-chat drives context-feed"],
+      },
+    }], advisoryPlan)[0]).toContain('Keep "slack-chat in slack-station"');
+  });
+
+  it("preserves sequential primary routes because each has its own readable window", () => {
+    const plan = compileCameraPhrasePlan({
+      cameraPlan: { version: 1, scenes: [] },
+      solver,
+      scenes: [{
+        sceneId: "proof",
+        preferredTarget: "metric",
+        phrases: [
+          seed({ dwell: { startSec: 1, endSec: 1.8, readableSec: 0.8 } }),
+          seed({
+            id: "proof:resolve:blocking",
+            phraseId: "proof-resolve",
+            startSec: 1.9,
+            arrivalSec: 2.1,
+            endSec: 3.5,
+            target: { kind: "part", id: "cta", entityId: "cta", entityKind: "cta" },
+            dwell: { startSec: 2.1, endSec: 3.2, readableSec: 1.1 },
+            settleUntilSec: 2.3,
+          }),
+        ],
+      }],
+    });
+    expect(plan.scenes[0]!.phrases.map((phrase) => phrase.target.id)).toEqual(["metric", "cta"]);
+  });
+
   it("budgets repeated semantic visits as one idea even when their poses must remain distinct", () => {
     const plan = compileCameraPhrasePlan({
       cameraPlan: { version: 1, scenes: [] },

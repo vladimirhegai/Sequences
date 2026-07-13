@@ -57,6 +57,119 @@ function scenes(): DirectScene[] {
 }
 
 describe("camera blocking director", () => {
+  it("executes one typed focal route while preserving the competing-route advisory", () => {
+    const scene: DirectScene = {
+      id: "brief-in-slack",
+      title: "Release brief in Slack",
+      purpose: "Show the Slack action and permission-scoped retrieval",
+      startSec: 3,
+      durationSec: 5,
+      components: [{
+        version: 1,
+        id: "slack-chat",
+        kind: "chat",
+        region: "slack-station",
+        role: "hero",
+        entityId: "product-shell",
+      }, {
+        version: 1,
+        id: "context-feed",
+        kind: "list",
+        region: "context-station",
+        role: "hero",
+        entityId: "trace",
+      }],
+      beats: [{
+        version: 1,
+        id: "context-assembles",
+        sceneId: "brief-in-slack",
+        component: "context-feed",
+        kind: "rows",
+        atSec: 3.28,
+        durationSec: 1,
+      }, {
+        version: 1,
+        id: "brief-typed",
+        sceneId: "brief-in-slack",
+        component: "slack-chat",
+        kind: "swap",
+        atSec: 3.9,
+        durationSec: 1.2,
+        text: "Build our launch video",
+      }],
+      interactions: [{
+        version: 1,
+        id: "type-brief",
+        sceneId: "brief-in-slack",
+        cursorId: "launch-cursor",
+        targetPart: "slack-chat",
+        item: 1,
+        action: "click",
+        startSec: 3.05,
+        arriveSec: 3.3,
+        pressSec: 3.4,
+        releaseSec: 3.5,
+        from: "frame:bottom-right",
+        path: "direct",
+        aimX: 0.3,
+        aimY: 0.75,
+        feedback: "press-ripple",
+      }],
+      moments: [{
+        version: 1,
+        id: "context-retrieved",
+        sceneId: "brief-in-slack",
+        atSec: 3.28,
+        title: "Context assembles",
+        visualState: "Permission-scoped context appears",
+        change: "The release material gathers",
+        motionIntent: "reveal",
+        importance: "primary",
+      }, {
+        version: 1,
+        id: "cursor-types-brief",
+        sceneId: "brief-in-slack",
+        atSec: 3.4,
+        title: "Cursor types the brief",
+        visualState: "The release brief is visible in Slack",
+        change: "The product action begins",
+        motionIntent: "ui-state",
+        importance: "primary",
+      }],
+      spatialIntent: {
+        version: 1,
+        focalPart: "slack-chat",
+        composition: "Slack chat first, context feed second",
+        relationships: ["slack-chat drives context-feed"],
+      },
+      camera: {
+        version: 1,
+        path: [{
+          version: 1,
+          move: "push-in",
+          startSec: 3.9,
+          durationSec: 2,
+          toRegion: "slack-station",
+        }, {
+          version: 1,
+          move: "pan",
+          startSec: 6.1,
+          durationSec: 1.5,
+          toRegion: "context-station",
+        }],
+      },
+    };
+    const plan = resolveCameraBlockingPlan([scene], resolveContinuityGraph([scene]));
+    const primaryTargets = plan.scenes[0]!.phrases
+      .filter((phrase) => phrase.importance === "primary")
+      .map((phrase) => phrase.target.id);
+    expect(primaryTargets).toContain("slack-chat");
+    expect(primaryTargets).not.toContain("context-feed");
+    expect(auditCameraIdeaBudget([scene]).join("\n")).toContain(
+      'Keep "slack-chat in slack-station"',
+    );
+  });
+
   it("keeps supporting evidence local when an authored move addresses the focal station", () => {
     const storyboard: DirectScene[] = [{
       id: "owner-verify",
