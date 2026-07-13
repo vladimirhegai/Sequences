@@ -29,9 +29,11 @@ import {
   stagnantPolishShipReason,
   stagnantPolishSignature,
   browserQualityPenalty,
+  correctLoadBearingContainment,
   repairContrastAaIssues,
   correctLayoutOverflow,
   correctSparseFraming,
+  evaluateLoadBearingContainmentAdoption,
   sourceRetryFeedbackForBrowserQa,
   repairStationPositioning,
   injectBrandBase,
@@ -3115,6 +3117,120 @@ describe("correctLayoutOverflow (browser-measured overflow repair)", () => {
       storyboard,
     );
     expect(repaired.html).not.toContain("data-sequences-layout-repair");
+  });
+});
+
+describe("S6.10 typed load-bearing containment", () => {
+  const rect = (left: number, top: number, width: number, height: number) => ({
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+  });
+  const scene = (extra: Partial<DirectScene> = {}): DirectScene => ({
+    id: "one",
+    title: "One",
+    purpose: "Show the primary result",
+    startSec: 0,
+    durationSec: 3,
+    spatialIntent: {
+      version: 1,
+      focalPart: "hero",
+      composition: "One primary result",
+      relationships: ["hero owns the frame"],
+    },
+    ...extra,
+  });
+  const evidence = (overrides: Record<string, unknown> = {}) => ({
+    sceneId: "one",
+    part: "hero",
+    detector: "primary-moment" as const,
+    time: 1.5,
+    found: true,
+    opacity: 1,
+    visibleFraction: 0.4,
+    requiredVisibleFraction: 0.85,
+    rect: rect(-180, 220, 300, 120),
+    frameRect: rect(0, 0, 800, 600),
+    safeRect: rect(60, 60, 680, 480),
+    ...overrides,
+  });
+  const qa = (entries: ReturnType<typeof evidence>[], overrides: Partial<DirectBrowserQaResult> = {}): DirectBrowserQaResult => ({
+    ok: true,
+    strictOk: false,
+    samples: [1.5],
+    issues: [],
+    loadBearingContainment: entries,
+    errors: [],
+    warnings: [],
+    ...overrides,
+  });
+
+  it("emits one bounded idempotent repair for a measured off-frame primary", () => {
+    const first = correctLoadBearingContainment([scene()], qa([evidence()]));
+    expect(first.corrected).toHaveLength(1);
+    const repair = first.storyboard[0]!.layoutRepairs![0]!;
+    expect(repair.issueCode).toBe("load_bearing_containment");
+    expect(repair.selector).toBe('[data-scene="one"] [data-part="hero"]');
+    expect(repair.dx).toBeGreaterThan(0);
+    expect(repair.dx).toBeLessThanOrEqual(320);
+    expect(repair.scale).toBeGreaterThanOrEqual(0.65);
+    const second = correctLoadBearingContainment(first.storyboard, qa([evidence()]));
+    expect(second.storyboard).toEqual(first.storyboard);
+  });
+
+  it("leaves decorative/support content and ProofLane-visible occupancy preferences untouched", () => {
+    const support = scene({
+      spatialIntent: undefined,
+      components: [{ version: 1, id: "hero", kind: "headline", role: "support" }],
+    });
+    expect(correctLoadBearingContainment([support], qa([evidence()])).corrected).toEqual([]);
+    expect(correctLoadBearingContainment(
+      [scene()],
+      qa([evidence({
+        detector: "camera-blocking",
+        visibleFraction: 1,
+        rect: rect(200, 220, 300, 120),
+      })], {
+        issues: [{
+          code: "camera_blocking_landing",
+          severity: "warning",
+          time: 18.12,
+          selector: '[data-part="hero"]',
+          sceneId: "one",
+          part: "hero",
+          message:
+            "ProofLane J: target is 100% visible at 12.2% occupancy; only the ensemble " +
+            "station occupancy preference misses.",
+          source: "sequences",
+        }],
+      }),
+    ).corrected).toEqual([]);
+  });
+
+  it("adopts only strict visibility improvement with no new hard containment", () => {
+    const fixed = correctLoadBearingContainment([scene()], qa([evidence()]));
+    const target = fixed.corrected[0]!;
+    expect(evaluateLoadBearingContainmentAdoption({
+      before: qa([evidence()]),
+      after: qa([evidence({ visibleFraction: 1, rect: rect(240, 220, 300, 120) })]),
+      target,
+    })).toMatchObject({ accepted: true, beforeVisibleFraction: 0.4, afterVisibleFraction: 1 });
+    expect(evaluateLoadBearingContainmentAdoption({
+      before: qa([evidence()]),
+      after: qa([evidence({ visibleFraction: 0.7 })]),
+      target,
+    })).toMatchObject({ accepted: false, reason: "visibility-floor" });
+    expect(evaluateLoadBearingContainmentAdoption({
+      before: qa([evidence()]),
+      after: qa([
+        evidence({ visibleFraction: 1 }),
+        evidence({ sceneId: "two", part: "other", visibleFraction: 0.2 }),
+      ]),
+      target,
+    })).toMatchObject({ accepted: false, reason: "new-hard-containment" });
   });
 });
 

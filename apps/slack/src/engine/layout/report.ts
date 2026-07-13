@@ -108,6 +108,25 @@ export interface LayoutRect {
 
 export type LayoutOverflow = Partial<Record<"left" | "right" | "top" | "bottom", number>>;
 
+/**
+ * Browser measurement for one typed primary whose visibility is load-bearing.
+ * This is evidence, not another finding class: S6.10 uses the same measurement
+ * before and after one host-owned containment repair.
+ */
+export interface LoadBearingContainmentEvidence {
+  sceneId: string;
+  part: string;
+  detector: "primary-moment" | "camera-blocking";
+  time: number;
+  found: boolean;
+  opacity: number;
+  visibleFraction: number;
+  requiredVisibleFraction: number;
+  rect?: LayoutRect;
+  frameRect?: LayoutRect;
+  safeRect?: LayoutRect;
+}
+
 export interface DirectLayoutIssue {
   code: string;
   severity: LayoutSeverity;
@@ -189,6 +208,8 @@ export interface DirectBrowserQaResult {
   samples: number[];
   issues: DirectLayoutIssue[];
   interactions?: DirectInteractionEvidence[];
+  /** Measured primary containment evidence used by the bounded S6.10 repair. */
+  loadBearingContainment?: LoadBearingContainmentEvidence[];
   /** Measured per-boundary focal-part geometry (feeds cut discovery). */
   boundaries?: DirectBoundaryInventory[];
   /** Rendered temporal judge: per-moment before/after frame-difference evidence. */
@@ -676,7 +697,9 @@ function loadBrowserAudit(name: "layout-audit.browser.js" | "contrast-audit.brow
 // transparent semantic wrappers no longer fabricate a collapsed station.
 // v39: blocking rest evidence measures camera-world speed instead of focal DOM
 // entrance motion, and explicit full-move destinations become primary routes.
-const QA_CACHE_VERSION = 39;
+// v40: typed primary focal/camera samples persist structured containment bounds
+// for the one measured, same-attempt S6.10 repair and its reinspection proof.
+const QA_CACHE_VERSION = 40;
 
 /** Everything environment-side that can change the verdict for the same draft. */
 let cachedStaticFingerprint: string | undefined;
@@ -2246,6 +2269,7 @@ async function auditPrimaryMomentFocals(
   page: import("puppeteer-core").Page,
   draft: DirectCompositionDraft,
   seekContent: (time: number) => Promise<void>,
+  containmentEvidence: LoadBearingContainmentEvidence[] = [],
 ): Promise<DirectLayoutIssue[]> {
   const issues: DirectLayoutIssue[] = [];
   const failed = new Set<string>();
@@ -2311,13 +2335,48 @@ async function auditPrimaryMomentFocals(
         );
         const area = rect.width * rect.height;
         const frameArea = rootRect.width * rootRect.height;
+        const rectValue = (value: DOMRect) => ({
+          left: value.left,
+          top: value.top,
+          right: value.right,
+          bottom: value.bottom,
+          width: value.width,
+          height: value.height,
+        });
+        const cssSafe = Number.parseFloat(getComputedStyle(root).getPropertyValue("--space-safe"));
+        const safe = Number.isFinite(cssSafe) && cssSafe > 0
+          ? cssSafe
+          : Math.round(Math.min(rootRect.width, rootRect.height) * 0.06);
         return {
           missing: false,
           opacity,
           onFrame: area > 0 ? (width * height) / area : 0,
           frameFraction: frameArea > 0 ? (width * height) / frameArea : 0,
+          rect: rectValue(rect),
+          frameRect: rectValue(rootRect),
+          safeRect: {
+            left: rootRect.left + safe,
+            top: rootRect.top + safe,
+            right: rootRect.right - safe,
+            bottom: rootRect.bottom - safe,
+            width: rootRect.width - safe * 2,
+            height: rootRect.height - safe * 2,
+          },
         };
       }, { sceneId: scene.id, focalPart });
+      containmentEvidence.push({
+        sceneId: scene.id,
+        part: focalPart,
+        detector: "primary-moment",
+        time: sampleAt,
+        found: !measured.missing,
+        opacity: measured.opacity,
+        visibleFraction: measured.onFrame,
+        requiredVisibleFraction: 0.85,
+        ...(measured.rect ? { rect: measured.rect } : {}),
+        ...(measured.frameRect ? { frameRect: measured.frameRect } : {}),
+        ...(measured.safeRect ? { safeRect: measured.safeRect } : {}),
+      });
       if (!measured.missing && measured.opacity >= 0.35 && measured.onFrame >= 0.85) continue;
       failed.add(key);
       const invisible = measured.missing || measured.opacity < 0.35;
@@ -2350,6 +2409,7 @@ export async function auditCameraBlockingLandings(
   page: import("puppeteer-core").Page,
   draft: DirectCompositionDraft,
   seekContent: (time: number) => Promise<void>,
+  containmentEvidence: LoadBearingContainmentEvidence[] = [],
 ): Promise<DirectLayoutIssue[]> {
   const plan = parseCameraPhrasePlan(draft.html);
   if (!plan?.enabled) return [];
@@ -2432,6 +2492,18 @@ export async function auditCameraBlockingLandings(
       const opacity = chainOpacity(target);
       const area = Math.max(0, rect.width * rect.height);
       const visibleArea = visibleAreaOf(rect);
+      const rectValue = (value: DOMRect) => ({
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      });
+      const cssSafe = Number.parseFloat(getComputedStyle(root).getPropertyValue("--space-safe"));
+      const safe = Number.isFinite(cssSafe) && cssSafe > 0
+        ? cssSafe
+        : Math.round(Math.min(frame.width, frame.height) * 0.06);
       // Mirror the camera runtime's regionContentRect: an ensemble framing
       // station is judged by the union of its painted/semantic content, not
       // its raw placement rect, and a station whose only painted content IS
@@ -2518,11 +2590,34 @@ export async function auditCameraBlockingLandings(
         occupancyFraction: visibleArea / frameArea,
         framingOccupancyFraction,
         framingCollapsed,
+        rect: rectValue(rect),
+        frameRect: rectValue(frame),
+        safeRect: {
+          left: frame.left + safe,
+          top: frame.top + safe,
+          right: frame.right - safe,
+          bottom: frame.bottom - safe,
+          width: frame.width - safe * 2,
+          height: frame.height - safe * 2,
+        },
       };
     }, {
       sceneId: block.sceneId,
       part: block.target.id,
       framing: block.framingTarget ?? null,
+    });
+    containmentEvidence.push({
+      sceneId: block.sceneId,
+      part: block.target.id,
+      detector: "camera-blocking",
+      time: sampleAt,
+      found: !measured.missing,
+      opacity: measured.opacity,
+      visibleFraction: measured.visibleFraction,
+      requiredVisibleFraction: tolerances.visibleFractionMin,
+      ...(measured.rect ? { rect: measured.rect } : {}),
+      ...(measured.frameRect ? { frameRect: measured.frameRect } : {}),
+      ...(measured.safeRect ? { safeRect: measured.safeRect } : {}),
     });
     const visible = !measured.missing && measured.opacity >= tolerances.opacityMin &&
       measured.visibleFraction >= tolerances.visibleFractionMin;
@@ -3996,6 +4091,7 @@ export async function inspectDirectComposition(
 
     const rawIssues: DirectLayoutIssue[] = [];
     const interactionEvidence: DirectInteractionEvidence[] = [];
+    const loadBearingContainment: LoadBearingContainmentEvidence[] = [];
     const coverageSamples: Array<{ time: number; coverage: number }> = [];
     const compositionMode = compositionFloorMode();
     const compositionCoverageSamples: Array<{ time: number; coverage: number }> = [];
@@ -5288,8 +5384,8 @@ export async function inspectDirectComposition(
     }
 
     rawIssues.push(...await (graphOwnedCamera
-      ? auditCameraBlockingLandings(page, draft, seekContent)
-      : auditPrimaryMomentFocals(page, draft, seekContent)));
+      ? auditCameraBlockingLandings(page, draft, seekContent, loadBearingContainment)
+      : auditPrimaryMomentFocals(page, draft, seekContent, loadBearingContainment)));
 
     // Exit discipline (WS4): a surface whose last beat has passed still sitting
     // at full opacity over the focal element is the "assets don't disappear and
@@ -5728,6 +5824,7 @@ export async function inspectDirectComposition(
       samples,
       issues,
       interactions: interactionEvidence,
+      ...(loadBearingContainment.length ? { loadBearingContainment } : {}),
       ...(boundaryInventories.length ? { boundaries: boundaryInventories } : {}),
       ...(temporalJudge.length ? { temporalJudge } : {}),
       ...(transitionOutgoing.length ? { transitionOutgoing } : {}),

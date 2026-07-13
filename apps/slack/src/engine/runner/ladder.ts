@@ -91,9 +91,11 @@ import {
   applyCompositionRepair,
   applyDeterministicSourceRepairs,
   browserInteractionIssues,
+  correctLoadBearingContainment,
   correctLayoutOverflow,
   correctSparseFraming,
   degradeVolunteeredBridgedCuts,
+  evaluateLoadBearingContainmentAdoption,
   lockedSceneGraphError,
   quarantineStaticInteractionErrors,
   recoverByQuarantiningInteractions,
@@ -3487,6 +3489,65 @@ async function authorCompositionLoop(
         ...validation.frameWarnings,
         ...validation.motionWarnings,
       ];
+      // S6.10: one typed load-bearing primary that measured below its hard
+      // visibility floor gets one zero-call containment transaction in this
+      // source attempt. Reinspection must prove the exact target improved to
+      // the floor with no new runtime/containment failure; otherwise the
+      // original authored candidate remains untouched for the normal hard-
+      // failure decision. Occupancy/sparse/taste findings never enter here.
+      if (browserQa.ok && args.lockedStoryboard) {
+        const containmentFix = correctLoadBearingContainment(draft.storyboard, browserQa);
+        const target = containmentFix.corrected[0];
+        if (target) {
+          const candidate = applyDeterministicSourceRepairs(
+            { storyboard: containmentFix.storyboard, html: draft.html },
+            args.projectDir,
+            containmentFix.storyboard,
+          );
+          const candidateValidation = await validateDirectComposition(args.projectDir, candidate);
+          if (candidateValidation.ok) {
+            const candidateQa = await inspectDirectComposition(args.projectDir, candidate, {
+              captureGuide: false,
+            });
+            const adoption = evaluateLoadBearingContainmentAdoption({
+              before: browserQa,
+              after: candidateQa,
+              target,
+            });
+            if (adoption.accepted) {
+              process.stderr.write(
+                `[author] deterministically contained load-bearing ${target.sceneId}/${target.part}: ` +
+                  `${(adoption.beforeVisibleFraction * 100).toFixed(1)}% -> ` +
+                  `${((adoption.afterVisibleFraction ?? 0) * 100).toFixed(1)}% visible\n`,
+              );
+              recordSentinelNormalization("load-bearing-containment", 1);
+              summary.strategyChanges.push(
+                `load-bearing-containment:${target.sceneId}/${target.part}`,
+              );
+              draft = candidate;
+              validation = candidateValidation;
+              browserQa = candidateQa;
+              staticRepairWarnings = [
+                ...candidateValidation.frameWarnings,
+                ...candidateValidation.motionWarnings,
+              ];
+              args = { ...args, lockedStoryboard: containmentFix.storyboard };
+              persistUpgradedStoryboard(args.projectDir, containmentFix.storyboard);
+            } else {
+              process.stderr.write(
+                `[author] deterministic load-bearing containment rejected ` +
+                  `(${target.sceneId}/${target.part}; ${adoption.reason ?? "unknown"}); ` +
+                  `keeping the authored candidate\n`,
+              );
+            }
+          } else {
+            process.stderr.write(
+              `[author] deterministic load-bearing containment failed static validation; ` +
+                `keeping the authored candidate\n`,
+            );
+          }
+        }
+      }
       // Contrast is sampled across stateful moments. Repairing the first
       // measured state can expose the same label against a later background,
       // so converge through a tiny bounded loop inside THIS source attempt.

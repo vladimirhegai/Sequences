@@ -130,7 +130,7 @@ export interface SceneLayoutRepairV1 {
   id: string;
   kind: "overflow-clamp";
   selector: string;
-  issueCode: "canvas_overflow" | "important_safe_area";
+  issueCode: "canvas_overflow" | "important_safe_area" | "load_bearing_containment";
   dx: number;
   dy: number;
   scale: number;

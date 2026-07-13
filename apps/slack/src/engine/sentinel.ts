@@ -1012,6 +1012,24 @@ export const SENTINEL_CONTRACT: readonly SentinelContractRow[] = [
       "otherwise the prior geometry ships unchanged. Telemetry tag station-size-fit.",
   },
   {
+    id: "normalize.load-bearing-containment",
+    group: "layout",
+    layer: "normalize",
+    blocking: "deterministic-repair",
+    findingPrefixes: ["spatial_focal_offframe", "camera_blocking_landing"],
+    promptCostChars: 0,
+    test: "test/loadBearingContainment.browser.test.ts",
+    addedBecause:
+      "S6.10 hackathon guardrail: a typed primary whose browser bounds prove " +
+      "less than 85% visibility receives one host-owned wrapper translate/scale " +
+      "inside the same source attempt. The repair is bounded (scale >=0.65, " +
+      "translation <=40% of either frame axis), idempotent, and re-inspected. " +
+      "It is adopted only when the exact target becomes more visible, reaches " +
+      "its hard floor, and creates no new runtime or load-bearing containment " +
+      "failure. Occupancy/sparse/settle/contrast findings never qualify. " +
+      "Telemetry tag load-bearing-containment.",
+  },
+  {
     id: "normalize.gsap-repeat-clamp",
     group: "runtime-invariants",
     layer: "normalize",
@@ -1792,6 +1810,8 @@ export const NON_FINDING_LITERALS: ReadonlySet<string> = new Set([
   // eye-trace row). Listed so the closed-world scan doesn't mistake the
   // prefix literal for a new class.
   "eye_trace",
+  // Host-only SceneLayoutRepairV1 issueCode/telemetry id, not a QA finding.
+  "load_bearing_containment",
 ]);
 
 /** Every registered finding prefix, flattened (for the coverage walk). */
@@ -1874,6 +1894,7 @@ export const SENTINEL_NORMALIZER_SCOPES: Readonly<
   "normalize.kit-progress-complete": ["source"],
   "normalize.world-layout-derive": ["source", "storyboard"],
   "normalize.station-size-fit": ["browser"],
+  "normalize.load-bearing-containment": ["browser"],
   "normalize.gsap-repeat-clamp": ["source"],
   "normalize.lint-font-var-artifact": ["source"],
   "normalize.station-position": ["source"],

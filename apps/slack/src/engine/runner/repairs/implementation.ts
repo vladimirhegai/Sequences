@@ -13,6 +13,7 @@ import {
   inspectDirectComposition,
   type DirectBrowserQaResult,
   type DirectLayoutIssue,
+  type LoadBearingContainmentEvidence,
 } from "../../layoutInspector.ts";
 import { resolveCutPlan, type CutAxis } from "../../cutContract.ts";
 import {
@@ -2622,8 +2623,10 @@ const LAYOUT_REPAIR_SCALE_FLOOR = 0.86;
  * intentional composition, not shrinkage.
  */
 const LAYOUT_REPAIR_SCALE_FLOOR_BAND = 0.78;
+const LOAD_BEARING_CONTAINMENT_SCALE_FLOOR = 0.65;
 const LAYOUT_REPAIR_BAND_FRACTION = 0.7;
 const LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION = 0.1;
+const LOAD_BEARING_CONTAINMENT_TRANSLATE_CAP_FRACTION = 0.4;
 const LAYOUT_REPAIR_GOLDEN_RATIO = (1 + Math.sqrt(5)) / 2;
 const LAYOUT_REPAIR_GOLDEN_INSET = 1 / (LAYOUT_REPAIR_GOLDEN_RATIO * LAYOUT_REPAIR_GOLDEN_RATIO);
 
@@ -2765,7 +2768,12 @@ function layoutRepairCandidate(
     candidate.issueCode === "important_safe_area" &&
     (rect.width >= frameRect.width * LAYOUT_REPAIR_BAND_FRACTION ||
       rect.height >= frameRect.height * LAYOUT_REPAIR_BAND_FRACTION);
-  const scaleFloor = isBand ? LAYOUT_REPAIR_SCALE_FLOOR_BAND : LAYOUT_REPAIR_SCALE_FLOOR;
+  const loadBearing = candidate.issueCode === "load_bearing_containment";
+  const scaleFloor = loadBearing
+    ? LOAD_BEARING_CONTAINMENT_SCALE_FLOOR
+    : isBand
+      ? LAYOUT_REPAIR_SCALE_FLOOR_BAND
+      : LAYOUT_REPAIR_SCALE_FLOOR;
   if (!Number.isFinite(scale) || scale < scaleFloor) return undefined;
   const scaledWidth = rect.width * scale;
   const scaledHeight = rect.height * scale;
@@ -2774,12 +2782,18 @@ function layoutRepairCandidate(
   }
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
+  const measuredOverflow: RepairOverflow = {
+    ...(rect.left < safeRect.left ? { left: safeRect.left - rect.left } : {}),
+    ...(rect.right > safeRect.right ? { right: rect.right - safeRect.right } : {}),
+    ...(rect.top < safeRect.top ? { top: safeRect.top - rect.top } : {}),
+    ...(rect.bottom > safeRect.bottom ? { bottom: rect.bottom - safeRect.bottom } : {}),
+  };
   const overflow = candidate.issues.reduce<RepairOverflow>((acc, issue) => ({
     left: Math.max(acc.left ?? 0, issue.overflow?.left ?? 0),
     right: Math.max(acc.right ?? 0, issue.overflow?.right ?? 0),
     top: Math.max(acc.top ?? 0, issue.overflow?.top ?? 0),
     bottom: Math.max(acc.bottom ?? 0, issue.overflow?.bottom ?? 0),
-  }), {});
+  }), measuredOverflow);
   const targetX = chooseAxisCenter(
     centerX,
     scaledWidth,
@@ -2798,8 +2812,11 @@ function layoutRepairCandidate(
   );
   const dx = roundRepairNumber(targetX - centerX, 2);
   const dy = roundRepairNumber(targetY - centerY, 2);
-  const cappedX = frameRect.width * LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION;
-  const cappedY = frameRect.height * LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION;
+  const translateCap = loadBearing
+    ? LOAD_BEARING_CONTAINMENT_TRANSLATE_CAP_FRACTION
+    : LAYOUT_REPAIR_TRANSLATE_CAP_FRACTION;
+  const cappedX = frameRect.width * translateCap;
+  const cappedY = frameRect.height * translateCap;
   if (Math.abs(dx) > cappedX || Math.abs(dy) > cappedY) return undefined;
   const roundedScale = roundRepairNumber(scale, 3);
   if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && roundedScale > 0.999) return undefined;
@@ -2947,6 +2964,170 @@ export function correctLayoutOverflow(
   return { storyboard: mutated, corrected };
 }
 
+export interface LoadBearingContainmentTarget {
+  sceneId: string;
+  part: string;
+  detector: LoadBearingContainmentEvidence["detector"];
+  time: number;
+  beforeVisibleFraction: number;
+  requiredVisibleFraction: number;
+}
+
+function validLoadBearingPart(scene: DirectScene, evidence: LoadBearingContainmentEvidence): boolean {
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(evidence.part)) return false;
+  if (scene.spatialIntent?.focalPart === evidence.part) return true;
+  if (scene.components?.some((component) =>
+    component.id === evidence.part && component.role === "hero"
+  )) return true;
+  // Camera-blocking evidence is emitted only for a compiled PRIMARY phrase;
+  // the typed phrase itself is the load-bearing declaration even when the
+  // target is a semantic author part rather than a component-kit root.
+  return evidence.detector === "camera-blocking";
+}
+
+function containmentEvidenceKey(
+  value: Pick<LoadBearingContainmentEvidence, "sceneId" | "part">,
+): string {
+  // Detector paths can legitimately change after canonical host reinjection
+  // (primary-moment -> camera-blocking). Retry ownership is the typed target,
+  // so duplicate detectors collapse to one scene+part containment key.
+  return `${value.sceneId}${LAYOUT_REPAIR_KEY_SEPARATOR}${value.part}`;
+}
+
+/**
+ * One S6.10 containment transaction. Only measured typed primaries below the
+ * hard visibility floor qualify; occupancy/sparseness never enters this seam.
+ * The returned storyboard carries at most one host-only translate/scale rule.
+ */
+export function correctLoadBearingContainment(
+  storyboard: DirectScene[],
+  browserQa: DirectBrowserQaResult,
+): { storyboard: DirectScene[]; corrected: LoadBearingContainmentTarget[] } {
+  const sceneById = new Map(storyboard.map((scene) => [scene.id, scene]));
+  const candidates = (browserQa.loadBearingContainment ?? [])
+    .filter((evidence) => {
+      const scene = sceneById.get(evidence.sceneId);
+      return Boolean(
+        scene &&
+        evidence.found &&
+        evidence.opacity >= 0.35 &&
+        evidence.visibleFraction + 1e-6 < evidence.requiredVisibleFraction &&
+        evidence.rect && evidence.frameRect && evidence.safeRect &&
+        evidence.rect.width > 0 && evidence.rect.height > 0 &&
+        validLoadBearingPart(scene!, evidence),
+      );
+    })
+    .sort((a, b) =>
+      a.visibleFraction - b.visibleFraction ||
+      a.time - b.time ||
+      containmentEvidenceKey(a).localeCompare(containmentEvidenceKey(b))
+    );
+  const evidence = candidates[0];
+  if (!evidence?.rect || !evidence.frameRect || !evidence.safeRect) {
+    return { storyboard, corrected: [] };
+  }
+  const selector = `[data-scene="${evidence.sceneId}"] [data-part="${evidence.part}"]`;
+  if (!safeLayoutRepairSelector(selector)) return { storyboard, corrected: [] };
+  const repair = layoutRepairCandidate({
+    sceneId: evidence.sceneId,
+    selector,
+    issueCode: "load_bearing_containment",
+    rect: evidence.rect,
+    safeRect: evidence.safeRect,
+    frameRect: evidence.frameRect,
+    part: evidence.part,
+    componentRootPart: evidence.part,
+    issues: [],
+  });
+  if (!repair) return { storyboard, corrected: [] };
+  const completed: SceneLayoutRepairV1 = {
+    ...repair,
+    id: layoutRepairId(evidence.sceneId, selector, "load_bearing_containment"),
+  };
+  const target: LoadBearingContainmentTarget = {
+    sceneId: evidence.sceneId,
+    part: evidence.part,
+    detector: evidence.detector,
+    time: evidence.time,
+    beforeVisibleFraction: evidence.visibleFraction,
+    requiredVisibleFraction: evidence.requiredVisibleFraction,
+  };
+  const mutated = storyboard.map((scene) => {
+    if (scene.id !== evidence.sceneId) return scene;
+    const kept = (scene.layoutRepairs ?? []).filter((entry) => entry.id !== completed.id);
+    const notes = new Set(scene.sentinelNormalizations ?? []);
+    notes.add(
+      `load-bearing-containment: ${evidence.part} visibility ` +
+      `${roundRepairNumber(evidence.visibleFraction, 3)} -> >=` +
+      `${roundRepairNumber(evidence.requiredVisibleFraction, 3)}; ` +
+      `translate ${completed.dx}px/${completed.dy}px scale ${completed.scale}`,
+    );
+    return {
+      ...scene,
+      layoutRepairs: [...kept, completed],
+      sentinelNormalizations: [...notes],
+    };
+  });
+  return { storyboard: mutated, corrected: [target] };
+}
+
+function failedContainmentKeys(browserQa: DirectBrowserQaResult): Set<string> {
+  return new Set((browserQa.loadBearingContainment ?? [])
+    .filter((entry) =>
+      !entry.found || entry.opacity < 0.35 ||
+      entry.visibleFraction + 1e-6 < entry.requiredVisibleFraction
+    )
+    .map(containmentEvidenceKey));
+}
+
+export function evaluateLoadBearingContainmentAdoption(args: {
+  before: DirectBrowserQaResult;
+  after: DirectBrowserQaResult;
+  target: LoadBearingContainmentTarget;
+}): {
+  accepted: boolean;
+  beforeVisibleFraction: number;
+  afterVisibleFraction?: number;
+  reason?: "infrastructure" | "hard-failure" | "measurement-missing" | "not-improved" |
+    "visibility-floor" | "new-hard-containment";
+} {
+  const base = { beforeVisibleFraction: args.target.beforeVisibleFraction };
+  if (args.after.infraError) return { ...base, accepted: false, reason: "infrastructure" };
+  if (!args.after.ok) return { ...base, accepted: false, reason: "hard-failure" };
+  const afterEvidence = (args.after.loadBearingContainment ?? [])
+    .filter((entry) =>
+      entry.sceneId === args.target.sceneId &&
+      entry.part === args.target.part
+    )
+    .sort((a, b) =>
+      Number(b.detector === args.target.detector) - Number(a.detector === args.target.detector) ||
+      Math.abs(a.time - args.target.time) - Math.abs(b.time - args.target.time)
+    )[0];
+  if (!afterEvidence?.found || afterEvidence.opacity < 0.35) {
+    return { ...base, accepted: false, reason: "measurement-missing" };
+  }
+  const afterVisibleFraction = afterEvidence.visibleFraction;
+  if (afterVisibleFraction <= args.target.beforeVisibleFraction + 0.01) {
+    return { ...base, accepted: false, afterVisibleFraction, reason: "not-improved" };
+  }
+  if (afterVisibleFraction + 1e-6 < args.target.requiredVisibleFraction) {
+    return { ...base, accepted: false, afterVisibleFraction, reason: "visibility-floor" };
+  }
+  const beforeFailures = failedContainmentKeys(args.before);
+  const targetKey = containmentEvidenceKey(args.target);
+  for (const key of failedContainmentKeys(args.after)) {
+    if (key !== targetKey && !beforeFailures.has(key)) {
+      return {
+        ...base,
+        accepted: false,
+        afterVisibleFraction,
+        reason: "new-hard-containment",
+      };
+    }
+  }
+  return { ...base, accepted: true, afterVisibleFraction };
+}
+
 function formatLayoutRepairPx(value: number): string {
   return `${Number.isInteger(value) ? value : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}px`;
 }
@@ -2977,7 +3158,11 @@ function layoutRepairStyleBlock(storyboard: DirectScene[]): string | undefined {
       if (
         repair.version !== 1 ||
         repair.kind !== "overflow-clamp" ||
-        (repair.issueCode !== "canvas_overflow" && repair.issueCode !== "important_safe_area") ||
+        (
+          repair.issueCode !== "canvas_overflow" &&
+          repair.issueCode !== "important_safe_area" &&
+          repair.issueCode !== "load_bearing_containment"
+        ) ||
         !safeLayoutRepairSelector(repair.selector) ||
         !Number.isFinite(repair.dx) ||
         !Number.isFinite(repair.dy) ||

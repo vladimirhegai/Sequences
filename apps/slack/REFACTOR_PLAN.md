@@ -773,17 +773,17 @@ does not remove their diagnostic visibility.
   update as one S6.9 commit.
 
 ### S6.10 Deterministic load-bearing frame containment
-- [ ] At the lowest geometry owner, implement one bounded same-attempt repair
+- [x] At the lowest geometry owner, implement one bounded same-attempt repair
   for a typed load-bearing component whose measured bounds prove it is partly
   or wholly outside the viewport/safe area. Prefer wrapper translation/scale or
   station/camera fit using measured bounds; keep the authored component, copy,
   scene order, timing, and style intact.
-- [ ] Reinspect after the one repair and adopt it only when the exact component
+- [x] Reinspect after the one repair and adopt it only when the exact component
   is measurably more visible, satisfies the hard visibility floor, and creates
   no new hard diagnostic. If deterministic containment cannot satisfy those
   conditions, preserve the original candidate and permit at most one author
   repair for that source stage.
-- [ ] Add negative controls proving that decorative/support content may remain
+- [x] Add negative controls proving that decorative/support content may remain
   intentionally cropped, visible focal content is not mutated merely for being
   sparse/large, and ProofLane J's fully visible headline does not trigger this
   repair.
@@ -1808,3 +1808,30 @@ Sentinel, sequence-status, normalizer-registry, and attempt-ledger unit tests
 (34/34); Slack typecheck; exact ProofLane J `source:replay`; and exact
 `replay:all` (25 replayed / 0 skipped / 0 failed), all green. No production
 code, paid probe, publish, deployment, or S7+ work. S6.10 is next.
+
+## S6.10 — 2026-07-12 — DONE
+Added structured browser bounds for typed primary-moment and camera-blocking
+focals, then reused the existing host-owned `layoutRepairs` seam for one
+measured same-attempt containment correction. The correction is capped at 40%
+of the frame per translation axis and a 0.65 scale floor, replaces its own
+stable scene/part repair idempotently, and is adopted only after reinspection
+proves a strict visibility improvement to the existing hard floor with no new
+runtime or containment failure. A failed correction leaves the authored
+candidate untouched for S6.11's single paid-repair policy.
+
+The real-Chromium minimized typed fixture moves a 40%-visible load-bearing hero
+fully into frame. Unit rollback controls cover no improvement, an undersized
+result, and a newly failed focal. Supporting/decorative content is untouched,
+as is the explicit ProofLane J negative-control shape whose headline is 100%
+visible despite its advisory ensemble-occupancy finding. No copy, story order,
+component choice, beat timing, typography, palette, or motion style changes.
+
+Files: `src/engine/{compositionRunner.ts,directComposition.ts,layout/report.ts,
+runner/index.ts,runner/ladder.ts,runner/repairs/implementation.ts,sentinel.ts}`,
+`test/{directComposition.test.ts,loadBearingContainment.browser.test.ts,
+runnerExtraction.test.ts}`, and this plan. Verification: Slack typecheck;
+focused containment/registry tests; complete Slack unit suite; complete Slack
+browser suite (24 files / 59 tests); exact ProofLane J `source:replay`;
+`replay:all` (25 replayed / 0 skipped / 0 failed); deterministic `film:demo`
+render, preview, and temporal proof; and `git diff --check`, all green. No paid
+probe, publish, deployment, feature work, or S7+ work. S6.11 is next.
