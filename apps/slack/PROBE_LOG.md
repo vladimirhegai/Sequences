@@ -10,11 +10,84 @@ fix the lowest deterministic owner, add a regression, and record the honest
 terminal status. Provider faults are environmental but still count in call
 accounting.
 
-Current boundary (2026-07-12): this ledger now runs through the early-stopped
-ProofLane J probe. The next work is S6.9's guardrail/retry inventory, not probe
-K. The active sprint permits at most two new paid probes total and stops after
-the first runtime-valid, human-acceptable MP4; advisory-only residue is not a
-reason to rerun.
+Current boundary (2026-07-13): this ledger now runs through the owner-authorized
+post-freeze Harborview motion-audit probe and its deterministic offline fix
+below. No rerun is authorized or performed.
+
+## 2026-07-13 Post-freeze motion-design audit probe (Harborview)
+
+### Harborview — `motion-audit-harborview-20260713` (fail-loud; no repair attempted)
+
+One owner-authorized probe to look for motion-design defects on an ordinary
+brief (new domain, 16s, before→action→result→CTA, one supplied metric fact).
+Documented probe environment: fallback `0`, continuity on, composition audit,
+`--provider openrouter-api --mcp --render --temporal --format both`. Preflight
+at HEAD `80aa701`: Slack typecheck and exact `replay:all` (25/0/0) green.
+
+The run failed loud at `source-author` after ~12 minutes with **no storyboard
+preview, source, render, temporal evidence, or MP4**. Recorded accounting:
+5 logical / 8 physical requests (frame-design 3/4, storyboard 1/2,
+source-author 1/2), one failed physical request, two hedges. Stage durations:
+frame-design 45s, storyboard-plan 7m03s, source-author 1m58s.
+
+Why it failed, step by step: the concept call was slow and hedged (hedge won);
+storyboard attempt 1 exhausted its completion budget and recovered through the
+bounded compact-artifact retry inside one logical attempt, then was accepted
+with three advisory pacing degradations; the first author slot response dropped
+host-contract bindings in three scenes (scatter-sources, converge-rail,
+inbox-action-metric). The scene-scoped repair re-request was then refused by
+the S6.11 atomic reservation — `model-call budget exhausted before author
+source: 6 logical calls` — with the physical budget simultaneously at its 8/8
+cap. Author attempts 1 and 2 both terminated on that reservation exception
+without a provider call; fallback was disabled, so the run wrote `FAILURE.md`
+and published nothing. The budget enforcement behaved as designed; what
+consumed the headroom was planning overhead (three frame-design calls) plus
+latency hedges, leaving no room to repair one ordinary authoring defect.
+
+Motion-design evidence: none rendered. The only motion-relevant findings are
+the storyboard's three advisory pacing degradations — the payoff scene
+introduces 5 surfaces with the last landing 85% into the scene, and both
+2-word metric swaps (`metric-before`, `metric-after`) change framing 0.0s
+after the swap with no reading hold. S6.11's advisory demotion worked: they
+cost zero paid retries. Terminal triage: fail-loud, `runtimeValid=false`,
+status `warn`. Artifacts preserved under
+`.data/projects/motion-audit-harborview-20260713/` (attempt ledger, author
+run, both author exception records, `FAILURE.md`, triage). At probe time this
+failure was recorded without a fix, replay, or rerun.
+
+#### Post-probe deterministic fix — 2026-07-13
+
+Offline investigation found an L2/L5 ordering defect, not a call-budget defect.
+`authorSlotDraft` inspected raw slot markup and immediately bought a
+`scaffold-repair` subcall before `applyDeterministicSourceRepairs` could use
+exact ids, typed component ownership, and region-home reconciliation to restore
+the bindings for free. Raw scaffold gaps are now observational: the host first
+assembles the document and runs the complete deterministic source registry;
+only an unresolved hard L3 binding finding can reach the existing scene-scoped
+paid repair. Logical/physical caps, hedging, hard gates, and prompts are
+unchanged.
+
+The incident also exposed a preservation bug. The 17,962-character first author
+response lived only inside `authorSlotDraft`; when the nested reservation threw,
+the caller's `attemptRaw` was still unset, so the exception artifacts lost the
+paid response. Nested slot failures now carry that raw response back to attempt
+persistence. The original Harborview bytes remain unrecoverable, so the fix is
+proved honestly with a minimized fixture using the exact three offender scene
+ids and their persisted typed obligations, not described as an exact source
+replay. That fixture reproduces the raw-gap pattern and proves existing L2
+restores the typed components/stations with one author response; a no-candidate
+root still reaches one post-L2 scene repair. No provider call, probe rerun,
+fallback, publish, or deploy was performed for the fix.
+
+Stable-tree verification: root and Slack typechecks; focused slot, reliability,
+Sentinel, and telemetry regressions; complete Slack unit suite (82 files / 1,396
+tests); complete root suite (125 files / 1,608 tests, including browser); exact
+S6.12 Probe A and B source replays; `replay:all` (25/0/0); and model-free
+`demo`, `mcp:demo`, `direct:demo`, plus `sequence:check --demo --no-mcp --format
+both`, all green. The A/B replays retain their pre-existing advisory warnings;
+the direct demo remains runtime-valid with its existing one static and ten
+browser warnings. No Harborview render can be inspected because the failed run
+produced neither source nor frames, and no paid rerun was authorized.
 
 ## 2026-07-12 Hackathon stabilization probe preflight
 
