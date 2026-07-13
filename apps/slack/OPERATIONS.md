@@ -19,6 +19,30 @@ Railway hosts the Bolt app, outbound Socket Mode connection, Chromium/FFmpeg,
 `/healthz`, `/slack/install`, and `/slack/oauth_redirect`. It is not a public
 MCP endpoint.
 
+## Slack app manifest
+
+`apps/slack/manifest.json` is the version-controlled source of truth for the
+Slack app configuration. Slack slash-command names cannot contain spaces, so
+the app registers one `/sequences` command; `assets`, `assets clear`, `demo`,
+and the other documented operations are arguments handled by the Bolt app.
+
+A Railway deploy does not update Slack's copy of the manifest. Apply manifest
+changes in **Slack app settings → App Manifest**, or use
+`apps.manifest.update` with a short-lived Slack app configuration token. Do not
+store that user-scoped configuration token as a Railway runtime variable.
+
+This app uses Socket Mode, so slash commands, events, and interactivity do not
+need public request URLs in the manifest. The OAuth redirect URL is still
+required and must exactly match:
+
+```text
+https://sequences-slack-production.up.railway.app/slack/oauth_redirect
+```
+
+After a scope change, reinstall the Slack app and replace the affected runtime
+token in Railway before deploying. Copy/help/redirect-only manifest changes do
+not rotate the existing bot token.
+
 ## Local verification and probes
 
 Install dependencies from the monorepo root. Do not run the Slack Socket Mode

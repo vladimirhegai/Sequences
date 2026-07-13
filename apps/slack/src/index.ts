@@ -586,7 +586,7 @@ async function runCreate(client: WebClient, args: CreateArgs): Promise<void> {
     }
   }
 
-  // Channel brand brief (`/sequences asset`): committed brand truth captured
+  // Channel brand brief (`/sequences assets`): committed brand truth captured
   // from the user's own screenshots outranks anything inferred, so it is
   // appended AFTER workspace context. The deterministic demo skips it.
   if (!args.presetPlan) {
@@ -969,7 +969,7 @@ app.command("/sequences", async ({ command, ack, client, respond }) => {
       text:
         "*Sequences — from shipped to shown.*\n" +
         "• `/sequences` — open the modal and turn a launch into an on-brand video.\n" +
-        "• `/sequences asset` — upload UI screenshots once; every video in this channel picks up your brand (`asset clear` to forget).\n" +
+        "• `/sequences assets` — upload 1–5 UI screenshots; every video in this channel picks up your brand (`assets clear` to forget).\n" +
         "• `/sequences demo` — build a ready-made *Relay v2* launch reel (no setup).\n" +
         "• `/sequences mcp-test` — self-check every service (MCP, render host, Slack, config).\n" +
         "• `/sequences debug on|off` — show/hide the model-stage receipt trail on results.\n" +
@@ -1032,7 +1032,7 @@ app.command("/sequences", async ({ command, ack, client, respond }) => {
       response_type: "ephemeral",
       text: removed
         ? ":wastebasket: Forgot this channel's brand brief — videos go back to inferred styling."
-        : "No brand brief is stored for this channel. `/sequences asset` to capture one.",
+        : "No brand brief is stored for this channel. `/sequences assets` to capture one.",
     });
     return;
   }
@@ -1194,7 +1194,7 @@ app.view("asset_brief", async ({ ack, view, client }) => {
           text:
             `:art: Captured your brand from ${images.length} screenshot${images.length === 1 ? "" : "s"}` +
             (paletteText ? ` — ${paletteText}.` : ".") +
-            " Every `/sequences` video in this channel now uses it. `/sequences asset clear` to forget.",
+            " Every `/sequences` video in this channel now uses it. `/sequences assets clear` to forget.",
         });
         if (palette) {
           const preview = await renderAssetBriefPreview(brief);

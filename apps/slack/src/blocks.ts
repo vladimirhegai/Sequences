@@ -30,8 +30,7 @@ const TONE_OPTIONS: Array<{ value: Tone; label: string }> = [
   { value: "bold-launch", label: "Bold & high-energy - launch" },
 ];
 
-// 15 was dropped: sub-20s films read as truncated (owner call, 2026-07-09).
-const LENGTH_OPTIONS = [20, 25, 30, 45, 60];
+const LENGTH_OPTIONS = [15, 20, 25, 30, 45, 60];
 
 function plain(text: string) {
   return { type: "plain_text" as const, text, emoji: true };
@@ -92,7 +91,8 @@ export function buildCreateModal(ctx: ModalContext): View {
           type: "mrkdwn",
           text:
             ":clapper: *Turn your launch into a short, on-brand video.*\n" +
-            "Give me the essentials - I'll draft a storyboard, render a draft MP4, and you can revise it right in the thread.",
+            "Give me the essentials. I'll retrieve permission-scoped Slack context, " +
+            "build a storyboard and preview, then return the rendered MP4 to the channel.",
         },
       },
       { type: "divider" },
@@ -104,7 +104,7 @@ export function buildCreateModal(ctx: ModalContext): View {
           type: "plain_text_input",
           action_id: "value",
           max_length: 80,
-          initial_value: ctx.product ?? "",
+          ...(ctx.product ? { initial_value: ctx.product } : {}),
           placeholder: plain("Relay"),
         },
       },
@@ -117,8 +117,8 @@ export function buildCreateModal(ctx: ModalContext): View {
           action_id: "value",
           multiline: true,
           max_length: 2_000,
-          initial_value: ctx.whatShipped ?? "",
-          placeholder: plain("sub-100ms traces, 1-click rollback, 40% faster cold starts"),
+          ...(ctx.whatShipped ? { initial_value: ctx.whatShipped } : {}),
+          placeholder: plain("A launch brief now becomes a storyboard, preview, and MP4 in Slack"),
         },
       },
       {
@@ -158,7 +158,7 @@ export function buildCreateModal(ctx: ModalContext): View {
         element: {
           type: "static_select",
           action_id: "value",
-          initial_option: { text: plain("30 seconds"), value: "30" },
+          initial_option: { text: plain("15 seconds"), value: "15" },
           options: LENGTH_OPTIONS.map((seconds) => ({
             text: plain(`${seconds} seconds`),
             value: String(seconds),
@@ -175,7 +175,7 @@ export function buildCreateModal(ctx: ModalContext): View {
           action_id: "value",
           multiline: true,
           max_length: 2_000,
-          placeholder: plain("Anything else the video should say or show"),
+          placeholder: plain("Trusted facts, CTA, or constraints not already in Slack"),
         },
       },
     ],
@@ -183,7 +183,7 @@ export function buildCreateModal(ctx: ModalContext): View {
 }
 
 /**
- * The `/sequences asset` intake modal. Slash commands can't carry files, so
+ * The `/sequences assets` intake modal. Slash commands can't carry files, so
  * the modal's `file_input` block is how screenshots reach the bot. Kept to
  * two fields — images + notes — because everything else is derived.
  */
@@ -208,7 +208,7 @@ export function buildAssetBriefModal(ctx: ModalContext): View {
             ":art: *Show me your product's UI.*\n" +
             "I'll extract your brand truth (accent, canvas tone) and theme every video " +
             "made in this channel with it — plus preview the asset kit in your colors. " +
-            "Re-run to replace; `/sequences asset clear` to forget.",
+            "Re-run to replace; `/sequences assets clear` to forget.",
         },
       },
       {
@@ -232,7 +232,7 @@ export function buildAssetBriefModal(ctx: ModalContext): View {
           action_id: "value",
           multiline: true,
           max_length: 1_000,
-          placeholder: plain("Anything the videos should respect — vibe, colors to avoid, product nouns"),
+          placeholder: plain("Vibe, colors to avoid, product nouns, or other brand constraints"),
         },
       },
     ],
